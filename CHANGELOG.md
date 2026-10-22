@@ -38,6 +38,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `devctl serve`: a blocking tool (`pr_wait`, `pr_merge`, `release_wait`, `release_promote`) called without a
+  `progressToken`, as through muster's `call_tool` or `muster call`, is no longer refused with
+  `progress_token_required`: it answers within `--no-progress-timeout` (20s) with the verdict reached by then,
+  `timeout` (exit 2) while pending, and a warning saying how to go on. `pr_merge` merges only a head it judged green
+  in that time; a merge whose release is not confirmed yet is exit 9, and calling again merges nothing twice. Without
+  a grant such a call is `auth_required`. A call with a `progressToken` blocks as before. The chart's
+  `noProgressTimeout` sets the flag.
+
 - `prwait.Config.GitHub` is the `prwait.GitHub` interface `*githubclient.Client` satisfies, and the `pr wait` and
   `pr merge status` documents are `prwait.Document` and `mergejob.StatusDocument`, shared by the CLI and the server.
 - The agent-facing engines (`pr wait`, `pr merge`, `release wait`, `release promote`, `rollout wait`) take clients built

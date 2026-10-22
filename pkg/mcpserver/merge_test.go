@@ -119,17 +119,57 @@ func TestPRMergeReleaseOutcomesStayDistinct(t *testing.T) {
 	}
 }
 
-// TestPRMergeRefusesWithoutProgressToken: the merge is a wait too and is
-// never started without the progress that keeps its call alive.
-func TestPRMergeRefusesWithoutProgressToken(t *testing.T) {
-	gh := greenPR()
-	s := &sources{merge: gh, policy: prmergetest.Policy(false)}
-	c, _ := connect(t, mcpserver.Config{Credentials: person("ghu_person"), Sources: s, Clock: virtual()})
-	_, doc := call(t, c, mcpserver.ToolPRMerge, map[string]any{"repository": "giantswarm/devctl", "number": 42}, nil)
-	assertVerdict(t, doc, agentcli.VerdictProgressTokenRequired, agentcli.ExitUsage)
-	if len(gh.Merges()) != 0 || len(s.tokens) != 0 {
-		t.Errorf("a refused call merged %d times and built clients with %v", len(gh.Merges()), s.tokens)
+// TestPRMergeWithoutProgressToken: without a progressToken a head not
+// judged green within the no-progress timeout is not merged, and a green one
+// is merged once, its release not confirmed in the time left, so calling
+// again goes on without a second merge.
+func TestPRMergeWithoutProgressToken(t *testing.T) {
+	merge := func(t *testing.T, gh *prmergetest.GitHub) func() map[string]any {
+		t.Helper()
+		release, err := releasewaittest.GeneratedRelease("giantswarm", "devctl", &releasewaittest.Registry{}, "running")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := &sources{merge: gh, policy: prmergetest.Policy(false), release: release}
+		c, n := connect(t, mcpserver.Config{Credentials: person("ghu_person"), Sources: s, Clock: virtual()})
+		t.Cleanup(func() {
+			if got := len(n.all()); got != 0 {
+				t.Errorf("%d progress notifications without a progressToken", got)
+			}
+		})
+		return func() map[string]any {
+			_, doc := call(t, c, mcpserver.ToolPRMerge, map[string]any{"repository": "giantswarm/devctl", "number": 42, "timeout": "30m"}, nil)
+			if !hasWarning(doc, "called without a progressToken") {
+				t.Errorf("no warning on how to go on: %v", doc["warnings"])
+			}
+			return doc
+		}
 	}
+
+	t.Run("pending", func(t *testing.T) {
+		gh := prmergetest.New(prmergetest.PullRequest("giantswarm", "devctl", 42, "abc123", prmergetest.Login),
+			prwaittest.Head{CheckRuns: []*github.CheckRun{prwaittest.CheckRun("test", "in_progress", "")}})
+		doc := merge(t, gh)()
+		assertVerdict(t, doc, agentcli.VerdictTimeout, agentcli.ExitTimeout)
+		if n := len(gh.Merges()); n != 0 {
+			t.Errorf("%d merge API requests on a head not judged green", n)
+		}
+	})
+
+	t.Run("green", func(t *testing.T) {
+		gh := greenPR()
+		call := merge(t, gh)
+		for i := 1; i <= 2; i++ {
+			doc := call()
+			assertVerdict(t, doc, agentcli.VerdictReleaseUnconfirmed, agentcli.ExitReleaseUnconfirmed)
+			if doc["mergeCommitSha"] != releasewaittest.ReleaseSHA {
+				t.Errorf("call %d: mergeCommitSha %v, want the merge's", i, doc["mergeCommitSha"])
+			}
+		}
+		if n := len(gh.Merges()); n != 1 {
+			t.Errorf("%d merge API requests, want 1", n)
+		}
+	})
 }
 
 func hasWarning(doc map[string]any, substring string) bool {

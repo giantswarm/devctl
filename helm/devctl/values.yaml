@@ -21,6 +21,10 @@ imagePullSecrets: []
 # muster.mcpServer.timeout, which each notification restarts.
 progressInterval: 10s
 
+# -- How long a wait called without a progressToken runs before it answers, a
+# Go duration: below muster.mcpServer.timeout, as nothing keeps the call alive.
+noProgressTimeout: 20s
+
 github:
   # -- The provider App muster keeps whose grant carries the person's GitHub
   # token (muster's providerApps entry, the workspace-manager's provider

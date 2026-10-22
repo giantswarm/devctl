@@ -20,13 +20,14 @@ import (
 // ToolPRMerge is the merge tool's name.
 const ToolPRMerge = "pr_merge"
 
-func prMergeTool() mcp.Tool {
+func prMergeTool(noProgress time.Duration) mcp.Tool {
 	return mcp.NewTool(ToolPRMerge,
 		mcp.WithDescription("Merge a pull request as you, in one call: devctl pr merge. "+
 			"Waits until the head is green, merges it with the judged head as the expected head, deletes the branch, then waits until the release it triggered is pullable. "+
 			"Refuses what devctl refuses: a draft, closed or conflicting pull request (exit 3), another human's (exit 5), a repository whose team-file entry says agentMerge: false (exit 5), acceptRed naming a required check or a security scan (exit 3). "+
 			"Safe to call again: a pull request merged already answers its merge and its release, with no second merge. "+
-			"Call it with a progressToken; it reports progress until its verdict. "+
+			progressDescription(noProgress)+
+			"Without a progressToken the wait for green and the release wait share that timeout: a head not judged green by then is not merged, and a merge whose release is not confirmed yet is release_unconfirmed (exit 9); calling again merges nothing twice. "+
 			"Answers devctl's document: verdict green once merged and released (or no release follows), release_failed (exit 6) or release_unconfirmed (exit 9) after the merge, or the wait's verdict, and its exitCode."),
 		mcp.WithString("repository", mcp.Required(), mcp.Description("The repository, owner/repo.")),
 		mcp.WithInteger("number", mcp.Required(), mcp.Description("The pull request's number.")),
@@ -99,9 +100,7 @@ func checkMerge(request mcp.CallToolRequest, doc *prmerge.Document) (mergeCall, 
 	}
 	c.updateBranch = request.GetBool("updateBranch", false)
 	c.acceptRed = request.GetStringSlice("acceptRed", nil)
-	if c.progressToken = progressToken(request); c.progressToken == nil {
-		return c, errNoProgressToken(ToolPRMerge)
-	}
+	c.progressToken = progressToken(request)
 	return c, nil
 }
 
@@ -131,6 +130,14 @@ func (s *Server) runPRMerge(ctx context.Context, request mcp.CallToolRequest, do
 	if err != nil {
 		return nil, err
 	}
+	// Without a progressToken the whole call answers within the
+	// no-progress timeout: the release wait gets what the wait for green
+	// left of it.
+	var deadline time.Time
+	if c.progressToken == nil {
+		deadline = s.clock.Now().Add(s.noProgressTimeout)
+		c.timeout = s.bound(c.progressToken, ToolPRMerge, c.timeout, doc.Warn)
+	}
 	githubToken, err := s.credentials.GitHubToken(ctx)
 	if err != nil {
 		return nil, err
@@ -142,7 +149,7 @@ func (s *Server) runPRMerge(ctx context.Context, request mcp.CallToolRequest, do
 	err = s.keepAlive(ctx, c.progressToken, "the merge of "+what, func(progress *agentcli.Progress) error {
 		// One merge of a pull request at a time: a second call waits for
 		// the first and finds the pull request merged.
-		unlock, err := s.pulls.lock(ctx, what, progress)
+		unlock, err := s.pulls.lock(ctx, what, c.progressToken != nil, progress)
 		if err != nil {
 			return err
 		}
@@ -156,7 +163,7 @@ func (s *Server) runPRMerge(ctx context.Context, request mcp.CallToolRequest, do
 		}
 		var release prmerge.ReleaseWait
 		if !c.noReleaseWait {
-			release = s.mergeRelease(githubToken, retrying, c.releaseTimeout, progress, doc.Warn)
+			release = s.mergeRelease(githubToken, retrying, c.releaseTimeout, deadline, progress, doc.Warn)
 		}
 		merger, err := prmerge.New(prmerge.Config{
 			Wait: prwait.Config{
@@ -187,9 +194,17 @@ func (s *Server) runPRMerge(ctx context.Context, request mcp.CallToolRequest, do
 }
 
 // mergeRelease is the release wait after a merge: release_wait's, on the
-// merge commit.
-func (s *Server) mergeRelease(githubToken string, retrying *agentcli.Retrying, timeout time.Duration, progress *agentcli.Progress, warn func(string)) prmerge.ReleaseWait {
+// merge commit, ending at deadline unless it is zero.
+func (s *Server) mergeRelease(githubToken string, retrying *agentcli.Retrying, timeout time.Duration, deadline time.Time, progress *agentcli.Progress, warn func(string)) prmerge.ReleaseWait {
 	return func(ctx context.Context, owner, repo string, number int, mergeCommitSHA string, result *releasewait.Result) error {
+		if !deadline.IsZero() {
+			left := deadline.Sub(s.clock.Now())
+			if left <= 0 {
+				return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout,
+					"the %s a call without a progressToken answers within ended with the merge", s.noProgressTimeout)
+			}
+			timeout = min(timeout, left)
+		}
 		sources, err := s.sources.ReleaseWait(ctx, githubToken, retrying)
 		if err != nil {
 			return err
@@ -253,8 +268,9 @@ type pulls struct {
 }
 
 // lock waits until no other merge of pull runs and takes it; the returned
-// func gives it back. ctx ending first is its error.
-func (p *pulls) lock(ctx context.Context, pull string, progress *agentcli.Progress) (func(), error) {
+// func gives it back. ctx ending first is its error. Without wait, another
+// merge running is a timeout at once.
+func (p *pulls) lock(ctx context.Context, pull string, wait bool, progress *agentcli.Progress) (func(), error) {
 	for {
 		p.mu.Lock()
 		if p.running == nil {
@@ -273,6 +289,9 @@ func (p *pulls) lock(ctx context.Context, pull string, progress *agentcli.Progre
 			}, nil
 		}
 		p.mu.Unlock()
+		if !wait {
+			return nil, agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout, "another call merges %s; call again once it ended", pull)
+		}
 		progress.Printf("another call merges %s; waiting for it to end", pull)
 		select {
 		case <-done:

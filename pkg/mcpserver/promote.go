@@ -15,11 +15,11 @@ import (
 // [Config.ReleasePromote] only.
 const ToolReleasePromote = "release_promote"
 
-func releasePromoteTool() mcp.Tool {
+func releasePromoteTool(noProgress time.Duration) mcp.Tool {
 	return mcp.NewTool(ToolReleasePromote,
 		mcp.WithDescription("Promote the latest release candidate of auto-release repositories to a stable release, as you, in one call: devctl release promote. "+
 			"Name exactly one of repositories and team. Dispatches each repository's Auto Release workflow with release-type stable and follows the runs until the stable gate and the tag are done. "+
-			"Call it with a progressToken; it reports progress until its verdict. "+
+			progressDescription(noProgress)+
 			"Answers devctl's document: one entry per repository with its state, verdict green when every repository is dispatched, would be or has nothing to promote, red naming the others, and its exitCode."),
 		mcp.WithArray("repositories", mcp.WithStringItems(), mcp.Description("The repositories, owner/repo each.")),
 		mcp.WithString("team", mcp.Description("Promote every auto-release repository of this team's file in giantswarm/github (team-bumblebee) instead.")),
@@ -63,8 +63,8 @@ func (s *Server) runReleasePromote(ctx context.Context, request mcp.CallToolRequ
 		return err
 	}
 	token := progressToken(request)
-	if token == nil {
-		return errNoProgressToken(ToolReleasePromote)
+	if call.Follow {
+		call.FollowTimeout = s.bound(token, ToolReleasePromote, call.FollowTimeout, doc.Warn)
 	}
 	githubToken, err := s.credentials.GitHubToken(ctx)
 	if err != nil {

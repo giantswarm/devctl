@@ -1,7 +1,7 @@
 # devctl serve
 
 ```
-devctl serve [--address :8080] [--progress-interval 10s] [--release-promote]
+devctl serve [--address :8080] [--progress-interval 10s] [--no-progress-timeout 20s] [--release-promote]
              [--grant-app <app>] [--github-app <name>]
              [--oidc-issuer <url> --oidc-audience <aud>... [--oidc-ca-file <pem>]]
              [--metrics-address :9090]
@@ -55,8 +55,25 @@ increases and a `message` naming what it waits for and its latest poll. Nothing 
 restarts the server's registered `timeout` on each notification of a call that carries a `progressToken`, up to
 `spec.progress.maxDuration`, so `--progress-interval` stays below that `timeout`.
 
-A wait called without a `progressToken` is refused at once and reads nothing: verdict `progress_token_required`,
-exit 7.
+## A call without a progressToken
+
+Not every client sends a `progressToken`: a tool called through muster's `call_tool` meta-tool, or with `muster call`,
+may carry none. Nothing keeps such a call alive past the gateway's registered `timeout`, so a blocking tool (`pr_wait`,
+`pr_merge`, `release_wait`, `release_promote`) answers it within `--no-progress-timeout` (20s, below muster's 30 s)
+instead of blocking until its verdict, and sends no progress:
+
+- `pr_wait` and `release_wait` run their wait for at most that long, whatever `timeout` says, and answer the verdict
+  they reached: `green` or `available` when it came in time, `red`, `ci_failed` or any other verdict as it fell, and
+  `timeout` (exit 2), its reason naming what is still pending, while the head or the release is not done yet.
+- `pr_merge` shares that time between the wait for green and the release wait. A head it has not judged green by then
+  is not merged (`timeout`, exit 2). A merged one whose release is not confirmed in the time left is
+  `release_unconfirmed` (exit 9); another call answers the merge made already and waits for the release again, with no
+  second merge. A call while another merges the same pull request answers `timeout` at once.
+- `release_promote` dispatches as with a `progressToken` and follows the runs for at most that long.
+
+Every such answer carries a warning that the call had no `progressToken`. The caller calls the tool again until the
+verdict is no longer `timeout` (or `release_unconfirmed` after a merge); a call with a `progressToken` waits for the
+verdict in one call. Without a grant the call is `auth_required` as with a token.
 
 ## What only a laptop has
 

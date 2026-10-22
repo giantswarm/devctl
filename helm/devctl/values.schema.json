@@ -206,6 +206,10 @@
             "type": "string",
             "description": "Override the chart name."
         },
+        "noProgressTimeout": {
+            "type": "string",
+            "description": "How long a wait called without a progressToken runs before it answers, a Go duration: below muster.mcpServer.timeout, as nothing keeps the call alive."
+        },
         "nodeSelector": {
             "type": "object",
             "additionalProperties": true

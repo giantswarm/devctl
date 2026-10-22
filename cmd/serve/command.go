@@ -39,8 +39,12 @@ is a field, and the call is an MCP error only for auth_required.
 A wait is one call: it blocks until its verdict and sends
 notifications/progress on the caller's progressToken every
 --progress-interval, which keeps the call alive through a gateway that
-restarts its timeout on progress (muster). A wait without a progressToken is
-refused at once, verdict progress_token_required.
+restarts its timeout on progress (muster). A wait without a progressToken,
+which a client calling through muster's call_tool or muster call may send
+none of, sends no progress and answers within --no-progress-timeout: the
+verdict it reached by then, timeout (exit 2) while still pending, and a
+warning saying so; calling again goes on. pr_merge never merges a head it
+has not judged green by then.
 
 pr_merge is devctl pr merge in one call: the wait for green, the merge with
 the judged head as the expected head, then the release wait, with the CLI's
@@ -70,15 +74,16 @@ type Config struct {
 }
 
 type flag struct {
-	Address          string
-	MetricsAddress   string
-	ProgressInterval time.Duration
-	ReleasePromote   bool
-	GrantApp         string
-	GitHubApp        string
-	OIDCIssuer       string
-	OIDCAudiences    []string
-	OIDCCAFile       string
+	Address           string
+	MetricsAddress    string
+	ProgressInterval  time.Duration
+	NoProgressTimeout time.Duration
+	ReleasePromote    bool
+	GrantApp          string
+	GitHubApp         string
+	OIDCIssuer        string
+	OIDCAudiences     []string
+	OIDCCAFile        string
 }
 
 func New(config Config) (*cobra.Command, error) {
@@ -109,6 +114,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.Flags().StringSliceVar(&f.OIDCAudiences, "oidc-audience", nil, "An audience of the forwarded ID token this server trusts; repeatable, required with --oidc-issuer")
 	c.Flags().StringVar(&f.OIDCCAFile, "oidc-ca-file", "", "PEM CA bundle the issuer's certificate is checked against, besides the system's; for an issuer with a private CA")
 	c.Flags().DurationVar(&f.ProgressInterval, "progress-interval", mcpserver.DefaultProgressInterval, "How often a wait sends notifications/progress; below the registered timeout of the gateway in front")
+	c.Flags().DurationVar(&f.NoProgressTimeout, "no-progress-timeout", mcpserver.DefaultNoProgressTimeout, "How long a wait called without a progressToken runs before it answers; below the registered timeout of the gateway in front")
 	return c, nil
 }
 
@@ -116,13 +122,17 @@ func run(ctx context.Context, stderr io.Writer, f *flag) error {
 	if f.ProgressInterval <= 0 {
 		return fmt.Errorf("--progress-interval must be positive, got %s", f.ProgressInterval)
 	}
+	if f.NoProgressTimeout <= 0 {
+		return fmt.Errorf("--no-progress-timeout must be positive, got %s", f.NoProgressTimeout)
+	}
 	endpoints := agentcli.EndpointsFromEnv()
 	config := mcpserver.Config{
-		Version:          project.Version(),
-		Endpoints:        endpoints,
-		ProgressInterval: f.ProgressInterval,
-		ReleasePromote:   f.ReleasePromote,
-		Logger:           slog.New(slog.NewJSONHandler(stderr, nil)),
+		Version:           project.Version(),
+		Endpoints:         endpoints,
+		ProgressInterval:  f.ProgressInterval,
+		NoProgressTimeout: f.NoProgressTimeout,
+		ReleasePromote:    f.ReleasePromote,
+		Logger:            slog.New(slog.NewJSONHandler(stderr, nil)),
 	}
 	if f.GrantApp != "" {
 		config.Credentials = mcpserver.MusterGrant{
