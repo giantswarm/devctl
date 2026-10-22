@@ -19,6 +19,10 @@ the server speaks no stdio.
 | `pr_merge_status` | [`devctl pr merge status`](pr-merge.md) | `handle` (empty lists every merge) | yes |
 | `release_wait` | [`devctl release wait`](release-wait.md) | `repository`, `version` or `pr`, `timeout`, `catalog`, `images`, `charts` | yes |
 | `rollout_wait` | [`devctl rollout wait`](rollout-wait.md) | `installation`, `repository`, `version` or `pr`, `timeout`, `images`, `charts`, `helmreleases` | yes |
+| `reservation_reserve` | [`devctl reservation reserve`](reservation.md) | `cluster`, `app`, `branch`, `pullRequest`, `duration`, `exclusive`, `repository`, `dryRun` | no |
+| `reservation_list` | [`devctl reservation list`](reservation.md) | `cluster`, `repository` | yes |
+| `reservation_extend` | [`devctl reservation extend`](reservation.md) | `pullRequest`, `repository`, `dryRun` | no |
+| `reservation_release` | [`devctl reservation release`](reservation.md) | `cluster` and `app`, or `pullRequest`; `repository`, `dryRun` | no |
 | `release_promote` (`--release-promote` only) | [`devctl release promote`](release-promote.md) | `repositories` or `team`, `dryRun`, `version`, `branch`, `noFollow`, `followTimeout` | no |
 
 `timeout` is a Go duration, 30m by default and at most 55m, below the hour a gateway keeps a progress-kept call alive;
@@ -116,6 +120,26 @@ expires, so the cluster answers by the person's access:
 `caFile` (PEM) is the API's certificate authority, empty for the system roots; `issuer` is what the exchanged token
 must name, empty for the token endpoint without `/token`; `audience` defaults to `dex-k8s-authenticator`. Without
 `clientSecretFile` the client is a public one, named in the form (kubectl-gs's, for a server run on a laptop).
+
+## Reservations
+
+The `reservation_*` tools are the `devctl reservation` commands as the person, on the GitOps repository `repository`
+(default `giantswarm/giantswarm-management-clusters`). They take no `user`: the holder is the GitHub login of the
+person's grant, and `reservation_extend` makes them the holder, as the CLI's `--user` does. `reap` stays the CI bot's.
+
+Each call clones the repository's `main` shallowly into a directory of its own under the system's temporary directory
+and removes it when it ends, whatever its outcome. The person's token of the App is the clone's git credential, in the
+clone's own git configuration, never on a command line; a commit's author is the person, their login and GitHub noreply
+address (`<id>+<login>@users.noreply.github.com`), and it is pushed straight to `main`, as the CLI pushes it. The push
+reaches `main` only as far as the person's own rights and the repository's protection admit it. `reservation_reserve`
+renders the cluster's collections before it commits, loading their remote bases: the image carries `git`, and the
+server reaches the bases' host.
+
+A call answers the command's result as the CLI's `--output json` prints it, in devctl's envelope with `repository`, `user`
+and, for `dryRun`, `patch`, the commits it made and dropped. Another holder's reservation, or a push the repository did
+not take, is `refused` (exit 5) naming the holder, branch and end, or git's refusal; a cluster that is not there or not
+enabled, an app it does not serve, a release of what is not reserved or an extend of nothing is `not_applicable` (exit
+3). A `progressToken` keeps a call alive past the gateway's timeout while it clones, renders and pushes.
 
 ## What only a laptop has
 

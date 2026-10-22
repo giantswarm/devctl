@@ -35,7 +35,7 @@ const (
 
 	// DefaultRepo holds the configuration of every Giant Swarm management
 	// cluster.
-	DefaultRepo = "giantswarm/giantswarm-management-clusters"
+	DefaultRepo = reservation.DefaultGitOpsRepository
 
 	branch = "main"
 )
