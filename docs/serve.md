@@ -142,5 +142,7 @@ a version (its MCP `serverInfo.version`). One values change registers it with mu
 the memory of the replica that runs it.
 
 An installation's muster configuration adds the toolset presets `devctl` (`server: devctl`, every tool, the write
-tools included) and `devctl-read-only` (the waits, `pr_merge_status` and `reservation_list` by name), which resolves to
-the same devctl tools as muster's built-in `read-only`.
+tools included) and `devctl-read-only` (`pr_wait`, `release_wait`, `rollout_wait`, `pr_merge_status` and
+`reservation_list` by name), which resolves to the same devctl tools as muster's built-in `read-only`. A preset names
+`rollout_wait` and `reservation_list` ahead of the server: a name no tool in the [list above](#tools) answers matches
+nothing until a release serves it.
