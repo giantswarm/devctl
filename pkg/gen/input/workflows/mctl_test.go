@@ -392,8 +392,9 @@ func Test_MctlCommentFlagParsing(t *testing.T) {
 
 // Test_MctlValidateManifestSkipsLegacyCharts checks legacy charts are skipped, release-* and unparsable ones validated.
 func Test_MctlValidateManifestSkipsLegacyCharts(t *testing.T) {
-	if _, err := exec.LookPath("yq"); err != nil {
-		t.Skip("yq not on PATH (it is on the GitHub-hosted runner)")
+	yq := mikefarahYq(t)
+	if yq == "" {
+		t.Skip("no mikefarah yq v4 on PATH (the GitHub-hosted runner has one; the step's `yq eval-all` needs it)")
 	}
 
 	dir := t.TempDir()
@@ -428,6 +429,10 @@ func Test_MctlValidateManifestSkipsLegacyCharts(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Shadow any other yq on PATH (the Python jq wrapper has no eval-all, so the step would skip nothing).
+	if err := os.Symlink(yq, filepath.Join(bin, "yq")); err != nil {
+		t.Fatal(err)
+	}
 
 	cmd := exec.CommandContext(t.Context(), "bash", "-eo", "pipefail", "-c", mctlStepScript(t, "validate_manifest", "Validate changed manifests")) // #nosec G204 -- the script is the rendered template, test-only
 	cmd.Dir = dir
@@ -452,6 +457,21 @@ func Test_MctlValidateManifestSkipsLegacyCharts(t *testing.T) {
 	if !strings.Contains(string(out), `skipped: cluster chart "cluster-aws"`) {
 		t.Errorf("no skip line for the legacy chart:\n%s", out)
 	}
+}
+
+// mikefarahYq returns the first yq on PATH that is mikefarah's v4, the one the workflow's runner has, or "".
+func mikefarahYq(t *testing.T) string {
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		path, err := exec.LookPath(filepath.Join(dir, "yq"))
+		if err != nil {
+			continue
+		}
+		out, err := exec.CommandContext(t.Context(), path, "--version").CombinedOutput() // #nosec G204 G702 -- a yq found on PATH, test-only
+		if err == nil && strings.Contains(string(out), "mikefarah") && strings.Contains(string(out), "version v4") {
+			return path
+		}
+	}
+	return ""
 }
 
 // outputValue reads a key out of a $GITHUB_OUTPUT file.
