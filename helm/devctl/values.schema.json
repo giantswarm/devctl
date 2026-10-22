@@ -75,11 +75,6 @@
             "description": "Global values shared between all subcharts",
             "$comment": "Added automatically by 'helm schema' to allow this chart to be used as a Helm dependency, as this schema would otherwise not allow Helm's special 'global' values key."
         },
-        "identity": {
-            "type": "object",
-            "description": "Ignored: the server names the caller from the person's GitHub grant, not from the ID token muster forwards. Accepted so a configuration that still sets it renders.",
-            "additionalProperties": true
-        },
         "image": {
             "type": "object",
             "additionalProperties": false,

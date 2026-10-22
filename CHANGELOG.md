@@ -114,6 +114,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Removed
 
+- The devctl chart's `identity` value, ignored since the server names the caller from the GitHub grant.
+
 - `devctl serve`: `--oidc-issuer`, `--oidc-audience` and `--oidc-ca-file`; the chart no longer mounts an issuer CA.
 
 - The CHANGELOG cut: `devctl changelog cut` and `check`, the Auto-release workflow's job that opened, approved

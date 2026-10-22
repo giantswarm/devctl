@@ -31,7 +31,6 @@ devctl serve on a Giant Swarm management cluster — devctl's agent-facing comma
 | noProgressTimeout | string | `"20s"` | How long a wait called without a progressToken runs before it answers, a Go duration: below muster.mcpServer.timeout, as nothing keeps the call alive. |
 | github.grantApp | string | `""` | The provider App muster keeps whose grant carries the person's GitHub token (muster's providerApps entry, the workspace-manager's provider instance name): muster attaches it in X-Muster-Grant-<grantApp> and the server acts on GitHub with it. Required with muster.mcpServer.enabled. |
 | github.app | string | `""` | The GitHub App behind grantApp (`<installation>-agents`), as an auth_required or not_applicable answer names it; empty is grantApp. |
-| identity | object | `{}` | Ignored: the server names the caller from the person's GitHub grant, not from the ID token muster forwards. Accepted so a configuration that still sets it renders. |
 | metrics.enabled | bool | `true` | Serve the call metrics (devctl_mcp_tool_calls_total and devctl_mcp_tool_call_duration_seconds, by tool, the caller's GitHub login and user id, repository and verdict) at /metrics on port. |
 | metrics.port | int | `9090` |  |
 | metrics.serviceMonitor.enabled | bool | `false` | Render a ServiceMonitor for the metrics port. |
