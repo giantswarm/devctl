@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `repo reconcile`, `repo setup`, `repo checks`: a repository with a `tests/e2e` directory requires Heimdall's gatekeeper check once it has reported.
 - `devctl serve`: `pr_merge`, `devctl pr merge` in one call kept alive by progress (the wait for green, the merge with
   the judged head as the expected head, the release wait) with the CLI's refusals and document, its merges listed by
   `pr_merge_status`. A pull request merged already answers its merge and release state instead of exit 3, and a
