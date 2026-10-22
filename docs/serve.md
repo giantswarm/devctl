@@ -3,7 +3,6 @@
 ```
 devctl serve [--address :8080] [--progress-interval 10s] [--no-progress-timeout 20s] [--release-promote]
              [--grant-app <app>] [--github-app <name>]
-             [--oidc-issuer <url> --oidc-audience <aud>... [--oidc-ca-file <pem>]]
              [--metrics-address :9090]
 ```
 
@@ -89,15 +88,17 @@ The server acts on GitHub with the token of the person a call is made for; with 
 use for git): muster attaches it to every call in `X-Muster-Grant-<app>` once the person granted the App, because the
 server's `MCPServer` names the App in `spec.auth.providerApps`. The server stores no token and runs no sign-in.
 
-- No grant: `auth_required` with `status: grant_required` and `apps: [<app>]` in the structured content, which muster
-  answers with the App's sign-in link (`authUrl`); after the person signed in, the same call acts as them.
+- The grant names the caller: GitHub's user for the token (`GET /user`, kept five minutes), its login and id.
+- No grant, or one GitHub refuses: every tool call, `pr_merge_status` included, is `auth_required` with
+  `status: grant_required` and `apps: [<app>]` in the structured content, which muster answers with the App's sign-in
+  link (`authUrl`); after the person signed in, the same call acts as them. Opening a session and listing the tools
+  need no grant, so the person sees the tools before granting the App.
 - A repository whose owner the App is not installed on (`GET /user/installations` with the person's token, kept five
   minutes): `not_applicable`, exit 3, naming the owner and the App (`--github-app`). Such a repository is for devctl on
   a laptop.
 
-With `--oidc-issuer` every request carries the ID token muster forwards (`spec.auth.forwardToken`): signed by the issuer
-(`--oidc-ca-file` for a private CA) for one of the `--oidc-audience` audiences, or the request is refused with 401
-before any tool runs. Its subject is the caller of the call.
+The server reads no ID token: its `MCPServer` keeps `spec.auth.forwardToken` only because muster attaches provider App
+grants to a connection made as the person, so no list of audiences has to follow muster's.
 
 A promotion's document names the identity source `platform`. The private registry is read anonymously.
 
@@ -125,17 +126,17 @@ A coding agent that meets a flaky job reports it, or pushes a commit that rebuil
 
 ## Tracing
 
-Each call logs one JSON line on stderr — `tool`, the caller's `subject` and `email`, `repository`, `verdict`,
+Each call logs one JSON line on stderr — `tool`, the caller's GitHub `login` and `userId`, `repository`, `verdict`,
 `exitCode`, `duration` — and, with `--metrics-address`, counts it at `/metrics`:
-`devctl_mcp_tool_calls_total` and `devctl_mcp_tool_call_duration_seconds` by `tool`, `subject`, `repository` and
-`verdict`. A metric's `repository` is a GitHub `owner/repo` of a call past its usage checks, else empty; the email is
-in the log only.
+`devctl_mcp_tool_calls_total` and `devctl_mcp_tool_call_duration_seconds` by `tool`, `login`, `user_id`, `repository`
+and `verdict`. A call refused before its grant named the caller (no grant, a usage error) is `login` `anonymous` with
+an empty id. A metric's `repository` is a GitHub `owner/repo` of a call past its usage checks, else empty.
 
 ## Deployment
 
 The chart `helm/devctl` runs the server from the image CircleCI pushes on every tag, so the server and the binary share
 a version (its MCP `serverInfo.version`). One values change registers it with muster: `muster.mcpServer.enabled` with
-`github.grantApp` and `identity.issuer` / `identity.audiences` (and `identity.caSecret` for a private CA) renders one
+`github.grantApp` renders one
 `MCPServer` with `toolPrefix: devctl` — tools `x_devctl_<tool>` — unpinned, `forwardToken: true`,
 `providerApps: [<grantApp>]`, `timeout` 30 s and `progress.maxDuration` 3600 s. It runs one replica: a merge lives in
 the memory of the replica that runs it.

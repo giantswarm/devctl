@@ -2,13 +2,10 @@ package mcpserver
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/textproto"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
@@ -26,20 +23,25 @@ const GrantHeaderPrefix = "X-Muster-Grant-" //nolint:gosec // G101: a header nam
 const StatusGrantRequired = "grant_required"
 
 // MusterGrant is the person's token of the GitHub App muster keeps as App:
-// muster attaches it to every call the person granted it for. The server
-// stores no token and runs no sign-in.
+// muster attaches it to every call the person granted it for. The token
+// names the caller: a call without one GitHub accepts is refused. The
+// server stores no token and runs no sign-in.
 type MusterGrant struct {
 	// App is the provider App's name in muster, the header's suffix.
 	App string
 	// GitHubApp is the GitHub App's name, as a refusal names it.
 	GitHubApp string
+	// Users answer the person the token acts as, the call's caller; nil
+	// names none and accepts the token unchecked.
+	Users Users
 	// Installations answer the owners the App is installed on that the
 	// person reaches; nil checks none.
 	Installations Installations
 }
 
-// GitHubToken implements [Credentials]: the person's token of the App; a
-// grant_required auth_required without one, and not_applicable for a
+// GitHubToken implements [Credentials]: the person's token of the App,
+// with the caller it names put on the call; a grant_required auth_required
+// without one or with one GitHub refuses, and not_applicable for a
 // repository whose owner the App is not installed on.
 func (g MusterGrant) GitHubToken(ctx context.Context) (string, error) {
 	call := callFrom(ctx)
@@ -48,6 +50,16 @@ func (g MusterGrant) GitHubToken(ctx context.Context) (string, error) {
 		call.grantRequired = g.App
 		return "", agentcli.NewExitError(agentcli.ExitAuthRequired, agentcli.VerdictAuthRequired,
 			"the devctl server acts on GitHub as you through the GitHub App %s: grant it once in muster (core_auth_login app=%s), then call again", g.gitHubApp(), g.App)
+	}
+	if g.Users != nil {
+		caller, err := g.Users.User(ctx, token)
+		if err != nil {
+			if agentcli.Exit(err) == agentcli.ExitAuthRequired {
+				call.grantRequired = g.App
+			}
+			return "", err
+		}
+		call.caller = caller
 	}
 	if call.owner == "" || g.Installations == nil {
 		return token, nil
@@ -86,13 +98,7 @@ type GitHubInstallations struct {
 	TTL     time.Duration
 	Now     func() time.Time
 
-	mu    sync.Mutex
-	cache map[[sha256.Size]byte]installations
-}
-
-type installations struct {
-	owners  []string
-	expires time.Time
+	cache tokenCache[[]string]
 }
 
 // DefaultInstallationsTTL is how long a token's installations are kept.
@@ -100,57 +106,13 @@ const DefaultInstallationsTTL = 5 * time.Minute
 
 // Owners implements [Installations].
 func (g *GitHubInstallations) Owners(ctx context.Context, token string) ([]string, error) {
-	now := time.Now
-	if g.Now != nil {
-		now = g.Now
-	}
-	key := sha256.Sum256([]byte(token))
-	g.mu.Lock()
-	cached, ok := g.cache[key]
-	g.mu.Unlock()
-	if ok && now().Before(cached.expires) {
-		return cached.owners, nil
-	}
-	owners, err := g.read(ctx, token)
-	if err != nil {
-		return nil, err
-	}
-	ttl := g.TTL
-	if ttl <= 0 {
-		ttl = DefaultInstallationsTTL
-	}
-	g.mu.Lock()
-	if g.cache == nil {
-		g.cache = map[[sha256.Size]byte]installations{}
-	}
-	for k, v := range g.cache {
-		if !now().Before(v.expires) {
-			delete(g.cache, k)
-		}
-	}
-	g.cache[key] = installations{owners: owners, expires: now().Add(ttl)}
-	g.mu.Unlock()
-	return owners, nil
+	return g.cache.get(token, g.TTL, DefaultInstallationsTTL, g.Now, func() ([]string, error) { return g.read(ctx, token) })
 }
 
 func (g *GitHubInstallations) read(ctx context.Context, token string) ([]string, error) {
-	client := g.Client
-	if client == nil {
-		client = http.DefaultClient
-	}
 	var owners []string
 	for page := 1; ; page++ {
 		url := fmt.Sprintf("%s/user/installations?per_page=100&page=%d", strings.TrimSuffix(g.BaseURL, "/"), page)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Authorization", "Bearer "+token)
-		req.Header.Set("Accept", "application/vnd.github+json")
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("reading the App's installations: %w", err)
-		}
 		var body struct {
 			TotalCount    int `json:"total_count"`
 			Installations []struct {
@@ -159,16 +121,8 @@ func (g *GitHubInstallations) read(ctx context.Context, token string) ([]string,
 				} `json:"account"`
 			} `json:"installations"`
 		}
-		err = json.NewDecoder(resp.Body).Decode(&body)
-		_ = resp.Body.Close()
-		switch {
-		case resp.StatusCode == http.StatusUnauthorized:
-			return nil, agentcli.NewExitError(agentcli.ExitAuthRequired, agentcli.VerdictAuthRequired,
-				"GitHub refused your token of the App: grant it again in muster, then call again")
-		case resp.StatusCode != http.StatusOK:
-			return nil, fmt.Errorf("reading the App's installations: GitHub answered %s", resp.Status)
-		case err != nil:
-			return nil, fmt.Errorf("reading the App's installations: %w", err)
+		if err := getGitHub(ctx, g.Client, url, token, "the App's installations", &body); err != nil {
+			return nil, err
 		}
 		for _, i := range body.Installations {
 			owners = append(owners, i.Account.Login)
@@ -180,11 +134,12 @@ func (g *GitHubInstallations) read(ctx context.Context, token string) ([]string,
 }
 
 // call is what the server learns about one tool call on its way: the
-// person's grants muster attached, the repository's owner, and the App
-// whose grant the call lacked.
+// person's grants muster attached, the repository's owner, the caller their
+// grant names, and the App whose grant the call lacked.
 type call struct {
 	grants        map[string]string
 	owner         string
+	caller        Caller
 	grantRequired string
 }
 
