@@ -102,6 +102,7 @@ func New(config Config) (*cobra.Command, error) {
 		renewGitHub:     authstore.RenewGitHubToken,
 		endpoints:       agentcli.EndpointsFromEnv,
 		clock:           agentcli.SystemClock,
+		github:          newGitHub,
 	}
 
 	c := &cobra.Command{

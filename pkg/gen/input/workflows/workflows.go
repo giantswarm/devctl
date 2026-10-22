@@ -18,6 +18,10 @@ type Config struct {
 	// (release-X.Y) cut releases too, each the patches of its X.Y series.
 	MaintenanceBranches bool
 
+	// PatchCandidates says a patch of the last stable release is cut as a
+	// release candidate too, never tagged stable on its push.
+	PatchCandidates bool
+
 	// RepoName is the repository's name under the giantswarm organization,
 	// for cliff.toml's `[remote.github].repo` field.
 	RepoName string
@@ -39,6 +43,7 @@ func New(config Config) (*Workflows, error) {
 			Flavours:            config.Flavours,
 			ReleaseBranch:       releaseBranch,
 			MaintenanceBranches: config.MaintenanceBranches,
+			PatchCandidates:     config.PatchCandidates,
 			RepoName:            config.RepoName,
 		},
 	}

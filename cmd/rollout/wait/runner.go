@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/dynamic"
 
+	"github.com/giantswarm/devctl/v8/internal/laptop"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/prwait"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
@@ -25,12 +26,12 @@ type runner struct {
 	// gate is versiongate.Check: an outdated devctl ends the run in the
 	// document.
 	gate func(noCache bool) error
-	// openRelease is releasewait.OpenSources and openCluster
-	// rolloutwait.OpenCluster; tests inject fakes.
+	// openRelease is laptop.ReleaseWaitSources and openCluster
+	// laptop.OpenCluster; tests inject fakes.
 	openRelease func(ctx context.Context, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*releasewait.Sources, error)
-	openCluster func(ctx context.Context, c rolloutwait.ClusterConfig) (dynamic.Interface, error)
+	openCluster func(ctx context.Context, c laptop.ClusterConfig) (dynamic.Interface, error)
 	// teleport logs in to an installation the kubeconfig lacks.
-	teleport rolloutwait.Teleport
+	teleport laptop.Teleport
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -123,7 +124,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 	// The kube context is read before the release wait, so a context that
 	// does not exist ends the wait at once rather than after the release.
 	kubeContext := r.kubeContext(installation)
-	client, err := r.openCluster(ctx, rolloutwait.ClusterConfig{
+	client, err := r.openCluster(ctx, laptop.ClusterConfig{
 		Installation: installation,
 		Context:      kubeContext,
 		Kubeconfig:   r.flag.Kubeconfig,

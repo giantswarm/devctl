@@ -162,48 +162,43 @@
       depNameTemplate: 'golang.org/x/tools',
       datasourceTemplate: 'go',
     },
-    // Kyverno version installed for chainsaw tests, pinned in both the Makefile fragment
-    // (`?=` form) and the workflow env block (`:` form) of the kyverno-policy templates.
-    // Tracked against giantswarm/kyverno-crds so the tests run the Kyverno version we ship
-    // rather than whatever upstream released last. Both pins must stay in sync: the workflow
-    // env wins in CI, the Makefile default is what a local `make install-kyverno` uses.
-    // This manager is the only thing keeping the pin current. The `# repository:` comments
-    // above the pins are inert -- they match no manager in renovate-presets, which keys off
-    // `repo:`/`registry:` -- and the generated files in consuming repos cannot be renovated
-    // because the align-files automation regenerates them from these templates.
-    {
-      customType: 'regex',
-      managerFilePatterns: [
-        '/Makefile\\.gen\\.chainsaw\\.mk\\.template$/',
-        '/test-kyverno-policies-with-chainsaw\\.yaml\\.template$/',
-      ],
-      matchStrings: [
-        'KYVERNO_VERSION \\?= (?<currentValue>v\\S+)',
-        'KYVERNO_VERSION: (?<currentValue>v\\S+)',
-      ],
-      depNameTemplate: 'giantswarm/kyverno-crds',
-      datasourceTemplate: 'github-releases',
-    },
-    // Pins in the generator's Makefile templates that carry the standard `# renovate:`
-    // annotation. Nothing else matches these files: renovate-presets anchors its Makefile
-    // manager on `/^Makefile\..+\.mk$/`, which no nested `*.mk.template` matches, and its
-    // other managers read `# repo:` / `# registry:` comment lines instead. One entry for the
-    // whole annotation form, so a new pin needs only the comment above it -- written as
+    // Pins in the generator's templates that carry the standard `# renovate:` annotation.
+    // Nothing else matches these pins: renovate-presets anchors its Makefile manager on
+    // `/^Makefile\..+\.mk$/`, which no nested `*.mk.template` matches, and its other
+    // managers read `# repo:` / `# registry:` comment lines instead. The built-in
+    // github-actions manager does scan the `*.yaml.template` files (see above), but it reads
+    // `uses:` lines, not an annotation above an `env:` entry. One entry for the whole
+    // annotation form, so a new pin needs only the comment above it -- written as
     // `# renovate: datasource=X depName=Y [versioning=Z]` on the line directly above a single
-    // `NAME ?= value`. Any other shape silently stops being matched, with no error. The
-    // optional versioning capture is what keeps a `versioning=` annotation matching at all.
+    // `NAME ?= value` (Makefile fragment) or `NAME: value` (workflow env block). Any other
+    // shape silently stops being matched, with no error. The optional versioning capture is
+    // what keeps a `versioning=` annotation matching at all.
     // The generated copies in app repos stay uncovered on purpose: align-files regenerates
     // them from here, so a per-repo bump would only fight the regeneration.
+    //
+    // Kyverno is tracked against giantswarm/kyverno-crds, so the chainsaw tests run the
+    // version we ship rather than whatever upstream released last. It is pinned twice, in the
+    // Makefile fragment and in the workflow env block, and both carry the annotation, so they
+    // move in one PR: the workflow env wins in CI, the Makefile default is what a local
+    // `make install-kyverno` uses.
     {
       customType: 'regex',
-      managerFilePatterns: ['/pkg/gen/input/.*\\.mk\\.template$/'],
+      managerFilePatterns: ['/pkg/gen/input/.*\\.template$/'],
       matchStrings: [
         '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\n\\s*\\w+ \\?= (?<currentValue>\\S+)',
+        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\n\\s*\\w+: (?<currentValue>\\S+)',
       ],
       versioningTemplate: '{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}',
     },
   ],
   packageRules: [
+    {
+      // kind and the kindest/node image it boots are released and tested as a pair, so a
+      // chainsaw run on a mismatched pair is untested ground. One PR for both, so the review
+      // sees the combination rather than two halves of it.
+      matchPackageNames: ['kubernetes-sigs/kind', 'kindest/node'],
+      groupName: 'kind',
+    },
     {
       // architect-orb git tags are vX.Y.Z; the pinned constant and the golden
       // fixtures hold the bare version, so strip the leading `v` before

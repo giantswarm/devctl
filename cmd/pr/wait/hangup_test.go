@@ -139,6 +139,7 @@ func Test_hangupChild(t *testing.T) {
 		},
 		endpoints: func() agentcli.Endpoints { return endpoints },
 		clock:     func() (agentcli.Clock, error) { return agentcli.NewClock(0.01, nil), nil },
+		github:    newGitHub,
 	}
 	if err := r.Run(&cobra.Command{}, []string{"o/r", "42"}); err != nil {
 		t.Fatalf("exit %d: %v", agentcli.Exit(err), err)

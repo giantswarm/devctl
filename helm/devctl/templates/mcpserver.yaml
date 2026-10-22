@@ -1,0 +1,54 @@
+{{- if .Values.muster.mcpServer.enabled }}
+{{- /*
+Registers devctl serve with muster, one MCPServer with toolPrefix devctl: its
+tools appear as x_devctl_<tool>. Unpinned: muster forwards the session's Dex ID
+token (forwardToken), which the server checks against identity.issuer and
+identity.audiences, and attaches the person's token of the provider App
+github.grantApp, which muster keeps (spec.auth.providerApps), in
+X-Muster-Grant-<app>. A call without that grant answers grant_required, which
+muster turns into auth_required with the App's sign-in link. A wait is one
+call kept alive by progress: each progress notification restarts timeout, up
+to progress.maxDuration.
+*/}}
+{{- if not .Values.identity.issuer }}
+{{- fail "muster.mcpServer.enabled forwards the person's ID token, which the server checks: set identity.issuer and identity.audiences" }}
+{{- end }}
+{{- if not .Values.github.grantApp }}
+{{- fail "muster.mcpServer.enabled: github.grantApp names the provider App whose grant muster attaches; without it every call is auth_required" }}
+{{- end }}
+apiVersion: muster.giantswarm.io/v1alpha1
+kind: MCPServer
+metadata:
+  name: {{ .Values.muster.mcpServer.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    muster.giantswarm.io/type: devctl
+    {{- include "devctl.labels" . | nindent 4 }}
+    {{- with .Values.muster.mcpServer.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.muster.mcpServer.displayName }}
+  annotations:
+    ui.giantswarm.io/display-name: {{ . | quote }}
+  {{- end }}
+spec:
+  autoStart: {{ .Values.muster.mcpServer.autoStart }}
+  type: streamable-http
+  url: http://{{ include "devctl.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}/mcp
+  toolPrefix: devctl
+  {{- with .Values.muster.mcpServer.description }}
+  description: {{ . | quote }}
+  {{- end }}
+  timeout: {{ .Values.muster.mcpServer.timeout | int }}
+  progress:
+    maxDuration: {{ .Values.muster.mcpServer.progressMaxDuration | int }}
+  auth:
+    type: oauth
+    forwardToken: true
+    providerApps:
+      - {{ .Values.github.grantApp | quote }}
+    {{- with .Values.muster.mcpServer.requiredAudiences }}
+    requiredAudiences:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+{{- end }}

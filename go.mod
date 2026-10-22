@@ -2,6 +2,8 @@ module github.com/giantswarm/devctl/v8
 
 go 1.26.5
 
+toolchain go1.27.3
+
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/aws/aws-sdk-go-v2 v1.47.3
@@ -11,22 +13,26 @@ require (
 	github.com/aws/smithy-go v1.28.5
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/bmatcuk/doublestar/v4 v4.10.3
+	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/fatih/color v1.19.0
-	github.com/giantswarm/go-selfupdate v1.6.5
+	github.com/giantswarm/go-selfupdate v1.6.6
 	github.com/giantswarm/microerror v0.4.1
 	github.com/giantswarm/micrologger v1.1.2
 	github.com/giantswarm/releases/sdk v0.13.0
 	github.com/giantswarm/schemalint/v2 v2.6.3
-	github.com/giantswarm/selfupdate-cosign v0.3.4
+	github.com/giantswarm/selfupdate-cosign v0.3.10
 	github.com/go-git/go-git/v5 v5.19.3
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/godbus/dbus/v5 v5.2.4
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-github/v93 v93.0.0
 	github.com/jedib0t/go-pretty/v6 v6.8.3
 	github.com/losisin/helm-values-schema-json/v2 v2.6.0
 	github.com/manifoldco/promptui v0.9.0
+	github.com/mark3labs/mcp-go v1.3.0
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
 	github.com/pelletier/go-toml/v2 v2.4.3
+	github.com/prometheus/client_golang v1.23.2
 	github.com/rogpeppe/go-internal v1.16.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/sirupsen/logrus v1.10.2
@@ -135,6 +141,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.38.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.4 // indirect
+	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudflare/circl v1.6.4 // indirect
@@ -156,6 +163,7 @@ require (
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
+	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/iancoleman/orderedmap v0.3.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
@@ -167,6 +175,7 @@ require (
 	github.com/knadh/koanf/providers/posflag v1.0.2 // indirect
 	github.com/knadh/koanf/providers/structs v1.0.1 // indirect
 	github.com/knadh/koanf/v2 v2.3.6 // indirect
+	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-runewidth v0.0.27 // indirect
@@ -177,11 +186,16 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pjbgf/sha1cd v0.7.0 // indirect
+	github.com/prometheus/client_model v0.6.2 // indirect
+	github.com/prometheus/common v0.67.5 // indirect
+	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/skeema/knownhosts v1.3.2 // indirect
+	github.com/spf13/cast v1.10.0 // indirect
 	github.com/ulikunitz/xz v0.5.16 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.opentelemetry.io/otel/sdk v1.46.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.46.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect

@@ -3032,14 +3032,14 @@ func TestRunFullRepositorySetUp(t *testing.T) {
 	require.Contains(t, string(data), `"repository":"giantswarm/sample-service"`)
 
 	// The budget: a check of the converged repository, every step, costs at
-	// most twenty-three GitHub requests (the webhooks and the deploy keys the
+	// most twenty-four GitHub requests (the webhooks and the deploy keys the
 	// circleci step reads are the last two), and the count is the fake's own.
 	before := len(h.gets())
 	check := h.run(ModeCheck, false)
 	require.True(t, check.Converged, "%+v", check.Steps)
 	gets := h.gets()[before:]
 	require.Equal(t, len(gets), check.Requests.GitHub, "the counter and the fake agree")
-	require.LessOrEqual(t, check.Requests.GitHub, 23, "a converged check within the budget of twenty-three; the reads:\n%s", strings.Join(gets, "\n"))
+	require.LessOrEqual(t, check.Requests.GitHub, 24, "a converged check within the budget of twenty-four; the reads:\n%s", strings.Join(gets, "\n"))
 	require.Positive(t, check.Requests.CircleCI, "the circleci and release steps read CircleCI")
 
 	// The override costs nothing: the caller hands it in with the entry

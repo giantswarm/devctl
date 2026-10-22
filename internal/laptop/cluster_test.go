@@ -1,4 +1,4 @@
-package rolloutwait
+package laptop
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/rolloutwait"
 )
 
 const kubeconfig = `apiVersion: v1
@@ -52,7 +53,7 @@ contexts:
 current-context: teleport.giantswarm.io-myinstallation
 `
 
-const teleportContext = ContextPrefix + "myinstallation"
+const teleportContext = rolloutwait.ContextPrefix + "myinstallation"
 
 // writeFile writes content to name in a new temporary directory.
 func writeFile(t *testing.T, name, content string) string {

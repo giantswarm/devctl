@@ -9,6 +9,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `repo reconcile`, `repo setup`, `repo checks`: a repository with a `tests/e2e` directory requires Heimdall's gatekeeper check once it has reported.
+- `devctl serve`: `pr_merge`, `devctl pr merge` in one call kept alive by progress (the wait for green, the merge with
+  the judged head as the expected head, the release wait) with the CLI's refusals and document, its merges listed by
+  `pr_merge_status`. A pull request merged already answers its merge and release state instead of exit 3, and a
+  second call while one runs waits for it, so nothing merges twice; exits 6 and 9 stay distinct. `release_promote`
+  behind `--release-promote`. Neither carries the read-only annotation. The CLI keeps exit 3 for a merged pull
+  request; its merge engine takes any `prmerge.GitHub`, and `pkg/prmerge/prmergetest` is its in-process test double.
+- `devctl serve`: the read-only agent-facing commands as MCP tools over streamable HTTP (`/mcp`): `pr_wait`,
+  `pr_merge_status` and `release_wait`, each with the read-only annotation. A tool answers the command's document,
+  devctl's envelope included, as structured content; the exit code is a field and the call is an MCP error only for
+  `auth_required`. A wait is one call that sends `notifications/progress` on the caller's `progressToken` every
+  `--progress-interval` (10s) until its verdict; a wait without a `progressToken` is refused at once, verdict
+  `progress_token_required` (exit 7). The server has no version gate, keychain, on-disk state, SIGHUP handling or
+  `DEVCTL_TIME_SCALE`; it reads no CircleCI, and until the platform hands it a person's GitHub token every call that
+  reads GitHub is `auth_required`.
+- `gen workflows --patch-candidates` (team file: `gen.ci.patchCandidates: true`): a patch of the last stable release
+  is cut as a release candidate `vX.Y.Z-rc.N` too, on the default branch and on a fork line's maintenance branches,
+  never tagged stable on its push, for a repository whose consumers take its next patch on their own. Every stable
+  release is a promotion. Opt-in: a repository without it keeps the patch fast path.
+- `devctl release promote --branch <branch>`, for one repository: promotes the candidate of that branch instead of the
+  default branch's, a fork line's maintenance branch `release-X.Y` cutting the candidates of its own series.
 - `gen workflows` flavour `fleet`: the mctl workflows of a management-clusters repository (`zz_generated.mctl_*.yaml`, mctl image pinned to 0.1.16), replacing the copies and `op.env` `mctl create cmc-repo` wrote.
 - `devctl release rerun` cancels a tag workflow running longer than `--wedged-after` (2h; `0` turns it off), its
   jobs hung on CircleCI's side, waits for the cancel to land and reruns it from failed, from start where CircleCI
@@ -18,6 +39,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `devctl serve`: a blocking tool (`pr_wait`, `pr_merge`, `release_wait`, `release_promote`) called without a
+  `progressToken`, as through muster's `call_tool` or `muster call`, is no longer refused with
+  `progress_token_required`: it answers within `--no-progress-timeout` (20s) with the verdict reached by then,
+  `timeout` (exit 2) while pending, and a warning saying how to go on. `pr_merge` merges only a head it judged green
+  in that time; a merge whose release is not confirmed yet is exit 9, and calling again merges nothing twice. Without
+  a grant such a call is `auth_required`. A call with a `progressToken` blocks as before. The chart's
+  `noProgressTimeout` sets the flag.
+
+- `prwait.Config.GitHub` is the `prwait.GitHub` interface `*githubclient.Client` satisfies, and the `pr wait` and
+  `pr merge status` documents are `prwait.Document` and `mergejob.StatusDocument`, shared by the CLI and the server.
+- The agent-facing engines (`pr wait`, `pr merge`, `release wait`, `release promote`, `rollout wait`) take clients built
+  from tokens their caller hands in: `releasewait.NewSources`, `releasepromote.NewSources` (each from `Credentials`) and
+  `rolloutwait.NewClient` (a `rest.Config`, a bearer token for one). The keychain, docker keychain, kubeconfig and tsh
+  wiring moved out of the engine packages into the CLI's `internal/laptop`; `releasewait.RegistryProber` with no
+  `Keychain` reads the private registry anonymously. The laptop commands and their documents are unchanged.
 - `gen workflows` flavour `fleet`: mctl image pinned to 0.2.1.
 - `devctl release promote` follows the Auto Release run each dispatch started until it concludes, at most
   `--follow-timeout` (20m): a run the repository's stable gate refuses, or that fails otherwise, is `refused`
@@ -36,6 +72,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `devctl pr merge` refuses (exit 5) while a reviewer's `CHANGES_REQUESTED` review is still their latest verdict:
+  a newer commit, an author reply or the reviewer's later `COMMENTED` review no longer clears it, only the same
+  reviewer's `APPROVED` review or the review's dismissal. The reason names the reviewer and links the review;
+  `unansweredReviews[]` marks it `standing: true`.
+- The `gh` link (`devctl auth exec -- gh`) runs `gh issue|pr` with `--attach` on the person's own `gh` login: GitHub's
+  file upload endpoint refuses the App user token, which `gh` reported as "attaching files requires write access to the
+  repository" for a person with push access. The person's login also no longer sees a `$GITHUB_TOKEN` of the agent's
+  environment.
+- Builds on Go 1.27.3 (`toolchain go1.27.3`), which fixes the standard library vulnerability GO-2026-6809 that
+  govulncheck reports for Go 1.27.2.
+- `devctl release promote --version` accepts the bare version `X.Y.Z-rc.N`, as `devctl release wait` does, besides the
+  tag `vX.Y.Z-rc.N`.
+- The auto-release workflow skips a candidate number that a tag off the branch already holds. Such a tag is a
+  candidate tagged by hand on a pull request's branch to prove it, whose commits a rebase merge then rewrote. Before,
+  the workflow cut that tag name again, and GitHub attached the new release to the old tag's commit.
 - `gen workflows` flavour `fleet`: the mctl merge gate no longer calls `getOctokit`, which `actions/github-script@v7` does not provide; the step crashed before posting `mctl/ready-to-merge`.
 - `release create`: end the updated `releases.json` with a trailing newline.
 - The Auto-release workflow's unconventional-subject warning accepts every type git-cliff parses (letters,
@@ -523,14 +574,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- Renovate bumps the tool versions pinned in the generator's Makefile templates. A custom manager reads the standard
-  `# renovate:` annotation in `pkg/gen/input/**/*.mk.template`, which no other manager matched, so
-  `HELM_UNITTEST_VERSION` in `Makefile.gen.app.mk.template` sat unbumped since #2570.
-
-## [8.139.9-rc.1] - 2026-10-15
-
-### Fixed
-
+- Renovate bumps the tool versions pinned in the generator's templates. A custom manager reads the standard
+  `# renovate:` annotation in `pkg/gen/input/**/*.template`, which no other manager matched, so
+  `HELM_UNITTEST_VERSION` in `Makefile.gen.app.mk.template` sat unbumped since #2570. The kind, Kubernetes and
+  Kyverno pins of the kyverno-policy flavour carry that annotation now, in place of the `# repository:` comments,
+  which matched nothing either: `Makefile.gen.chainsaw.mk` and `test-kyverno-policies-with-chainsaw.yaml` change in
+  every kyverno-policy repo on the next align-files run.
 - `gen workflows`: `sync_from_upstream.yaml` sets `permissions: {}` at the workflow level, and `auto_release.yaml`
   grants its permissions on the `tag` job instead of the workflow, so no job inherits more than it is given.
 
