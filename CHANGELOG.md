@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `ci job <owner/repo> <job number> [--lines <n>]`: one CircleCI job, one JSON document: its status, page and times,
+  every step with its status and times, and the last lines (200 by default) of its failed steps' output without
+  control sequences, the tail `pr wait --failed-log` reads, for a job of any pipeline. It takes the `devctl auth
+  login` CircleCI login in devctl's process; a step's output is read from its signed URL without it.
 - `devctl serve`: `reservation_reserve`, `reservation_list`, `reservation_extend` and `reservation_release`, the
   `devctl reservation` commands as the person, `reservation_list` read-only. They take no `user`: the holder is the
   login of the person's grant. Each call works on a shallow clone of the GitOps repository's `main` of its own,

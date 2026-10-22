@@ -45,12 +45,16 @@ func (c *Client) GetProjectPipeline(ctx context.Context, org, repo string, numbe
 }
 
 // ProjectJob is one job as the project's job endpoint answers it: its
-// number, name and status, and the pipeline and workflow it ran in.
+// number, name, status, page and times, and the pipeline and workflow it ran
+// in.
 type ProjectJob struct {
-	Number   int64  `json:"number"`
-	Name     string `json:"name"`
-	Status   string `json:"status"`
-	Pipeline struct {
+	Number    int64     `json:"number"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	WebURL    string    `json:"web_url"`
+	StartedAt time.Time `json:"started_at"`
+	StoppedAt time.Time `json:"stopped_at"`
+	Pipeline  struct {
 		ID string `json:"id"`
 	} `json:"pipeline"`
 	LatestWorkflow struct {

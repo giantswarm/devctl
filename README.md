@@ -77,12 +77,13 @@ devctl pr rerun giantswarm/devctl 2277
 devctl release rerun giantswarm/devctl v8.123.0
 ```
 
-### CircleCI pipelines at the job level (`devctl ci jobs`, `devctl ci rerun`)
+### CircleCI pipelines at the job level (`devctl ci jobs`, `devctl ci job`, `devctl ci rerun`)
 
-`devctl ci jobs <owner/repo> <pipeline number|id>` reads a pipeline at the job level: every workflow run with its jobs, their start and stop times, and for a running job the step it is in and how long ago that step last wrote output, which tells a slow job from a stuck one while the workflow reads `running`. `devctl ci rerun <owner/repo> <workflow id> [--from-failed] [--cancel]` reruns one workflow, once an hour: a second rerun of the workflow's name in the same pipeline within an hour is refused (exit 5), as is a workflow still running unless `--cancel` cancels it first, the recovery of a stuck one. Both take the `devctl auth login` CircleCI login (Write access for the rerun) and read nothing on GitHub. See [docs/ci.md](docs/ci.md).
+`devctl ci jobs <owner/repo> <pipeline number|id>` reads a pipeline at the job level: every workflow run with its jobs, their start and stop times, and for a running job the step it is in and how long ago that step last wrote output, which tells a slow job from a stuck one while the workflow reads `running`. `devctl ci job <owner/repo> <job number>` reads one job: its steps with their status and the end of its failed steps' output, why it failed, without the CircleCI UI. `devctl ci rerun <owner/repo> <workflow id> [--from-failed] [--cancel]` reruns one workflow, once an hour: a second rerun of the workflow's name in the same pipeline within an hour is refused (exit 5), as is a workflow still running unless `--cancel` cancels it first, the recovery of a stuck one. All take the `devctl auth login` CircleCI login (Write access for the rerun) and read nothing on GitHub. See [docs/ci.md](docs/ci.md).
 
 ```nohighlight
 devctl ci jobs giantswarm/devctl 3885
+devctl ci job giantswarm/devctl 7781
 devctl ci rerun giantswarm/devctl f1290c29-9a4b-4e0e-8c6a-0b7d3e5f2a11 --from-failed
 ```
 
