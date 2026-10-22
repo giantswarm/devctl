@@ -35,11 +35,6 @@ github:
   # auth_required or not_applicable answer names it; empty is grantApp.
   app: ""
 
-# -- Ignored: the server names the caller from the person's GitHub grant, not
-# from the ID token muster forwards. Accepted so a configuration that still
-# sets it renders.
-identity: {}  # @schema additionalProperties: true
-
 metrics:
   # -- Serve the call metrics (devctl_mcp_tool_calls_total and
   # devctl_mcp_tool_call_duration_seconds, by tool, the caller's GitHub login
