@@ -594,3 +594,39 @@ func TestNamedHelmReleaseMalformedIsUsage(t *testing.T) {
 		}
 	}
 }
+
+// childHelmRelease is a HelmRelease the chart's Helm release renders (a
+// meta chart's component) at generation 2.
+func childHelmRelease(observed int64, conditions []any) *unstructured.Unstructured {
+	u := obj("helm.toolkit.fluxcd.io/v2", "HelmRelease", "agent-platform", "kagent", map[string]any{
+		"spec":   map[string]any{"chartRef": map[string]any{"kind": "OCIRepository", "name": "kagent"}},
+		"status": map[string]any{"observedGeneration": observed, "conditions": conditions},
+	})
+	u.SetGeneration(2)
+	u.SetAnnotations(map[string]string{annotationReleaseName: chart, annotationReleaseNamespace: "agent-platform"})
+	return u
+}
+
+// A component HelmRelease the release renders is one of its workloads:
+// rolled out once helm-controller observed its generation and it is Ready,
+// its dependencies included; failed when its upgrade failed.
+func TestChildHelmReleaseIsAWorkload(t *testing.T) {
+	for name, tc := range map[string]struct {
+		child  *unstructured.Unstructured
+		code   int
+		reason string
+	}{
+		"ready":                 {childHelmRelease(2, ready("True", "UpgradeSucceeded", "")), agentcli.ExitOK, ""},
+		"generation unobserved": {childHelmRelease(1, ready("True", "UpgradeSucceeded", "")), agentcli.ExitTimeout, "HelmRelease agent-platform/kagent: waiting for the controller to observe the new generation"},
+		"dependency not ready":  {childHelmRelease(2, ready("False", "DependencyNotReady", "dependency 'agent-platform/substrate' is not ready")), agentcli.ExitTimeout, "HelmRelease agent-platform/kagent: not ready: DependencyNotReady"},
+		"upgrade failed":        {childHelmRelease(2, ready("False", "UpgradeFailed", "timed out")), agentcli.ExitRed, "a workload failed: HelmRelease agent-platform/kagent: UpgradeFailed timed out"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := wait(t, newClient(ociRepository(map[string]any{"semver": ">=0.17.0 <1.0.0"}), helmRelease("0.48.1", nil), deployment(2), tc.child), false)
+			wantExit(t, r, tc.code, tc.reason)
+			if d := r.result.Deployments[0]; len(d.Workloads) != 2 {
+				t.Errorf("workloads: %+v", d.Workloads)
+			}
+		})
+	}
+}

@@ -72,6 +72,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `rollout wait --pr` of a configuration change follows the HelmReleases a Kustomization changed with the merge
+  commit: the HelmRelease itself (until helm-controller observed its new generation), a ConfigMap or Secret of its
+  `valuesFrom` or its chart source (until it deployed after kustomize-controller wrote them). A management-clusters
+  pull request that changed a HelmRelease's values ConfigMap was `rolled_out` as soon as the Kustomization applied it.
+- `rollout wait --pr --helmrelease` of a configuration change no Konfiguration renders finds the named HelmRelease in
+  any namespace instead of exit 3; the exit 3 for a name nothing answers to says how many HelmReleases it looked
+  through, in all namespaces of the context.
+- `rollout wait`: the HelmReleases a release renders (a meta chart's components) are among its workloads, rolled out
+  once helm-controller observed their generation and they are Ready, dependencies included; a failed one is exit 1.
+  Each poll lists a resource once.
 - `devctl pr merge` refuses (exit 5) while a reviewer's `CHANGES_REQUESTED` review is still their latest verdict:
   a newer commit, an author reply or the reviewer's later `COMMENTED` review no longer clears it, only the same
   reviewer's `APPROVED` review or the review's dismissal. The reason names the reviewer and links the review;

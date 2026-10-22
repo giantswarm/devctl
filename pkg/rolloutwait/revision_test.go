@@ -416,3 +416,130 @@ func TestRevisionSHA(t *testing.T) {
 		}
 	}
 }
+
+// appliedBy marks an object as last changed by kustomize-controller at at.
+func appliedBy(u *unstructured.Unstructured, at time.Time) *unstructured.Unstructured {
+	u.SetManagedFields([]metav1.ManagedFieldsEntry{{Manager: kustomizeManager, Operation: metav1.ManagedFieldsOperationApply, Time: &metav1.Time{Time: at}}})
+	return u
+}
+
+// extrasKustomization applies, from the configuration repository,
+// devctl's HelmRelease, its values ConfigMap and the beekeeper HelmRelease,
+// as a management-clusters Kustomization does.
+func extrasKustomization() *unstructured.Unstructured {
+	var entries []any
+	for _, id := range []string{
+		"flux-giantswarm_devctl-values__ConfigMap",
+		"flux-giantswarm_devctl_helm.toolkit.fluxcd.io_HelmRelease",
+		"flux-giantswarm_devctl_source.toolkit.fluxcd.io_OCIRepository",
+		"flux-giantswarm_beekeeper_helm.toolkit.fluxcd.io_HelmRelease",
+	} {
+		entries = append(entries, map[string]any{"id": id, "v": "v1"})
+	}
+	return obj("kustomize.toolkit.fluxcd.io/v1", "Kustomization", "flux-giantswarm", "flux-extras", map[string]any{
+		"spec": map[string]any{"path": "./management-clusters/myinstallation/extras", "sourceRef": map[string]any{"kind": "GitRepository", "name": "giantswarm-config"}},
+		"status": map[string]any{
+			"observedGeneration": int64(1), "lastAppliedRevision": "main@sha1:" + mergeSHA, "conditions": ready("True", "ReconciliationSucceeded", ""),
+			"inventory": map[string]any{"entries": entries},
+		},
+	})
+}
+
+// devctlHelmRelease takes its values from the ConfigMap devctl-values the
+// Kustomization applies, last deployed at deployed.
+func devctlHelmRelease(deployed time.Time, conditions []any) *unstructured.Unstructured {
+	hr := valuesHelmRelease("devctl", deployed, conditions)
+	_ = unstructured.SetNestedSlice(hr.Object, []any{map[string]any{"kind": "ConfigMap", "name": "devctl-values", "valuesKey": "values.yaml"}}, "spec", "valuesFrom")
+	return appliedBy(hr, mergedAt.Add(-24*time.Hour))
+}
+
+func devctlValues(written time.Time) *unstructured.Unstructured {
+	return appliedBy(obj("v1", "ConfigMap", "flux-giantswarm", "devctl-values", nil), written)
+}
+
+const extrasPath = "management-clusters/myinstallation/extras/devctl/configmap.yaml"
+
+// A Kustomization changed the ConfigMap a HelmRelease takes its values
+// from: the HelmRelease is followed until it deployed after the change,
+// and a deploy between the merge and the apply does not count.
+func TestRevisionKustomizationValuesHelmRelease(t *testing.T) {
+	written := mergedAt.Add(2 * time.Minute)
+	for name, tc := range map[string]struct {
+		hr     *unstructured.Unstructured
+		code   int
+		reason string
+	}{
+		"deployed after the change": {devctlHelmRelease(written.Add(8*time.Minute), ready("True", "UpgradeSucceeded", "")), agentcli.ExitOK, ""},
+		"deployed before the change": {devctlHelmRelease(mergedAt.Add(16*time.Second), ready("True", "UpgradeSucceeded", "")), agentcli.ExitTimeout,
+			"HelmRelease flux-giantswarm/devctl: last deployed " + formatTime(mergedAt.Add(16*time.Second)) + ", before Kustomization flux-giantswarm/flux-extras wrote ConfigMap flux-giantswarm/devctl-values"},
+		"upgrade failed since": {devctlHelmRelease(mergedAt.Add(-time.Hour), []any{map[string]any{"type": "Ready", "status": "False", "reason": "UpgradeFailed", "message": "bad values", "lastTransitionTime": written.Add(time.Minute).Format(time.RFC3339)}}), agentcli.ExitRed,
+			"HelmRelease flux-giantswarm/devctl failed on myinstallation: UpgradeFailed"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := wait(t, newClient(gitRepository(mergeSHA), extrasKustomization(), devctlValues(written), tc.hr), false, revision(extrasPath), mergedAtOption)
+			wantExit(t, r, tc.code, tc.reason)
+			d := r.result.Deployments[len(r.result.Deployments)-1]
+			if d.Kind != KindHelmRelease || d.Name != "devctl" || d.Source != "ConfigMap flux-giantswarm/devctl-values" || d.Follows != "Kustomization flux-giantswarm/flux-extras" {
+				t.Errorf("deployment: %+v", d)
+			}
+		})
+	}
+}
+
+// A ConfigMap the apply left as it was changes nothing: its HelmRelease is
+// not followed.
+func TestRevisionKustomizationUnchangedValuesNotFollowed(t *testing.T) {
+	stale := devctlHelmRelease(mergedAt.Add(-time.Hour), ready("True", "UpgradeSucceeded", ""))
+	r := wait(t, newClient(gitRepository(mergeSHA), extrasKustomization(), devctlValues(mergedAt.Add(-time.Hour)), stale), false, revision(extrasPath), mergedAtOption)
+	wantExit(t, r, agentcli.ExitOK, "")
+	if len(r.result.Deployments) != 2 {
+		t.Errorf("deployments: %+v", r.result.Deployments)
+	}
+}
+
+// A HelmRelease the apply changed itself (a chart range, a values field) is
+// followed until helm-controller observed its new generation and it is
+// Ready.
+func TestRevisionKustomizationChangedHelmRelease(t *testing.T) {
+	for name, tc := range map[string]struct {
+		observed int64
+		code     int
+	}{
+		"observed":     {2, agentcli.ExitOK},
+		"not observed": {1, agentcli.ExitTimeout},
+	} {
+		t.Run(name, func(t *testing.T) {
+			hr := appliedBy(devctlHelmRelease(mergedAt.Add(-time.Hour), ready("True", "UpgradeSucceeded", "")), mergedAt.Add(time.Minute))
+			hr.SetGeneration(2)
+			_ = unstructured.SetNestedField(hr.Object, tc.observed, "status", "observedGeneration")
+			r := wait(t, newClient(gitRepository(mergeSHA), extrasKustomization(), devctlValues(mergedAt.Add(-time.Hour)), hr), false, revision(extrasPath), mergedAtOption)
+			wantExit(t, r, tc.code, "")
+			if d := r.result.Deployments[len(r.result.Deployments)-1]; d.Name != "devctl" {
+				t.Errorf("deployments: %+v", r.result.Deployments)
+			}
+		})
+	}
+}
+
+// --helmrelease names a HelmRelease outside any Konfiguration's values, in
+// a namespace of its own, as <namespace>/<name> or by its bare name: it is
+// followed by its Ready. A name nothing answers to says where it looked.
+func TestRevisionNamedHelmReleaseOfAKustomization(t *testing.T) {
+	beekeeper := obj("helm.toolkit.fluxcd.io/v2", "HelmRelease", "flux-giantswarm", "beekeeper", map[string]any{
+		"spec": map[string]any{"chartRef": map[string]any{"kind": "OCIRepository", "name": "beekeeper"}, "targetNamespace": "beekeeper"},
+		"status": map[string]any{"observedGeneration": int64(1), "conditions": ready("True", "UpgradeSucceeded", ""), "history": []any{map[string]any{
+			"chartName": "beekeeper", "chartVersion": "0.159.1+8cecd5ddc35f", "status": "deployed", "name": "beekeeper", "namespace": "beekeeper",
+		}}},
+	})
+	for _, name := range []string{"flux-giantswarm/beekeeper", "beekeeper"} {
+		t.Run(name, func(t *testing.T) {
+			r := wait(t, newClient(gitRepository(mergeSHA), extrasKustomization(), beekeeper), false, revision(extrasPath), mergedAtOption, func(c *Config) { c.HelmReleases = []string{name} })
+			wantExit(t, r, agentcli.ExitOK, "")
+			if d := r.result.Deployments[len(r.result.Deployments)-1]; d.Name != "beekeeper" || d.State != StateRolledOut || d.RunningVersion != "0.159.1" {
+				t.Errorf("deployment: %+v", d)
+			}
+		})
+	}
+	r := wait(t, newClient(gitRepository(mergeSHA), extrasKustomization(), beekeeper), false, revision(extrasPath), mergedAtOption, func(c *Config) { c.HelmReleases = []string{"other/beekeeper"} })
+	wantExit(t, r, agentcli.ExitNotApplicable, "no HelmRelease other/beekeeper on myinstallation: none of the 1 HelmReleases in all namespaces of teleport.giantswarm.io-myinstallation answers to it")
+}
