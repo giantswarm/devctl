@@ -430,7 +430,7 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 		}
 	}
 
-	s := snapshot{headSHA: sha, required: h.required, accepted: w.acceptRed, circleJobs: h.circleJobs}
+	s := snapshot{now: w.clock.Now(), headSHA: sha, required: h.required, accepted: w.acceptRed, circleJobs: h.circleJobs}
 	if err := w.readChecks(ctx, owner, repo, sha, &s, result); err != nil {
 		return nil, err
 	}

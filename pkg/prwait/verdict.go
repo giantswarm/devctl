@@ -87,10 +87,24 @@ type ActionRun struct {
 	Status     string `json:"status"`
 	Conclusion string `json:"conclusion"`
 	URL        string `json:"url"`
+	// JobsCompleted: the run still reads in progress while every job of it
+	// the head lists has completed, the last one RunSettleGrace ago or longer;
+	// it no longer keeps the head waiting, its jobs are its verdict.
+	JobsCompleted bool `json:"jobsCompleted,omitempty"`
 }
+
+// RunSettleGrace is how long a GitHub Actions run may read in progress after
+// its last listed job completed before the wait counts it finished. GitHub
+// completes a run seconds after its last job, and starts a job behind needs:
+// seconds after the jobs it needs; it has left a run in progress for an hour
+// after its only job succeeded.
+const RunSettleGrace = 5 * time.Minute
 
 // snapshot is what one poll read; evaluate turns it into a verdict.
 type snapshot struct {
+	// now is when the poll read the head; zero never counts a run in
+	// progress finished.
+	now       time.Time
 	headSHA   string
 	checkRuns []*github.CheckRun
 	statuses  []*github.RepoStatus
@@ -220,7 +234,9 @@ func (e *evaluation) approvalReason() string {
 //     its workflows listed or their jobs' statuses on GitHub), and the newest
 //     run of each of its workflows is success (not_run counts as skipped);
 //  3. no GitHub Actions run of the head is queued, in progress, waiting or
-//     awaiting approval;
+//     awaiting approval; a run in progress whose listed jobs have all
+//     completed RunSettleGrace ago is judged by them (rule 1), as GitHub may
+//     leave it in progress long after;
 //  4. every required status context has reported;
 //  5. when CircleCI is read through its commit statuses, every job the head's
 //     configuration runs has posted one: a job behind requires: posts
@@ -333,6 +349,8 @@ func evaluate(s snapshot) *evaluation {
 		case action.Conclusion == conclusionActionRequired:
 			e.awaitingApproval = append(e.awaitingApproval, action)
 			e.unfinished = append(e.unfinished, fmt.Sprintf("actions run %s (awaiting approval)", action.Name))
+		case jobsCompleted(run, checkRuns, s.now):
+			e.actions[len(e.actions)-1].JobsCompleted = true
 		case workflowRunOpen(action.Status):
 			e.unfinished = append(e.unfinished, fmt.Sprintf("actions run %s (%s)", action.Name, action.Status))
 		}
@@ -492,6 +510,30 @@ func workflowRunOpen(status string) bool {
 		return true
 	}
 	return false
+}
+
+// jobsCompleted: the run reads in progress, and the head lists at least one
+// job of it, every one completed (not awaiting a human), the last
+// RunSettleGrace before now or earlier. A queued or waiting run, or one whose
+// jobs are not listed, keeps the wait going.
+func jobsCompleted(run *github.WorkflowRun, checkRuns []headCheckRun, now time.Time) bool {
+	if run.GetStatus() != "in_progress" || now.IsZero() {
+		return false
+	}
+	var last time.Time
+	for _, c := range checkRuns {
+		if c.workflow.GetID() != run.GetID() {
+			continue
+		}
+		completed := c.run.GetCompletedAt().Time
+		if c.run.GetStatus() != statusCompleted || c.run.GetConclusion() == conclusionActionRequired || completed.IsZero() {
+			return false
+		}
+		if completed.After(last) {
+			last = completed
+		}
+	}
+	return !last.IsZero() && !now.Before(last.Add(RunSettleGrace))
 }
 
 // otherApp: the check run is reported by a named app other than GitHub

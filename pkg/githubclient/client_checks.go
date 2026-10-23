@@ -127,7 +127,7 @@ const checkRollupQuery = `query($owner: String!, $name: String!, $oid: GitObject
             pageInfo { hasNextPage endCursor }
             nodes {
               __typename
-              ... on CheckRun { databaseId name status conclusion url startedAt checkSuite { databaseId app { slug } } }
+              ... on CheckRun { databaseId name status conclusion url startedAt completedAt checkSuite { databaseId app { slug } } }
               ... on StatusContext { context state targetUrl createdAt }
             }
           }
@@ -157,13 +157,14 @@ type checkRollupPage struct {
 type checkRollupNode struct {
 	Typename string `json:"__typename"`
 
-	DatabaseID int64             `json:"databaseId"`
-	Name       string            `json:"name"`
-	Status     string            `json:"status"`
-	Conclusion string            `json:"conclusion"`
-	URL        string            `json:"url"`
-	StartedAt  *github.Timestamp `json:"startedAt"`
-	CheckSuite *struct {
+	DatabaseID  int64             `json:"databaseId"`
+	Name        string            `json:"name"`
+	Status      string            `json:"status"`
+	Conclusion  string            `json:"conclusion"`
+	URL         string            `json:"url"`
+	StartedAt   *github.Timestamp `json:"startedAt"`
+	CompletedAt *github.Timestamp `json:"completedAt"`
+	CheckSuite  *struct {
 		DatabaseID int64 `json:"databaseId"`
 		App        *struct {
 			Slug string `json:"slug"`
@@ -202,12 +203,13 @@ func (c *Client) CheckRollup(ctx context.Context, owner, repo, sha string) ([]*g
 			switch node.Typename {
 			case "CheckRun":
 				run := &github.CheckRun{
-					ID:         new(node.DatabaseID),
-					Name:       new(node.Name),
-					Status:     new(strings.ToLower(node.Status)),
-					Conclusion: new(strings.ToLower(node.Conclusion)),
-					HTMLURL:    new(node.URL),
-					StartedAt:  node.StartedAt,
+					ID:          new(node.DatabaseID),
+					Name:        new(node.Name),
+					Status:      new(strings.ToLower(node.Status)),
+					Conclusion:  new(strings.ToLower(node.Conclusion)),
+					HTMLURL:     new(node.URL),
+					StartedAt:   node.StartedAt,
+					CompletedAt: node.CompletedAt,
 				}
 				if suite := node.CheckSuite; suite != nil {
 					run.CheckSuite = &github.CheckSuite{ID: new(suite.DatabaseID)}

@@ -81,6 +81,24 @@ func workflowRun(id int64, name, status, conclusion string) *github.WorkflowRun 
 	return run
 }
 
+// stuckJobDone is when the only job of giantswarm/devctl-mcp-proof's Actions
+// run 39827025949 completed; GitHub left the run in progress for an hour after.
+var stuckJobDone = time.Date(2026, 10, 22, 17, 57, 4, 0, time.UTC)
+
+// stuckRun is that run as it read while it stayed in progress.
+func stuckRun() *github.WorkflowRun {
+	run := ofWorkflow(workflowRun(39827025949, "pre-commit", "in_progress", ""), 1, 107944062674)
+	run.RunStartedAt = &github.Timestamp{Time: stuckJobDone.Add(-37 * time.Second)}
+	return run
+}
+
+// stuckJob is the check run of that run's job, completed at completed.
+func stuckJob(name, status, conclusion string, completed time.Time) *github.CheckRun {
+	run := inSuite(ofApp(checkRun(119992893079, name, status, conclusion, completed.Add(-34*time.Second)), actionsApp), 107944062674)
+	run.CompletedAt = &github.Timestamp{Time: completed}
+	return run
+}
+
 func circle(state string, workflows ...circleciclient.Workflow) *circleSnapshot {
 	return &circleSnapshot{
 		project:   "github/o/r",
@@ -495,6 +513,65 @@ func Test_evaluate(t *testing.T) {
 				runs:      []*github.WorkflowRun{workflowRun(10, "CI", "in_progress", "")},
 			},
 			wantUnfinished:  []string{"actions run CI (in_progress)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "giantswarm/devctl-mcp-proof run 39827025949: in progress an hour after its only job succeeded, judged by the job: green",
+			snapshot: snapshot{
+				now:       stuckJobDone.Add(30 * time.Minute),
+				checkRuns: []*github.CheckRun{stuckJob("pre-commit", "completed", "success", stuckJobDone)},
+				runs:      []*github.WorkflowRun{stuckRun()},
+				required:  []string{"pre-commit"},
+			},
+			wantGreen: true,
+			wantChecks: []Check{
+				{Name: "pre-commit", ID: 119992893079, Workflow: "pre-commit", Source: SourceCheckRun, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/runs/pre-commit", Required: true},
+			},
+			wantActions: []ActionRun{
+				{Name: "pre-commit", RunID: 39827025949, Status: "in_progress", URL: "https://github.com/o/r/actions/runs/pre-commit", JobsCompleted: true},
+			},
+		},
+		{
+			name: "a run in progress whose only job completed less than the grace ago: still waited for",
+			snapshot: snapshot{
+				now:       stuckJobDone.Add(RunSettleGrace - time.Second),
+				checkRuns: []*github.CheckRun{stuckJob("pre-commit", "completed", "success", stuckJobDone)},
+				runs:      []*github.WorkflowRun{stuckRun()},
+			},
+			wantUnfinished:  []string{"actions run pre-commit (in_progress)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a run in progress with one job done long ago and one still queued: both waited for",
+			snapshot: snapshot{
+				now: stuckJobDone.Add(time.Hour),
+				checkRuns: []*github.CheckRun{
+					stuckJob("pre-commit", "completed", "success", stuckJobDone),
+					inSuite(ofApp(checkRun(119992893080, "test", "queued", "", stuckJobDone), actionsApp), 107944062674),
+				},
+				runs: []*github.WorkflowRun{stuckRun()},
+			},
+			wantUnfinished:  []string{"check test (queued)", "actions run pre-commit (in_progress)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a run in progress with its only job failed long ago: red, and judged by the job",
+			snapshot: snapshot{
+				now:       stuckJobDone.Add(time.Hour),
+				checkRuns: []*github.CheckRun{stuckJob("pre-commit", "completed", "failure", stuckJobDone)},
+				runs:      []*github.WorkflowRun{stuckRun()},
+			},
+			wantRed:         []string{"check pre-commit concluded failure"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a queued run whose listed jobs completed long ago: still waited for",
+			snapshot: snapshot{
+				now:       stuckJobDone.Add(time.Hour),
+				checkRuns: []*github.CheckRun{stuckJob("pre-commit", "completed", "success", stuckJobDone)},
+				runs:      []*github.WorkflowRun{ofWorkflow(workflowRun(39827025949, "pre-commit", "queued", ""), 1, 107944062674)},
+			},
+			wantUnfinished:  []string{"actions run pre-commit (queued)"},
 			skipFieldChecks: true,
 		},
 		{

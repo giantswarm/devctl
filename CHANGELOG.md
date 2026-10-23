@@ -111,6 +111,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait` and `pr merge`: an Actions run that GitHub leaves `in_progress` after every job of it completed no
+  longer holds the wait until its timeout; five minutes after its last job completed, its jobs are its verdict, and
+  `actions[]` marks it `jobsCompleted` ([#2956](https://github.com/giantswarm/devctl/issues/2956)).
+
 - `repo reconcile` and giantswarm-repo-manager: the release step of a `multi-image` entry verifies GitHub's latest
   release first. A skip (no CircleCI client, project not followed) names it, and the summary leads with it before
   the other image lines, so the manager's clientless step reads the release its inventory read instead of reporting
