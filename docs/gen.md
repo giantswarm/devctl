@@ -166,3 +166,35 @@ devctl gen circleci --repo-name template-app --language generic --flavour app --
 ```
 
 The app name (`sample-app`) and the Helm repository (`https://charts.example.com`) are fixtures; the team is the owning team from the team file (`team-honeybadger` and `honeybadger` both name it), because the team label is what the first chart build of a created repository is validated on. Green means a repository created from the template passes that first build. Nothing is released from a template, so the pipeline has no chart-test job, no push jobs and no release leg, the build runs on every branch including `main`, and no `tests/ats` files are written. A template without a chart (no `app` flavour) is unchanged by the flag; every other `--component-type` value is inert.
+
+### Multi-image repositories
+
+A repository of the [`multi-image` flavour](flavours.md#multi-image) holds several images, one per `toolchains/<name>/` directory with a `Dockerfile`, each released as its own `<name>/vX.Y.Z` line:
+
+```nohighlight
+devctl gen circleci --repo-name agent-toolchains --language generic --flavour multi-image
+devctl gen workflows --flavour multi-image --language generic --release-workflow auto-release
+```
+
+Every image is `giantswarm/<repo>/<name>` (`--image-name` sets the prefix), built with `toolchains/` as its context, so the images share the build files kept there beside them (`toolchains/lib/`).
+
+- `.circleci/config.yml` is a setup workflow that reads the image directories at pipeline runtime, so a pull request that adds an image builds it without a regeneration, and continues the pipeline with one copy of the per-image workflow of `.circleci/workflows.yml` for each image to build (`__IMAGE__` in it stands for the name). The optional `.circleci/custom.yml` is merged in last, as everywhere.
+- A branch pushes an amd64 dev image of each image whose directory changed against `main`; a change under `toolchains/` outside every image directory builds every image. `main` itself builds nothing: its merges are released by their tags.
+- A tag `<name>/vX.Y.Z` publishes that image multi-arch (`--image-platforms`, `linux/amd64,linux/arm64` by default) to gsoci.azurecr.io under its version and `latest`; `--force-public` for a private repository whose images are public, `--image-private-only` for gsociprivate alone. A tag that names no image fails the pipeline.
+- The repository's own check of an image is the job `check-image` in `.circleci/custom.yml`, with a string parameter `image`, the image's name: when it is defined, each release runs it first and the push requires it. Without it a release publishes straight away.
+
+```yaml
+# .circleci/custom.yml
+jobs:
+  check-image:
+    parameters:
+      image:
+        type: string
+    machine:
+      image: ubuntu-2404:current
+    steps:
+    - checkout
+    - run: scripts/check-toolchains.sh << parameters.image >>
+```
+
+`.github/workflows/zz_generated.auto_release.yaml` tags, on every push to the release branch, each image whose directory, or a shared file under `toolchains/`, changed since its latest `<name>/vX.Y.Z` with its next version, from the pushed commit's subject (the squash subject): a breaking change (`type!:` or a `BREAKING CHANGE` footer) the major, a `feat` the minor, anything else the patch, `v0.1.0` for a new image. There are no release candidates: each tag is stable and gets its GitHub release. `.github/release-gate.custom.sh`, when present, runs with each tag about to be cut; a refusal skips that tag and fails the run. The last step makes sure CircleCI built every tag, triggering a lost one through `CIRCLECI_API_TOKEN`. The flavour takes `auto-release` alone, and `cliff.toml` is removed.

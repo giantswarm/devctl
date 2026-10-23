@@ -254,3 +254,50 @@ func Test_Run_FleetMctl(t *testing.T) {
 		})
 	}
 }
+
+// Test_Run_MultiImage runs the command for a multi-image repository: on
+// auto-release it writes the per-image Auto Release and removes what either
+// single-line flow left (cliff.toml, the legacy trio), without a repository
+// name; the legacy flow is refused.
+func Test_Run_MultiImage(t *testing.T) {
+	t.Run("auto-release", func(t *testing.T) {
+		dir := t.TempDir()
+		git(t, "init", "--quiet", dir)
+		t.Chdir(dir)
+		require.NoError(t, os.MkdirAll(".github/workflows", 0o750))
+		for _, leftover := range []string{"cliff.toml", ".github/workflows/zz_generated.create_release.yaml", ".github/workflows/zz_generated.validate_changelog.yaml"} {
+			require.NoError(t, os.WriteFile(leftover, nil, 0o600))
+		}
+
+		r := &runner{flag: &flag{
+			Flavours:        gen.FlavourSlice{gen.FlavourMultiImage},
+			Language:        "generic",
+			ReleaseWorkflow: releaseWorkflowAutoRelease,
+		}}
+		require.NoError(t, r.Run(&cobra.Command{}, nil))
+
+		got, err := os.ReadFile(".github/workflows/zz_generated.auto_release.yaml")
+		require.NoError(t, err)
+		require.Contains(t, string(got), "Push-based release tagger of a multi-image repository")
+		for _, leftover := range []string{"cliff.toml", ".github/workflows/zz_generated.create_release.yaml", ".github/workflows/zz_generated.validate_changelog.yaml"} {
+			require.NoFileExists(t, leftover)
+		}
+	})
+
+	t.Run("legacy is refused", func(t *testing.T) {
+		f := &flag{
+			Flavours:        gen.FlavourSlice{gen.FlavourMultiImage},
+			ReleaseWorkflow: releaseWorkflowLegacy,
+		}
+		require.ErrorContains(t, f.Validate(), "requires --release-workflow=auto-release")
+	})
+
+	t.Run("patch candidates are refused", func(t *testing.T) {
+		f := &flag{
+			Flavours:        gen.FlavourSlice{gen.FlavourMultiImage},
+			ReleaseWorkflow: releaseWorkflowAutoRelease,
+			PatchCandidates: true,
+		}
+		require.ErrorContains(t, f.Validate(), "no candidates")
+	})
+}

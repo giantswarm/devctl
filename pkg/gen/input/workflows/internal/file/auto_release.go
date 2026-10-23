@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
+	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/workflows/internal/params"
 )
@@ -40,6 +41,37 @@ func NewAutoReleaseInput(p params.Params) input.Input {
 			templateKeyPatchCandidates:     p.PatchCandidates,
 			templateKeyReleaseBranch:       p.ReleaseBranch,
 			templateKeyAdvisoryJobs:        strings.Join(circleciclient.AdvisoryJobs, " "),
+		},
+	}
+}
+
+//go:embed auto_release_multi_image.yaml.template
+var autoReleaseMultiImageTemplate string
+
+//go:generate go run ../../../update-template-sha.go auto_release_multi_image.yaml.template
+//go:embed auto_release_multi_image.yaml.template*
+var autoReleaseMultiImageTemplateFiles embed.FS
+
+var autoReleaseMultiImageTemplateSha = input.TemplateSHA(autoReleaseMultiImageTemplateFiles, "auto_release_multi_image.yaml.template")
+
+// NewAutoReleaseMultiImageInput emits the zz_generated.auto_release.yaml of a
+// multi-image repository (flavour multi-image) in place of the single-line
+// one: on every push it tags each image whose directory changed since its
+// latest <name>/vX.Y.Z tag with its next version, from the pushed commit's
+// subject. Same path as NewAutoReleaseInput, so the deletion inputs of both
+// release flows cover it.
+func NewAutoReleaseMultiImageInput(p params.Params) input.Input {
+	return input.Input{
+		Path:         params.RegenerableFileName(p, "auto_release.yaml"),
+		TemplateBody: autoReleaseMultiImageTemplate,
+		TemplateDelims: input.InputTemplateDelims{
+			Left:  templateDelimLeft,
+			Right: templateDelimRight,
+		},
+		TemplateData: map[string]interface{}{
+			templateKeyHeader:        params.Header("#", autoReleaseMultiImageTemplateSha),
+			templateKeyReleaseBranch: p.ReleaseBranch,
+			"ImagesDir":              gen.MultiImageDir,
 		},
 	}
 }
