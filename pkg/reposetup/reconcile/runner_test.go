@@ -2619,7 +2619,7 @@ func TestSteps(t *testing.T) {
 				r.releases = []fakeRelease{
 					{tag: "go/v0.3.0-rc.1", at: now.Add(-50 * time.Minute), prerelease: true},
 					{tag: "node/v0.3.0", at: now.Add(-55 * time.Minute), draft: true},
-					{tag: "python/v0.2.0", at: now.Add(-time.Hour)},
+					{tag: "python/v0.2.0", at: now.Add(-40 * time.Minute)},
 					{tag: "node/v0.2.0", at: now.Add(-time.Hour)},
 					{tag: "go/v0.10.0", at: now.Add(-time.Hour)},
 					{tag: "go/v0.9.0", at: now.Add(-2 * time.Hour)},
@@ -2635,7 +2635,9 @@ func TestSteps(t *testing.T) {
 			verify: func(t *testing.T, _ *harness, res *Result) {
 				require.Empty(t, res.Findings())
 				summary := res.Step(StepRelease).Summary
-				require.Regexp(t, `^release go/v0\.10\.0 built: pipeline \d+, workflows build succeeded; release node/v0\.2\.0 built: .*; release python/v0\.2\.0 built: `, summary)
+				// python/v0.2.0 is GitHub's latest, the newest published
+				// release: it leads, the others follow by image name.
+				require.Regexp(t, `^release python/v0\.2\.0 built: pipeline \d+, workflows build succeeded; release go/v0\.10\.0 built: .*; release node/v0\.2\.0 built: `, summary)
 				require.NotContains(t, summary, "go/v0.9.0")
 				require.NotContains(t, summary, "v0.3.0")
 				require.NotContains(t, summary, "v1.0.0")
@@ -2692,14 +2694,34 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			name: "release: a multi-image repository not followed on CircleCI is skipped once", step: StepRelease, entry: multiImageEntryYAML,
+			// giantswarm-repo-manager runs the engine without a CircleCI
+			// client: the skip names GitHub's latest release, the one its
+			// inventory reads and its clientless step verifies.
+			name: "release: a multi-image repository without a CircleCI client is skipped, naming the newest release", step: StepRelease, entry: multiImageEntryYAML,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
-				r.releases = []fakeRelease{{tag: "node/v0.2.0", at: time.Now().Add(-time.Hour)}, {tag: "go/v0.2.0", at: time.Now().Add(-time.Hour)}}
+				// Two releases of one commit tie on its date: GitHub's
+				// answer, not the list, names node/v0.2.1 its latest.
+				r.release, r.releaseAt = "node/v0.2.1", time.Now().Add(-time.Hour)
+				r.releases = []fakeRelease{{tag: "github/v0.1.0", at: time.Now().Add(-time.Hour)}, {tag: "node/v0.2.1", at: time.Now().Add(-time.Hour)}}
+				h.runner.CircleCI = nil
 			},
 			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
 			verify: func(t *testing.T, _ *harness, res *Result) {
-				require.Equal(t, "release go/v0.2.0: project not followed on CircleCI", res.Step(StepRelease).Summary)
+				require.Equal(t, "release node/v0.2.1: no CircleCI client to verify the pipeline", res.Step(StepRelease).Summary)
+			},
+		},
+		{
+			// The skip names the newest release, GitHub's latest, which a
+			// reader without CircleCI verifies from the tag's statuses.
+			name: "release: a multi-image repository not followed on CircleCI is skipped once, naming the newest release", step: StepRelease, entry: multiImageEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.releases = []fakeRelease{{tag: "node/v0.2.1", at: time.Now().Add(-time.Minute)}, {tag: "go/v0.2.0", at: time.Now().Add(-time.Hour)}}
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "release node/v0.2.1: project not followed on CircleCI", res.Step(StepRelease).Summary)
 				require.Empty(t, res.Findings())
 			},
 		},
