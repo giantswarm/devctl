@@ -47,6 +47,11 @@ const flavourCustomer = reposetup.FlavourCustomer
 // settings step keeps rebase merges on it ([run.mergeMethods]).
 const flavourFork = "fork"
 
+// flavourMultiImage is the gen.flavours value of a repository of several
+// images, one per toolchains/<name>/ directory, each released as its own
+// <name>/vX.Y.Z line: the release step verifies every line's newest release.
+const flavourMultiImage = "multi-image"
+
 // componentTypeTemplate is the componentType of a template repository, one
 // other repositories are created from: its chart lives under a placeholder
 // directory (helm/{APP-NAME}) and carries the placeholders a created

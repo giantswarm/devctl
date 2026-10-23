@@ -73,6 +73,8 @@ func TestValidateEntries(t *testing.T) {
 		{name: "taken-name", template: TemplateGo, verdict: VerdictTaken, fields: []string{"name"}},
 		{name: "renamed-name", template: TemplateGo, verdict: VerdictTaken, fields: []string{"name"}},
 		{name: "no-ci-jobs", template: TemplateMinimal, verdict: VerdictFree, fields: []string{"gen.ci.generate"}},
+		// The per-image pipeline is a job whatever the language.
+		{name: "multi-image-generated", template: TemplateMinimal, verdict: VerdictFree},
 		{name: "align-opt-in", template: TemplateGo, verdict: VerdictFree},
 		{name: "align-not-bool", template: TemplateGo, verdict: VerdictFree, fields: []string{"align"}},
 		{name: "agent-merge-opt-out", template: TemplateGo, verdict: VerdictFree},
@@ -351,6 +353,7 @@ func TestValidateExistingMode(t *testing.T) {
 		{name: "chart-name-mismatch", template: TemplateChart, verdict: VerdictFree},
 		{name: "Bad_Name", template: TemplateMinimal, verdict: VerdictFree},
 		{name: "no-ci-jobs", template: TemplateMinimal, verdict: VerdictFree},
+		{name: "multi-image-generated", template: TemplateMinimal, verdict: VerdictFree},
 		{name: "taken-name", template: TemplateGo, verdict: VerdictTaken},
 		{name: "renamed-name", template: TemplateGo, verdict: VerdictTaken},
 		// The schema and the file's integrity still refuse: gen, once

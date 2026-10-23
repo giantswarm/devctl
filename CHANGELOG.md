@@ -111,6 +111,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile` and giantswarm-repo-manager: the release step of a `multi-image` entry verifies the newest
+  `<name>/vX.Y.Z` release of every image line against its tag pipeline instead of skipping GitHub's latest release
+  as not a `vX.Y.Z` tag; a red or missed image release is a finding naming its tag. Drafts, pre-releases and tags
+  outside the grammar belong to no line.
+- `repo create`, `repo validate` and the creation rules: a `multi-image` entry with `gen.ci.generate: true` is
+  accepted whatever its language, its per-image pipeline being the CircleCI job, and `repo create` declares it with
+  generated CI.
 - `version update`, `version check` and the version check before every command find the latest release while GitHub
   answers its release list with no release at all, which it does intermittently: an empty list is asked for again
   twice, and the latest release, asked for on its own, is added when the list lacks it. go-selfupdate v1.6.7 carries

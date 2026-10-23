@@ -168,6 +168,15 @@
     flavours:
       - generic
     language: generic
+- name: multi-image-generated
+  componentType: unspecified
+  gen:
+    flavours:
+      - multi-image
+    language: generic
+    ci:
+      generate: true
+      releaseWorkflow: auto-release
 - name: align-opt-in
   componentType: service
   align: true

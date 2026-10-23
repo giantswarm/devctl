@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -356,8 +357,12 @@ func (r *Runner) circleCIGrantee(ctx context.Context, s *run) (string, error) {
 // The release verified is one of the platform's flow, a vX.Y.Z tag
 // (isReleaseTag). A latest release tagged otherwise — per component,
 // base/v0.1.0 — is outside that flow: the step is skipped naming the tag,
-// no pipeline is looked up and nothing is reported.
+// no pipeline is looked up and nothing is reported. A multi-image entry
+// releases one line per image instead (stepImageReleases).
 func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error {
+	if s.hasFlavour(flavourMultiImage) {
+		return r.stepImageReleases(ctx, s, sr)
+	}
 	release, resp, err := r.GitHub.Repositories.GetLatestRelease(ctx, s.owner, s.name)
 	switch {
 	case isNotFound(resp, err):
@@ -372,32 +377,118 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 		sr.Summary = fmt.Sprintf("release %s: not a vX.Y.Z tag, not verified", tag)
 		return nil
 	}
-	if r.CircleCI == nil {
+	summary, skipped, err := r.verifyRelease(ctx, s, sr, tag, release.GetCreatedAt().Time)
+	if skipped {
 		sr.Verdict = VerdictSkipped
-		sr.Summary = fmt.Sprintf("release %s: no CircleCI client to verify the pipeline", tag)
+	}
+	sr.Summary = summary
+	return err
+}
+
+// stepImageReleases is the release step of a multi-image entry: every image
+// is its own release line, <name>/vX.Y.Z, cut by the multi-image
+// auto-release and built by the tag pipeline of that image. GitHub's latest
+// release is the newest of any line, so the step verifies the newest
+// published release of each line (imageReleases), each as stepRelease
+// verifies a single line's. A missing CircleCI client or project skips the
+// step once, for all lines alike.
+func (r *Runner) stepImageReleases(ctx context.Context, s *run, sr *StepResult) error {
+	releases, err := r.imageReleases(ctx, s)
+	if err != nil {
+		return err
+	}
+	if len(releases) == 0 {
+		sr.Summary = "no <name>/vX.Y.Z release yet"
 		return nil
 	}
+	var summaries []string
+	for _, release := range releases {
+		summary, skipped, err := r.verifyRelease(ctx, s, sr, release.GetTagName(), release.GetCreatedAt().Time)
+		if err != nil {
+			return err
+		}
+		if skipped {
+			sr.Verdict = VerdictSkipped
+			sr.Summary = summary
+			return nil
+		}
+		summaries = append(summaries, summary)
+	}
+	sr.Summary = strings.Join(summaries, "; ")
+	return nil
+}
 
-	pipeline, err := r.tagPipeline(ctx, s, tag, release.GetCreatedAt().Time)
+// imageReleases returns the newest published release of each image line of
+// a multi-image repository, ordered by image name. Drafts and pre-releases
+// are left out, as GitHub's latest release leaves them out; a release
+// tagged outside the <name>/vX.Y.Z grammar (imageReleaseTag) belongs to no
+// line.
+func (r *Runner) imageReleases(ctx context.Context, s *run) ([]*github.RepositoryRelease, error) {
+	newest := map[string]*github.RepositoryRelease{}
+	versions := map[string]*semver.Version{}
+	opts := &github.ListOptions{PerPage: 100}
+	for {
+		page, resp, err := r.GitHub.Repositories.ListReleases(ctx, s.owner, s.name, opts)
+		if err != nil {
+			return nil, err
+		}
+		for _, release := range page {
+			if release.GetDraft() || release.GetPrerelease() {
+				continue
+			}
+			image, version, ok := imageReleaseTag(release.GetTagName())
+			if !ok {
+				continue
+			}
+			if v, seen := versions[image]; !seen || version.GreaterThan(v) {
+				newest[image], versions[image] = release, version
+			}
+		}
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+	images := make([]string, 0, len(newest))
+	for image := range newest {
+		images = append(images, image)
+	}
+	slices.Sort(images)
+	out := make([]*github.RepositoryRelease, 0, len(images))
+	for _, image := range images {
+		out = append(out, newest[image])
+	}
+	return out, nil
+}
+
+// verifyRelease verifies one release, tag, of the platform's flow, as
+// stepRelease describes: findings and the first release's trigger go on sr,
+// the line on the state found is returned. skipped says the release could
+// not be verified at all: no CircleCI client, or the project not followed.
+func (r *Runner) verifyRelease(ctx context.Context, s *run, sr *StepResult, tag string, releasedAt time.Time) (summary string, skipped bool, err error) {
+	if r.CircleCI == nil {
+		return fmt.Sprintf("release %s: no CircleCI client to verify the pipeline", tag), true, nil
+	}
+
+	pipeline, err := r.tagPipeline(ctx, s, tag, releasedAt)
 	switch {
 	case circleciclient.IsNotFound(err) && s.followedNow:
 		// The follow is planned, not made (check mode): the project has no
 		// pipeline yet, the tag's included.
 		pipeline = nil
 	case circleciclient.IsNotFound(err):
-		sr.Verdict = VerdictSkipped
-		sr.Summary = fmt.Sprintf("release %s: project not followed on CircleCI", tag)
-		return nil
+		return fmt.Sprintf("release %s: project not followed on CircleCI", tag), true, nil
 	case err != nil:
-		return err
+		return "", false, err
 	}
 	if pipeline == nil {
 		first, err := r.firstRelease(ctx, s, tag)
 		if err != nil {
-			return err
+			return "", false, err
 		}
 		if first {
-			return s.plan(sr, fmt.Sprintf("trigger the pipeline of %s, the first release of the created repository", tag), func() error {
+			summary := fmt.Sprintf("release %s: first release, pipeline triggered", tag)
+			return summary, false, s.plan(sr, fmt.Sprintf("trigger the pipeline of %s, the first release of the created repository", tag), func() error {
 				_, err := r.CircleCI.TriggerTagPipeline(ctx, s.owner, s.name, tag)
 				return err
 			})
@@ -405,12 +496,12 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 		s.report(sr, FindingMissedTagBuild,
 			fmt.Sprintf("release %s of %s has no pipeline: nothing was built or published for the tag", tag, s.slug()),
 			"cut the next tag, or trigger the tag's pipeline by hand")
-		return nil
+		return fmt.Sprintf("release %s: no pipeline", tag), false, nil
 	}
 
 	workflows, err := r.CircleCI.ListPipelineWorkflows(ctx, pipeline.ID)
 	if err != nil {
-		return err
+		return "", false, err
 	}
 	workflows = circleciclient.NewestWorkflows(workflows)
 	var failed, pending, succeeded, published []string
@@ -419,7 +510,7 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 		case circleciclient.WorkflowFailed(wf.Status):
 			jobs, err := r.CircleCI.ListWorkflowJobs(ctx, wf.ID)
 			if err != nil {
-				return err
+				return "", false, err
 			}
 			var redJobs []string
 			for _, j := range jobs {
@@ -441,20 +532,25 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 	}
 	switch {
 	case len(failed) > 0:
+		summary = fmt.Sprintf("release %s: pipeline %d red", tag, pipeline.Number)
+		confirm := fmt.Sprintf(", then `devctl release wait %s %s` confirms the images and chart", s.slug(), tag)
+		if _, _, image := imageReleaseTag(tag); image {
+			confirm = "" // release wait follows vX.Y.Z tags only
+		}
 		s.report(sr, FindingRedRelease,
 			fmt.Sprintf("release %s of %s is red: pipeline %d, %s", tag, s.slug(), pipeline.Number, strings.Join(failed, "; ")),
-			fmt.Sprintf("nothing was published for %s: rerun the failed workflow from failed on CircleCI (the rerun checks out the same commit and runs the publish jobs), then `devctl release wait %s %s` confirms the images and chart; when the cause is in the code, fix it and let the next tag be the release", tag, s.slug(), tag))
+			fmt.Sprintf("nothing was published for %s: rerun the failed workflow from failed on CircleCI (the rerun checks out the same commit and runs the publish jobs)%s; when the cause is in the code, fix it and let the next tag be the release", tag, confirm))
 	case len(pending) > 0:
-		sr.Summary = fmt.Sprintf("release %s: pipeline %d running: %s", tag, pipeline.Number, strings.Join(pending, ", "))
+		summary = fmt.Sprintf("release %s: pipeline %d running: %s", tag, pipeline.Number, strings.Join(pending, ", "))
 	case len(workflows) == 0:
-		sr.Summary = fmt.Sprintf("release %s: pipeline %d has no workflows yet", tag, pipeline.Number)
+		summary = fmt.Sprintf("release %s: pipeline %d has no workflows yet", tag, pipeline.Number)
 	default:
-		sr.Summary = fmt.Sprintf("release %s built: pipeline %d, workflows %s succeeded", tag, pipeline.Number, strings.Join(succeeded, ", "))
+		summary = fmt.Sprintf("release %s built: pipeline %d, workflows %s succeeded", tag, pipeline.Number, strings.Join(succeeded, ", "))
 		if len(published) > 0 {
-			sr.Summary += fmt.Sprintf("; %s failed, the GitHub release it publishes exists", strings.Join(published, ", "))
+			summary += fmt.Sprintf("; %s failed, the GitHub release it publishes exists", strings.Join(published, ", "))
 		}
 	}
-	return nil
+	return summary, false, nil
 }
 
 // GitHubReleaseJob is the generated tag pipeline's job whose one output is
@@ -509,6 +605,26 @@ func isReleaseTag(tag string) bool {
 	}
 	_, err := semver.StrictNewVersion(strings.TrimPrefix(tag, "v"))
 	return err == nil
+}
+
+// imageNamePattern is an image name of a multi-image repository: its
+// directory under toolchains/, a valid image repository path component —
+// the names the generated setup workflow and auto-release accept.
+var imageNamePattern = regexp.MustCompile(`^[a-z0-9]+([._-][a-z0-9]+)*$`)
+
+// imageReleaseTag splits a release tag of a multi-image repository,
+// <name>/vX.Y.Z — what its auto-release cuts and its tag pipeline builds —
+// into the image name and the version; ok is false for any other tag.
+func imageReleaseTag(tag string) (image string, version *semver.Version, ok bool) {
+	image, rest, found := strings.Cut(tag, "/")
+	if !found || !imageNamePattern.MatchString(image) || !isReleaseTag(rest) {
+		return "", nil, false
+	}
+	version, err := semver.StrictNewVersion(strings.TrimPrefix(rest, "v"))
+	if err != nil {
+		return "", nil, false
+	}
+	return image, version, true
 }
 
 // tagPipeline finds the pipeline that built tag among the project's

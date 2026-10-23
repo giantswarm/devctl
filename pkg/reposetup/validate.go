@@ -576,7 +576,8 @@ func GeneratesCircleCI(f Fields) bool {
 
 // hasCIJob says whether the CircleCI generator has a job for the
 // declaration: a Go or Node build, an image (a scaffold has a Dockerfile only
-// where gen.ci.image.dockerfile names one) or a chart.
+// where gen.ci.image.dockerfile names one), a chart, or the per-image
+// pipeline of a multi-image repository, whatever its language.
 func hasCIJob(f Fields) bool {
 	g := f.Gen
 	switch {
@@ -588,7 +589,7 @@ func hasCIJob(f Fields) bool {
 		return true
 	}
 	for _, flavour := range g.Flavours {
-		if flavour == gen.FlavourApp.String() {
+		if flavour == gen.FlavourApp.String() || flavour == gen.FlavourMultiImage.String() {
 			return true
 		}
 	}
