@@ -351,7 +351,7 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 	if err != nil {
 		return fmt.Errorf("reading the repository: %w", err)
 	}
-	version := strings.TrimPrefix(result.Tag, "v")
+	image, version := tagVersion(result.Tag)
 
 	if content.HasCircleCI() && w.config.CircleCIFromStatuses {
 		w.statusesOnly = true
@@ -372,7 +372,7 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 		if entry == nil {
 			return usageErr("no team-file entry declares %s/%s, and the artifacts of its generated pipeline (%s at %s) are named by the entry", owner, repo, circleCIWorkflows, short(result.SHA))
 		}
-		artifacts, err := GeneratedArtifacts(*entry, repo, version, *content, private, w.config.Endpoints, TagChartNames(ctx, w.config.GitHub, owner, repo, result.SHA))
+		artifacts, err := GeneratedArtifacts(*entry, repo, image, version, *content, private, w.config.Endpoints, TagChartNames(ctx, w.config.GitHub, owner, repo, result.SHA))
 		if err != nil {
 			return err
 		}

@@ -1,7 +1,7 @@
 # Waiting for a release: `devctl release wait`
 
 ```nohighlight
-devctl release wait <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--timeout 30m] [--catalog] [--image <owner/name>]... [--chart <path>]... [--progress] [--failed-log [--failed-log-lines 50]]
+devctl release wait <owner/repo> (<vX.Y.Z | X.Y.Z | image/vX.Y.Z> | --pr <number>) [--timeout 30m] [--catalog] [--image <owner/name>]... [--chart <path>]... [--progress] [--failed-log [--failed-log-lines 50]]
 ```
 
 Blocks until every image and chart of a release is pullable and the tag's pipeline is green, then prints
@@ -28,6 +28,11 @@ the login command in `reason`, before anything is waited for.
 
 - `vX.Y.Z` or `X.Y.Z`: the tag is looked up under both spellings, the given one first, and the wait
   starts when it exists. A tag that never appears is a timeout (exit 2).
+- `<image>/vX.Y.Z`: a release of one image of a `multi-image` repository (one image per
+  `toolchains/<image>/` directory, each its own release line), under that one spelling. Its artifact is
+  the image `<owner>/<repo>/<image>:<X.Y.Z>`. With `--pr`, a merge commit that carries one image's
+  tag is followed like a `vX.Y.Z` tag. One that carries several (a change to the build files the images
+  share releases every image) ends with exit 11, naming each tag to wait for.
 - `--pr <number>`: the pull request must be merged (otherwise exit 3). In a repository on the
   **auto-release** model the tag is the one on the merge commit, on whatever branch the pull request
   was merged into (a release branch's tag of an older line included); the command waits for it to
@@ -321,7 +326,7 @@ stderr.
 | 3 | `no_release` | No release follows the pull request's merge: the repository does not tag merge commits (the legacy release model, or no release workflow at all), or the merge commit's auto-release run finished without a tag and no later tag on the pull request's base branch carries it; the reason names the branch. |
 | 7 | `usage` | A bad argument or flag; a newer devctl released (the reason names `devctl version update`); no source says how the repository releases; the sources disagree about the CI model or the artifacts; a registry answer that is neither a digest nor "manifest unknown"; a tooling error, a GitHub or CircleCI read that failed eight tries in a row among them. |
 | 8 | `auth_required` | No usable token in the keychain; `reason` names the `devctl auth login` invocation. |
-| 11 | `ambiguous_release` | With `--pr`, the commit the wait resolves to (the merge commit, or the first tagged commit after it) carries the release tags (`vX.Y.Z`, `vX.Y.Z-rc.N`) of more than one version: the wait does not choose. `reason` and `conflictingTags` name every release tag on the commit, newest first; a wait given the version waits on it. A candidate and its promoted stable on one commit are one version. |
+| 11 | `ambiguous_release` | With `--pr`, the commit the wait resolves to (the merge commit, or the first tagged commit after it) carries the release tags (`vX.Y.Z`, `vX.Y.Z-rc.N`) of more than one version, or the `<image>/vX.Y.Z` tags of more than one image: the wait does not choose. `reason` and `conflictingTags` name every release tag on the commit, newest first; a wait given the version waits on it. A candidate and its promoted stable on one commit are one version. |
 | 12 | `status_failed` | Every artifact is available and the tag's CI is green, and a commit status of the tag's commit (the branch pipeline's, another CI's) is `failure` or `error`: `devctl release promote` refuses the commit. `reason` and `statuses[]` name the failed contexts. |
 
 ## Environment

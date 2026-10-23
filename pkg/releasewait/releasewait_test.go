@@ -1253,6 +1253,57 @@ func TestWaitPullRequestResolvesTheTagFromTheMergeCommit(t *testing.T) {
 	}
 }
 
+// A multi-image repository's merge commit carries the tag of the image it
+// changed, <name>/vX.Y.Z: the wait follows that tag's pipeline and probes
+// the one image <owner>/<repo>/<name> under X.Y.Z.
+func TestWaitPullRequestFollowsTheImageReleaseOfAMultiImageRepository(t *testing.T) {
+	const tag = "go/v0.3.0"
+	entry := fieldsFromYAML(t, `- name: kserve
+  gen:
+    flavours: [multi-image]
+    language: generic
+    ci:
+      generate: true
+`)
+	github := baseGitHub([]string{"toolchains"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"})
+	github[repoRoute("/pulls/7")] = []sequence.Response{{Body: map[string]any{"number": 7, "state": "closed", "merged": true, "merge_commit_sha": testSHA}}}
+	github[repoRoute("/tags")] = []sequence.Response{{Body: []map[string]any{{"name": tag, "commit": map[string]any{"sha": testSHA}}, {"name": "go/v0.2.0", "commit": map[string]any{"sha": "older"}}}}}
+	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "release-go", "success", "2026-09-21T10:00:00Z")}}, map[string][]map[string]any{"w1": {job("push-go", "success")}})
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/pipeline"] = []sequence.Response{{Body: map[string]any{"items": []map[string]any{{"id": "p1", "number": 12, "vcs": map[string]any{"tag": tag, "revision": testSHA}}}}}}
+	fx := fixture{
+		entry: &entry, github: github, pr: 7, circleci: circleci,
+		registry: sequence.Routes{"HEAD /v2/giantswarm/kserve/go/manifests/0.3.0": {{Status: 200}}},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Tag != tag || result.SHA != testSHA || result.CIModel != CIModelGenerated {
+		t.Errorf("head: %+v", result)
+	}
+	if len(result.Artifacts) != 1 || !strings.HasSuffix(result.Artifacts[0].Reference, "/giantswarm/kserve/go:0.3.0") || result.Artifacts[0].State != StateAvailable {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+}
+
+// A change to the build files the images share releases every image from
+// one merge commit: the wait does not choose, it names each tag.
+func TestWaitPullRequestWithSeveralImageReleasesIsAmbiguous(t *testing.T) {
+	entry := fieldsFromYAML(t, `- name: kserve
+  gen:
+    flavours: [multi-image]
+    language: generic
+    ci:
+      generate: true
+`)
+	github := baseGitHub([]string{"toolchains"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"})
+	github[repoRoute("/pulls/7")] = []sequence.Response{{Body: map[string]any{"number": 7, "state": "closed", "merged": true, "merge_commit_sha": testSHA}}}
+	github[repoRoute("/tags")] = []sequence.Response{{Body: []map[string]any{{"name": "node/v0.2.1", "commit": map[string]any{"sha": testSHA}}, {"name": "go/v0.3.0", "commit": map[string]any{"sha": testSHA}}}}}
+	result, err := run(t, fixture{entry: &entry, github: github, pr: 7})
+	assertExit(t, err, agentcli.ExitAmbiguousRelease, "devctl release wait giantswarm/kserve go/v0.3.0")
+	if !slices.Equal(result.ConflictingTags, []string{"go/v0.3.0", "node/v0.2.1"}) {
+		t.Errorf("conflicting tags: %v", result.ConflictingTags)
+	}
+}
+
 // CircleCI knows the tag pipeline's setup workflow by id before it lists its
 // jobs: GET /workflow/{id}/job is 404 for a short while after the pipeline
 // is created. That is the tag not built yet, not a tooling failure: the

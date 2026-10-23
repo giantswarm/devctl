@@ -111,6 +111,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release wait`, and so `pr merge` after the merge: a `multi-image` repository's `<image>/vX.Y.Z` release is
+  followed. Given as the version, or as the one image tag on a pull request's merge commit, it is followed with its
+  image `giantswarm/<repo>/<image>:<X.Y.Z>`. A merge commit carrying the tags of several images ends with exit 11
+  (`ambiguous_release`), naming each tag to wait for.
 - `version update`, `version check` and the version check before every command find the latest release while GitHub
   answers its release list with no release at all, which it does intermittently: an empty list is asked for again
   twice, and the latest release, asked for on its own, is added when the list lacks it. go-selfupdate v1.6.7 carries
