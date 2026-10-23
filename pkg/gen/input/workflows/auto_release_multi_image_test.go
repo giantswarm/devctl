@@ -107,6 +107,7 @@ func Test_AutoReleaseMultiImageTags(t *testing.T) {
 	tests := []struct {
 		name    string
 		change  map[string]string
+		remove  []string
 		message string
 		gate    string
 		want    []string
@@ -143,6 +144,23 @@ func Test_AutoReleaseMultiImageTags(t *testing.T) {
 			want:    []string{"c/v0.1.0"},
 		},
 		{
+			name:    "a removed shared file releases every image",
+			remove:  []string{"toolchains/lib/fetch.sh"},
+			message: "chore: drop the shared fetch",
+			want:    []string{"a/v0.1.1", "b/v0.1.1"},
+		},
+		{
+			name:    "a removed image releases none of the others",
+			remove:  []string{"toolchains/b/Dockerfile"},
+			message: "chore: drop b",
+		},
+		{
+			name:    "a new image releases none of the others",
+			change:  map[string]string{"toolchains/c/Dockerfile": "FROM scratch\n", "toolchains/c/tool.sh": "true\n"},
+			message: "fix: c",
+			want:    []string{"c/v0.1.0"},
+		},
+		{
 			name:    "a change outside the images releases nothing",
 			change:  map[string]string{"README.md": "changed\n"},
 			message: "fix: readme",
@@ -166,6 +184,9 @@ func Test_AutoReleaseMultiImageTags(t *testing.T) {
 			dir := multiImageHistory(t)
 			for name, content := range tc.change {
 				writeRepoFile(t, filepath.Join(dir, name), content)
+			}
+			for _, name := range tc.remove {
+				mustGit(t, dir, "rm", "-q", name)
 			}
 			if tc.gate != "" {
 				writeRepoFile(t, filepath.Join(dir, ".github/release-gate.custom.sh"), tc.gate)

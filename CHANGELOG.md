@@ -111,6 +111,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen workflows` and `gen circleci`, `multi-image` flavour: a shared file or directory under `toolchains/` that a
+  commit removes counts as a change. The Auto Release diffs each image against its last tag on all of `toolchains/`
+  but the other images' directories (those holding a `Dockerfile` at HEAD or at that tag), so removing shared build
+  files releases every image and removing an image releases none of the others; a branch that removes shared build
+  files builds every image's dev image.
+
 - `release wait`, and so `pr merge` after the merge: a `multi-image` repository's `<image>/vX.Y.Z` release is
   followed. Given as the version, or as the one image tag on a pull request's merge commit, it is followed with its
   image `giantswarm/<repo>/<image>:<X.Y.Z>`. A merge commit carrying the tags of several images ends with exit 11

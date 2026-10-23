@@ -61,6 +61,7 @@ jobs:
           else
             kind=build
             git fetch --quiet origin "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+            base=$(git merge-base "origin/${DEFAULT_BRANCH}" HEAD)
             all=false
             changed=()
             while IFS= read -r path; do
@@ -68,13 +69,14 @@ jobs:
               top=${rel%%/*}
               if [ "$top" != "$rel" ] && image_dir "$top"; then
                 changed+=("$top")
-              elif [ "$top" = "$rel" ] || [ -e "${IMAGES_DIR}/${top}" ]; then
+              elif [ "$top" = "$rel" ] || [ -e "${IMAGES_DIR}/${top}" ] \
+                || ! git cat-file -e "${base}:${IMAGES_DIR}/${top}/Dockerfile" 2>/dev/null; then
                 # A file directly under the directory, or one of a directory
-                # without a Dockerfile: shared by the images.
+                # without a Dockerfile, there or removed: shared by the images.
                 all=true
               fi
-              # Otherwise the directory is gone: an image removed, nothing to build.
-            done < <(git diff --name-only "origin/${DEFAULT_BRANCH}...HEAD" -- "${IMAGES_DIR}/")
+              # Otherwise an image directory is gone: nothing to build for it.
+            done < <(git diff --name-only "${base}" HEAD -- "${IMAGES_DIR}/")
             if [ "$all" = true ]; then
               for dir in "${IMAGES_DIR}"/*/; do
                 image_dir "$(basename "$dir")" && changed+=("$(basename "$dir")")
