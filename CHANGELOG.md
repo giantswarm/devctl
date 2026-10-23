@@ -111,6 +111,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release wait`, and so `pr merge` after the merge: a `multi-image` repository's `<image>/vX.Y.Z` release is
+  followed. Given as the version, or as the one image tag on a pull request's merge commit, it is followed with its
+  image `giantswarm/<repo>/<image>:<X.Y.Z>`. A merge commit carrying the tags of several images ends with exit 11
+  (`ambiguous_release`), naming each tag to wait for.
 - `repo reconcile` and giantswarm-repo-manager: the release step of a `multi-image` entry verifies the newest
   `<name>/vX.Y.Z` release of every image line against its tag pipeline instead of skipping GitHub's latest release
   as not a `vX.Y.Z` tag; a red or missed image release is a finding naming its tag. Drafts, pre-releases and tags
