@@ -77,7 +77,7 @@ func (r *runner) kubeContext(installation string) string {
 
 func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Document) error {
 	if len(args) < 2 || len(args) > 3 {
-		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "usage: devctl %s <installation> <owner/repo> [<vX.Y.Z|X.Y.Z>] [--pr <number>], got %d argument(s)", rolloutwait.Command, len(args))
+		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "usage: devctl %s <installation> <owner/repo> [<vX.Y.Z|X.Y.Z>] [--version <vX.Y.Z>] [--pr <number>], got %d argument(s)", rolloutwait.Command, len(args))
 	}
 	installation := args[0]
 	if installation == "" || strings.ContainsAny(installation, "/ ") {
@@ -87,8 +87,11 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
 		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "%q is not a repository: expected owner/repo", args[1])
 	}
-	version := ""
+	version := r.flag.Version
 	if len(args) > 2 {
+		if version != "" && version != args[2] {
+			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "the version argument %q and --version %q differ: name the version once", args[2], version)
+		}
 		version = args[2]
 	}
 	if (version == "") == (r.flag.PR == 0) {

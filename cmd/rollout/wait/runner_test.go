@@ -70,6 +70,9 @@ func TestRunUsageErrorsAreDocuments(t *testing.T) {
 		{name: "neither version nor pr", args: []string{"myinstallation", "giantswarm/devctl"}, reason: "exactly one of a version"},
 		{name: "both version and pr", args: []string{"myinstallation", "giantswarm/devctl", "v1.2.3"}, flag: flag{PR: 7}, reason: "exactly one of a version"},
 		{name: "not a version", args: []string{"myinstallation", "giantswarm/devctl", "latest"}, reason: "not a version"},
+		{name: "both --version and pr", args: []string{"myinstallation", "giantswarm/devctl"}, flag: flag{Version: "v1.2.3", PR: 7}, reason: "exactly one of a version"},
+		{name: "--version and a differing argument", args: []string{"myinstallation", "giantswarm/devctl", "v1.2.3"}, flag: flag{Version: "v1.2.4"}, reason: "differ"},
+		{name: "--version not a version", args: []string{"myinstallation", "giantswarm/devctl"}, flag: flag{Version: "latest"}, reason: "not a version"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -144,5 +147,22 @@ func TestRunPassesKubeconfigAndTeleport(t *testing.T) {
 	_ = r.run(context.Background(), []string{"myinstallation", "giantswarm/devctl", "v1.2.3"})
 	if got.Installation != "myinstallation" || got.Context != "teleport.giantswarm.io-myinstallation" || got.Kubeconfig != "/home/me/own.kubeconfig" || got.Teleport == nil || got.Wrap == nil {
 		t.Errorf("cluster config: %+v", got)
+	}
+}
+
+// --version names the version like the argument: the wait goes on to the
+// release.
+func TestRunVersionFlagIsTheVersion(t *testing.T) {
+	authErr := &authstore.AuthRequiredError{Identity: "GitHub", Cause: "no token in the keychain", Hint: "devctl auth login"}
+	for name, args := range map[string][]string{
+		"flag only":                  {"myinstallation", "giantswarm/devctl"},
+		"flag and the same argument": {"myinstallation", "giantswarm/devctl", "v3.23.0"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := runCommand(t, args, &flag{Version: "v3.23.0"}, authErr)
+			if agentcli.Exit(err) != agentcli.ExitAuthRequired {
+				t.Fatalf("want the release opened (exit %d), got %d (%v)", agentcli.ExitAuthRequired, agentcli.Exit(err), err)
+			}
+		})
 	}
 }

@@ -103,6 +103,12 @@ func (r Release) Wait(ctx context.Context, doc *Document) error {
 		return agentcli.NewExitError(code, verdict, "release: %s", err)
 	}
 	doc.Release.Verdict = agentcli.VerdictAvailable
+	// What rolls out is the tag the release wait found: without one,
+	// nothing on the installation can be judged, and the wait never ends
+	// in a rollout of nothing.
+	if doc.Release.Tag == "" {
+		return agentcli.NewExitError(agentcli.ExitNotApplicable, VerdictRolloutUnknown, "release: %s/%s is available, but the release wait named no version to roll out", r.Owner, r.Repo)
+	}
 
 	var charts []string
 	for _, a := range doc.Release.Artifacts {
