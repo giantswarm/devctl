@@ -6,9 +6,11 @@
 #
 # On every push to {{{{ .ReleaseBranch }}}}, each image whose directory, or a file under
 # {{{{ .ImagesDir }}}}/ outside every image directory (the build files the images share),
-# changed since the image's latest <name>/vX.Y.Z tag gets its next tag and a
-# GitHub Release. The pushed commit's subject -- the merged pull request's
-# squash subject -- sets the bump: a breaking change (`type!:` or a
+# was added, changed or removed since the image's latest <name>/vX.Y.Z tag
+# gets its next tag and a GitHub Release. An image directory is one holding a
+# Dockerfile at the pushed commit or at that tag, so removing an image
+# releases none of the others. The pushed commit's subject -- the merged pull
+# request's squash subject -- sets the bump: a breaking change (`type!:` or a
 # `BREAKING CHANGE` footer) the major, a `feat` the minor, anything else the
 # patch; an image's first tag is v0.1.0. Diffing against the image's own last
 # tag, not just the pushed commit, lets a failed or skipped run catch up on the
@@ -68,14 +70,10 @@ jobs:
           fi
           echo "bump from the commit subject \"${subject}\": ${bump}"
 
-          images=() shared=()
+          images=()
           for path in "${IMAGES_DIR}"/*; do
-            [ -e "$path" ] || continue
-            if [ -f "${path}/Dockerfile" ]; then
-              images+=("$(basename "$path")")
-            else
-              shared+=("$path")
-            fi
+            [ -f "${path}/Dockerfile" ] || continue
+            images+=("$(basename "$path")")
           done
           if [ "${#images[@]}" -eq 0 ]; then
             echo "::warning title=No image::no ${IMAGES_DIR}/<name>/Dockerfile: nothing to release."
@@ -90,10 +88,22 @@ jobs:
               | { grep -E "^${name}/v[0-9]+\.[0-9]+\.[0-9]+$" || true; } | head -1)
             if [ -z "$latest" ]; then
               next="${name}/v0.1.0"
-            elif git diff --quiet "$latest" HEAD -- "${IMAGES_DIR}/${name}" ${shared[@]+"${shared[@]}"}; then
-              echo "${name}: unchanged since ${latest}"
-              continue
             else
+              # All of IMAGES_DIR but the other images' directories, so that a
+              # shared file added, changed or removed since the tag counts.
+              others=()
+              for other in "${images[@]}"; do
+                [ "$other" = "$name" ] || others+=(":(exclude)${IMAGES_DIR}/${other}")
+              done
+              while IFS= read -r path; do
+                if [ "$path" != "${IMAGES_DIR}/${name}" ] && git cat-file -e "${latest}:${path}/Dockerfile" 2>/dev/null; then
+                  others+=(":(exclude)${path}")
+                fi
+              done < <(git ls-tree -d --name-only "$latest" "${IMAGES_DIR}/")
+              if git diff --quiet "$latest" HEAD -- "${IMAGES_DIR}" ${others[@]+"${others[@]}"}; then
+                echo "${name}: unchanged since ${latest}"
+                continue
+              fi
               IFS=. read -r major minor patch <<<"${latest#"${name}"/v}"
               case "$bump" in
                 major) next="${name}/v$((major + 1)).0.0" ;;

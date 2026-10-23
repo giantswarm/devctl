@@ -334,6 +334,13 @@ func Test_MultiImageSetupPicksTheImages(t *testing.T) {
 			want: []string{"no-op"},
 		},
 		{
+			name: "a branch that removes the shared build files builds every image",
+			change: func(t *testing.T, dir string) {
+				mustRun(t, dir, "git", "rm", "-q", "-r", "toolchains/lib")
+			},
+			want: []string{"build-a", "build-b", "build-c"},
+		},
+		{
 			name: "a branch outside the images builds nothing",
 			change: func(t *testing.T, dir string) {
 				writeFile(t, filepath.Join(dir, "README.md"), "changed\n")
