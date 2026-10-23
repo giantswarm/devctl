@@ -390,8 +390,9 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 // auto-release and built by the tag pipeline of that image. GitHub's latest
 // release is the newest of any line, so the step verifies the newest
 // published release of each line (imageReleases), each as stepRelease
-// verifies a single line's. A missing CircleCI client or project skips the
-// step once, for all lines alike.
+// verifies a single line's, the newest release first. A missing CircleCI
+// client or project skips the step once, for all lines alike, naming the
+// newest release.
 func (r *Runner) stepImageReleases(ctx context.Context, s *run, sr *StepResult) error {
 	releases, err := r.imageReleases(ctx, s)
 	if err != nil {
@@ -401,21 +402,59 @@ func (r *Runner) stepImageReleases(ctx context.Context, s *run, sr *StepResult) 
 		sr.Summary = "no <name>/vX.Y.Z release yet"
 		return nil
 	}
-	var summaries []string
+	// GitHub's latest release is verified first: a skip names it, the
+	// release a reader without CircleCI (giantswarm-repo-manager's
+	// clientless steps) verifies from the tag commit's statuses instead.
+	newest, err := r.latestImageRelease(ctx, s, releases)
+	if err != nil {
+		return err
+	}
+	summary, skipped, err := r.verifyRelease(ctx, s, sr, newest.GetTagName(), newest.GetCreatedAt().Time)
+	if err != nil {
+		return err
+	}
+	if skipped {
+		sr.Verdict = VerdictSkipped
+		sr.Summary = summary
+		return nil
+	}
+	// The newest release leads the summary, the others follow by image name:
+	// a reader of GitHub's latest release finds it built at the start.
+	summaries := []string{summary}
 	for _, release := range releases {
-		summary, skipped, err := r.verifyRelease(ctx, s, sr, release.GetTagName(), release.GetCreatedAt().Time)
+		if release == newest {
+			continue
+		}
+		summary, _, err := r.verifyRelease(ctx, s, sr, release.GetTagName(), release.GetCreatedAt().Time)
 		if err != nil {
 			return err
-		}
-		if skipped {
-			sr.Verdict = VerdictSkipped
-			sr.Summary = summary
-			return nil
 		}
 		summaries = append(summaries, summary)
 	}
 	sr.Summary = strings.Join(summaries, "; ")
 	return nil
+}
+
+// latestImageRelease is the line release of releases that GitHub names its
+// latest release, the one the inventory reads: GitHub orders releases by
+// their commit's date, so the releases of two images cut from one commit tie
+// and only GitHub's own answer says which is latest. A latest release
+// outside every line (a plain vX.Y.Z) leaves the newest line release.
+func (r *Runner) latestImageRelease(ctx context.Context, s *run, releases []*github.RepositoryRelease) (*github.RepositoryRelease, error) {
+	latest, resp, err := r.GitHub.Repositories.GetLatestRelease(ctx, s.owner, s.name)
+	if err != nil && !isNotFound(resp, err) {
+		return nil, err
+	}
+	newest := releases[0]
+	for _, release := range releases {
+		if release.GetTagName() == latest.GetTagName() {
+			return release, nil
+		}
+		if release.GetCreatedAt().After(newest.GetCreatedAt().Time) {
+			newest = release
+		}
+	}
+	return newest, nil
 }
 
 // imageReleases returns the newest published release of each image line of

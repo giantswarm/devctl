@@ -111,6 +111,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile` and giantswarm-repo-manager: the release step of a `multi-image` entry verifies GitHub's latest
+  release first. A skip (no CircleCI client, project not followed) names it, and the summary leads with it before
+  the other image lines, so the manager's clientless step reads the release its inventory read instead of reporting
+  the alphabetically first line as not the latest.
 - `gen workflows` and `gen circleci`, `multi-image` flavour: a shared file or directory under `toolchains/` that a
   commit removes counts as a change. The Auto Release diffs each image against its last tag on all of `toolchains/`
   but the other images' directories (those holding a `Dockerfile` at HEAD or at that tag), so removing shared build
