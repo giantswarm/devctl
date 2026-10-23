@@ -101,6 +101,16 @@ const (
     flavours: [app]
     language: go
 `
+	// multiImageEntryYAML declares a multi-image repository: one image per
+	// toolchains/<name>/ directory, each released as <name>/vX.Y.Z.
+	multiImageEntryYAML = `- name: sample-service
+  componentType: service
+  description: A sample service
+  visibility: public
+  gen:
+    flavours: [multi-image]
+    language: generic
+`
 	// customerEntryYAML declares a customer repository: the flavour is the
 	// profile, the component type the catalog's type.
 	customerEntryYAML = `- name: sample-service
@@ -2594,6 +2604,103 @@ func TestSteps(t *testing.T) {
 				require.Empty(t, res.Findings())
 				require.Empty(t, h.cc.pages, "no pipeline list is read")
 				require.Empty(t, h.cc.mutations, "no pipeline is triggered")
+			},
+		},
+		{
+			// A multi-image repository releases one line per image. GitHub's
+			// latest release is the newest of any line; the step verifies the
+			// newest published release of each line instead, older ones,
+			// drafts, pre-releases and tags outside the grammar left out.
+			name: "release: a multi-image repository verifies the newest release of each image line", step: StepRelease, entry: multiImageEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				now := time.Now()
+				r.release, r.releaseAt = "python/v0.2.0", now.Add(-time.Hour)
+				r.releases = []fakeRelease{
+					{tag: "go/v0.3.0-rc.1", at: now.Add(-50 * time.Minute), prerelease: true},
+					{tag: "node/v0.3.0", at: now.Add(-55 * time.Minute), draft: true},
+					{tag: "python/v0.2.0", at: now.Add(-time.Hour)},
+					{tag: "node/v0.2.0", at: now.Add(-time.Hour)},
+					{tag: "go/v0.10.0", at: now.Add(-time.Hour)},
+					{tag: "go/v0.9.0", at: now.Add(-2 * time.Hour)},
+					{tag: "v1.0.0", at: now.Add(-3 * time.Hour)},
+				}
+				r.releasesPage = 2
+				p := h.cc.follow(owner, name)
+				for _, tag := range []string{"go/v0.10.0", "node/v0.2.0", "python/v0.2.0"} {
+					h.cc.seedPipeline(p, circleciclient.PipelineVCS{Tag: tag}, now.Add(-time.Minute), "success")
+				}
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Empty(t, res.Findings())
+				summary := res.Step(StepRelease).Summary
+				require.Regexp(t, `^release go/v0\.10\.0 built: pipeline \d+, workflows build succeeded; release node/v0\.2\.0 built: .*; release python/v0\.2\.0 built: `, summary)
+				require.NotContains(t, summary, "go/v0.9.0")
+				require.NotContains(t, summary, "v0.3.0")
+				require.NotContains(t, summary, "v1.0.0")
+			},
+		},
+		{
+			// Each line is held against its own tag pipeline: a red release
+			// of one image is reported beside the built ones. Release wait
+			// follows vX.Y.Z tags only, so the fix does not name it.
+			name: "release: a multi-image repository reports a red image release", step: StepRelease, entry: multiImageEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				now := time.Now()
+				r.releases = []fakeRelease{{tag: "node/v0.2.0", at: now.Add(-time.Hour)}, {tag: "go/v0.2.0", at: now.Add(-time.Hour)}}
+				p := h.cc.follow(owner, name)
+				h.cc.seedPipeline(p, circleciclient.PipelineVCS{Tag: "go/v0.2.0"}, now.Add(-time.Minute), "success")
+				h.cc.seedPipeline(p, circleciclient.PipelineVCS{Tag: "node/v0.2.0"}, now.Add(-time.Minute), "failed")
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRedRelease, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Len(t, res.Findings(), 1)
+				f := res.Findings()[0]
+				require.Contains(t, f.Message, "release node/v0.2.0 of "+owner+"/"+name+" is red")
+				require.NotContains(t, f.Fix, "devctl release wait")
+				require.Contains(t, res.Step(StepRelease).Summary, "release go/v0.2.0 built")
+				require.Contains(t, res.Step(StepRelease).Summary, "release node/v0.2.0: pipeline")
+			},
+		},
+		{
+			// An image tag CircleCI never built is a missed build of that line.
+			name: "release: a multi-image repository reports an image release without a pipeline", step: StepRelease, entry: multiImageEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.releases = []fakeRelease{{tag: "go/v0.2.0", at: time.Now().Add(-time.Hour)}}
+				h.cc.seedPipeline(h.cc.follow(owner, name), circleciclient.PipelineVCS{Branch: "main"}, time.Now().Add(-2*time.Hour), "success")
+			},
+			wantCheck: VerdictReported, wantFinding: FindingMissedTagBuild, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Contains(t, res.Findings()[0].Message, "release go/v0.2.0 of "+owner+"/"+name+" has no pipeline")
+				require.Empty(t, h.cc.mutations, "no pipeline is triggered")
+			},
+		},
+		{
+			name: "release: a multi-image repository without an image release has none yet", step: StepRelease, entry: multiImageEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.releases = []fakeRelease{{tag: "v0.1.0", at: time.Now().Add(-time.Hour)}}
+				h.cc.follow(owner, name)
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "no <name>/vX.Y.Z release yet", res.Step(StepRelease).Summary)
+				require.Empty(t, h.cc.pages, "no pipeline list is read")
+			},
+		},
+		{
+			name: "release: a multi-image repository not followed on CircleCI is skipped once", step: StepRelease, entry: multiImageEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.releases = []fakeRelease{{tag: "node/v0.2.0", at: time.Now().Add(-time.Hour)}, {tag: "go/v0.2.0", at: time.Now().Add(-time.Hour)}}
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "release go/v0.2.0: project not followed on CircleCI", res.Step(StepRelease).Summary)
+				require.Empty(t, res.Findings())
 			},
 		},
 		{
