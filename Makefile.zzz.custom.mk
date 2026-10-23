@@ -39,3 +39,26 @@ $(GIT_CLIFF_DIR)/git-cliff:
 	  || { [ -z "$$CI" ] || exit 1; echo "warning: cannot download git-cliff from $(GIT_CLIFF_URL); its tests will skip"; }
 
 test: git-cliff
+
+# The merge and setup-render cases in pkg/gen/input/circleci run the generated
+# setup config's yq expressions, which need mikefarah's yq v4 (cimg/base's), so
+# `make test` puts a pinned one first on PATH: the first yq elsewhere may be the
+# Python jq-wrapper. Without one the cases fail rather than skip.
+YQ_VERSION := 4.54.1
+YQ_DIR := $(CURDIR)/.build/yq/$(YQ_VERSION)
+YQ_TARGET := $(shell uname -s | tr '[:upper:]' '[:lower:]')_$(shell uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+YQ_URL := https://github.com/mikefarah/yq/releases/download/v$(YQ_VERSION)/yq_$(YQ_TARGET)
+
+export PATH := $(YQ_DIR):$(PATH)
+
+.PHONY: yq
+yq: $(YQ_DIR)/yq ## Install the pinned mikefarah yq under .build.
+
+# Off CI a failed download only warns: the cases then fall back to a mikefarah
+# yq v4 on PATH or $YQ, and fail naming what they found when there is none.
+$(YQ_DIR)/yq:
+	@mkdir -p $(YQ_DIR)
+	@curl -sSfL -o $@.download $(YQ_URL) && chmod +x $@.download && mv $@.download $@ \
+	  || { rm -f $@.download; [ -z "$$CI" ] || exit 1; echo "warning: cannot download yq from $(YQ_URL)"; }
+
+test: yq

@@ -3,7 +3,7 @@
 bin-dist/
 TODO
 
-# Pinned tools `make test` downloads (git-cliff).
+# Pinned tools `make test` downloads (git-cliff, yq).
 .build/
 
 # Scratch files architect's go-build/go-test write into the worktree. Ignored so
