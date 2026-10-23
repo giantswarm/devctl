@@ -55,8 +55,11 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	// isn't in the declaration this command reads, so it's read from the
 	// origin remote, with --repo-name as the override a render with no real
 	// checkout (e.g. devctl repo create's scaffold) has to pass explicitly.
+	// A multi-image repository releases without git-cliff, so it has no
+	// cliff.toml to name the repository in.
+	multiImage := r.flag.Flavours.Contains(gen.FlavourMultiImage)
 	repoName := r.flag.RepoName
-	if repoName == "" && r.flag.ReleaseWorkflow == releaseWorkflowAutoRelease {
+	if repoName == "" && r.flag.ReleaseWorkflow == releaseWorkflowAutoRelease && !multiImage {
 		repoName, err = gitremote.RepoName(ctx, ".")
 		if err != nil {
 			return microerror.Maskf(invalidFlagError, "cliff.toml's [remote.github].repo cannot be read from the origin remote: %s; pass --%s <name>", err, flagRepoName)
@@ -102,7 +105,20 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	// over from manual migrations predating the `zz_generated.` rename is
 	// deleted in BOTH branches via AutoReleaseLegacyDeletion, and so is the
 	// retired zz_generated.changelog.yaml via ChangelogDeletion.
-	if r.flag.ReleaseWorkflow == releaseWorkflowAutoRelease {
+	if multiImage {
+		// Validate admits a multi-image repository on auto-release alone. Its
+		// workflow takes the auto-release path, so a switch from either flow
+		// to it, or back, leaves one set of release files.
+		inputs = append(inputs,
+			workflowsInput.AutoReleaseLegacyDeletion(),
+			workflowsInput.AutoReleaseMultiImage(),
+			workflowsInput.ChangelogDeletion(),
+			workflowsInput.CliffTomlDeletion(),
+			workflowsInput.CreateReleaseDeletion(),
+			workflowsInput.CreateReleasePRDeletion(),
+			workflowsInput.ValidateChangelogDeletion(),
+		)
+	} else if r.flag.ReleaseWorkflow == releaseWorkflowAutoRelease {
 		inputs = append(inputs,
 			workflowsInput.AutoReleaseLegacyDeletion(),
 			workflowsInput.AutoRelease(),

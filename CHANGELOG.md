@@ -9,6 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen circleci` and `gen workflows`: the `multi-image` flavour, a repository of several images, one per
+  `toolchains/<name>/` directory holding a `Dockerfile`, each released as its own `<name>/vX.Y.Z` line (giantswarm/agent-toolchains).
+  The setup job reads the image directories at pipeline runtime: a branch pushes an amd64 dev image of each image it
+  changed (every image when it changed a file under `toolchains/` outside them), a tag `<name>/vX.Y.Z` publishes that
+  image multi-arch to gsoci after the repository's `check-image` job when `.circleci/custom.yml` defines one.
+  `--release-workflow auto-release`, the only one it takes, tags each image changed since its latest tag from the
+  pushed commit's subject and makes sure CircleCI built every tag; `cliff.toml` is removed.
+
 - `ci job <owner/repo> <job number> [--lines <n>]`: one CircleCI job, one JSON document: its status, page and times,
   every step with its status and times, and the last lines (200 by default) of its failed steps' output without
   control sequences, the tail `pr wait --failed-log` reads, for a job of any pipeline. It takes the `devctl auth

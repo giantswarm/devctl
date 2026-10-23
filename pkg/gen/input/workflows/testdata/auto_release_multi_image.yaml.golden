@@ -1,0 +1,207 @@
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+# yamllint disable rule:truthy
+# Push-based release tagger of a multi-image repository: one image per
+# toolchains/<name>/ directory holding a Dockerfile, each released as its own
+# <name>/vX.Y.Z line.
+#
+# On every push to main, each image whose directory, or a file under
+# toolchains/ outside every image directory (the build files the images share),
+# changed since the image's latest <name>/vX.Y.Z tag gets its next tag and a
+# GitHub Release. The pushed commit's subject -- the merged pull request's
+# squash subject -- sets the bump: a breaking change (`type!:` or a
+# `BREAKING CHANGE` footer) the major, a `feat` the minor, anything else the
+# patch; an image's first tag is v0.1.0. Diffing against the image's own last
+# tag, not just the pushed commit, lets a failed or skipped run catch up on the
+# next one. There are no release candidates: each tag is stable.
+#
+# A repository's own rule for a release goes in .github/release-gate.custom.sh:
+# when the pushed commit carries it, it runs with each tag about to be cut as
+# its argument, and a non-zero exit skips that tag and fails the run.
+#
+# Each tag push starts the CircleCI tag pipeline (.circleci/config.yml), which
+# runs the repository's check-image job and publishes that image; the last
+# step makes sure CircleCI picked every tag up.
+name: Auto-release
+
+on:
+  push:
+    branches:
+      - main
+  # Re-runs the same detection, e.g. after a failed run.
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: auto-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write       # push the tags and create the GitHub Releases
+    env:
+      IMAGES_DIR: toolchains
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0        # full history: every image's last tag
+          fetch-tags: true
+
+      - name: Tag and release the changed images
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          message=$(git log -1 --format=%B HEAD)
+          subject=$(head -1 <<<"$message")
+          if grep -qE '^[a-z]+(\([^)]*\))?!:' <<<"$subject" || grep -qE '^BREAKING[ -]CHANGE' <<<"$message"; then
+            bump="major"
+          elif grep -qE '^feat(\([^)]*\))?:' <<<"$subject"; then
+            bump="minor"
+          else
+            bump="patch"
+          fi
+          echo "bump from the commit subject \"${subject}\": ${bump}"
+
+          images=() shared=()
+          for path in "${IMAGES_DIR}"/*; do
+            [ -e "$path" ] || continue
+            if [ -f "${path}/Dockerfile" ]; then
+              images+=("$(basename "$path")")
+            else
+              shared+=("$path")
+            fi
+          done
+          if [ "${#images[@]}" -eq 0 ]; then
+            echo "::warning title=No image::no ${IMAGES_DIR}/<name>/Dockerfile: nothing to release."
+            exit 0
+          fi
+
+          gate=.github/release-gate.custom.sh
+          refused=()
+          : > tags.txt
+          for name in "${images[@]}"; do
+            latest=$(git tag --list "${name}/v*" --sort=-v:refname \
+              | { grep -E "^${name}/v[0-9]+\.[0-9]+\.[0-9]+$" || true; } | head -1)
+            if [ -z "$latest" ]; then
+              next="${name}/v0.1.0"
+            elif git diff --quiet "$latest" HEAD -- "${IMAGES_DIR}/${name}" ${shared[@]+"${shared[@]}"}; then
+              echo "${name}: unchanged since ${latest}"
+              continue
+            else
+              IFS=. read -r major minor patch <<<"${latest#"${name}"/v}"
+              case "$bump" in
+                major) next="${name}/v$((major + 1)).0.0" ;;
+                minor) next="${name}/v${major}.$((minor + 1)).0" ;;
+                *)     next="${name}/v${major}.${minor}.$((patch + 1))" ;;
+              esac
+            fi
+
+            if [ -f "$gate" ] && ! bash "$gate" "$next"; then
+              echo "::error title=Release gate refused::${gate} refused ${next}: no tag and no release are cut for it."
+              refused+=("$next")
+              continue
+            fi
+
+            echo "${name}: releasing ${next}"
+            # One tag per push: CircleCI starts one pipeline per tag event.
+            git tag "$next"
+            git push origin "refs/tags/${next}"
+            notes=(--generate-notes)
+            [ -z "$latest" ] || notes+=(--notes-start-tag "$latest")
+            gh release create "$next" --title "$next" --verify-tag "${notes[@]}"
+            echo "$next" >> tags.txt
+            sleep 2
+          done
+          if [ "${#refused[@]}" -gt 0 ]; then
+            echo "::error title=Release gate refused::${refused[*]}"
+            exit 1
+          fi
+
+      # GitHub delivers a tag's webhook to CircleCI once and never retries.
+      # CIRCLECI_API_TOKEN is an org-level secret holding a CircleCI personal
+      # API token; without it a lost webhook can only be reported.
+      - name: Verify CircleCI picked up the tags
+        if: always() && hashFiles('.circleci/config.yml') != '' && hashFiles('tags.txt') != ''
+        env:
+          CIRCLECI_API_TOKEN: ${{ secrets.CIRCLECI_API_TOKEN }}
+          CIRCLECI_PIPELINE_WAIT_SECONDS: "120"
+        run: |
+          set -euo pipefail
+          api="https://circleci.com/api/v2/project/gh/${GITHUB_REPOSITORY}/pipeline"
+          auth=()
+          if [ -n "${CIRCLECI_API_TOKEN}" ]; then
+            auth=(-H "Circle-Token: ${CIRCLECI_API_TOKEN}")
+          fi
+
+          # pipeline <tag>: "<HTTP code of the last read> <number of the tag's
+          # pipeline>", the number empty when there is none yet.
+          pipeline() {
+            local url=$api pages=0 resp body next code="" found=""
+            while [ -n "$url" ] && [ "$pages" -lt 2 ]; do
+              resp=$(curl -sS ${auth[@]+"${auth[@]}"} -w '\n%{http_code}' "$url" || printf '\n000')
+              code=${resp##*$'\n'}
+              body=${resp%$'\n'*}
+              [ "$code" = 200 ] || break
+              found=$(jq -r --arg tag "$1" '[.items[] | select(.vcs.tag == $tag)][0] | select(. != null) | .number' <<<"$body")
+              [ -z "$found" ] || break
+              next=$(jq -r '.next_page_token // empty' <<<"$body")
+              url=${next:+"${api}?page-token=${next}"}
+              pages=$((pages + 1))
+            done
+            echo "$code $found"
+          }
+
+          failed=0
+          deadline=$((SECONDS + CIRCLECI_PIPELINE_WAIT_SECONDS))
+          while read -r tag; do
+            [ -n "$tag" ] || continue
+            while :; do
+              read -r code number < <(pipeline "$tag")
+              if [ -n "$number" ]; then
+                echo "CircleCI pipeline #${number} exists for ${tag}"
+                break
+              fi
+              case "$code" in
+                200) ;;
+                *) break ;;
+              esac
+              [ "$SECONDS" -lt "$deadline" ] || break
+              echo "no CircleCI pipeline for ${tag} yet; retrying in 10 s"
+              sleep 10
+            done
+            [ -z "$number" ] || continue
+
+            manual="curl -X POST -H 'Circle-Token: <token>' -H 'Content-Type: application/json' -d '{\"tag\":\"${tag}\"}' ${api}"
+            case "$code" in
+              200)
+                if [ -z "${CIRCLECI_API_TOKEN}" ]; then
+                  echo "::error::CircleCI never built ${tag} and there is no CIRCLECI_API_TOKEN secret to trigger it. Fix by hand: ${manual}"
+                  failed=1
+                  continue
+                fi
+                echo "CircleCI never built ${tag}; triggering the pipeline through the API"
+                resp=$(curl -sS "${auth[@]}" -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' -d "{\"tag\":\"${tag}\"}" "$api" || printf '\n000')
+                if [ "${resp##*$'\n'}" != 201 ]; then
+                  echo "::error::triggering the CircleCI pipeline for ${tag} failed: ${resp%$'\n'*}"
+                  failed=1
+                fi
+                ;;
+              404)
+                echo "::warning::cannot verify that CircleCI built ${tag}: the project is private or not followed on CircleCI. Check https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY}"
+                ;;
+              *)
+                echo "::error::could not read the CircleCI pipelines (HTTP ${code}); cannot verify that ${tag} was built. Check https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY} and, if the tag is missing: ${manual}"
+                failed=1
+                ;;
+            esac
+          done < tags.txt
+          exit "$failed"

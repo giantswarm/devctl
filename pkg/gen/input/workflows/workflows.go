@@ -85,6 +85,12 @@ func (w *Workflows) AutoRelease() input.Input {
 	return file.NewAutoReleaseInput(w.params)
 }
 
+// AutoReleaseMultiImage is the Auto Release of a multi-image repository: one
+// <name>/vX.Y.Z release line per image directory.
+func (w *Workflows) AutoReleaseMultiImage() input.Input {
+	return file.NewAutoReleaseMultiImageInput(w.params)
+}
+
 func (w *Workflows) AutoReleaseDeletion() input.Input {
 	return file.NewAutoReleaseDeletionInput(w.params)
 }

@@ -485,7 +485,8 @@ type Config struct {
 	// ImageName overrides the `giantswarm/<repo>` default image name on the
 	// image jobs. Set it for repos whose published image differs from the repo
 	// name (e.g. kserve -> giantswarm/kserve-controller). Empty keeps the orb
-	// default.
+	// default. With the multi-image flavour it is the prefix every image's
+	// name is appended to, giantswarm/<repo> when empty.
 	ImageName string
 	// ImagePlatforms overrides the buildx platform list on the image jobs.
 	// Empty lets the orb default apply. Set it for single-architecture images
@@ -710,7 +711,69 @@ func resolveImageBuilds(platforms string, resourceClasses map[string]string) (st
 // generation time rather than interpreted by the CI shell.
 var goTestArtifactsPattern = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
 
+// MultiImageDefaultBranch is the branch a multi-image repository's branch
+// builds diff against to find the changed images. It builds nothing itself:
+// its merges are released by their tags.
+const MultiImageDefaultBranch = "main"
+
+// The registries-data lines of the multi-image jobs: every image goes to one
+// registry, gsoci, or gsociprivate alone for a repository whose images must
+// stay private. The trailing true lets branch builds push their dev images.
+const (
+	multiImageRegistryPublic  = "public gsoci.azurecr.io ACR_GSOCI_USERNAME ACR_GSOCI_PASSWORD true"
+	multiImageRegistryPrivate = "private gsociprivate.azurecr.io ACR_GSOCIPRIVATE_USERNAME ACR_GSOCIPRIVATE_PASSWORD true"
+)
+
+// newMultiImage renders the pipeline of a multi-image repository (the
+// multi-image flavour). Its images are found at pipeline runtime, so only
+// the knobs that apply to every image are read: ImageName (the prefix of the
+// image names), ImagePlatforms (of the release build), ForcePublic and
+// ImagePrivateOnly. The language selects nothing: the images are the build.
+func newMultiImage(config Config) (*CircleCI, error) {
+	if config.Flavours.Contains(gen.FlavourApp) || config.Flavours.Contains(gen.FlavourCLI) {
+		return nil, microerror.Maskf(invalidConfigError, "the %s flavour is a repository of images alone: it does not combine with the %s or %s flavour", gen.FlavourMultiImage, gen.FlavourApp, gen.FlavourCLI)
+	}
+	if config.ForcePublic && config.ImagePrivateOnly {
+		return nil, microerror.Maskf(invalidConfigError, "ForcePublic and ImagePrivateOnly are mutually exclusive")
+	}
+	if config.ImageDockerfile != "" || config.ImageNativeBuilds || len(config.ImageResourceClasses) > 0 || config.ImagePreBuildJob != "" {
+		return nil, microerror.Maskf(invalidConfigError, "ImageDockerfile, ImageNativeBuilds, ImageResourceClasses and ImagePreBuildJob do not apply to the %s flavour: each image is %s/<name>/Dockerfile, built in one multi-platform job", gen.FlavourMultiImage, gen.MultiImageDir)
+	}
+
+	imageNamePrefix := config.ImageName
+	if imageNamePrefix == "" {
+		imageNamePrefix = "giantswarm/" + config.RepoName
+	}
+	imagePlatforms := config.ImagePlatforms
+	if imagePlatforms == "" {
+		imagePlatforms = DefaultImagePlatforms
+	}
+	registry := multiImageRegistryPublic
+	if config.ImagePrivateOnly {
+		registry = multiImageRegistryPrivate
+	}
+
+	return &CircleCI{
+		params: params.Params{
+			RepoName:               config.RepoName,
+			ForcePublic:            config.ForcePublic,
+			ImagePlatforms:         imagePlatforms,
+			OrbVersion:             OrbVersion,
+			ContinuationOrbVersion: ContinuationOrbVersion,
+			MultiImage:             true,
+			ImagesDir:              gen.MultiImageDir,
+			DefaultBranch:          MultiImageDefaultBranch,
+			ImageNamePrefix:        imageNamePrefix,
+			Registry:               registry,
+		},
+	}, nil
+}
+
 func New(config Config) (*CircleCI, error) {
+	if config.Flavours.Contains(gen.FlavourMultiImage) {
+		return newMultiImage(config)
+	}
+
 	// Every job is derived from a signal. With none of them set the template
 	// renders an empty `jobs:` list, which is an invalid CircleCI config.
 	hasApp := config.Flavours.Contains(gen.FlavourApp)
