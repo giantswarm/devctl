@@ -73,6 +73,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen workflows`: the customer repositories' `add_customer_board_automation` workflow passes the
+  `giantswarm-project-automation` App's `PROJECT_AUTOMATION_CLIENT_ID` and `PROJECT_AUTOMATION_PRIVATE_KEY` to
+  `issue-to-customer-board.yaml` instead of architectbot's `ISSUE_AUTOMATION` token (giantswarm/giantswarm#38800).
 - `devctl serve` names the caller from the person's GitHub grant (`GET /user`, kept five minutes), not from the ID
   token muster forwards: logs carry `login` and `userId`, metrics `login` and `user_id` instead of `subject`. A tool
   call without a grant GitHub accepts, `pr_merge_status` included, is `auth_required` marked `grant_required`. The
