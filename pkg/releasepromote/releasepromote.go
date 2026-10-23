@@ -72,6 +72,7 @@ type GitHub interface {
 	DefaultBranch(ctx context.Context, owner, repo string) (string, error)
 	ReadFile(ctx context.Context, owner, repo, path, ref string) ([]byte, bool, error)
 	ListReleases(ctx context.Context, owner, repo string) ([]githubclient.Release, error)
+	GetReleaseByTag(ctx context.Context, owner, repo, tag string) (githubclient.Release, error)
 	Reachable(ctx context.Context, owner, repo, ref, branch string) (bool, error)
 	GetCombinedStatus(ctx context.Context, owner, repo, ref string) (githubclient.CombinedStatus, error)
 	DispatchWorkflowRun(ctx context.Context, owner, repo, file, ref string, inputs map[string]any) (githubclient.DispatchedRun, error)
@@ -104,7 +105,8 @@ type Config struct {
 	Follow bool
 	// FollowTimeout bounds following; zero means DefaultFollowTimeout.
 	FollowTimeout time.Duration
-	// Clock paces following; the zero value is the wall clock.
+	// Clock paces following and the retries of a release read by its tag;
+	// the zero value is the wall clock.
 	Clock agentcli.Clock
 	// Progress receives one line per repository; nil is silent.
 	Progress *agentcli.Progress
@@ -180,6 +182,12 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 	if err != nil {
 		return entry.set(StateFailed, "listing the releases: %v", err)
 	}
+	if config.Version != "" {
+		releases, err = withNamedRelease(ctx, config, owner, repo, releases)
+		if err != nil {
+			return entry.set(StateFailed, "reading the release %s: %v", config.Version, err)
+		}
+	}
 	reachable := func(tag string) (bool, error) {
 		return gh.Reachable(ctx, owner, repo, tag, branch)
 	}
@@ -245,6 +253,39 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 		entry.Warnings = append(entry.Warnings, fmt.Sprintf("GitHub named no run for the dispatch, so its stable gate is not followed; follow the release with devctl release wait %s %s", repository, StableVersion(candidate)))
 	}
 	return entry.set(StateDispatched, "dispatched %s on %s to promote %s%s", Workflow, branch, candidate, leftOut)
+}
+
+// The reads of a release by its tag before it counts as missing, and the
+// pause between two.
+const (
+	releaseReads    = 3
+	releaseInterval = 2 * time.Second
+)
+
+// withNamedRelease is releases with the release of config.Version added when
+// the list lacks it: GitHub's release list intermittently answers empty, so
+// a candidate named for promotion is read by its tag, briefly retried while
+// GitHub answers 404. A release still missing then is left out, for
+// [SelectVersion] to refuse.
+func withNamedRelease(ctx context.Context, config Config, owner, repo string, releases []githubclient.Release) ([]githubclient.Release, error) {
+	if slices.ContainsFunc(releases, func(r githubclient.Release) bool { return r.Tag == config.Version }) {
+		return releases, nil
+	}
+	for read := 1; ; read++ {
+		release, err := config.GitHub.GetReleaseByTag(ctx, owner, repo, config.Version)
+		if err == nil {
+			return append(releases, release), nil
+		}
+		if !githubclient.IsNotFound(err) {
+			return releases, err
+		}
+		if read == releaseReads {
+			return releases, nil
+		}
+		if err := config.Clock.Sleep(ctx, releaseInterval); err != nil {
+			return releases, err
+		}
+	}
 }
 
 // notBuilt is entry refused as not_built, its candidate's statuses judged
