@@ -173,16 +173,20 @@ func (w *Waiter) judgeHelmRelease(ctx context.Context, hr *unstructured.Unstruct
 	if src.exists {
 		d.source = &src.object
 	}
+	// The newest deployed release is what runs: mid-upgrade the newest
+	// entry is the pending upgrade, after a failed one the failure.
 	release, releaseNamespace := "", ""
-	if history, _, _ := unstructured.NestedSlice(hr.Object, "status", "history"); len(history) > 0 {
-		if h, ok := history[0].(map[string]any); ok && h["status"] == statusDeployed {
+	history, _, _ := unstructured.NestedSlice(hr.Object, "status", "history")
+	for _, entry := range history {
+		if h, ok := entry.(map[string]any); ok && h["status"] == statusDeployed {
 			v, _ := h["chartVersion"].(string)
 			d.RunningVersion = bare(v)
 			release, _ = h["name"].(string)
 			releaseNamespace, _ = h["namespace"].(string)
+			break
 		}
 	}
-	ready, stalled := condition(hr, "Ready"), condition(hr, "Stalled")
+	ready, stalled, reconciling := condition(hr, "Ready"), condition(hr, "Stalled"), condition(hr, "Reconciling")
 	current := num(hr, "status", "observedGeneration") >= hr.GetGeneration()
 
 	if suspended, _, _ := unstructured.NestedBool(hr.Object, "spec", "suspend"); suspended {
@@ -210,6 +214,15 @@ func (w *Waiter) judgeHelmRelease(ctx context.Context, hr *unstructured.Unstruct
 		return d.set(StateNotFollowing, "%s follows %s, which excludes %s; runs %s", d.Source, src.follows, w.version, orNone(d.RunningVersion)), nil
 	}
 	if bare(str(hr, "status", "lastAttemptedRevision")) == w.version && (stalled.status == conditionTrue || (ready.status == conditionFalse && helmReleaseFailures[ready.reason])) {
+		// A failure settles once helm-controller is done with it: at the
+		// current generation, no retry in flight. Until then the upgrade
+		// may still succeed.
+		if !current {
+			return d.set(StateProgressing, "runs %s; %s %s, helm-controller has not observed generation %d yet", orNone(d.RunningVersion), ready.reason, w.version, hr.GetGeneration()), nil
+		}
+		if reconciling.status == conditionTrue {
+			return d.set(StateProgressing, "runs %s; %s %s, helm-controller retrying: %s", orNone(d.RunningVersion), ready.reason, w.version, strings.TrimSpace(reconciling.reason+" "+reconciling.message)), nil
+		}
 		return d.set(StateFailed, "%s %s: %s", ready.reason, w.version, ready.message), nil
 	}
 	if src.ready.found && src.ready.status != conditionTrue {
