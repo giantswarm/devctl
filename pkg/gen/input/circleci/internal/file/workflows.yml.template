@@ -232,6 +232,18 @@ jobs:
 workflows:
   build:
     jobs:
+{{- if .PinVersion }}
+    # Resolve the version once, at the start of the workflow, and persist it to
+    # the workspace (.pipeline_version). Every image and chart job requires
+    # this job and builds with that version instead of resolving its own, so a
+    # stable tag landing while the workflow runs (a promote) cannot give the
+    # image and the chart that references it different versions.
+    - architect/pin-version:
+        name: pin-version
+        filters:
+          tags:
+            only: /^v.*/
+{{- end }}
 {{- if eq .Language "go" }}
     - architect/go-build:
         name: go-build
@@ -356,8 +368,8 @@ workflows:
 {{- if $.ImageName }}
         image: {{ $.ImageName }}
 {{- end }}
-{{- if or $.BuildJobName $.ImagePreBuildJob }}
         requires:
+        - pin-version
 {{- if $.BuildJobName }}
         - {{ $.BuildJobName }}
 {{- end }}
@@ -366,7 +378,6 @@ workflows:
         # image build needs the same workspace handoff as the release build, so
         # the generator carries the dependency.
         - {{ $.ImagePreBuildJob }}
-{{- end }}
 {{- end }}
         filters:
           branches:
@@ -391,6 +402,7 @@ workflows:
         image: {{ .ImageName }}
 {{- end }}
         requires:
+        - pin-version
 {{- range .BranchImageBuilds }}
         - {{ .Name }}
 {{- end }}
@@ -438,8 +450,8 @@ workflows:
 {{- else }}
         split-china-push: true
 {{- end }}
-{{- if or $.BuildJobName $.ImagePreBuildJob }}
         requires:
+        - pin-version
 {{- if $.BuildJobName }}
         - {{ $.BuildJobName }}
 {{- end }}
@@ -448,7 +460,6 @@ workflows:
         # generated job cannot be injected with this dependency via the
         # append-only custom.yml merge, so the generator carries it.
         - {{ $.ImagePreBuildJob }}
-{{- end }}
 {{- end }}
         filters:
           tags:
@@ -475,6 +486,7 @@ workflows:
         split-china-push: true
 {{- end }}
         requires:
+        - pin-version
 {{- range .ReleaseImageBuilds }}
         - {{ .Name }}
 {{- end }}
@@ -508,8 +520,8 @@ workflows:
 {{- else }}
         platforms: linux/amd64
 {{- end }}
-{{- if or .BuildJobName .ImagePreBuildJob }}
         requires:
+        - pin-version
 {{- if .BuildJobName }}
         - {{ .BuildJobName }}
 {{- end }}
@@ -518,7 +530,6 @@ workflows:
         # branch image build needs the same workspace handoff as the release
         # job, so the generator carries the dependency.
         - {{ .ImagePreBuildJob }}
-{{- end }}
 {{- end }}
         filters:
           branches:
@@ -549,8 +560,8 @@ workflows:
         # must not attempt the darwin/windows manifests under QEMU.
         platforms: "linux/amd64,linux/arm64"
 {{- end }}
-{{- if or .BuildJobName .ImagePreBuildJob }}
         requires:
+        - pin-version
 {{- if .BuildJobName }}
         - {{ .BuildJobName }}
 {{- end }}
@@ -560,7 +571,6 @@ workflows:
         # release job (it builds the same Dockerfile), so the generator carries
         # the dependency.
         - {{ .ImagePreBuildJob }}
-{{- end }}
 {{- end }}
         filters:
           branches:
@@ -604,8 +614,8 @@ workflows:
         # build the darwin/windows manifests under QEMU and hangs.
         platforms: "linux/amd64,linux/arm64"
 {{- end }}
-{{- if or .BuildJobName .ImagePreBuildJob }}
         requires:
+        - pin-version
 {{- if .BuildJobName }}
         - {{ .BuildJobName }}
 {{- end }}
@@ -614,7 +624,6 @@ workflows:
         # generated job cannot be injected with this dependency via the
         # append-only custom.yml merge, so the generator carries it.
         - {{ .ImagePreBuildJob }}
-{{- end }}
 {{- end }}
         filters:
           tags:
@@ -681,6 +690,9 @@ workflows:
         push_to_appcatalog: false
         push_to_oci_registry: false
         persist_chart_archive: true
+        # The version pin-version persisted (every chart job attaches the
+        # workspace for it).
+        attach_workspace: true
 {{- if .OwnImages }}
         # app-build-suite fails a chart whose gsoci image references the registry
         # does not carry. build-chart runs before this pipeline pushes its own
@@ -701,8 +713,9 @@ workflows:
             command: echo 'export ABS_HELM_IMAGE_REFERENCE_VALIDATOR_OWN_IMAGE={{ index .OwnImages 0 }}' >> "$BASH_ENV"
 {{- end }}
 {{- end }}
-{{- if .BuildJobName }}
         requires:
+        - pin-version
+{{- if .BuildJobName }}
         - {{ .BuildJobName }}
 {{- end }}
         filters:
@@ -827,7 +840,9 @@ workflows:
         # chart ships only to gsociprivate. The catalog params above are inert.
         push_to_appcatalog: false
 {{- end }}
+        attach_workspace: true
         requires:
+        - pin-version
 {{- if .SkipATS }}
         - build-chart
 {{- else }}
@@ -885,7 +900,9 @@ workflows:
         # chart ships only to gsociprivate. The catalog params above are inert.
         push_to_appcatalog: false
 {{- end }}
+        attach_workspace: true
         requires:
+        - pin-version
 {{- if .ATSOnRelease }}
         - execute-chart-tests-release
 {{- else }}
