@@ -76,6 +76,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `gen workflows`: the customer repositories' `add_customer_board_automation` workflow passes the
   `giantswarm-project-automation` App's `PROJECT_AUTOMATION_CLIENT_ID` and `PROJECT_AUTOMATION_PRIVATE_KEY` to
   `issue-to-customer-board.yaml` instead of architectbot's `ISSUE_AUTOMATION` token (giantswarm/giantswarm#38800).
+- `gen circleci`: the generated pipelines pin architect orb 10.15.1. Its executor runs architect 8.6.20 (Go 1.27.3),
+  which carries the `crypto/x509` fix for the eMudhra intermediate CA compromise of October 2026 (GO-2026-6809), so
+  `go-build` produces binaries the sbom-advisory-operator's `go-stdlib` rule accepts instead of flagging every image
+  built on Go 1.27.2. Its `push-to-app-catalog` pushes the git catalog with the architect GitHub App's token instead of
+  catalogbot's SSH key, and gives up at once on a push the catalog refuses (a throttling 403 is still retried), so the
+  job needs the architect context.
 - `devctl serve` names the caller from the person's GitHub grant (`GET /user`, kept five minutes), not from the ID
   token muster forwards: logs carry `login` and `userId`, metrics `login` and `user_id` instead of `subject`. A tool
   call without a grant GitHub accepts, `pr_merge_status` included, is `auth_required` marked `grant_required`. The

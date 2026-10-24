@@ -198,3 +198,13 @@ jobs:
 ```
 
 `.github/workflows/zz_generated.auto_release.yaml` tags, on every push to the release branch, each image whose directory, or a shared file under `toolchains/`, changed since its latest `<name>/vX.Y.Z` with its next version, from the pushed commit's subject (the squash subject): a breaking change (`type!:` or a `BREAKING CHANGE` footer) the major, a `feat` the minor, anything else the patch, `v0.1.0` for a new image. There are no release candidates: each tag is stable and gets its GitHub release. `.github/release-gate.custom.sh`, when present, runs with each tag about to be cut; a refusal skips that tag and fails the run. The last step makes sure CircleCI built every tag, triggering a lost one through `CIRCLECI_API_TOKEN`. The flavour takes `auto-release` alone, and `cliff.toml` is removed.
+
+## Adding a generator option
+
+A repository's `gen` options are its entry in `repositories/<team>.yaml` of giantswarm/github. The align-files action (`.github/action/index.js` there) turns them into `devctl gen` flags: `installUpdateChart` is `--install-update-chart`, `helmDocsRegen` `--helm-docs-regen`, `ci.releaseWorkflow` `--release-workflow`. An entry without `ci.releaseWorkflow` gets `auto-release` when `ci.generate` is true and `legacy` otherwise, and pre-commit is generated when `ci.generate` is true or `preCommit` is a list (`[]` for the base hooks alone): a repository on GitHub Actions alone that wants Auto Release sets both keys explicitly.
+
+A new option therefore lands in three steps:
+
+1. In devctl: the flag, the template and its golden test. Each generator under `pkg/gen/input/<name>/` compares its output with goldens under `testdata/`, rewritten by `go test ./pkg/gen/input/<name>/ -update`; the workflow tests swap the provenance header for a fixed string (`withFixedHeader`), so a template that is not committed yet renders the same. The provenance files (`*.template.sha`) are gitignored and written by `go generate ./...`, which `make test` runs first.
+2. In giantswarm/github, once the release is out: the devctl pin at that release or later, and the option on the repository's entry. A merged change to an entry aligns that repository; `gh workflow run align-files.yaml --repo giantswarm/github -f repository=<name>` aligns it again, and the run's log names the pull request it opened from `teams-alignment-branch`.
+3. In the repository: review and merge that pull request, then prove the generated workflow with a pull request that exercises it.

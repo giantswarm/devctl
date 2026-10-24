@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
@@ -127,11 +128,12 @@ func (c TagContent) ReleaseModel() (string, error) {
 type Models struct {
 	Release string
 	CI      string
-	// Warning is set when the team-file entry and the tag's workflows
-	// disagree about the release model: the workflows decided, and the
-	// warning names the lagging declaration and its remedy. Empty when the
+	// Warnings name each disagreement between the team-file entry and the
+	// tag's files that the files decided: a release model behind or ahead
+	// of the workflows, with the remedy for the side that lags, and a
+	// multi-image release cut before its generated pipeline. Empty when the
 	// sources agree.
-	Warning string
+	Warnings []string
 }
 
 // EntryReleaseModel is the release model a team-file entry declares:
@@ -151,6 +153,19 @@ func EntryReleaseModel(entry *reposetup.Fields) string {
 	return ReleaseModelLegacy
 }
 
+// EntryMultiImage: the entry declares the multi-image flavour, whose release
+// <name>/vX.Y.Z publishes the one image <owner>/<repo>/<name>.
+func EntryMultiImage(entry *reposetup.Fields) bool {
+	return entry != nil && entry.Gen != nil && slices.Contains(entry.Gen.Flavours, string(gen.FlavourMultiImage))
+}
+
+// entryNamesImage: the release tag is an image's release of a multi-image
+// entry, so the flavour names its one artifact whatever pipeline built it.
+func entryNamesImage(entry *reposetup.Fields, tag string) bool {
+	_, _, ok := imageTag(tag)
+	return ok && EntryMultiImage(entry)
+}
+
 // EntryGeneratesCI: the entry opts into devctl-generated CircleCI
 // configuration.
 func EntryGeneratesCI(entry *reposetup.Fields) bool {
@@ -158,7 +173,8 @@ func EntryGeneratesCI(entry *reposetup.Fields) bool {
 }
 
 // ResolveModels settles the models from the team-file entry (nil when no
-// team file declares the repository) cross-checked against the tag's files.
+// team file declares the repository) cross-checked against the files of the
+// tag (empty while a pull request's tag is not known yet).
 //
 // The release model is what the workflows at the tag run: they made the
 // tag. An entry that says otherwise is a declaration behind or ahead of the
@@ -171,8 +187,11 @@ func EntryGeneratesCI(entry *reposetup.Fields) bool {
 // The CI model is what the .circleci files show, and an entry that declares
 // the generated pipeline explicitly (gen.ci.generate set) has to match them:
 // the artifact names of generated CI come from the entry, so a disagreement
-// there is an error.
-func ResolveModels(entry *reposetup.Fields, content TagContent) (Models, error) {
+// there is an error. Except for an image's release <name>/vX.Y.Z of a
+// multi-image entry cut by the hand-written pipeline that preceded the
+// generated one: the flavour names its image all the same, and the wait goes
+// on with a warning.
+func ResolveModels(entry *reposetup.Fields, content TagContent, tag string) (Models, error) {
 	fromFiles, err := content.ReleaseModel()
 	if err != nil {
 		return Models{}, err
@@ -182,7 +201,7 @@ func ResolveModels(entry *reposetup.Fields, content TagContent) (Models, error) 
 	switch {
 	case fromEntry != "" && fromFiles != "" && fromEntry != fromFiles:
 		m.Release = fromFiles
-		m.Warning = declarationMismatch(fromEntry, fromFiles, content)
+		m.Warnings = append(m.Warnings, declarationMismatch(fromEntry, fromFiles, content))
 	case fromEntry != "":
 		m.Release = fromEntry
 	case fromFiles != "":
@@ -194,6 +213,8 @@ func ResolveModels(entry *reposetup.Fields, content TagContent) (Models, error) 
 	m.CI = content.CIModel()
 	explicit := entry != nil && entry.Gen != nil && entry.Gen.CI != nil && entry.Gen.CI.Generate != nil
 	switch {
+	case EntryGeneratesCI(entry) && m.CI == CIModelHandWritten && entryNamesImage(entry, tag):
+		m.Warnings = append(m.Warnings, fmt.Sprintf("the team-file entry has gen.ci.generate true but %s at %s is hand-written (found: %s): %s predates the generated pipeline, and the multi-image flavour names its image", circleCIDir, short(content.SHA), listOrNone(content.CircleCI), tag))
 	case EntryGeneratesCI(entry) && m.CI != CIModelGenerated:
 		return Models{}, usageErr("the team-file entry has gen.ci.generate true but %s at %s has no generated %s (found: %s)", circleCIDir, short(content.SHA), circleCIWorkflows, listOrNone(content.CircleCI))
 	case explicit && !EntryGeneratesCI(entry) && m.CI == CIModelGenerated:

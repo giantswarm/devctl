@@ -3,6 +3,7 @@ package circleci
 import (
 	"bytes"
 	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -197,25 +198,110 @@ func Test_SetupConfigCarriesMergeExpression(t *testing.T) {
 }
 
 // findYq locates a mikefarah yq v4 binary -- the variant cimg/base ships and
-// the setup config's merge expression is written for. Some distros package it
-// as go-yq, and a plain `yq` may be the incompatible Python jq-wrapper, so
-// the version banner is checked.
+// the setup config's merge expression is written for -- and fails the test
+// when there is none: a skip would report the package green without running
+// the merge and setup-render cases. `make test` puts a pinned one first on PATH.
 func findYq(t *testing.T) string {
 	t.Helper()
 
-	for _, name := range []string{"yq", "go-yq"} {
-		path, err := exec.LookPath(name)
-		if err != nil {
-			continue
-		}
-		out, err := exec.Command(path, "--version").CombinedOutput() // #nosec G204 -- fixed args, test-only
-		if err == nil && strings.Contains(string(out), "mikefarah") {
-			return path
+	yq, err := resolveYq(os.Getenv("YQ"), os.Getenv("PATH"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return yq
+}
+
+// resolveYq returns the first mikefarah yq v4 among $YQ and every yq and go-yq
+// (some distros' name for it) in the PATH directories, checked by the version
+// banner: the first yq on PATH may be the incompatible Python jq-wrapper. The
+// error names every candidate it rejected and how to provide the right one.
+func resolveYq(explicit, path string) (string, error) {
+	var candidates []string
+	if explicit != "" {
+		candidates = append(candidates, explicit)
+	}
+	for _, dir := range filepath.SplitList(path) {
+		for _, name := range []string{"yq", "go-yq"} {
+			candidates = append(candidates, filepath.Join(dir, name))
 		}
 	}
 
-	t.Skip("mikefarah yq v4 not installed; skipping merge test")
-	return ""
+	var rejected []string
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate) // #nosec G703 -- test-only, a $YQ or PATH yq candidate
+		if seen[candidate] || err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+			continue
+		}
+		seen[candidate] = true
+		out, err := exec.Command(candidate, "--version").CombinedOutput() // #nosec G204 G702 -- test-only, a $YQ or PATH yq candidate's version
+		banner := strings.Join(strings.Fields(string(out)), " ")
+		if err == nil && strings.Contains(banner, "mikefarah") && strings.Contains(banner, "version v4.") {
+			return candidate, nil
+		}
+		rejected = append(rejected, fmt.Sprintf("%s (%s)", candidate, banner))
+	}
+
+	found := "none on PATH"
+	if len(rejected) > 0 {
+		found = "found only " + strings.Join(rejected, ", ")
+	}
+	return "", fmt.Errorf("mikefarah yq v4 is required by the merge and setup-render tests, %s: "+
+		"run them through `make test`, which installs a pinned one, or install it and set YQ to its path", found)
+}
+
+// Test_ResolveYqPicksMikefarahV4 pins how the yq-backed tests find their yq:
+// past a Python yq first on PATH to a mikefarah v4 further down, and an error
+// naming the rejected candidates -- never a silent skip -- when there is none.
+func Test_ResolveYqPicksMikefarahV4(t *testing.T) {
+	fake := func(name, banner string) string {
+		dir := t.TempDir()
+		script := "#!/bin/sh\nprintf '%s\\n' '" + banner + "'\n"
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil { // #nosec G306 -- test-only executable
+			t.Fatal(err)
+		}
+		return dir
+	}
+	python := fake("yq", "yq 3.4.3")
+	mikefarahV3 := fake("yq", "yq version 3.4.1")
+	mikefarah := fake("yq", "yq (https://github.com/mikefarah/yq/) version v4.54.1")
+	goYq := fake("go-yq", "yq (https://github.com/mikefarah/yq/) version v4.54.1")
+	list := func(dirs ...string) string { return strings.Join(dirs, string(filepath.ListSeparator)) }
+
+	testCases := []struct {
+		name     string
+		explicit string
+		path     string
+		want     string
+		wantErr  []string
+	}{
+		{name: "mikefarah behind a Python yq", path: list(python, mikefarahV3, mikefarah), want: filepath.Join(mikefarah, "yq")},
+		{name: "go-yq", path: list(python, goYq), want: filepath.Join(goYq, "go-yq")},
+		{name: "YQ first", explicit: filepath.Join(goYq, "go-yq"), path: list(mikefarah), want: filepath.Join(goYq, "go-yq")},
+		{name: "only a Python yq", path: list(python, mikefarahV3), wantErr: []string{
+			filepath.Join(python, "yq") + " (yq 3.4.3)", filepath.Join(mikefarahV3, "yq") + " (yq version 3.4.1)", "make test", "YQ",
+		}},
+		{name: "no yq", path: list(t.TempDir()), wantErr: []string{"none on PATH", "make test"}},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveYq(tc.explicit, tc.path)
+			if tc.wantErr == nil {
+				if err != nil || got != tc.want {
+					t.Fatalf("resolveYq = %q, %v; want %q", got, err, tc.want)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("resolveYq = %q, want an error", got)
+			}
+			for _, want := range tc.wantErr {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not name %q", err, want)
+				}
+			}
+		})
+	}
 }
 
 // yqMerge runs the setup config's merge expression over workflows.yml +

@@ -385,6 +385,19 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 			plan.custom = len(plan.customJobs) > 0
 			w.progress.Printf("%s/%s at %s declares %d push job(s) beyond the entry's artifacts", circleCIDir, circleCICustom, short(result.SHA), len(plan.customJobs))
 		}
+	case CIModelHandWritten:
+		// An image's release of a multi-image repository cut before its
+		// generated pipeline: the flavour names the image the hand-written
+		// one pushed, which may generate its jobs at run time, out of reach
+		// of the configuration. An image the caller names is read from the
+		// pipeline's jobs as for any hand-written pipeline.
+		if entryNamesImage(entry, result.Tag) && len(w.config.Images) == 0 && len(w.config.Charts) == 0 {
+			artifacts, err := GeneratedArtifacts(*entry, repo, image, version, *content, private, w.config.Endpoints, nil)
+			if err != nil {
+				return err
+			}
+			plan.setArtifacts(result, artifacts)
+		}
 	case CIModelNone:
 		// Nothing to derive: no CircleCI means no image and no chart.
 		plan.setArtifacts(result, nil)
@@ -973,12 +986,12 @@ func (w *Waiter) readModels(ctx context.Context, sha string, result *Result) (*T
 			return nil, nil, noReleaseErr("nothing tags the merge commit of %s/%s#%d: no team-file entry declares a release model and %s at %s holds no release workflow", w.config.Owner, w.config.Repo, w.config.PR, workflowsDir, short(sha))
 		}
 	}
-	models, err := ResolveModels(entry, *content)
+	models, err := ResolveModels(entry, *content, result.Tag)
 	if err != nil {
 		return nil, nil, err
 	}
-	if models.Warning != "" {
-		w.warn(models.Warning)
+	for _, warning := range models.Warnings {
+		w.warn(warning)
 	}
 	result.ReleaseModel, result.CIModel = models.Release, models.CI
 	return content, entry, nil

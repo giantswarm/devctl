@@ -82,7 +82,10 @@ Actions only: the check runs are the tag's pipeline, reported under `pipeline`, 
 every one finished successfully, `ci_failed` when one failed); a `.circleci/workflows.yml` beside it is the signature of
 `devctl gen circleci` and means `generated`; a `config.yml` alone is `hand-written`. The entry's
 `gen.ci.generate` is cross-checked against it (`true` without the generated files, or an explicit
-`false` with them, is exit 7).
+`false` with them, is exit 7). An `<image>/vX.Y.Z` tag of a `multi-image` entry cut by the hand-written
+pipeline that preceded the generated one is the exception: the flavour names its image
+`<owner>/<repo>/<image>:<X.Y.Z>` all the same, so the wait follows the tag's pipeline and probes that
+image, `ciModel` `hand-written`, with a warning (`--image` or `--chart` reads the pipeline's jobs instead).
 
 **Generated CI**: the artifacts are what devctl's generator emits for the entry, derived the way the
 generator derives them (an entry without a `gen.ci` block declares no override, so the generator's

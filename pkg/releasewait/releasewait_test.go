@@ -1284,6 +1284,54 @@ func TestWaitPullRequestFollowsTheImageReleaseOfAMultiImageRepository(t *testing
 	}
 }
 
+// An image's release <name>/vX.Y.Z named on the command line, cut by the
+// hand-written pipeline (a setup config that generates its push jobs at run
+// time) that preceded the generated one the entry now declares: the
+// multi-image flavour names the image, and the wait follows the tag's
+// pipeline and probes <owner>/<repo>/<name> under X.Y.Z, with a warning.
+func TestWaitImageTagBeforeTheGeneratedPipeline(t *testing.T) {
+	const tag = "go/v0.1.0"
+	entry := fieldsFromYAML(t, `- name: kserve
+  gen:
+    flavours: [multi-image]
+    language: generic
+    ci:
+      generate: true
+`)
+	github := baseGitHub([]string{"toolchains"}, []string{"toolchain-release.yaml"}, []string{"config.yml", "generate-config.sh"})
+	github[repoRoute("/git/ref/tags/"+tag)] = []sequence.Response{{Body: map[string]any{"ref": "refs/tags/" + tag, "object": map[string]any{"type": "commit", "sha": testSHA}}}}
+	setup := wf("w0", "setup", "success", "2026-09-21T09:59:00Z")
+	setup["tag"] = "setup"
+	circleci := pipelineRoutes(
+		[][]map[string]any{
+			{setup, wf("w1", "build", "running", "2026-09-21T10:00:00Z")},
+			{setup, wf("w1", "build", "success", "2026-09-21T10:00:00Z")},
+		},
+		map[string][]map[string]any{"w1": {job("contract-go", "success"), job("push-go", "success")}},
+	)
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/pipeline"] = []sequence.Response{{Body: map[string]any{"items": []map[string]any{{"id": "p1", "number": 12, "vcs": map[string]any{"tag": tag, "revision": testSHA}}}}}}
+	var warnings []string
+	fx := fixture{
+		entry: &entry, github: github, version: tag, circleci: circleci,
+		registry: sequence.Routes{"HEAD /v2/giantswarm/kserve/go/manifests/0.1.0": {{Status: 404}, {Status: 200}}},
+		warn:     func(w string) { warnings = append(warnings, w) },
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Tag != tag || result.SHA != testSHA || result.CIModel != CIModelHandWritten {
+		t.Errorf("head: %+v", result)
+	}
+	if len(result.Artifacts) != 1 || !strings.HasSuffix(result.Artifacts[0].Reference, "/giantswarm/kserve/go:0.1.0") || result.Artifacts[0].State != StateAvailable {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+	if result.Pipeline == nil || len(result.Pipeline.Unfinished) != 0 {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], tag+" predates the generated pipeline") {
+		t.Errorf("warnings: %q", warnings)
+	}
+}
+
 // A change to the build files the images share releases every image from
 // one merge commit: the wait does not choose, it names each tag.
 func TestWaitPullRequestWithSeveralImageReleasesIsAmbiguous(t *testing.T) {

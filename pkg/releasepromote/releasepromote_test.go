@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/require"
@@ -40,6 +41,8 @@ type fakeRepository struct {
 	// unreachable are the tags not on the default branch.
 	unreachable []string
 	releases    []githubclient.Release
+	// tagReleases answer GetReleaseByTag; releases too unless set.
+	tagReleases []githubclient.Release
 	status      githubclient.CombinedStatus
 	// statuses override status per ref.
 	statuses    map[string]githubclient.CombinedStatus
@@ -62,6 +65,7 @@ type fakeGitHub struct {
 	statusRefs   []string
 	compared     []string
 	runReads     int
+	tagReads     []string
 }
 
 var errNotFound = errors.New("404 Not Found")
@@ -111,6 +115,24 @@ func (f *fakeGitHub) Reachable(_ context.Context, owner, repo, ref, branch strin
 func (f *fakeGitHub) ListReleases(_ context.Context, owner, repo string) ([]githubclient.Release, error) {
 	r, err := f.repository(owner, repo)
 	return r.releases, err
+}
+
+func (f *fakeGitHub) GetReleaseByTag(_ context.Context, owner, repo, tag string) (githubclient.Release, error) {
+	f.tagReads = append(f.tagReads, tag)
+	r, err := f.repository(owner, repo)
+	if err != nil {
+		return githubclient.Release{}, err
+	}
+	releases := r.tagReleases
+	if releases == nil {
+		releases = r.releases
+	}
+	for _, rel := range releases {
+		if rel.Tag == tag {
+			return rel, nil
+		}
+	}
+	return githubclient.Release{}, githubclient.NotFound("release %s in %s/%s", tag, owner, repo)
 }
 
 func (f *fakeGitHub) GetCombinedStatus(_ context.Context, owner, repo, ref string) (githubclient.CombinedStatus, error) {
@@ -612,6 +634,14 @@ func TestPromoteVersion(t *testing.T) {
 			message:    "the commit statuses of v1.2.3-rc.15 are pending: promote it once its pipelines passed, or promote the newest built candidate with --version v1.2.3-rc.14",
 		},
 		{
+			name:       "a candidate the release list misses, read by its tag",
+			repository: fakeRepository{branch: "main", releases: []githubclient.Release{}, tagReleases: streamReleases, statuses: streamStatuses},
+			version:    "v1.2.3-rc.14",
+			state:      StateDispatched,
+			candidate:  "v1.2.3-rc.14",
+			message:    "dispatched zz_generated.auto_release.yaml on main to promote v1.2.3-rc.14",
+		},
+		{
 			name:       "a candidate without a published release",
 			repository: fakeRepository{branch: "main", releases: streamReleases, statuses: streamStatuses},
 			version:    "v1.2.3-rc.16",
@@ -652,7 +682,7 @@ func TestPromoteVersion(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			gh := &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/kserve": tc.repository}}
 			result := NewResult("")
-			err := Promote(t.Context(), Config{GitHub: gh, Version: tc.version}, []string{"giantswarm/kserve"}, &result)
+			err := Promote(t.Context(), Config{GitHub: gh, Version: tc.version, Clock: agentcli.NewVirtualClock(time.Unix(0, 0))}, []string{"giantswarm/kserve"}, &result)
 
 			got := result.Repositories[0]
 			require.Equal(t, tc.state, got.State, got.Message)
@@ -668,6 +698,23 @@ func TestPromoteVersion(t *testing.T) {
 			require.Equal(t, []dispatch{{repository: "giantswarm/kserve", file: Workflow, ref: "main", inputs: map[string]any{"release-type": "stable", "version": tc.version}}}, gh.dispatches)
 		})
 	}
+}
+
+// A named candidate the release list lacks is read by its tag, and a 404 is
+// read again before the candidate is refused as missing; one the list
+// carries is not read again.
+func TestPromoteVersionReadsAMissingReleaseByItsTag(t *testing.T) {
+	gh := &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/kserve": {branch: "main", releases: streamReleases, statuses: streamStatuses}}}
+	config := Config{GitHub: gh, Version: "v1.2.3-rc.16", Clock: agentcli.NewVirtualClock(time.Unix(0, 0))}
+	result := NewResult("")
+	_ = Promote(t.Context(), config, []string{"giantswarm/kserve"}, &result)
+	require.Equal(t, "v1.2.3-rc.16 is not a release candidate to promote on main: no published GitHub release v1.2.3-rc.16", result.Repositories[0].Message)
+	require.Equal(t, []string{"v1.2.3-rc.16", "v1.2.3-rc.16", "v1.2.3-rc.16"}, gh.tagReads)
+
+	gh.tagReads = nil
+	config.Version = "v1.2.3-rc.14"
+	require.NoError(t, Promote(t.Context(), config, []string{"giantswarm/kserve"}, &result))
+	require.Empty(t, gh.tagReads)
 }
 
 // Without --version, a latest candidate still building is refused, and the

@@ -12,6 +12,7 @@ import (
 )
 
 type flag struct {
+	Version        string
 	PR             int
 	Context        string
 	Kubeconfig     string
@@ -26,6 +27,7 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&f.Version, "version", "", "The release's version, vX.Y.Z or X.Y.Z: the same as the version argument")
 	cmd.Flags().IntVar(&f.PR, "pr", 0, "Wait for the release auto-release tagged from this merged pull request instead of a version")
 	cmd.Flags().StringVar(&f.Context, "context", "", "The kube context of the installation's management cluster (default "+rolloutwait.ContextPrefix+"<installation>)")
 	cmd.Flags().StringVar(&f.Kubeconfig, "kubeconfig", "", "Read the kube context from this kubeconfig file only, instead of KUBECONFIG or ~/.kube/config; it is never written")

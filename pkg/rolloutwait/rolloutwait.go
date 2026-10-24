@@ -126,6 +126,9 @@ func New(config Config) (*Waiter, error) {
 			return nil, agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--helmrelease %q: name a HelmRelease as <name> or <namespace>/<name>", name)
 		}
 	}
+	if config.Revision == "" && bare(config.Version) == "" {
+		return nil, errors.New("rolloutwait: Version must not be empty without a Revision")
+	}
 	if config.Timeout <= 0 {
 		config.Timeout = DefaultTimeout
 	}
