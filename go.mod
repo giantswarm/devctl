@@ -14,7 +14,7 @@ require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/bmatcuk/doublestar/v4 v4.10.3
 	github.com/fatih/color v1.19.0
-	github.com/giantswarm/gitsemver/v3 v3.0.1
+	github.com/giantswarm/gitsemver/v3 v3.0.8
 	github.com/giantswarm/go-selfupdate v1.6.7
 	github.com/giantswarm/microerror v0.4.1
 	github.com/giantswarm/micrologger v1.1.2
