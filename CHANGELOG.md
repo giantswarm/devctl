@@ -117,6 +117,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen circleci`: a workflow that builds an image or a chart resolves its version once. It starts with the architect
+  orb's `pin-version` job (orb 10.16.0), which every image and chart job requires, and the chart jobs attach the
+  workspace it persists `.pipeline_version` to; a stable tag landing mid-workflow (a promote) no longer gives the image
+  and the chart that references it different versions (giantswarm/backstage#3260). A workflow without an image or a
+  published chart (a binary, a node library, a template repository) and the multi-image pipeline, whose workflows
+  resolve the version in one job each, only move to the new orb.
 - `pr wait` and `pr merge`: an Actions run that GitHub leaves `in_progress` after every job of it completed no
   longer holds the wait until its timeout; five minutes after its last job completed, its jobs are its verdict, and
   `actions[]` marks it `jobsCompleted` ([#2956](https://github.com/giantswarm/devctl/issues/2956)).
