@@ -15,7 +15,7 @@ jobs:
   # repo redirects its bespoke toolchain by editing those scripts, not this job.
   node-test:
     docker:
-    - image: cimg/node:24.21.0
+    - image: cimg/node:24.22.1
     resource_class: large
     # Worker counts sized from the resource class's memory, not from the CPUs
     # the tools detect (the Docker executor shows the host's count to
