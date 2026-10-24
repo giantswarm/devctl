@@ -78,7 +78,8 @@ jobs:
   add-to-board:
     uses: giantswarm/github-workflows/.github/workflows/issue-to-customer-board.yaml@main
     secrets:
-      ISSUE_AUTOMATION: ${{ secrets.ISSUE_AUTOMATION }}
+      PROJECT_AUTOMATION_CLIENT_ID: ${{ secrets.PROJECT_AUTOMATION_CLIENT_ID }}
+      PROJECT_AUTOMATION_PRIVATE_KEY: ${{ secrets.PROJECT_AUTOMATION_PRIVATE_KEY }}
 
 --- .github/workflows/zz_generated.create_release.yaml
 # DO NOT EDIT. Generated with:
