@@ -121,6 +121,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   file read from the environment when a command starts and created with mode 0600 on first write, in place of the OS
   keychain; unset or empty keeps the keychain
   ([#2704](https://github.com/giantswarm/devctl/issues/2704)).
+- `pr rerun`, `release rerun`: the examples in `--help` and `docs/pr-rerun.md` call `devctl pr wait` and
+  `devctl release wait` directly
+  ([#2616](https://github.com/giantswarm/devctl/issues/2616)).
 - `pr wait` and `pr merge --accept-red`: a base branch without classic branch protection no longer ends the wait
   with exit 7 "branch is not protected"; the required status checks of the rulesets in effect on it count like
   those of branch protection, and a branch guarded by neither requires none, as before
