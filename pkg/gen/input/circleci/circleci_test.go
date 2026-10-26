@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -2995,50 +2994,64 @@ type gatedJob struct {
 	hasTagFilter bool
 }
 
-// gatedJobs returns the workflow jobs that carry `require_open_pull_request:
-// true`, in the order they appear, alongside whether each job's filters also
-// match tags. The generated workflows file is a flat list of
-// `- architect/<job>:` entries whose first key is always `name:` or
-// `context:`, so a line scan that remembers the last `name:` and, for the
-// current job, whether `require_open_pull_request` and a `tags:` filter both
-// appeared before the next entry starts, is enough to attribute both to their
-// job.
-func gatedJobs(got string) []gatedJob {
+// gatedJobs returns the workflow jobs of the generated config that carry
+// `require_open_pull_request: true`, in the order they appear, alongside
+// whether each job's filters also match tags.
+func gatedJobs(t *testing.T, got string) []gatedJob {
+	t.Helper()
+
+	var cfg struct {
+		Workflows struct {
+			Build struct {
+				// An entry is a bare job name or a one-key map of its settings.
+				Jobs []yaml.Node `yaml:"jobs"`
+			} `yaml:"build"`
+		} `yaml:"workflows"`
+	}
+	if err := yaml.Unmarshal([]byte(got), &cfg); err != nil {
+		t.Fatalf("generated config is not valid YAML: %v\n%s", err, got)
+	}
+
 	var jobs []gatedJob
-	var name string
-	var gated, hasTags bool
-	flush := func() {
-		if gated {
+	for i := range cfg.Workflows.Build.Jobs {
+		var entry map[string]struct {
+			Name                   string               `yaml:"name"`
+			RequireOpenPullRequest bool                 `yaml:"require_open_pull_request"`
+			Filters                map[string]yaml.Node `yaml:"filters"`
+		}
+		if cfg.Workflows.Build.Jobs[i].Decode(&entry) != nil {
+			continue
+		}
+		for key, job := range entry {
+			if !job.RequireOpenPullRequest {
+				continue
+			}
+			name := job.Name
+			if name == "" {
+				name = key
+			}
+			_, hasTags := job.Filters["tags"]
 			jobs = append(jobs, gatedJob{name: name, hasTagFilter: hasTags})
 		}
 	}
-	for _, line := range strings.Split(got, "\n") {
-		trimmed := strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(trimmed, "- architect/"):
-			flush()
-			name, gated, hasTags = "", false, false
-		case strings.HasPrefix(trimmed, "name: "):
-			name = strings.TrimPrefix(trimmed, "name: ")
-		case trimmed == "require_open_pull_request: true":
-			gated = true
-		case trimmed == "tags:":
-			hasTags = true
-		}
-	}
-	flush()
 	return jobs
 }
 
 // gatedJobNames extracts just the names gatedJobs found, in order, for tests
 // that only care which jobs are gated and not their filters.
-func gatedJobNames(got string) []string {
-	jobs := gatedJobs(got)
+func gatedJobNames(t *testing.T, got string) []string {
+	jobs := gatedJobs(t, got)
 	names := make([]string, len(jobs))
 	for i, job := range jobs {
 		names[i] = job.name
 	}
 	return names
+}
+
+// sameNames reports whether two job-name lists hold the same names, in any
+// order: the template's job order is not behaviour.
+func sameNames(got, want []string) bool {
+	return slices.Equal(slices.Sorted(slices.Values(got)), slices.Sorted(slices.Values(want)))
 }
 
 // Test_BranchJobsRequireOpenPullRequest pins the build rule: a push to a
@@ -3057,7 +3070,7 @@ func Test_BranchJobsRequireOpenPullRequest(t *testing.T) {
 	})
 
 	want := []string{"build-image", "execute-chart-tests"}
-	if got := gatedJobNames(service); !reflect.DeepEqual(got, want) {
+	if got := gatedJobNames(t, service); !sameNames(got, want) {
 		t.Errorf("gated jobs = %v, want %v:\n%s", got, want, service)
 	}
 
@@ -3071,21 +3084,16 @@ func Test_BranchJobsRequireOpenPullRequest(t *testing.T) {
 	})
 
 	want = []string{"push-to-registries", "execute-chart-tests", "push-chart"}
-	if got := gatedJobNames(publish); !reflect.DeepEqual(got, want) {
+	if got := gatedJobNames(t, publish); !sameNames(got, want) {
 		t.Errorf("gated jobs with branchPublish = %v, want %v:\n%s", got, want, publish)
 	}
 }
 
-// Test_GatedJobsNeverFilterOnTags is the regression test for the
-// silent-release-failure bug: build-chart used to carry both
-// `require_open_pull_request: true` and a `tags:` filter, so the orb halted
-// it on every release tag (no open pull request covers a tag), and both
-// push-chart-release and execute-chart-tests-release require build-chart --
-// so a release tag published no chart and nothing errored. gatedJobs is
-// name-only in Test_BranchJobsRequireOpenPullRequest above, which is exactly
-// why that test missed it: it never looks at a job's filters. This test
-// asserts the invariant directly, over every app shape the golden tests
-// cover, so no future gated job can sneak a tags filter back in.
+// Test_GatedJobsNeverFilterOnTags pins the invariant that no gated job's
+// filters carry a `tags:` key, over every app shape the golden tests cover.
+// build-chart is shared by the branch and tag paths and the release jobs
+// require it, so gating it would halt it on every release tag (no open pull
+// request covers a tag) and publish no chart without any error.
 func Test_GatedJobsNeverFilterOnTags(t *testing.T) {
 	stamp := true
 	configs := map[string]Config{
@@ -3164,7 +3172,7 @@ func Test_GatedJobsNeverFilterOnTags(t *testing.T) {
 	for name, cfg := range configs {
 		t.Run(name, func(t *testing.T) {
 			got := render(t, cfg)
-			for _, job := range gatedJobs(got) {
+			for _, job := range gatedJobs(t, got) {
 				if job.hasTagFilter {
 					t.Errorf("job %q carries require_open_pull_request and a tags filter: a release tag has no pull request, so the orb would silently halt it on every release\n%s", job.name, got)
 				}

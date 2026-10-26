@@ -59,6 +59,9 @@ jobs:
 workflows:
   build:
     jobs:
+    # A job carrying `require_open_pull_request: true` halts unless an open pull
+    # request covers the commit; go-build never carries it. build-chart stays
+    # ungated: its filters also match release tags, which have no pull request.
 
     # build-chart: render the template with fixture values, then package + lint
     # the rendered chart via app-build-suite (the job is defined above). Runs on
