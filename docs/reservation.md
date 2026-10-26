@@ -58,7 +58,7 @@ The first one releases everything the PR holds on every cluster; if the PR holds
 devctl reservation reap --user reservation-reaper
 ```
 
-Releases every expired reservation on every enabled cluster. With a GitHub token (the first set of `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` and `OPSCTL_GITHUB_TOKEN`, else the `devctl auth login --github-only` login, never under CI) it also releases reservations whose PR branch was renamed, as the old branch doesn't build anything anymore. Without a token it warns and skips that check.
+Releases every expired reservation on every enabled cluster. With a GitHub token (the first set of `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` and `OPSCTL_GITHUB_TOKEN`, else the `devctl auth login --github-only` login, never under CI) it also releases reservations whose PR is closed or merged (in case the close event got lost), and reservations whose PR branch was renamed, as the old branch doesn't build anything anymore. Without a token it warns and skips these checks.
 
 ## Output
 

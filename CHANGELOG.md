@@ -117,6 +117,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `reservation reap`: release a reservation whose pull request is closed or merged, with the reason `closed`, so a
+  lost close event no longer keeps the cluster reserved until the reservation expires.
+
 - `pr wait` and `pr merge --accept-red`: a base branch without classic branch protection no longer ends the wait
   with exit 7 "branch is not protected"; the required status checks of the rulesets in effect on it count like
   those of branch protection, and a branch guarded by neither requires none, as before
