@@ -450,5 +450,5 @@ wait's own tooling and authentication failures are 9.
 | `DEVCTL_CIRCLECI_API_URL` | `https://circleci.com/api/v2` | The CircleCI API v2. |
 | `DEVCTL_REGISTRY_PUBLIC`, `DEVCTL_REGISTRY_PRIVATE`, `DEVCTL_REGISTRY_INSECURE` | as in [release-wait.md](release-wait.md#environment) | The registries the release's artifacts are probed in. |
 | `DEVCTL_MERGE_DISPATCH` | unset | The workflow every merge dispatches afterwards, `<owner>/<repo>/<workflow file>[@<ref>]`, the value of `--dispatch`, which wins over it ([above](#after-the-merge-a-workflow-dispatch)). |
-| `DEVCTL_KEYRING_FILE` | unset | A 0600 JSON file in place of the OS keychain (tests). |
+| `DEVCTL_KEYRING_FILE` | unset | A JSON file that holds the records in place of the OS keychain; read from the environment when a command starts, created with mode 0600 on first write. Unset or empty keeps the keychain (tests, machines without a keychain daemon) |
 | `DEVCTL_TIME_SCALE` | `1` | Multiplies every poll interval and both timeouts (tests). |

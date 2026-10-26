@@ -117,6 +117,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `DEVCTL_KEYRING_FILE`: `docs/auth.md`, the other command docs and the code comments state the same behaviour, a JSON
+  file read from the environment when a command starts and created with mode 0600 on first write, in place of the OS
+  keychain; unset or empty keeps the keychain
+  ([#2704](https://github.com/giantswarm/devctl/issues/2704)).
 - `pr rerun`, `release rerun`: the examples in `--help` and `docs/pr-rerun.md` call `devctl pr wait` and
   `devctl release wait` directly
   ([#2616](https://github.com/giantswarm/devctl/issues/2616)).
