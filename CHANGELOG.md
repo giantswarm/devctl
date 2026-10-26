@@ -117,6 +117,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait` and `pr merge --accept-red`: a base branch without classic branch protection no longer ends the wait
+  with exit 7 "branch is not protected"; the required status checks of the rulesets in effect on it count like
+  those of branch protection, and a branch guarded by neither requires none, as before
+  ([#2989](https://github.com/giantswarm/devctl/issues/2989)).
+
 - `pr wait` and `pr merge`: an Actions run that GitHub leaves `in_progress` after every job of it completed no
   longer holds the wait until its timeout; five minutes after its last job completed, its jobs are its verdict, and
   `actions[]` marks it `jobsCompleted` ([#2956](https://github.com/giantswarm/devctl/issues/2956)).

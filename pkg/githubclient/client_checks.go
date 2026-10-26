@@ -265,6 +265,9 @@ func (c *Client) WorkflowRunsForSHA(ctx context.Context, owner, repo, sha string
 // ruleset in effect on it, sorted and without duplicates. A protection the
 // token may not read (404: none, or 403: no admin access) contributes
 // nothing; the rules endpoint answers for everyone with read access.
+// go-github answers a branch without classic protection with the bare
+// ErrBranchNotProtected, which carries no status: a branch guarded by
+// rulesets only.
 func (c *Client) RequiredStatusContexts(ctx context.Context, owner, repo, branch string) ([]string, error) {
 	set := map[string]bool{}
 
@@ -283,7 +286,7 @@ func (c *Client) RequiredStatusContexts(ctx context.Context, owner, repo, branch
 				}
 			}
 		}
-	case status == http.StatusNotFound, status == http.StatusForbidden:
+	case errors.Is(err, github.ErrBranchNotProtected), status == http.StatusNotFound, status == http.StatusForbidden:
 	default:
 		return nil, microerror.Mask(err)
 	}
