@@ -25,6 +25,8 @@ var update = flag.Bool("update", false, "update golden files")
 const (
 	goldenHelmDocsRegenPath = "testdata/helm-docs-regen.yaml.golden"
 
+	goldenTriggerCircleCIPipelinePath = "testdata/trigger-circleci-pipeline.yaml.golden"
+
 	// fixedHeader replaces the real header in golden renders. The real one
 	// carries the URL of the last commit that touched the template, which
 	// differs between a local checkout and the release build.
@@ -98,6 +100,60 @@ func assertGolden(t *testing.T, golden, got string) {
 
 	if got != string(want) {
 		t.Errorf("rendered workflow does not match %s (run with -update to regenerate)\n--- got ---\n%s\n--- want ---\n%s", golden, got, want)
+	}
+}
+
+// Test_TriggerCircleCIPipelinePath pins the generated file name: slice 03b's
+// reusable workflow is called by this exact path, next to the other
+// generated workflows.
+func Test_TriggerCircleCIPipelinePath(t *testing.T) {
+	in := newWorkflows(t, gen.FlavourApp).TriggerCircleCIPipeline()
+
+	want := filepath.Join(".github", "workflows", "zz_generated.trigger-circleci-pipeline.yaml")
+	if in.Path != want {
+		t.Errorf("path = %q, want %q", in.Path, want)
+	}
+}
+
+// Test_GoldenTriggerCircleCIPipeline pins the exact rendered workflow against
+// the caller contract slice 03b declares: pull_request opened/reopened calls
+// the reusable trigger-circleci-pipeline.yaml, passing only the
+// CIRCLECI_API_TOKEN secret it declares (not secrets: inherit -- see
+// Test_TriggerCircleCIPipelineSecretsLeastPrivilege). The workflow has no
+// repo-specific content, so one golden covers every repo.
+func Test_GoldenTriggerCircleCIPipeline(t *testing.T) {
+	got := renderInput(t, withFixedHeader(t, newWorkflows(t, gen.FlavourApp).TriggerCircleCIPipeline()))
+
+	assertGolden(t, goldenTriggerCircleCIPipelinePath, got)
+}
+
+// Test_TriggerCircleCIPipelineSecretsLeastPrivilege guards the finding: the
+// caller must not hand the reusable workflow every secret the repository can
+// read via `secrets: inherit` -- it must pass only the one secret the callee
+// declares (CIRCLECI_API_TOKEN), by name.
+func Test_TriggerCircleCIPipelineSecretsLeastPrivilege(t *testing.T) {
+	got := renderInput(t, newWorkflows(t, gen.FlavourApp).TriggerCircleCIPipeline())
+
+	if strings.Contains(got, "secrets: inherit") {
+		t.Errorf("workflow uses secrets: inherit, which hands the callee every secret this repo can read; want a named CIRCLECI_API_TOKEN pass-through:\n%s", got)
+	}
+
+	var wf struct {
+		Jobs map[string]struct {
+			Secrets map[string]string `yaml:"secrets"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(got), &wf); err != nil {
+		t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, got)
+	}
+
+	build, ok := wf.Jobs["build"]
+	if !ok {
+		t.Fatalf("no build job in %v", wf.Jobs)
+	}
+	want := map[string]string{"CIRCLECI_API_TOKEN": "${{ secrets.CIRCLECI_API_TOKEN }}"}
+	if len(build.Secrets) != len(want) || build.Secrets["CIRCLECI_API_TOKEN"] != want["CIRCLECI_API_TOKEN"] {
+		t.Errorf("build job secrets = %v, want exactly %v", build.Secrets, want)
 	}
 }
 
