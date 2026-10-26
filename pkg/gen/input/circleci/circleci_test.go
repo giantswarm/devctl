@@ -2983,3 +2983,200 @@ func Test_ChartTestsPullImagesWithRetry(t *testing.T) {
 		}
 	}
 }
+
+// gatedJob is a workflow job that carries `require_open_pull_request: true`,
+// together with whether that job's own `filters` block also carries a
+// `tags:` key. The orb halts a gated job unless an open pull request covers
+// the commit being built, but a release tag never has one -- so a gated job
+// filtered to also match tags would silently build nothing on every release.
+type gatedJob struct {
+	name         string
+	hasTagFilter bool
+}
+
+// gatedJobs returns the workflow jobs of the generated config that carry
+// `require_open_pull_request: true`, in the order they appear, alongside
+// whether each job's filters also match tags.
+func gatedJobs(t *testing.T, got string) []gatedJob {
+	t.Helper()
+
+	var cfg struct {
+		Workflows struct {
+			Build struct {
+				// An entry is a bare job name or a one-key map of its settings.
+				Jobs []yaml.Node `yaml:"jobs"`
+			} `yaml:"build"`
+		} `yaml:"workflows"`
+	}
+	if err := yaml.Unmarshal([]byte(got), &cfg); err != nil {
+		t.Fatalf("generated config is not valid YAML: %v\n%s", err, got)
+	}
+
+	var jobs []gatedJob
+	for i := range cfg.Workflows.Build.Jobs {
+		var entry map[string]struct {
+			Name                   string               `yaml:"name"`
+			RequireOpenPullRequest bool                 `yaml:"require_open_pull_request"`
+			Filters                map[string]yaml.Node `yaml:"filters"`
+		}
+		if cfg.Workflows.Build.Jobs[i].Decode(&entry) != nil {
+			continue
+		}
+		for key, job := range entry {
+			if !job.RequireOpenPullRequest {
+				continue
+			}
+			name := job.Name
+			if name == "" {
+				name = key
+			}
+			_, hasTags := job.Filters["tags"]
+			jobs = append(jobs, gatedJob{name: name, hasTagFilter: hasTags})
+		}
+	}
+	return jobs
+}
+
+// gatedJobNames extracts just the names gatedJobs found, in order, for tests
+// that only care which jobs are gated and not their filters.
+func gatedJobNames(t *testing.T, got string) []string {
+	jobs := gatedJobs(t, got)
+	names := make([]string, len(jobs))
+	for i, job := range jobs {
+		names[i] = job.name
+	}
+	return names
+}
+
+// sameNames reports whether two job-name lists hold the same names, in any
+// order: the template's job order is not behaviour.
+func sameNames(got, want []string) bool {
+	return slices.Equal(slices.Sorted(slices.Values(got)), slices.Sorted(slices.Values(want)))
+}
+
+// Test_BranchJobsRequireOpenPullRequest pins the build rule: a push to a
+// branch with no pull request must build no image and no chart, while the
+// basic checks (go-build, which also runs `make test`) still run. The orb
+// halts a job carrying `require_open_pull_request` when no open pull request
+// covers the build, so the generator sets it on exactly the branch-path build
+// jobs -- never on go-build, and never on any job whose filters also match
+// tags, which have no pull request to find.
+func Test_BranchJobsRequireOpenPullRequest(t *testing.T) {
+	service := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+	})
+
+	want := []string{"build-image", "execute-chart-tests"}
+	if got := gatedJobNames(t, service); !sameNames(got, want) {
+		t.Errorf("gated jobs = %v, want %v:\n%s", got, want, service)
+	}
+
+	// branchPublish adds the two dev pushes, and both are builds.
+	publish := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+		BranchPublish: true,
+	})
+
+	want = []string{"push-to-registries", "execute-chart-tests", "push-chart"}
+	if got := gatedJobNames(t, publish); !sameNames(got, want) {
+		t.Errorf("gated jobs with branchPublish = %v, want %v:\n%s", got, want, publish)
+	}
+}
+
+// Test_GatedJobsNeverFilterOnTags pins the invariant that no gated job's
+// filters carry a `tags:` key, over every app shape the golden tests cover.
+// build-chart is shared by the branch and tag paths and the release jobs
+// require it, so gating it would halt it on every release tag (no open pull
+// request covers a tag) and publish no chart without any error.
+func Test_GatedJobsNeverFilterOnTags(t *testing.T) {
+	stamp := true
+	configs := map[string]Config{
+		"service": {
+			RepoName:      repoMCPKubernetes,
+			Language:      gen.LanguageGo,
+			Flavours:      gen.FlavourSlice{gen.FlavourApp},
+			HasDockerfile: true,
+		},
+		"cli": {
+			RepoName:      repoMCPKubernetes,
+			Language:      gen.LanguageGo,
+			Flavours:      gen.FlavourSlice{gen.FlavourApp, gen.FlavourCLI},
+			HasDockerfile: true,
+		},
+		"node-npm": {
+			RepoName:       repoK8sTypes,
+			Language:       gen.LanguageNode,
+			PackageManager: PackageManagerNPM,
+		},
+		"node-yarn-berry": {
+			RepoName:        repoBackstage,
+			Language:        gen.LanguageNode,
+			Flavours:        gen.FlavourSlice{gen.FlavourApp},
+			PackageManager:  PackageManagerYarn,
+			NodeBuildTarget: nodeBuildTarget,
+			NodeBuildOutput: backstageBuildOutput,
+			ImageDockerfile: backstageDockerfile,
+		},
+		"chart-only": {
+			RepoName:                repoAPStandalone,
+			Language:                gen.LanguageGeneric,
+			Flavours:                gen.FlavourSlice{gen.FlavourApp},
+			OverrideChartAppVersion: &stamp,
+		},
+		"chart-only-ats-1.x": {
+			RepoName:                repoAPStandalone,
+			Language:                gen.LanguageGeneric,
+			Flavours:                gen.FlavourSlice{gen.FlavourApp},
+			OverrideChartAppVersion: &stamp,
+			ATSVersion:              "1.0.0",
+		},
+		"ats-on-release": {
+			RepoName:      repoMCPKubernetes,
+			Language:      gen.LanguageGo,
+			Flavours:      gen.FlavourSlice{gen.FlavourApp},
+			HasDockerfile: true,
+			ATSOnRelease:  true,
+		},
+		"ats-kind-config": {
+			RepoName:         repoAgent,
+			Language:         gen.LanguageGeneric,
+			Flavours:         gen.FlavourSlice{gen.FlavourApp},
+			ATSOnRelease:     true,
+			HasATSKindConfig: true,
+			ATSResourceClass: "large",
+		},
+		"native-image": {
+			RepoName:          repoMCPKubernetes,
+			Language:          gen.LanguageGo,
+			Flavours:          gen.FlavourSlice{gen.FlavourApp},
+			HasDockerfile:     true,
+			ImageNativeBuilds: true,
+		},
+		"native-node":    nativeNodeConfig(),
+		"template-chart": templateChartRepo(),
+		"go-test-artifacts": {
+			RepoName:        "muster",
+			Language:        gen.LanguageGo,
+			Flavours:        gen.FlavourSlice{gen.FlavourGeneric, gen.FlavourApp, gen.FlavourCLI},
+			HasDockerfile:   true,
+			GoTestArtifacts: "test-reports",
+		},
+	}
+
+	for name, cfg := range configs {
+		t.Run(name, func(t *testing.T) {
+			got := render(t, cfg)
+			for _, job := range gatedJobs(t, got) {
+				if job.hasTagFilter {
+					t.Errorf("job %q carries require_open_pull_request and a tags filter: a release tag has no pull request, so the orb would silently halt it on every release\n%s", job.name, got)
+				}
+			}
+		})
+	}
+}

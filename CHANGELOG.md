@@ -9,6 +9,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen circleci`: the branch-path build jobs (`build-image` / `push-to-registries`, `execute-chart-tests`,
+  `push-chart`) now carry `require_open_pull_request: true`. The orb halts a job carrying it unless an open
+  pull request covers the commit being built, so a push to a branch with no pull request builds no image and
+  no chart, while `go-build`, which also runs `make test`, still runs on that push. `build-chart` stays
+  ungated: it is the one job whose filters also match release tags, and a tag never has a pull request to
+  find. No gated job filters on tags. Needs an architect orb release that has the parameter, so the pinned
+  `OrbVersion` has to be at least that release; generating with an older pin leaves the parameter undeclared
+  and CircleCI rejects the config.
+- `gen workflows`: app repositories get `zz_generated.trigger-circleci-pipeline.yaml`, which calls
+  `giantswarm/github-workflows`' reusable `trigger-circleci-pipeline.yaml` on `pull_request` `opened` and
+  `reopened`, so a pull request opened on an already-pushed commit builds it. It passes only the
+  `CIRCLECI_API_TOKEN` secret that workflow declares and not `secrets: inherit`: the callee is pinned to a
+  moving `@main`, so `inherit` would hand it every secret the repository can read.
 - `gen circleci` and `gen workflows`: the `multi-image` flavour, a repository of several images, one per
   `toolchains/<name>/` directory holding a `Dockerfile`, each released as its own `<name>/vX.Y.Z` line (giantswarm/agent-toolchains).
   The setup job reads the image directories at pipeline runtime: a branch pushes an amd64 dev image of each image it

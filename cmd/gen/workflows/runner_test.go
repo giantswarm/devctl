@@ -301,3 +301,44 @@ func Test_Run_MultiImage(t *testing.T) {
 		require.ErrorContains(t, f.Validate(), "no candidates")
 	})
 }
+
+// Test_Run_TriggerCircleCIPipeline pins which repositories get the caller of
+// github-workflows' trigger-circleci-pipeline.yaml: app repositories, whose
+// dev builds a reservation deploys, and nothing else. Running the generator
+// again must leave the file as it was.
+func Test_Run_TriggerCircleCIPipeline(t *testing.T) {
+	const path = ".github/workflows/zz_generated.trigger-circleci-pipeline.yaml"
+
+	run := func(flavour gen.Flavour) error {
+		r := &runner{flag: &flag{
+			Flavours:        gen.FlavourSlice{flavour},
+			Language:        "go",
+			ReleaseBranch:   "main",
+			ReleaseWorkflow: releaseWorkflowLegacy,
+		}}
+		return r.Run(&cobra.Command{}, nil)
+	}
+
+	t.Run("app repository gets the caller, idempotently", func(t *testing.T) {
+		t.Chdir(t.TempDir())
+
+		require.NoError(t, run(gen.FlavourApp))
+		first, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Contains(t, string(first), "trigger-circleci-pipeline.yaml@main")
+
+		require.NoError(t, run(gen.FlavourApp))
+		second, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, string(first), string(second))
+	})
+
+	for _, flavour := range []gen.Flavour{gen.FlavourCLI, gen.FlavourFork} {
+		t.Run(flavour.String()+" repository gets none", func(t *testing.T) {
+			t.Chdir(t.TempDir())
+
+			require.NoError(t, run(flavour))
+			require.NoFileExists(t, path)
+		})
+	}
+}

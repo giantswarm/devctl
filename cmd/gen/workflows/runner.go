@@ -150,6 +150,11 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	}
 
 	if r.flag.Flavours.Contains(gen.FlavourApp) {
+		// CircleCI builds on push, not on pull request open, so the commit
+		// pushed before the pull request existed is never built. The app
+		// pipeline gates its build jobs on an open pull request
+		// (require_open_pull_request); this caller builds that commit.
+		inputs = append(inputs, workflowsInput.TriggerCircleCIPipeline())
 		inputs = append(inputs, workflowsInput.CheckValuesSchema())
 		inputs = append(inputs, workflowsInput.ChartTests())
 		if r.flag.CheckReadmeLinks {

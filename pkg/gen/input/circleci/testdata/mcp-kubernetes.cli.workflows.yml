@@ -73,6 +73,9 @@ commands:
 workflows:
   build:
     jobs:
+    # A job carrying `require_open_pull_request: true` halts unless an open pull
+    # request covers the commit; go-build never carries it. build-chart stays
+    # ungated: its filters also match release tags, which have no pull request.
     - architect/go-build:
         name: go-build
         binary: mcp-kubernetes
@@ -133,6 +136,7 @@ workflows:
         platforms: "linux/amd64,linux/arm64"
         requires:
         - go-build
+        require_open_pull_request: true
         filters:
           branches:
             ignore:
@@ -175,7 +179,11 @@ workflows:
 
     # build-chart: package + lint via app-build-suite and persist the archive
     # (no push). Shared by the branch and tag paths -- branches get build + test
-    # only by default.
+    # only by default. No require_open_pull_request here: this is the only job
+    # whose filters match both branches and tags, and the orb has no pull
+    # request to find for a tag, so gating it would silently drop every chart
+    # release (nothing downstream would push a chart, and nothing would error).
+    # It stays ungated on the branch path too since it never pushes anything.
     - architect/push-to-app-catalog:
         executor: app-build-suite
         context: architect
@@ -233,6 +241,7 @@ workflows:
             images: "gsoci.azurecr.io/giantswarm/app-test-suite:1.0.3 gsoci.azurecr.io/giantswarm/kind-node:v1.37.0"
         requires:
         - build-chart
+        require_open_pull_request: true
         filters:
           branches:
             ignore:
