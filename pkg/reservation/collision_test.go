@@ -1,6 +1,7 @@
 package reservation_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -37,5 +38,33 @@ func TestReserveIgnoresAnExpiredReservationOfTheSameApp(t *testing.T) {
 	}
 	if got := reservations[0].User; got != testOtherUser {
 		t.Errorf("holder: got %q, want %q", got, testOtherUser)
+	}
+}
+
+// TestReserveRefusalNamesThePullRequestAndTheExclusiveScope: the holder's pull
+// request is where the refused user goes to ask, and an exclusive holder blocks
+// every app, which the plain "is held by" text does not say.
+func TestReserveRefusalNamesThePullRequestAndTheExclusiveScope(t *testing.T) {
+	dir := newGitOpsFixture(t, fixtureOptions{})
+
+	first := testRequest(dir)
+	first.Scope = reservation.ScopeExclusive
+	if _, err := reservation.Reserve(first); err != nil {
+		t.Fatal(err)
+	}
+
+	second := testRequest(dir)
+	second.App = fixtureOtherApp
+	second.User = testOtherUser
+	second.Branch = testOtherBranch
+
+	_, err := reservation.Reserve(second)
+	if err == nil {
+		t.Fatal("expected a refusal, got none")
+	}
+	for _, want := range []string{"for pull request " + testPullRequest, "exclusive"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal %q does not contain %q", err, want)
+		}
 	}
 }

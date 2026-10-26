@@ -94,6 +94,10 @@ type Result struct {
 	// From and Until bound the reservation, in UTC.
 	From  time.Time `json:"from"`
 	Until time.Time `json:"until"`
+	// Replaced is the expired reservation of the same app, from another branch
+	// or pull request, that Reserve took over. Its pull request still reads
+	// "reserved" until somebody tells it otherwise.
+	Replaced *Reservation `json:"replaced,omitempty"`
 }
 
 func (r Request) validate() error {
@@ -213,7 +217,7 @@ func Reserve(req Request) (res Result, err error) {
 		return Result{}, microerror.Mask(err)
 	}
 
-	promoted, err := checkCollision(req, chart, from)
+	promoted, replaced, err := checkCollision(req, chart, from)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
@@ -298,6 +302,7 @@ func Reserve(req Request) (res Result, err error) {
 		Files:        files,
 		From:         from,
 		Until:        until,
+		Replaced:     replaced,
 	}, nil
 }
 
