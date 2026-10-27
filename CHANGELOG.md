@@ -73,6 +73,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `reservation`: a refusal names the holder's pull request and says when the holder is an exclusive reservation
+  that locks every app on the cluster. With `--output json`, `reserve` adds `replaced`, the expired reservation of
+  another branch or pull request it took over, and every `extend` entry adds `scope` and `commit`.
+
 - `gen circleci`: the generated pipelines pin architect orb 10.15.1. Its executor runs architect 8.6.20 (Go 1.27.3),
   which carries the `crypto/x509` fix for the eMudhra intermediate CA compromise of October 2026 (GO-2026-6809), so
   `go-build` produces binaries the sbom-advisory-operator's `go-stdlib` rule accepts instead of flagging every image
@@ -120,6 +124,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `reservation reap`: release a reservation whose pull request is closed or merged, with the reason `closed`, so a
   lost close event no longer keeps the cluster reserved until the reservation expires.
 
+- `DEVCTL_KEYRING_FILE`: `docs/auth.md`, the other command docs and the code comments state the same behaviour, a JSON
+  file read from the environment when a command starts and created with mode 0600 on first write, in place of the OS
+  keychain; unset or empty keeps the keychain
+  ([#2704](https://github.com/giantswarm/devctl/issues/2704)).
+- `pr rerun`, `release rerun`: the examples in `--help` and `docs/pr-rerun.md` call `devctl pr wait` and
+  `devctl release wait` directly
+  ([#2616](https://github.com/giantswarm/devctl/issues/2616)).
 - `pr wait` and `pr merge --accept-red`: a base branch without classic branch protection no longer ends the wait
   with exit 7 "branch is not protected"; the required status checks of the rulesets in effect on it count like
   those of branch protection, and a branch guarded by neither requires none, as before
