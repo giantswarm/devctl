@@ -70,6 +70,12 @@ func (w *Workflows) ChartTests() input.Input {
 	return file.NewChartTestsInput(w.params)
 }
 
+// ReservationCommand sends reservation commands from pull request comments,
+// and pull request closes, to giantswarm/mc-reservations.
+func (w *Workflows) ReservationCommand() input.Input {
+	return file.NewReservationCommandInput(w.params)
+}
+
 func (w *Workflows) ClusterAppDocumentationValidation() input.Input {
 	return file.NewClusterAppDocumentationValidation(w.params)
 }

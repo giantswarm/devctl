@@ -158,6 +158,9 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 		if r.flag.HelmDocsRegen {
 			inputs = append(inputs, workflowsInput.HelmDocsRegen())
 		}
+		if r.flag.ReservationCommand {
+			inputs = append(inputs, workflowsInput.ReservationCommand())
+		}
 		if r.flag.InstallUpdateChart {
 			inputs = append(inputs, workflowsInput.UpdateChart())
 			if r.flag.UpstreamSyncAutomation {

@@ -1,0 +1,33 @@
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+
+name: Reservation command
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  dispatch:
+    # Only a command comment or a close calls the shared workflow, so other
+    # comments start no run that needs the dispatch secrets.
+    if: >-
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       github.event.comment.user.type != 'Bot' &&
+       (contains(github.event.comment.body, '/deploy') ||
+        contains(github.event.comment.body, '/undeploy') ||
+        contains(github.event.comment.body, '/extend'))) ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    uses: giantswarm/github-workflows/.github/workflows/reservation-command.yaml@main
+    permissions: {}
+    secrets:
+      MC_RESERVATIONS_DISPATCH_CLIENT_ID: ${{ secrets.MC_RESERVATIONS_DISPATCH_CLIENT_ID }}
+      MC_RESERVATIONS_DISPATCH_APP_KEY: ${{ secrets.MC_RESERVATIONS_DISPATCH_APP_KEY }}
