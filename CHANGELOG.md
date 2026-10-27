@@ -73,6 +73,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen makefile --language go` and `gen precommit --language go`: `make lint` and the `golangci-lint` hook pass no
+  `-E` linter flags; the linters live in the repository's golangci-lint configuration, so a bare `golangci-lint run`
+  lints with the same set. Both commands write `.golangci.yaml` (gosec and goconst on top of the standard set,
+  issues uncapped) when the repository has none, and add gosec and goconst (govet too when `linters.default`
+  replaces the standard set) to `linters.enable` of a repository's own `.golangci.yml` or `.golangci.yaml` that
+  neither enables nor disables them, leaving the rest of the file as it is. A TOML or JSON configuration, or a flow
+  style `linters` or `linters.enable`, fails generation naming the linters to enable.
+
 - `reservation`: a refusal names the holder's pull request and says when the holder is an exclusive reservation
   that locks every app on the cluster. With `--output json`, `reserve` adds `replaced`, the expired reservation of
   another branch or pull request it took over, and every `extend` entry adds `scope` and `commit`.

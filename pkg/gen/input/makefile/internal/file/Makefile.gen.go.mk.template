@@ -157,7 +157,7 @@ imports: ## Runs goimports.
 .PHONY: lint
 lint: ## Runs golangci-lint.
 	@echo "====> $@"
-	golangci-lint run -E gosec -E goconst --timeout=15m ./...
+	golangci-lint run --timeout=15m ./...
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
