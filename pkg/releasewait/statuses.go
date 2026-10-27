@@ -24,7 +24,8 @@ const (
 // point at (a release candidate and its promotion) carries the statuses of
 // both tag pipelines, and of the branch's.
 type statusPipelines struct {
-	// pipeline is the tag pipeline once a status led to it.
+	// pipeline is the tag pipeline once the listing or a status named it: a
+	// listing that later pages past it still leaves the wait reading it.
 	pipeline *circleciclient.Pipeline
 	// jobs and pipelines are the job and pipeline numbers read already,
 	// each read once: a status of the branch's pipeline on the same commit
@@ -137,10 +138,12 @@ func (w *Waiter) statusesState(result *Result, statuses []githubclient.CommitSta
 		w.statusPipelines.warned = true
 		w.warn(fmt.Sprintf("CircleCI names no pipeline for %s, neither in its pipeline listing nor behind the commit statuses of %s; the tag's CI verdict is those %d CircleCI statuses", result.Tag, short(result.SHA), len(statuses)))
 	}
+	doc := &Pipeline{Workflows: []PipelineWorkflow{}, FailedJobs: []string{}, Unfinished: []string{}}
 	state := &pipelineState{green: true, jobs: map[string]bool{}}
 	for _, s := range statuses {
 		name := circleciclient.StatusJobName(s.Context)
 		state.jobs[name] = true
+		doc.Workflows = append(doc.Workflows, PipelineWorkflow{Name: name, Status: s.State})
 		switch s.State {
 		case commitStatusSuccess:
 		case commitStatusFailure, commitStatusError:
@@ -154,10 +157,13 @@ func (w *Waiter) statusesState(result *Result, statuses []githubclient.CommitSta
 			state.failedStatuses = append(state.failedStatuses, s)
 		default:
 			state.green = false
+			doc.Unfinished = append(doc.Unfinished, fmt.Sprintf("%s (%s)", name, s.State))
 		}
 		w.progress.Printf("status %s: %s", s.Context, s.State)
 	}
 	sort.Strings(state.failedJobs)
+	doc.FailedJobs = append(doc.FailedJobs, state.failedJobs...)
+	result.Pipeline = doc
 	return state
 }
 

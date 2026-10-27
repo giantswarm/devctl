@@ -655,6 +655,11 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 				}
 			}
 		}
+		if done && result.Pipeline != nil && len(result.Pipeline.Unfinished) > 0 {
+			// The document is what the caller acts on: a release it lists
+			// unfinished workflows of is not available.
+			done = false
+		}
 		if done {
 			// The tag pipeline is not every status of its commit: a late
 			// job, the branch pipeline and other CIs report there too, and

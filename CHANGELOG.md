@@ -129,6 +129,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release wait`: a tag pipeline a later CircleCI listing no longer names is read again instead of judging the
+  tag's CI from its commit's statuses, so the wait no longer ends available while that pipeline's workflows run; when
+  the statuses are the verdict, `pipeline` lists them, the pending ones in `unfinished`. Exit 0 never comes with an
+  `unfinished` entry ([#2574](https://github.com/giantswarm/devctl/issues/2574)).
+
 - `reservation reap`: release a reservation whose pull request is closed or merged, with the reason `closed`, so a
   lost close event no longer keeps the cluster reserved until the reservation expires.
 
