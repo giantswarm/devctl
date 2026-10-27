@@ -357,8 +357,8 @@ func Test_ChartTestsIsValidYAML(t *testing.T) {
 
 // Test_ReservationCommandIsValidYAML checks the properties the design rests
 // on: the workflow fires on new comments and on closed pull requests, a job
-// filter keeps other comments from calling the shared workflow, which gets
-// the two dispatch secrets by name and no token permissions.
+// filter skips other comments, the job has no GITHUB_TOKEN permissions, and
+// the app token it mints is scoped to dispatching to mc-reservations.
 func Test_ReservationCommandIsValidYAML(t *testing.T) {
 	in := newWorkflows(t, gen.FlavourApp).ReservationCommand()
 	if want := filepath.Join(".github", "workflows", "zz_generated.reservation_command.yaml"); in.Path != want {
@@ -378,9 +378,11 @@ func Test_ReservationCommandIsValidYAML(t *testing.T) {
 		Permissions map[string]string `yaml:"permissions"`
 		Jobs        map[string]struct {
 			If          string            `yaml:"if"`
-			Uses        string            `yaml:"uses"`
 			Permissions map[string]string `yaml:"permissions"`
-			Secrets     map[string]string `yaml:"secrets"`
+			Steps       []struct {
+				Uses string            `yaml:"uses"`
+				With map[string]string `yaml:"with"`
+			} `yaml:"steps"`
 		} `yaml:"jobs"`
 	}
 	if err := yaml.Unmarshal([]byte(got), &wf); err != nil {
@@ -401,18 +403,24 @@ func Test_ReservationCommandIsValidYAML(t *testing.T) {
 	if !ok {
 		t.Fatalf("no dispatch job in %v", wf.Jobs)
 	}
-	if want := "giantswarm/github-workflows/.github/workflows/reservation-command.yaml@main"; job.Uses != want {
-		t.Errorf("uses = %q, want %q", job.Uses, want)
-	}
 	if len(job.Permissions) != 0 {
 		t.Errorf("job permissions = %v, want none", job.Permissions)
 	}
 	if !strings.Contains(job.If, "'/deploy'") || !strings.Contains(job.If, "head.repo.full_name == github.repository") {
 		t.Errorf("job if does not filter commands and forks:\n%s", job.If)
 	}
-	for _, s := range []string{"MC_RESERVATIONS_DISPATCH_CLIENT_ID", "MC_RESERVATIONS_DISPATCH_APP_KEY"} {
-		if want := "${{ secrets." + s + " }}"; job.Secrets[s] != want {
-			t.Errorf("secret %s = %q, want %q", s, job.Secrets[s], want)
+	if len(job.Steps) == 0 || !strings.HasPrefix(job.Steps[0].Uses, "actions/create-github-app-token@") {
+		t.Fatalf("first step does not mint an app token: %+v", job.Steps)
+	}
+	with := job.Steps[0].With
+	for k, want := range map[string]string{
+		"client-id":           "${{ secrets.MC_RESERVATIONS_DISPATCH_CLIENT_ID }}",
+		"private-key":         "${{ secrets.MC_RESERVATIONS_DISPATCH_APP_KEY }}",
+		"repositories":        "mc-reservations",
+		"permission-contents": "write",
+	} {
+		if with[k] != want {
+			t.Errorf("app token %s = %q, want %q", k, with[k], want)
 		}
 	}
 }
