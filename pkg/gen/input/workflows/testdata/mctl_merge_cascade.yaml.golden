@@ -100,6 +100,78 @@ jobs:
               return;
             }
 
+            // Contact fields a person fills in on the installations PR (giantswarm/giantswarm#38847).
+            // Same check as the merge gate; admins can merge past it; FILL_IN_ is mctl's placeholder prefix.
+            const TEST_CUSTOMERS = ['giantswarm', 'antonia'];
+            const isTestCustomer = TEST_CUSTOMERS.includes(
+              context.repo.repo.replace(/-management-clusters$/, ''));
+
+            // No YAML parser here: reads top-level `key: value` lines and the
+            // `support` list under the top-level `slack:` block (block or flow style).
+            function missingContacts(clusterYAML) {
+              const lines = clusterYAML.split('\n').filter(l => !/^\s*(#.*)?$/.test(l));
+              const unquote = v => v.replace(/\s+#.*$/, '').trim().replace(/^(['"])(.*)\1$/, '$2').trim();
+              const isSet = v => v !== '' && !v.startsWith('FILL_IN_') &&
+                v !== 'person in charge' && v !== 'ae-*';
+              const top = key => {
+                const line = lines.find(l => l.startsWith(`${key}:`));
+                return line ? unquote(line.slice(key.length + 1)) : '';
+              };
+
+              const channels = [];
+              let inSlack = false;
+              let inSupport = false;
+              for (const l of lines) {
+                if (/^\S/.test(l)) {
+                  inSlack = /^slack:\s*$/.test(l);
+                  inSupport = false;
+                  continue;
+                }
+                if (!inSlack) continue;
+                const key = l.match(/^\s+([\w.-]+):(.*)$/);
+                if (key) {
+                  inSupport = key[1] === 'support';
+                  const flow = key[2].trim().match(/^\[(.*)\]$/);
+                  if (inSupport && flow) channels.push(...flow[1].split(',').map(unquote).filter(Boolean));
+                  continue;
+                }
+                const item = l.match(/^\s*-\s*(.*)$/);
+                if (inSupport && item) channels.push(unquote(item[1]));
+              }
+
+              const missing = [];
+              if (!channels.length || !channels.every(isSet)) missing.push('slack.support');
+              if (!isSet(top('accountEngineer'))) missing.push('accountEngineer');
+              if (!isSet(top('accountEngineersHandle'))) missing.push('accountEngineersHandle');
+              return missing;
+            }
+
+            // Returns null when the installations PR's cluster.yaml has its contacts
+            // filled in (or there is nothing to check yet), else { state, reason }.
+            async function contactsProblem(client, reported) {
+              const m = (reported || '').match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+              if (isTestCustomer || !m) return null;
+              const [, owner, repo, number] = m;
+              const path = `${installation}/cluster.yaml`;
+              let content;
+              try {
+                const { data: instPR } = await client.rest.pulls.get({
+                  owner, repo, pull_number: parseInt(number, 10),
+                });
+                if (instPR.merged) return null;
+                const { data: file } = await client.rest.repos.getContent({
+                  owner, repo, path, ref: instPR.head.sha,
+                });
+                content = Buffer.from(file.content, 'base64').toString('utf8');
+              } catch (err) {
+                return { state: 'error', reason: `Could not read ${path} from the installations PR (${err.status || err.message}).` };
+              }
+              const missing = missingContacts(content);
+              return missing.length
+                ? { state: 'failure', reason: `${path} in the installations PR lacks ${missing.join(', ')}.` }
+                : null;
+            }
+
             // mergeable_state is "unknown" until GitHub has computed it.
             async function getPR(target) {
               for (let attempt = 0; attempt < 4; attempt++) {
@@ -206,8 +278,17 @@ jobs:
             }
 
             const outcomes = [];
-            outcomes.push(await land(
-              'installations', findMarker('Installations PR'), false));
+            const installationsPR = findMarker('Installations PR');
+            const contacts = await contactsProblem(github, installationsPR);
+            if (contacts) {
+              const url = asPR(installationsPR).url;
+              outcomes.push({
+                row: `| installations | ❌ contacts missing | ${url} — ${contacts.reason} Fix it, then merge it by hand. |`,
+                failure: `installations ${url} not merged: ${contacts.reason}`,
+              });
+            } else {
+              outcomes.push(await land('installations', installationsPR, false));
+            }
             outcomes.push(await land(
               'teleport-fleet', findMarker('Teleport fleet PR'), true));
             const rows = outcomes.map(o => o.row);

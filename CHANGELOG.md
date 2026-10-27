@@ -73,6 +73,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen workflows` flavour `fleet`: for customer installations the mctl merge gate fails, and the merge cascade does not
+  land the installations PR, while its `<installation>/cluster.yaml` lacks `slack.support`, `accountEngineer` or
+  `accountEngineersHandle` or holds mctl's `FILL_IN_` placeholders; the `/config` comment asks to fill them in
+  (giantswarm/giantswarm#38847).
+
 - `reservation`: a refusal names the holder's pull request and says when the holder is an exclusive reservation
   that locks every app on the cluster. With `--output json`, `reserve` adds `replaced`, the expired reservation of
   another branch or pull request it took over, and every `extend` entry adds `scope` and `commit`.
