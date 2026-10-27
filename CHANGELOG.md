@@ -73,6 +73,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `reservation`: a refusal names the holder's pull request and says when the holder is an exclusive reservation
+  that locks every app on the cluster. With `--output json`, `reserve` adds `replaced`, the expired reservation of
+  another branch or pull request it took over, and every `extend` entry adds `scope` and `commit`.
+
 - `gen circleci`: the generated pipelines pin architect orb 10.15.1. Its executor runs architect 8.6.20 (Go 1.27.3),
   which carries the `crypto/x509` fix for the eMudhra intermediate CA compromise of October 2026 (GO-2026-6809), so
   `go-build` produces binaries the sbom-advisory-operator's `go-stdlib` rule accepts instead of flagging every image

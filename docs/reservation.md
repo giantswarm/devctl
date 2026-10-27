@@ -66,6 +66,8 @@ By default (`--output table`) `reserve` prints one line: what, where, for whom a
 
 `--output json` prints the same data as JSON, for scripts. `reserve` and `release --cluster` print one object. `extend`, `reap`, `release --pull-request` and `list` print an array, `[]` when there is nothing.
 
+The `reserve` object carries `replaced` when it took over an expired reservation of another branch or pull request, so a caller can tell that pull request. Each `extend` entry carries the reservation's `scope` and the `commit` it made.
+
 ## Dry run
 
 `--dry-run` works on `reserve`, `release`, `extend` and `reap`. devctl makes the commits in your checkout as usual, shows them on stderr (`git log -p`), then resets the checkout to `origin/main`. Nothing is pushed. The output on stdout is what a real run would print, except that the commits exist only in the dry run.
