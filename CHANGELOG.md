@@ -121,6 +121,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `reservation reap`: release a reservation whose pull request is closed or merged, with the reason `closed`, so a
+  lost close event no longer keeps the cluster reserved until the reservation expires.
+
 - `DEVCTL_KEYRING_FILE`: `docs/auth.md`, the other command docs and the code comments state the same behaviour, a JSON
   file read from the environment when a command starts and created with mode 0600 on first write, in place of the OS
   keychain; unset or empty keeps the keychain
