@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `pr wait`, `pr merge` (`--timeout`, `--release-timeout`), `release wait` and `rollout wait --release-timeout` default to
+  60 minutes instead of 30. The `serve` tools keep a 30 minute default within their 55 minute cap.
+
 ### Added
 
 - `gen circleci` and `gen workflows`: the `multi-image` flavour, a repository of several images, one per
