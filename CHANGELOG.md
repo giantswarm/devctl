@@ -129,6 +129,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `docs/gen.md`: a job of the repository's own that must not run on a release candidate, the krew index update of a
+  CLI among them, filters on stable tags (`/^v\d+\.\d+\.\d+$/`) before the repository moves to `auto-release`
+  ([#2652](https://github.com/giantswarm/devctl/issues/2652)).
 - `release wait`: a tag pipeline a later CircleCI listing no longer names is read again instead of judging the
   tag's CI from its commit's statuses, so the wait no longer ends available while that pipeline's workflows run; when
   the statuses are the verdict, `pipeline` lists them, the pending ones in `unfinished`. Exit 0 never comes with an
