@@ -66,7 +66,7 @@ const (
 )
 
 // DefaultTimeout bounds a wait that gets no --timeout.
-const DefaultTimeout = 30 * time.Minute
+const DefaultTimeout = 60 * time.Minute
 
 // GitHub is what the wait reads from GitHub; *githubclient.Client is one.
 type GitHub interface {

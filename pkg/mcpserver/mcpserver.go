@@ -46,6 +46,10 @@ const DefaultNoProgressTimeout = 20 * time.Second
 // timeout verdict, not the gateway's.
 const MaxTimeout = 55 * time.Minute
 
+// DefaultTimeout bounds a wait whose call names no timeout. It stays below the
+// CLI's default so pr_merge's CI and release waits fit in MaxTimeout together.
+const DefaultTimeout = 30 * time.Minute
+
 // Credentials answer the GitHub token of the person a call is made for.
 type Credentials interface {
 	// GitHubToken is the person's token for the call in ctx; an

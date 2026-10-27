@@ -1,7 +1,7 @@
 # Merging a pull request: `devctl pr merge`
 
 ```nohighlight
-devctl pr merge <owner/repo> <number> [--timeout 30m] [--release-timeout 30m] [--no-release-wait]
+devctl pr merge <owner/repo> <number> [--timeout 60m] [--release-timeout 60m] [--no-release-wait]
                 [--rebase | --squash] [--update-branch] [--accept-red <check>]...
                 [--dispatch <owner>/<repo>/<workflow file>[@<ref>]]
                 [--progress] [--failed-log [--failed-log-lines 50]] [--detach [--on-done <command>]]
