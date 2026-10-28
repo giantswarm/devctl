@@ -11,6 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `pr wait`, `pr merge` (`--timeout`, `--release-timeout`), `release wait` and `rollout wait --release-timeout` default to
   60 minutes instead of 30. The `serve` tools keep a 30 minute default within their 55 minute cap.
+- The generated auto-release, changelog validation, helm-docs and pre-commit workflows run on `ubuntu-26.04`
+  instead of `ubuntu-24.04`. The generated `renovate.json5` disables Renovate's runner updates in
+  `.github/workflows/zz_generated.*`, which align-files regenerates.
 
 ### Added
 
@@ -150,6 +153,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `reservation reap`: release a reservation whose pull request is closed or merged, with the reason `closed`, so a
   lost close event no longer keeps the cluster reserved until the reservation expires.
 
+- `release create`: the test-catalog rewrite for dev versions is now reversed when an app/component is back on a
+  plain release version (`cluster-test` → `cluster`, `default-test` → default), so test catalogs no longer linger
+  after dev builds are replaced. CI dev-build versions (e.g. `2.12.2-r5aa25357t20261024082658h446cfd7`) are now
+  also detected as dev versions, so their catalogs are rewritten to the test variants automatically.
 - `DEVCTL_KEYRING_FILE`: `docs/auth.md`, the other command docs and the code comments state the same behaviour, a JSON
   file read from the environment when a command starts and created with mode 0600 on first write, in place of the OS
   keychain; unset or empty keeps the keychain
