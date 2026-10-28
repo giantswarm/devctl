@@ -11,6 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `pr wait`, `pr merge` (`--timeout`, `--release-timeout`), `release wait` and `rollout wait --release-timeout` default to
   60 minutes instead of 30. The `serve` tools keep a 30 minute default within their 55 minute cap.
+- The generated auto-release, changelog validation, helm-docs and pre-commit workflows run on `ubuntu-26.04`
+  instead of `ubuntu-24.04`. The generated `renovate.json5` disables Renovate's runner updates in
+  `.github/workflows/zz_generated.*`, which align-files regenerates.
 
 ### Added
 
