@@ -17,6 +17,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen workflows --reservation-support` (app flavour only, off by default) generates
+  `zz_generated.reservation_command.yaml`, which sends `/deploy`, `/undeploy` and `/extend` pull request comments and
+  pull request closes to giantswarm/mc-reservations with an app token scoped to that repository, minted from the
+  `MC_RESERVATIONS_DISPATCH_CLIENT_ID` and `MC_RESERVATIONS_DISPATCH_APP_KEY` org secrets.
+
 - `gen circleci` and `gen workflows`: the `multi-image` flavour, a repository of several images, one per
   `toolchains/<name>/` directory holding a `Dockerfile`, each released as its own `<name>/vX.Y.Z` line (giantswarm/agent-toolchains).
   The setup job reads the image directories at pipeline runtime: a branch pushes an amd64 dev image of each image it

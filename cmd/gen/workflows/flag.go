@@ -17,6 +17,7 @@ const (
 	flagLanguage                      = "language"
 	flagInstallUpdateChart            = "install-update-chart"
 	flagHelmDocsRegen                 = "helm-docs-regen"
+	flagReservationSupport            = "reservation-support"
 	flagRunSecurityScorecard          = "run-security-scorecard"
 	flagAnalyzeGithubActions          = "analyze-github-actions"
 	flagPublishTechdocs               = "publish-techdocs"
@@ -39,6 +40,7 @@ type flag struct {
 	Language                      string
 	InstallUpdateChart            bool
 	HelmDocsRegen                 bool
+	ReservationSupport            bool
 	RunSecurityScorecard          bool
 	AnalyzeGithubActions          bool
 	PublishTechdocs               bool
@@ -58,6 +60,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&f.Language, flagLanguage, "l", "", "Language of the repo, for generating additional language-specific workflows, like vulnerability remediation.")
 	cmd.Flags().BoolVar(&f.InstallUpdateChart, flagInstallUpdateChart, false, "If true, also generate update_chart workflow. Only valid for app flavor.")
 	cmd.Flags().BoolVar(&f.HelmDocsRegen, flagHelmDocsRegen, false, "If true, also generate the helm-docs-regen workflow, which regenerates the chart README (helm-docs) and values.schema.json (helm-schema-<chart> hooks) on renovate/ and dependabot/ PR branches and pushes the result back onto the branch. Only valid for app flavor.")
+	cmd.Flags().BoolVar(&f.ReservationSupport, flagReservationSupport, false, "If true, also generate the reservation_command workflow, which sends `/deploy`, `/undeploy` and `/extend` pull request comments and pull request closes to giantswarm/mc-reservations, to reserve a management cluster for the branch's dev build. Only valid for app flavor.")
 	cmd.Flags().BoolVar(&f.RunSecurityScorecard, flagRunSecurityScorecard, true, "If true, also generate a security scorecard workflow. Possible values: true (default), false.")
 	cmd.Flags().BoolVar(&f.AnalyzeGithubActions, flagAnalyzeGithubActions, false, "If true, also generate a workflow for GitHub Actions security scanning. Possible values: false (default), true.")
 	cmd.Flags().BoolVar(&f.PublishTechdocs, flagPublishTechdocs, false, "If true, also generate the Publish Techdocs workflow. Possible values: false (default), true.")
