@@ -32,7 +32,7 @@ import (
 )
 
 // DefaultTimeout bounds a wait whose caller names none.
-const DefaultTimeout = 30 * time.Minute
+const DefaultTimeout = 60 * time.Minute
 
 // CircleCIConfigPath is the file whose presence at the head makes CircleCI
 // part of the verdict.

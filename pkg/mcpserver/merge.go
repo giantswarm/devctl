@@ -83,7 +83,7 @@ func checkMerge(request mcp.CallToolRequest, doc *prmerge.Document) (mergeCall, 
 	if c.number <= 0 {
 		return c, agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "number must be a pull request's number, got %d", c.number)
 	}
-	if c.timeout, err = timeoutOf(request, prwait.DefaultTimeout); err != nil {
+	if c.timeout, err = timeoutOf(request, DefaultTimeout); err != nil {
 		return c, err
 	}
 	c.noReleaseWait = request.GetBool("noReleaseWait", false)
@@ -105,7 +105,7 @@ func checkMerge(request mcp.CallToolRequest, doc *prmerge.Document) (mergeCall, 
 }
 
 // releaseTimeoutOf is the call's release timeout: what is left of
-// MaxTimeout after timeout, at most the release wait's default, without
+// MaxTimeout after timeout, at most DefaultTimeout, without
 // one; the two together at most MaxTimeout.
 func releaseTimeoutOf(request mcp.CallToolRequest, timeout time.Duration) (time.Duration, error) {
 	left := MaxTimeout - timeout
@@ -114,7 +114,7 @@ func releaseTimeoutOf(request mcp.CallToolRequest, timeout time.Duration) (time.
 		if left <= 0 {
 			return 0, agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "timeout %s leaves no time of %s for the release wait: shorten it, or pass noReleaseWait", timeout, MaxTimeout)
 		}
-		return min(left, releasewait.DefaultTimeout), nil
+		return min(left, DefaultTimeout), nil
 	}
 	release, err := time.ParseDuration(arg)
 	if err != nil || release <= 0 || release > left {

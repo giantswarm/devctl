@@ -1,7 +1,7 @@
 # Waiting for a pull request's CI: `devctl pr wait`
 
 ```nohighlight
-devctl pr wait <owner/repo> <number> [--timeout 30m] [--progress] [--failed-log [--failed-log-lines 50]]
+devctl pr wait <owner/repo> <number> [--timeout 60m] [--progress] [--failed-log [--failed-log-lines 50]]
 ```
 
 One blocking call that returns when the outcome of a pull request's CI is known: green, red, or a

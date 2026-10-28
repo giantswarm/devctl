@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `pr wait`, `pr merge` (`--timeout`, `--release-timeout`), `release wait` and `rollout wait --release-timeout` default to
+  60 minutes instead of 30. The `serve` tools keep a 30 minute default within their 55 minute cap.
+- The generated auto-release, changelog validation, helm-docs and pre-commit workflows run on `ubuntu-26.04`
+  instead of `ubuntu-24.04`. The generated `renovate.json5` disables Renovate's runner updates in
+  `.github/workflows/zz_generated.*`, which align-files regenerates.
+
 ### Added
 
 - `gen circleci` and `gen workflows`: the `multi-image` flavour, a repository of several images, one per
@@ -77,6 +85,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   land the installations PR, while its `<installation>/cluster.yaml` lacks `slack.support`, `accountEngineer` or
   `accountEngineersHandle` or holds mctl's `FILL_IN_` placeholders; the `/config` comment asks to fill them in
   (giantswarm/giantswarm#38847).
+- `gen makefile --language go` and `gen precommit --language go`: `make lint` and the `golangci-lint` hook pass no
+  `-E` linter flags; the linters live in the repository's golangci-lint configuration, so a bare `golangci-lint run`
+  lints with the same set. Both commands write `.golangci.yaml` (gosec and goconst on top of the standard set,
+  issues uncapped) when the repository has none, and add gosec and goconst (govet too when `linters.default`
+  replaces the standard set) to `linters.enable` of a repository's own `.golangci.yml` or `.golangci.yaml` that
+  neither enables nor disables them, leaving the rest of the file as it is. A TOML or JSON configuration, or a flow
+  style `linters` or `linters.enable`, fails generation naming the linters to enable.
 
 - `reservation`: a refusal names the holder's pull request and says when the holder is an exclusive reservation
   that locks every app on the cluster. With `--output json`, `reserve` adds `replaced`, the expired reservation of
@@ -125,6 +140,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   not regenerated yet.
 
 ### Fixed
+
+- `docs/gen.md`: a job of the repository's own that must not run on a release candidate, the krew index update of a
+  CLI among them, filters on stable tags (`/^v\d+\.\d+\.\d+$/`) before the repository moves to `auto-release`
+  ([#2652](https://github.com/giantswarm/devctl/issues/2652)).
+- `release wait`: a tag pipeline a later CircleCI listing no longer names is read again instead of judging the
+  tag's CI from its commit's statuses, so the wait no longer ends available while that pipeline's workflows run; when
+  the statuses are the verdict, `pipeline` lists them, the pending ones in `unfinished`. Exit 0 never comes with an
+  `unfinished` entry ([#2574](https://github.com/giantswarm/devctl/issues/2574)).
 
 - `reservation reap`: release a reservation whose pull request is closed or merged, with the reason `closed`, so a
   lost close event no longer keeps the cluster reserved until the reservation expires.
