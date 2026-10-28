@@ -17,7 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- `gen workflows --reservation-command` (app flavour only, off by default) generates
+- `gen workflows --reservation-support` (app flavour only, off by default) generates
   `zz_generated.reservation_command.yaml`, which sends `/deploy`, `/undeploy` and `/extend` pull request comments and
   pull request closes to giantswarm/mc-reservations with an app token scoped to that repository, minted from the
   `MC_RESERVATIONS_DISPATCH_CLIENT_ID` and `MC_RESERVATIONS_DISPATCH_APP_KEY` org secrets.

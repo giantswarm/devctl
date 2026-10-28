@@ -93,9 +93,9 @@ devctl gen workflows --flavour app --language generic --helm-docs-regen
 
 ### Reservation command workflow
 
-`--reservation-command` (app flavour only, off by default) adds `.github/workflows/zz_generated.reservation_command.yaml`, a self-contained workflow with one job. A pull request comment that starts a line with `/deploy`, `/undeploy` or `/extend`, and a closed pull request, are sent to giantswarm/mc-reservations as a `repository_dispatch`, which reserves a management cluster for the branch's dev build (see `devctl reservation`). The workflow is a pure trigger: it sends only the repository, the pull request number and the comment ID, and mc-reservations re-reads and checks the rest. A job filter skips other comments, bot comments and the close of a fork's pull request, so they start no run. The repository needs the `MC_RESERVATIONS_DISPATCH_CLIENT_ID` and `MC_RESERVATIONS_DISPATCH_APP_KEY` org secrets, and the `mc-reservations-github` App installed, or a command gets no answer.
+`--reservation-support` (app flavour only, off by default) adds `.github/workflows/zz_generated.reservation_command.yaml`, a self-contained workflow with one job. A pull request comment that starts a line with `/deploy`, `/undeploy` or `/extend`, and a closed pull request, are sent to giantswarm/mc-reservations as a `repository_dispatch`, which reserves a management cluster for the branch's dev build (see `devctl reservation`). The workflow is a pure trigger: it sends only the repository, the pull request number and the comment ID, and mc-reservations re-reads and checks the rest. A job filter skips other comments, bot comments and the close of a fork's pull request, so they start no run. The repository needs the `MC_RESERVATIONS_DISPATCH_CLIENT_ID` and `MC_RESERVATIONS_DISPATCH_APP_KEY` org secrets, and the `mc-reservations-github` App installed, or a command gets no answer.
 
-In giantswarm/github the flag is `gen.reservationCommand: true` on the repository entry.
+In giantswarm/github the flag is `gen.reservationSupport: true` on the repository entry.
 
 ### README link check workflow
 
