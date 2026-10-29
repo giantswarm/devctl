@@ -142,6 +142,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait`, `pr merge` and every other lookup of a CircleCI pipeline by revision or tag (`release wait`, `pr rerun`)
+  find the pipeline in a project CircleCI builds through its GitHub App. Such a pipeline has no `vcs`, so `pr wait`
+  never found the head's and ran out its timeout (exit 2), even with every CircleCI job green and only Actions runs
+  awaiting approval left (exit 4). When `vcs` is absent, the revision, branch and tag are read from
+  `trigger_parameters.git`.
 - Update `golang.org/x/net` to v0.62.0 for CVE-2026-78661. The `nancy` scan failed on it, so the v8.161.1 release build
   attached no binaries.
 - `gen precommit`: `zz_generated.app-platform.values.yaml` declares the values the platform injects besides the
