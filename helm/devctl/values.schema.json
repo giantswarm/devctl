@@ -38,6 +38,9 @@
         "clusterID": {
             "type": "string"
         },
+        "externalDNSIP": {
+            "type": "string"
+        },
         "extraArgs": {
             "type": "array",
             "description": "Extra arguments to devctl serve."
@@ -72,8 +75,18 @@
                 "object",
                 "null"
             ],
-            "description": "Global values shared between all subcharts",
-            "$comment": "Added automatically by 'helm schema' to allow this chart to be used as a Helm dependency, as this schema would otherwise not allow Helm's special 'global' values key."
+            "description": "Global values shared between all subcharts and the platform.",
+            "additionalProperties": true,
+            "properties": {
+                "podSecurityStandards": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            }
+        },
+        "helm": {
+            "type": "object",
+            "additionalProperties": true
         },
         "image": {
             "type": "object",
@@ -101,6 +114,9 @@
             "type": "object",
             "description": "The installations rollout_wait reads as the person, by name: the server exchanges the person's Dex token, which muster forwards, at the installation's Dex for a token its management cluster's API accepts, with the client the hub's muster presents there (the Secret `<name>-token-exchange-credentials` in the release namespace, keys client-id and client-secret, read at start). baseDomain derives the rest: apiServer `https://happaapi.<baseDomain>`, dex.tokenEndpoint `https://dex.<baseDomain>/token`, dex.issuer `https://dex.<baseDomain>`; each can be set instead, with dex.connectorId (giantswarm-simple-oidc), dex.audience (dex-k8s-authenticator) and credentialsSecret. Empty: rollout_wait reaches no installation.",
             "additionalProperties": true
+        },
+        "managementCluster": {
+            "type": "string"
         },
         "metrics": {
             "type": "object",
