@@ -142,7 +142,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- Update `golang.org/x/net` to v0.62.0 for CVE-2026-78661. The `nancy` scan failed on it, so the v8.161.1 release build attached no binaries. 
+- Update `golang.org/x/net` to v0.62.0 for CVE-2026-78661. The `nancy` scan failed on it, so the v8.161.1 release build
+  attached no binaries.
 - `gen precommit`: `zz_generated.app-platform.values.yaml` declares the values the platform injects besides the
   common cluster values, so a chart whose schema closes the root or `global` no longer fails with
   `values-schema-violation` on them: `externalDNSIP` (private and vSphere clusters), `helm` (the management cluster
