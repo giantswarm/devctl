@@ -24,6 +24,23 @@ type PipelineDetail struct {
 	ProjectSlug string `json:"project_slug"`
 }
 
+// UnmarshalJSON reads the pipeline through [Pipeline.UnmarshalJSON], which the
+// embedding would otherwise let decode the whole of it, and the project slug
+// beside it.
+func (p *PipelineDetail) UnmarshalJSON(data []byte) error {
+	if err := json.Unmarshal(data, &p.Pipeline); err != nil {
+		return err
+	}
+	var slug struct {
+		ProjectSlug string `json:"project_slug"`
+	}
+	if err := json.Unmarshal(data, &slug); err != nil {
+		return err
+	}
+	p.ProjectSlug = slug.ProjectSlug
+	return nil
+}
+
 // GetPipeline returns the pipeline of id; IsNotFound when CircleCI knows
 // none the token's user sees.
 func (c *Client) GetPipeline(ctx context.Context, id string) (*PipelineDetail, error) {

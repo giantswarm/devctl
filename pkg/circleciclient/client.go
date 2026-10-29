@@ -167,6 +167,51 @@ type Pipeline struct {
 	Trigger   PipelineTrigger `json:"trigger"`
 }
 
+// UnmarshalJSON reads a pipeline. One the CircleCI GitHub App triggered
+// carries no vcs: when vcs is absent, what it built is read from
+// trigger_parameters.git, the checkout's revision, its branch (or the branch
+// of a ref under refs/heads/) and the tag of a ref under refs/tags/.
+func (p *Pipeline) UnmarshalJSON(data []byte) error {
+	type pipeline Pipeline
+	var raw struct {
+		pipeline
+		TriggerParameters struct {
+			Git json.RawMessage `json:"git"`
+		} `json:"trigger_parameters"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*p = Pipeline(raw.pipeline)
+	if p.VCS == (PipelineVCS{}) {
+		p.VCS = triggerVCS(raw.TriggerParameters.Git)
+	}
+	return nil
+}
+
+// triggerVCS reads what a pipeline built from its trigger_parameters.git, or
+// nothing when that is absent or not the shape the GitHub App gives it: an
+// API-triggered pipeline's parameters are the project's own, and one named
+// git must not fail the read of the pipeline.
+func triggerVCS(data json.RawMessage) PipelineVCS {
+	var git struct {
+		CheckoutSHA string `json:"checkout_sha"`
+		Branch      string `json:"branch"`
+		Ref         string `json:"ref"`
+	}
+	if len(data) == 0 || json.Unmarshal(data, &git) != nil || git.CheckoutSHA == "" {
+		return PipelineVCS{}
+	}
+	if tag, ok := strings.CutPrefix(git.Ref, "refs/tags/"); ok {
+		return PipelineVCS{Revision: git.CheckoutSHA, Tag: tag}
+	}
+	branch := git.Branch
+	if branch == "" {
+		branch, _ = strings.CutPrefix(git.Ref, "refs/heads/")
+	}
+	return PipelineVCS{Revision: git.CheckoutSHA, Branch: branch}
+}
+
 // PipelineTrigger is what created a pipeline. Type is webhook for a push,
 // api (or explicit) for a pipeline triggered through the API, schedule or
 // scheduled_pipeline for a schedule.
