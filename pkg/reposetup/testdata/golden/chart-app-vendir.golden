@@ -2399,6 +2399,7 @@ app.kubernetes.io/instance: {{ .Release.Name | quote }}
                 "object",
                 "null"
             ],
+            "description": "Global values shared between all subcharts and the platform.",
             "additionalProperties": true,
             "properties": {
                 "podSecurityStandards": {
@@ -2493,6 +2494,7 @@ clusterID: ""
 # Set by cluster-apps-operator for private and vSphere clusters only.
 externalDNSIP: ""
 gcpProject: ""
+# -- Global values shared between all subcharts and the platform.
 global:  # @schema type: [object, null]; additionalProperties: true
   # From the legacy psp-removal-patch extraConfig, which app-admission-controller
   # attached to App CRs before v2.1.0. Existing App CRs still carry it.

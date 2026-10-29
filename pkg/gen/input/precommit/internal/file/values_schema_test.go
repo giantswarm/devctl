@@ -109,6 +109,13 @@ func Test_NewCreateValuesSchemaInput_appPlatformValues(t *testing.T) {
 			wantGlobalFields: []string{"imagePullSecrets", "podSecurityStandards"},
 		},
 		{
+			name:             "chart defines global without an annotation",
+			values:           "global:\n  imagePullSecrets: []\nreplicaCount: 1\n",
+			wantGlobalOpen:   true,
+			wantGlobalTypes:  []string{"object"},
+			wantGlobalFields: []string{"imagePullSecrets", "podSecurityStandards"},
+		},
+		{
 			name:             "chart without global",
 			values:           "replicaCount: 1\n",
 			wantGlobalOpen:   true,
@@ -152,9 +159,14 @@ func Test_NewCreateValuesSchemaInput_appPlatformValues(t *testing.T) {
 			if schema.AdditionalProperties == nil || *schema.AdditionalProperties {
 				t.Errorf("expected the root to stay closed, got additionalProperties %v", schema.AdditionalProperties)
 			}
-			for _, key := range []string{"externalDNSIP", "helm", "managementCluster", "replicaCount"} {
-				if _, ok := schema.Properties[key]; !ok {
-					t.Errorf("expected %q in properties", key)
+			for key, want := range map[string]string{
+				"externalDNSIP":     `"string"`,
+				"helm":              `"object"`,
+				"managementCluster": `"string"`,
+				"replicaCount":      `"integer"`,
+			} {
+				if got := string(schema.Properties[key].Type); got != want {
+					t.Errorf("expected %q of type %s, got %q", key, want, got)
 				}
 			}
 
