@@ -146,9 +146,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   common cluster values, so a chart whose schema closes the root or `global` no longer fails with
   `values-schema-violation` on them: `externalDNSIP` (private and vSphere clusters), `helm` (the management cluster
   itself), `managementCluster` (catalog config) and `global.podSecurityStandards` (legacy `psp-removal-patch`
-  extraConfig). A chart that closes `global` keeps it closed for everything else
+  extraConfig). `global` stays open unless the chart annotates its own `global` with `additionalProperties: false`,
+  which keeps it closed for everything else
   ([external-dns-app#521](https://github.com/giantswarm/external-dns-app/pull/521)).
-
 - `docs/gen.md`: a job of the repository's own that must not run on a release candidate, the krew index update of a
   CLI among them, filters on stable tags (`/^v\d+\.\d+\.\d+$/`) before the repository moves to `auto-release`
   ([#2652](https://github.com/giantswarm/devctl/issues/2652)).

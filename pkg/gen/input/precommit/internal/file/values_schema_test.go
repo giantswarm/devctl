@@ -1,12 +1,14 @@
 package file
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
+	"slices"
 	"testing"
+	"text/template"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/precommit/internal/params"
 )
@@ -78,65 +80,109 @@ func Test_NewCreateValuesSchemaInput(t *testing.T) {
 	}
 }
 
-// Test_NewCreateValuesSchemaInput_appPlatformValues runs the real app-platform values file
-// through the generator next to a chart that closes its own `global`, as
-// external-dns-app 3.7.x does. Every value the platform injects must end up in the
-// schema, while `global` stays closed for keys nobody declared: an App on alba failed
-// with "additional properties 'managementCluster' not allowed" and "at '/global':
-// additional properties 'podSecurityStandards' not allowed".
+// Test_NewCreateValuesSchemaInput_appPlatformValues runs the rendered app-platform values
+// file through the generator. Every value the platform injects must end up in the schema:
+// an App of external-dns-app 3.7.x, whose chart closes its own `global`, failed on alba with
+// "additional properties 'managementCluster' not allowed" and "at '/global': additional
+// properties 'podSecurityStandards' not allowed". A chart that closes `global` keeps it
+// closed for keys nobody declared, and a chart without a `global` of its own keeps the open,
+// nullable `global` it had before the file declared one.
 func Test_NewCreateValuesSchemaInput_appPlatformValues(t *testing.T) {
-	dir := t.TempDir()
-	chartDir := filepath.Join(dir, "helm", "test-chart")
-	if err := os.MkdirAll(chartDir, 0750); err != nil {
-		t.Fatalf("setup failed: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte(
-		"global:  # @schema additionalProperties: false\n  imagePullSecrets: []\nreplicaCount: 1\n",
-	), 0600); err != nil {
-		t.Fatalf("setup failed: %v", err)
-	}
-	appPlatformValues := strings.Replace(createAppPlatformValuesTemplate, "{{ .Header }}", "# header", 1)
-	if err := os.WriteFile(filepath.Join(chartDir, "zz_generated.app-platform.values.yaml"), []byte(appPlatformValues), 0600); err != nil {
-		t.Fatalf("setup failed: %v", err)
+	var appPlatformValues bytes.Buffer
+	in := NewCreateAppPlatformValuesInput(params.Params{}, "test-chart")
+	if err := template.Must(template.New("").Parse(in.TemplateBody)).Execute(&appPlatformValues, in.TemplateData); err != nil {
+		t.Fatalf("render app-platform values: %v", err)
 	}
 
-	t.Chdir(dir)
+	tests := []struct {
+		name             string
+		values           string
+		wantGlobalOpen   bool
+		wantGlobalTypes  []string
+		wantGlobalFields []string
+	}{
+		{
+			name:             "chart closes global",
+			values:           "global:  # @schema additionalProperties: false\n  imagePullSecrets: []\nreplicaCount: 1\n",
+			wantGlobalOpen:   false,
+			wantGlobalTypes:  []string{"object"},
+			wantGlobalFields: []string{"imagePullSecrets", "podSecurityStandards"},
+		},
+		{
+			name:             "chart without global",
+			values:           "replicaCount: 1\n",
+			wantGlobalOpen:   true,
+			wantGlobalTypes:  []string{"object", "null"},
+			wantGlobalFields: []string{"podSecurityStandards"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			chartDir := filepath.Join(dir, "helm", "test-chart")
+			if err := os.MkdirAll(chartDir, 0750); err != nil {
+				t.Fatalf("setup failed: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte(tc.values), 0600); err != nil {
+				t.Fatalf("setup failed: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(chartDir, "zz_generated.app-platform.values.yaml"), appPlatformValues.Bytes(), 0600); err != nil {
+				t.Fatalf("setup failed: %v", err)
+			}
 
-	got, err := NewCreateValuesSchemaInput(params.Params{K8sSchemaVersion: "v1.33.1"}, "test-chart").Generate(context.Background())
-	if err != nil {
-		t.Fatalf("Generate: %v", err)
-	}
+			t.Chdir(dir)
 
-	var schema struct {
-		AdditionalProperties *bool `json:"additionalProperties"`
-		Properties           map[string]struct {
-			AdditionalProperties *bool                      `json:"additionalProperties"`
-			Properties           map[string]json.RawMessage `json:"properties"`
-		} `json:"properties"`
-	}
-	if err := json.Unmarshal(got, &schema); err != nil {
-		t.Fatalf("output is not valid JSON: %v\n%s", err, got)
-	}
+			got, err := NewCreateValuesSchemaInput(params.Params{K8sSchemaVersion: "v1.33.1"}, "test-chart").Generate(context.Background())
+			if err != nil {
+				t.Fatalf("Generate: %v", err)
+			}
 
-	if schema.AdditionalProperties == nil || *schema.AdditionalProperties {
-		t.Errorf("expected the root to stay closed, got additionalProperties %v", schema.AdditionalProperties)
-	}
-	for _, key := range []string{"externalDNSIP", "helm", "managementCluster", "replicaCount"} {
-		if _, ok := schema.Properties[key]; !ok {
-			t.Errorf("expected %q in properties", key)
-		}
-	}
+			var schema struct {
+				AdditionalProperties *bool `json:"additionalProperties"`
+				Properties           map[string]struct {
+					Type                 json.RawMessage            `json:"type"`
+					AdditionalProperties *bool                      `json:"additionalProperties"`
+					Properties           map[string]json.RawMessage `json:"properties"`
+				} `json:"properties"`
+			}
+			if err := json.Unmarshal(got, &schema); err != nil {
+				t.Fatalf("output is not valid JSON: %v\n%s", err, got)
+			}
 
-	global, ok := schema.Properties["global"]
-	if !ok {
-		t.Fatalf("expected global in properties\n%s", got)
-	}
-	if global.AdditionalProperties == nil || *global.AdditionalProperties {
-		t.Errorf("expected global to stay closed, got additionalProperties %v", global.AdditionalProperties)
-	}
-	for _, key := range []string{"imagePullSecrets", "podSecurityStandards"} {
-		if _, ok := global.Properties[key]; !ok {
-			t.Errorf("expected %q in global.properties\n%s", key, got)
-		}
+			if schema.AdditionalProperties == nil || *schema.AdditionalProperties {
+				t.Errorf("expected the root to stay closed, got additionalProperties %v", schema.AdditionalProperties)
+			}
+			for _, key := range []string{"externalDNSIP", "helm", "managementCluster", "replicaCount"} {
+				if _, ok := schema.Properties[key]; !ok {
+					t.Errorf("expected %q in properties", key)
+				}
+			}
+
+			global, ok := schema.Properties["global"]
+			if !ok {
+				t.Fatalf("expected global in properties\n%s", got)
+			}
+			if global.AdditionalProperties == nil {
+				t.Errorf("expected global additionalProperties %v, got none", tc.wantGlobalOpen)
+			} else if *global.AdditionalProperties != tc.wantGlobalOpen {
+				t.Errorf("expected global additionalProperties %v, got %v", tc.wantGlobalOpen, *global.AdditionalProperties)
+			}
+			var types []string
+			if err := json.Unmarshal(global.Type, &types); err != nil {
+				var single string
+				if err := json.Unmarshal(global.Type, &single); err != nil {
+					t.Fatalf("global type %s: %v", global.Type, err)
+				}
+				types = []string{single}
+			}
+			if !slices.Equal(types, tc.wantGlobalTypes) {
+				t.Errorf("expected global type %v, got %v", tc.wantGlobalTypes, types)
+			}
+			for _, key := range tc.wantGlobalFields {
+				if _, ok := global.Properties[key]; !ok {
+					t.Errorf("expected %q in global.properties\n%s", key, got)
+				}
+			}
+		})
 	}
 }

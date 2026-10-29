@@ -9,7 +9,7 @@ import (
 
 // The app-platform values file exists so the generated values.schema.json
 // (schemaRoot.additionalProperties: false) accepts the keys the app platform
-// merges into every App via the <cluster>-cluster-values ConfigMap.
+// merges into Apps: cluster values, catalog config and legacy extraConfigs.
 func Test_NewCreateAppPlatformValuesInput(t *testing.T) {
 	got := NewCreateAppPlatformValuesInput(params.Params{Dir: ""}, "my-app")
 
@@ -32,6 +32,7 @@ func Test_NewCreateAppPlatformValuesInput(t *testing.T) {
 		"clusterID:",
 		"externalDNSIP:",
 		"gcpProject:",
+		"global:  # @schema type: [object, null]; additionalProperties: true",
 		"podSecurityStandards: {}  # @schema skipProperties: true; additionalProperties: true",
 		"helm: {}  # @schema skipProperties: true; additionalProperties: true",
 		"managementCluster:",

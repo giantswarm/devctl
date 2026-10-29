@@ -8,8 +8,12 @@
 # ("additional properties 'baseDomain', 'provider', ... not allowed").
 #
 # `helm schema` merges this file BEFORE the chart's values.yaml (see
-# .schema.yaml), so any of these keys the chart defines itself keeps its own
-# schema. Helm itself never reads this file; it only feeds schema generation.
+# .schema.yaml): the chart's properties are added and its `@schema`
+# annotations win, but an object the chart defines without an
+# `additionalProperties` annotation stays as open as it is declared here.
+# `global` is open for the same reason, since subcharts and the platform share
+# it; a chart that wants it closed says so on its own `global`. Helm itself
+# never reads this file; it only feeds schema generation.
 
 baseDomain: ""
 bootstrapMode: {}  # @schema skipProperties: true; additionalProperties: true
@@ -23,7 +27,7 @@ clusterID: ""
 # Set by cluster-apps-operator for private and vSphere clusters only.
 externalDNSIP: ""
 gcpProject: ""
-global:
+global:  # @schema type: [object, null]; additionalProperties: true
   # From the legacy psp-removal-patch extraConfig, which app-admission-controller
   # attached to App CRs before v2.1.0. Existing App CRs still carry it.
   podSecurityStandards: {}  # @schema skipProperties: true; additionalProperties: true
