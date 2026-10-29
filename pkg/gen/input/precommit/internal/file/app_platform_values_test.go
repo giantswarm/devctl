@@ -17,7 +17,7 @@ func Test_NewCreateAppPlatformValuesInput(t *testing.T) {
 		t.Errorf("path: expected %q, got %q", "helm/my-app/zz_generated.app-platform.values.yaml", got.Path)
 	}
 
-	// All 12 cluster-values keys must be present; object keys must stay open
+	// Every injected key must be present; object keys must stay open
 	// (skipProperties + additionalProperties) since their content is
 	// provider-dependent and owned by the platform, not the chart.
 	for _, want := range []string{
@@ -30,7 +30,11 @@ func Test_NewCreateAppPlatformValuesInput(t *testing.T) {
 		"clusterCIDR:",
 		"clusterDNSIP:",
 		"clusterID:",
+		"externalDNSIP:",
 		"gcpProject:",
+		"podSecurityStandards: {}  # @schema skipProperties: true; additionalProperties: true",
+		"helm: {}  # @schema skipProperties: true; additionalProperties: true",
+		"managementCluster:",
 		"provider:",
 		"subscriptionID:",
 	} {

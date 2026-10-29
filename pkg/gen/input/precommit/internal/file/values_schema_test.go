@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/precommit/internal/params"
@@ -74,5 +75,68 @@ func Test_NewCreateValuesSchemaInput(t *testing.T) {
 	}
 	if string(got) != string(again) {
 		t.Errorf("Generate is not idempotent:\nfirst:  %s\nsecond: %s", got, again)
+	}
+}
+
+// Test_NewCreateValuesSchemaInput_appPlatformValues runs the real app-platform values file
+// through the generator next to a chart that closes its own `global`, as
+// external-dns-app 3.7.x does. Every value the platform injects must end up in the
+// schema, while `global` stays closed for keys nobody declared: an App on alba failed
+// with "additional properties 'managementCluster' not allowed" and "at '/global':
+// additional properties 'podSecurityStandards' not allowed".
+func Test_NewCreateValuesSchemaInput_appPlatformValues(t *testing.T) {
+	dir := t.TempDir()
+	chartDir := filepath.Join(dir, "helm", "test-chart")
+	if err := os.MkdirAll(chartDir, 0750); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte(
+		"global:  # @schema additionalProperties: false\n  imagePullSecrets: []\nreplicaCount: 1\n",
+	), 0600); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+	appPlatformValues := strings.Replace(createAppPlatformValuesTemplate, "{{ .Header }}", "# header", 1)
+	if err := os.WriteFile(filepath.Join(chartDir, "zz_generated.app-platform.values.yaml"), []byte(appPlatformValues), 0600); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	got, err := NewCreateValuesSchemaInput(params.Params{K8sSchemaVersion: "v1.33.1"}, "test-chart").Generate(context.Background())
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	var schema struct {
+		AdditionalProperties *bool `json:"additionalProperties"`
+		Properties           map[string]struct {
+			AdditionalProperties *bool                      `json:"additionalProperties"`
+			Properties           map[string]json.RawMessage `json:"properties"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(got, &schema); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, got)
+	}
+
+	if schema.AdditionalProperties == nil || *schema.AdditionalProperties {
+		t.Errorf("expected the root to stay closed, got additionalProperties %v", schema.AdditionalProperties)
+	}
+	for _, key := range []string{"externalDNSIP", "helm", "managementCluster", "replicaCount"} {
+		if _, ok := schema.Properties[key]; !ok {
+			t.Errorf("expected %q in properties", key)
+		}
+	}
+
+	global, ok := schema.Properties["global"]
+	if !ok {
+		t.Fatalf("expected global in properties\n%s", got)
+	}
+	if global.AdditionalProperties == nil || *global.AdditionalProperties {
+		t.Errorf("expected global to stay closed, got additionalProperties %v", global.AdditionalProperties)
+	}
+	for _, key := range []string{"imagePullSecrets", "podSecurityStandards"} {
+		if _, ok := global.Properties[key]; !ok {
+			t.Errorf("expected %q in global.properties\n%s", key, got)
+		}
 	}
 }
