@@ -182,6 +182,10 @@ jobs:
               const lines = ['### ✅ `mctl config` completed\n'];
               if (ccrMatch)  lines.push(`- **CCR PR:** ${ccrMatch[1]}`);
               if (instMatch) lines.push(`- **Installations PR:** ${instMatch[1]}`);
+              // mctl prints this line for customer installations only.
+              if (instMatch && /Edit \S+ in the installations PR/.test(output)) {
+                lines.push('\n📇 Fill in the Slack support channel (`slack.support`) and AE info (`accountEngineer`, `accountEngineersHandle`) in the Installations PR\'s `cluster.yaml`; the merge gate waits for them.');
+              }
 
               // Skipped steps: `[name] reason\n  → command`
               const stepMatches = [...output.matchAll(/\[([\w-]+)\] ([^\n]+)\n\s+→ ([^\n]+)/g)];

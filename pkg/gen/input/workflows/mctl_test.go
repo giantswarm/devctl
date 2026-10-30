@@ -492,3 +492,36 @@ func Test_MctlNoGetOctokit(t *testing.T) {
 		}
 	}
 }
+
+// Test_MctlInstallationsContacts pins the installations contacts check (giantswarm/giantswarm#38847): mctl's
+// FILL_IN_ placeholder prefix, the gate checking before the /create-mc result, and the cascade before landing.
+func Test_MctlInstallationsContacts(t *testing.T) {
+	renders := mctlRenders(t, false)
+
+	for _, name := range []string{"merge_gate", "merge_cascade"} {
+		body := renders[name]
+		for _, want := range []string{"startsWith('FILL_IN_')", "['giantswarm', 'antonia']", "'slack.support'", "'accountEngineer'", "'accountEngineersHandle'"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s does not contain %s", name, want)
+			}
+		}
+	}
+
+	gate := renders["merge_gate"]
+	check := strings.Index(gate, "await contactsProblem(crossRepo, findMarker('Installations PR'))")
+	result := strings.Index(gate, "if (!latestResult) {")
+	if check < 0 || result < 0 || check > result {
+		t.Error("the merge gate must check the installations contacts before the /create-mc result")
+	}
+
+	cascade := renders["merge_cascade"]
+	check = strings.Index(cascade, "await contactsProblem(github, installationsPR)")
+	land := strings.Index(cascade, "await land('installations', installationsPR, false)")
+	if check < 0 || land < 0 || check > land {
+		t.Error("the merge cascade must check the installations contacts before landing the installations PR")
+	}
+
+	if !strings.Contains(renders["config"], `Edit \S+ in the installations PR`) {
+		t.Error("config does not match mctl's installations contacts line")
+	}
+}

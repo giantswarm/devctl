@@ -86,6 +86,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen workflows` flavour `fleet`: for customer installations the mctl merge gate fails, and the merge cascade does not
+  land the installations PR, while its `<installation>/cluster.yaml` lacks `slack.support`, `accountEngineer` or
+  `accountEngineersHandle` or holds mctl's `FILL_IN_` placeholders; the `/config` comment asks to fill them in
+  (giantswarm/giantswarm#38847).
 - `gen makefile --language go` and `gen precommit --language go`: `make lint` and the `golangci-lint` hook pass no
   `-E` linter flags; the linters live in the repository's golangci-lint configuration, so a bare `golangci-lint run`
   lints with the same set. Both commands write `.golangci.yaml` (gosec and goconst on top of the standard set,
