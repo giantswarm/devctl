@@ -86,6 +86,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen workflows`: the customer repositories' `add_customer_board_automation` workflow passes the
+  `giantswarm-project-automation` App's `PROJECT_AUTOMATION_CLIENT_ID` and `PROJECT_AUTOMATION_PRIVATE_KEY` to
+  `issue-to-customer-board.yaml` instead of architectbot's `ISSUE_AUTOMATION` token (giantswarm/giantswarm#38800).
 - `gen makefile --language go` and `gen precommit --language go`: `make lint` and the `golangci-lint` hook pass no
   `-E` linter flags; the linters live in the repository's golangci-lint configuration, so a bare `golangci-lint run`
   lints with the same set. Both commands write `.golangci.yaml` (gosec and goconst on top of the standard set,
