@@ -410,17 +410,18 @@ func (m *Merger) refuse(ctx context.Context, owner, repo string, pr *github.Pull
 
 // automationAccounts are Giant Swarm's automation accounts that GitHub
 // carries as plain users: they hold no [bot] login and no Bot user type, so
-// nothing in the author tells them from a teammate. taylorbot opens the
-// release pull request of every repository on devctl-generated CI (the
-// zz_generated.create_release_pr.yaml workflow) and architectbot the
-// architect line's, so without them no agent could finish a release.
+// nothing in the author tells them from a teammate. architectbot opens the
+// architect line's release pull request, so without it no agent could finish
+// that release. taylorbot is no longer one of them: the giantswarm-release
+// GitHub App opens the release pull requests of devctl-generated CI, and a
+// pull request taylorbot opens is refused like any other person's
+// (giantswarm/giantswarm#2280).
 //
 // Each is pinned by its numeric account id as well as its login, because an
 // id is GitHub's stable identity and a login is not: a login that is ever
 // renamed or released and taken by someone else no longer matches, and that
 // account's pull request is refused like any other person's.
 var automationAccounts = map[string]int64{
-	"taylorbot":    25685558,
 	"architectbot": 61872893,
 }
 
