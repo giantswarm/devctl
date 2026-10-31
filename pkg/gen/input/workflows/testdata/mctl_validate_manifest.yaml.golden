@@ -96,7 +96,7 @@ jobs:
 
       - name: Post validation failures as PR comment
         if: failure() && steps.validate.outputs.failed == '1' && steps.placeholders.outputs.has_placeholders == 'false'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           VALIDATE_OUTPUT: ${{ steps.validate.outputs.output }}
         with:

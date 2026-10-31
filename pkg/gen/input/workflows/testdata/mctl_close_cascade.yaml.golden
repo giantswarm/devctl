@@ -33,7 +33,7 @@ jobs:
     steps:
       - name: Find config PR URLs from comments
         id: find
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             const comments = await github.paginate(
@@ -88,7 +88,7 @@ jobs:
           steps.find.outputs.ccr_pr_url != '' ||
           steps.find.outputs.installations_pr_url != '' ||
           steps.find.outputs.teleport_fleet_pr_url != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           CCR_PR_URL: ${{ steps.find.outputs.ccr_pr_url }}
           INSTALLATIONS_PR_URL: ${{ steps.find.outputs.installations_pr_url }}
