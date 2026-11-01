@@ -1,7 +1,7 @@
 # Waiting for a pull request's CI: `devctl pr wait`
 
 ```nohighlight
-devctl pr wait <owner/repo> <number> [--timeout 30m] [--progress] [--failed-log [--failed-log-lines 50]]
+devctl pr wait <owner/repo> <number> [--timeout 60m] [--progress] [--failed-log [--failed-log-lines 50]]
 ```
 
 One blocking call that returns when the outcome of a pull request's CI is known: green, red, or a
@@ -282,5 +282,5 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 |---|---|---|
 | `DEVCTL_GITHUB_API_URL` | `https://api.github.com` | The GitHub REST API. |
 | `DEVCTL_CIRCLECI_API_URL` | `https://circleci.com/api/v2` | The CircleCI API v2. |
-| `DEVCTL_KEYRING_FILE` | unset | A 0600 JSON file in place of the OS keychain (tests). |
+| `DEVCTL_KEYRING_FILE` | unset | A JSON file that holds the records in place of the OS keychain; read from the environment when a command starts, created with mode 0600 on first write. Unset or empty keeps the keychain (tests, machines without a keychain daemon) |
 | `DEVCTL_TIME_SCALE` | `1` | Multiplies every poll interval and the timeout (tests). |

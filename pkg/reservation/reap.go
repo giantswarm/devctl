@@ -13,9 +13,10 @@ import (
 )
 
 // HeadBranchFunc resolves a pull request, e.g. "giantswarm/hello-world#123",
-// to its current head branch. Reap calls it only for a reservation that is
-// not already expired and names a pull request.
-type HeadBranchFunc func(ctx context.Context, pullRequest string) (string, error)
+// to its current head branch and whether it is closed (merged counts as
+// closed). Reap calls it only for a reservation that is not already expired
+// and names a pull request.
+type HeadBranchFunc func(ctx context.Context, pullRequest string) (branch string, closed bool, err error)
 
 // ReapRequest sweeps every enabled cluster in a GitOps repo.
 type ReapRequest struct {
@@ -47,8 +48,9 @@ func (r ReapRequest) validate() error {
 }
 
 // Reap sweeps every enabled cluster under RepoDir's management-clusters
-// directory and releases every reservation that ran out of time or whose
-// stored branch no longer matches its pull request's current head branch. A
+// directory and releases every reservation that ran out of time, whose pull
+// request is closed, or whose stored branch no longer matches its pull
+// request's current head branch. A
 // cluster that fails -- an unparsable ConfigMap, a push that never lands --
 // does not stop the sweep from reaching the next one; its error is joined into
 // the one Reap returns alongside whatever it did manage to release, so a
@@ -189,9 +191,13 @@ func reapReason(ctx context.Context, headBranch HeadBranchFunc, r Reservation, n
 		return "", nil
 	}
 
-	current, err := headBranch(ctx, r.PullRequest)
+	current, closed, err := headBranch(ctx, r.PullRequest)
 	if err != nil {
 		return "", microerror.Mask(err)
+	}
+	if closed {
+		// The close dispatch normally releases first; this catches a lost one.
+		return ReasonClosed, nil
 	}
 	if current != r.Branch {
 		return ReasonRenamed, nil
@@ -294,7 +300,8 @@ type Reaped struct {
 	// PullRequest is the reservation's pull request, e.g.
 	// "giantswarm/hello-world#123", or empty when it named none.
 	PullRequest string `json:"pullRequest,omitempty"`
-	// Reason is why Reap released it: ReasonExpired or ReasonRenamed.
+	// Reason is why Reap released it: ReasonExpired, ReasonClosed or
+	// ReasonRenamed.
 	Reason string `json:"reason"`
 	// Until is the reservation's expiry, in UTC.
 	Until time.Time `json:"until"`
@@ -308,4 +315,6 @@ const (
 	// ReasonRenamed means the reservation's stored branch no longer matches its
 	// pull request's current head branch: the old branch builds nothing.
 	ReasonRenamed = "renamed"
+	// ReasonClosed means the reservation's pull request is closed or merged.
+	ReasonClosed = "closed"
 )

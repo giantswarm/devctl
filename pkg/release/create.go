@@ -450,7 +450,10 @@ func CreateRelease(githubToken, name, base, releases, provider string, component
 	newRelease := mergeReleases(effectiveBaseRelease, updatesRelease)
 
 	// Rewrite catalogs to their test variants for apps/components carrying development
-	// versions, so the cluster chart lookup can locate the build artifact.
+	// versions, so the cluster chart lookup can locate the build artifact. The rewrite
+	// is reversed once an app/component is back on a plain release version, so test
+	// catalogs do not linger after dev builds are replaced (versions with other
+	// pre-release suffixes are left untouched).
 	for i, app := range newRelease.Spec.Apps {
 		if isDevVersion(app.Version) {
 			catalog := app.Catalog
@@ -463,6 +466,13 @@ func CreateRelease(githubToken, name, base, releases, provider string, component
 					app.Name, app.Version, catalog, testCatalog)
 			}
 			newRelease.Spec.Apps[i].Catalog = testCatalog
+		} else if isReleaseVersion(app.Version) && strings.HasSuffix(app.Catalog, "-test") {
+			restoredCatalog := fromTestCatalog(app.Catalog)
+			if verbose {
+				fmt.Printf("Release version detected for app %s (%s): catalog %q → %q\n",
+					app.Name, app.Version, app.Catalog, restoredCatalog)
+			}
+			newRelease.Spec.Apps[i].Catalog = restoredCatalog
 		}
 	}
 	for i, comp := range newRelease.Spec.Components {
@@ -480,6 +490,13 @@ func CreateRelease(githubToken, name, base, releases, provider string, component
 					comp.Name, comp.Version, comp.Catalog, testCatalog)
 			}
 			newRelease.Spec.Components[i].Catalog = testCatalog
+		} else if isReleaseVersion(comp.Version) && strings.HasSuffix(comp.Catalog, "-test") {
+			restoredCatalog := fromTestCatalog(comp.Catalog)
+			if verbose {
+				fmt.Printf("Release version detected for component %s (%s): catalog %q → %q\n",
+					comp.Name, comp.Version, comp.Catalog, restoredCatalog)
+			}
+			newRelease.Spec.Components[i].Catalog = restoredCatalog
 		}
 	}
 

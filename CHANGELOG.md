@@ -7,7 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `pr wait`, `pr merge` (`--timeout`, `--release-timeout`), `release wait` and `rollout wait --release-timeout` default to
+  60 minutes instead of 30. The `serve` tools keep a 30 minute default within their 55 minute cap.
+- The generated auto-release, changelog validation, helm-docs and pre-commit workflows run on `ubuntu-26.04`
+  instead of `ubuntu-24.04`. The generated `renovate.json5` disables Renovate's runner updates in
+  `.github/workflows/zz_generated.*`, which align-files regenerates.
+
 ### Added
+
+- `gen workflows --reservation-support` (app flavour only, off by default) generates
+  `zz_generated.reservation_command.yaml`, which sends `/deploy`, `/undeploy` and `/extend` pull request comments and
+  pull request closes to giantswarm/mc-reservations with an app token scoped to that repository, minted from the
+  `MC_RESERVATIONS_DISPATCH_CLIENT_ID` and `MC_RESERVATIONS_DISPATCH_APP_KEY` org secrets.
 
 - `gen circleci` and `gen workflows`: the `multi-image` flavour, a repository of several images, one per
   `toolchains/<name>/` directory holding a `Dockerfile`, each released as its own `<name>/vX.Y.Z` line (giantswarm/agent-toolchains).
@@ -73,6 +86,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen workflows`: the customer repositories' `add_customer_board_automation` workflow passes the
+  `giantswarm-project-automation` App's `PROJECT_AUTOMATION_CLIENT_ID` and `PROJECT_AUTOMATION_PRIVATE_KEY` to
+  `issue-to-customer-board.yaml` instead of architectbot's `ISSUE_AUTOMATION` token (giantswarm/giantswarm#38800).
+- `gen makefile --language go` and `gen precommit --language go`: `make lint` and the `golangci-lint` hook pass no
+  `-E` linter flags; the linters live in the repository's golangci-lint configuration, so a bare `golangci-lint run`
+  lints with the same set. Both commands write `.golangci.yaml` (gosec and goconst on top of the standard set,
+  issues uncapped) when the repository has none, and add gosec and goconst (govet too when `linters.default`
+  replaces the standard set) to `linters.enable` of a repository's own `.golangci.yml` or `.golangci.yaml` that
+  neither enables nor disables them, leaving the rest of the file as it is. A TOML or JSON configuration, or a flow
+  style `linters` or `linters.enable`, fails generation naming the linters to enable.
+
+- `reservation`: a refusal names the holder's pull request and says when the holder is an exclusive reservation
+  that locks every app on the cluster. With `--output json`, `reserve` adds `replaced`, the expired reservation of
+  another branch or pull request it took over, and every `extend` entry adds `scope` and `commit`.
+
 - `gen circleci`: the generated pipelines pin architect orb 10.15.1. Its executor runs architect 8.6.20 (Go 1.27.3),
   which carries the `crypto/x509` fix for the eMudhra intermediate CA compromise of October 2026 (GO-2026-6809), so
   `go-build` produces binaries the sbom-advisory-operator's `go-stdlib` rule accepts instead of flagging every image
@@ -118,11 +146,52 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - `gen circleci`: a workflow that builds an image or a chart resolves its version once. It starts with the architect
-  orb's `pin-version` job (orb 10.16.0), which every image and chart job requires, and the chart jobs attach the
+  orb's `pin-version` job (orb 10.16.7), which every image and chart job requires, and the chart jobs attach the
   workspace it persists `.pipeline_version` to; a stable tag landing mid-workflow (a promote) no longer gives the image
   and the chart that references it different versions (giantswarm/backstage#3260). A workflow without an image or a
   published chart (a binary, a node library, a template repository) and the multi-image pipeline, whose workflows
   resolve the version in one job each, only move to the new orb.
+- `pr wait`, `pr merge` and every other lookup of a CircleCI pipeline by revision or tag (`release wait`, `pr rerun`)
+  find the pipeline in a project CircleCI builds through its GitHub App. Such a pipeline has no `vcs`, so `pr wait`
+  never found the head's and ran out its timeout (exit 2), even with every CircleCI job green and only Actions runs
+  awaiting approval left (exit 4). When `vcs` is absent, the revision, branch and tag are read from
+  `trigger_parameters.git`.
+- Update `golang.org/x/net` to v0.62.0 for CVE-2026-78661. The `nancy` scan failed on it, so the v8.161.1 release build
+  attached no binaries.
+- `gen precommit`: `zz_generated.app-platform.values.yaml` declares the values the platform injects besides the
+  common cluster values, so a chart whose schema closes the root or `global` no longer fails with
+  `values-schema-violation` on them: `externalDNSIP` (private and vSphere clusters), `helm` (the management cluster
+  itself), `managementCluster` (catalog config) and `global.podSecurityStandards` (legacy `psp-removal-patch`
+  extraConfig). `global` stays open unless the chart annotates its own `global` with `additionalProperties: false`,
+  which keeps it closed for everything else
+  ([external-dns-app#521](https://github.com/giantswarm/external-dns-app/pull/521)).
+- `docs/gen.md`: a job of the repository's own that must not run on a release candidate, the krew index update of a
+  CLI among them, filters on stable tags (`/^v\d+\.\d+\.\d+$/`) before the repository moves to `auto-release`
+  ([#2652](https://github.com/giantswarm/devctl/issues/2652)).
+- `release wait`: a tag pipeline a later CircleCI listing no longer names is read again instead of judging the
+  tag's CI from its commit's statuses, so the wait no longer ends available while that pipeline's workflows run; when
+  the statuses are the verdict, `pipeline` lists them, the pending ones in `unfinished`. Exit 0 never comes with an
+  `unfinished` entry ([#2574](https://github.com/giantswarm/devctl/issues/2574)).
+
+- `reservation reap`: release a reservation whose pull request is closed or merged, with the reason `closed`, so a
+  lost close event no longer keeps the cluster reserved until the reservation expires.
+
+- `release create`: the test-catalog rewrite for dev versions is now reversed when an app/component is back on a
+  plain release version (`cluster-test` → `cluster`, `default-test` → default), so test catalogs no longer linger
+  after dev builds are replaced. CI dev-build versions (e.g. `2.12.2-r5aa25357t20261024082658h446cfd7`) are now
+  also detected as dev versions, so their catalogs are rewritten to the test variants automatically.
+- `DEVCTL_KEYRING_FILE`: `docs/auth.md`, the other command docs and the code comments state the same behaviour, a JSON
+  file read from the environment when a command starts and created with mode 0600 on first write, in place of the OS
+  keychain; unset or empty keeps the keychain
+  ([#2704](https://github.com/giantswarm/devctl/issues/2704)).
+- `pr rerun`, `release rerun`: the examples in `--help` and `docs/pr-rerun.md` call `devctl pr wait` and
+  `devctl release wait` directly
+  ([#2616](https://github.com/giantswarm/devctl/issues/2616)).
+- `pr wait` and `pr merge --accept-red`: a base branch without classic branch protection no longer ends the wait
+  with exit 7 "branch is not protected"; the required status checks of the rulesets in effect on it count like
+  those of branch protection, and a branch guarded by neither requires none, as before
+  ([#2989](https://github.com/giantswarm/devctl/issues/2989)).
+
 - `pr wait` and `pr merge`: an Actions run that GitHub leaves `in_progress` after every job of it completed no
   longer holds the wait until its timeout; five minutes after its last job completed, its jobs are its verdict, and
   `actions[]` marks it `jobsCompleted` ([#2956](https://github.com/giantswarm/devctl/issues/2956)).

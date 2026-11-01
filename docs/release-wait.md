@@ -1,7 +1,7 @@
 # Waiting for a release: `devctl release wait`
 
 ```nohighlight
-devctl release wait <owner/repo> (<vX.Y.Z | X.Y.Z | image/vX.Y.Z> | --pr <number>) [--timeout 30m] [--catalog] [--image <owner/name>]... [--chart <path>]... [--progress] [--failed-log [--failed-log-lines 50]]
+devctl release wait <owner/repo> (<vX.Y.Z | X.Y.Z | image/vX.Y.Z> | --pr <number>) [--timeout 60m] [--catalog] [--image <owner/name>]... [--chart <path>]... [--progress] [--failed-log [--failed-log-lines 50]]
 ```
 
 Blocks until every image and chart of a release is pullable and the tag's pipeline is green, then prints
@@ -196,7 +196,8 @@ orb at 10.12.0 or later, or at a dev version: from 10.12.0 the orb pushes a pre-
 Every poll reads the tag pipeline: the newest CircleCI pipeline whose `vcs.tag` is the tag, its
 workflows reduced to the **newest run per workflow name** (a rerun, from failed or in full, is a
 second workflow of the same name in the same pipeline, and the one it replaces keeps its failed
-status for ever). A workflow in `failed`, `error`, `failing`, `canceled` or `unauthorized` ends the
+status for ever). Once a listing named the tag pipeline, a later one that no longer does (a busy
+repository's newer pipelines push it off the pages read) leaves the wait reading that pipeline. A workflow in `failed`, `error`, `failing`, `canceled` or `unauthorized` ends the
 wait with exit 1 and `pipeline.failedJobs` (`workflow/job`, or the workflow alone when CircleCI does
 not list its jobs). The verdict is the workflows': their jobs are read only where they are needed,
 to name the failed ones and to derive the artifacts of hand-written CI and of a `custom.yml` that
@@ -312,7 +313,7 @@ stderr.
 | `releaseModel` | `auto-release` or `legacy`. |
 | `ciModel` | `generated`, `hand-written`, `actions` or `none`. |
 | `artifacts[]` | `kind` (`image`, `chart`, `release-asset`), `reference` (the pullable reference, or the asset's download URL), `digest` (empty while missing), `state` (`available`, `missing`). Empty until the artifacts are known (hand-written CI before its pipeline exists). |
-| `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status, conclusion}]` (newest run per name; for `ciModel` `actions` one entry per check run of the tag's commit, with its `conclusion`, `id`, `number` empty and `url` the commit's checks page), `failedJobs[]`, `unfinished[]` (the workflows not finished, `name (status)`, with `jobs not visible yet` when CircleCI does not list them yet; what a timeout was waiting for, empty at exit 0). `null` for a repository without CircleCI and without check runs on the tag, or while the CircleCI pipeline does not exist. |
+| `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status, conclusion}]` (newest run per name; for `ciModel` `actions` one entry per check run of the tag's commit, with its `conclusion`, `id`, `number` empty and `url` the commit's checks page), `failedJobs[]`, `unfinished[]` (the workflows not finished, `name (status)`, with `jobs not visible yet` when CircleCI does not list them yet; what a timeout was waiting for, empty at exit 0). When CircleCI names no pipeline for the tag and its commit's CircleCI statuses are the verdict, `workflows` are those statuses' jobs and `unfinished` the pending ones, with `id`, `number` and `url` empty. `null` for a repository without CircleCI and without check runs on the tag, or while the CircleCI pipeline does not exist. |
 | `actions[]` | The Actions runs the tag triggered, for a repository without CircleCI: `name`, `runId`, `status`, `conclusion`, `url`. |
 | `statuses[]` | The newest commit status of every context of the tag's commit, `context`, `state` (`pending`, `success`, `failure`, `error`) and `url`, read once the artifacts are available and the tag's CI is green; empty before. |
 | `conflictingTags[]` | Present at exit 11: every release tag on the commit the wait resolved to, newest first. Absent otherwise. |
@@ -345,7 +346,7 @@ end-to-end tests.
 | `DEVCTL_REGISTRY_PRIVATE` | `gsociprivate.azurecr.io` | The private registry, probed with the docker keychain. |
 | `DEVCTL_REGISTRY_INSECURE` | unset | `1` talks plain HTTP to the registries (tests). |
 | `DEVCTL_CATALOG_URL` | `https://giantswarm.github.io` | The host of the catalog indexes (`<host>/<catalog>/index.yaml`). |
-| `DEVCTL_KEYRING_FILE` | unset | A 0600 JSON file in place of the OS keychain (tests). |
+| `DEVCTL_KEYRING_FILE` | unset | A JSON file that holds the records in place of the OS keychain; read from the environment when a command starts, created with mode 0600 on first write. Unset or empty keeps the keychain (tests, machines without a keychain daemon) |
 | `DEVCTL_TIME_SCALE` | `1` | Multiplies every sleep and the timeout. |
 
 ## The requests, for a mock

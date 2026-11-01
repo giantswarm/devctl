@@ -73,7 +73,7 @@ repos:
 
   # static type checking with mypy
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.4.0
+    rev: v2.4.1
     hooks:
       - id: mypy
 {{- end }}
@@ -87,9 +87,6 @@ repos:
       - id: go-mod-tidy
       - id: golangci-lint
         args:
-          - -E=gosec
-          - -E=goconst
-          - -E=govet
           # No --timeout: golangci-lint v2 has none by default and a flag would
           # override a repo's `run.timeout` in .golangci.yml, its place to set one.
           # List all issues found

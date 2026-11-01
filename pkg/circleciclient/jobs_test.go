@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -73,6 +74,22 @@ func TestCancelWorkflowPosts(t *testing.T) {
 	r.status, r.answer = http.StatusForbidden, `{"message": "Permission denied"}`
 	if err := c.CancelWorkflow(context.Background(), "w1"); !IsForbidden(err) {
 		t.Errorf("a 403: want IsForbidden, got %v", err)
+	}
+}
+
+// TestPipelineDetail_githubAppTrigger: a pipeline the GitHub App triggered is
+// read with what it built and the project it belongs to.
+func TestPipelineDetail_githubAppTrigger(t *testing.T) {
+	r := &recorder{answer: `{"id": "p1", "number": 132, "project_slug": "gh/o/r", "vcs": null, "trigger_parameters": {"git": {"checkout_sha": "b", "branch": "feature"}}}`}
+	c, _ := r.serve(t)
+	p, err := c.GetPipeline(context.Background(), "p1")
+	if err != nil || p.Number != 132 || p.ProjectSlug != "gh/o/r" || p.VCS != (PipelineVCS{Revision: "b", Branch: "feature"}) {
+		t.Fatalf("pipeline: %+v %v", p, err)
+	}
+	// PipelineDetail.UnmarshalJSON reads its fields by hand: a field added
+	// to it needs reading there too.
+	if n := reflect.TypeOf(PipelineDetail{}).NumField(); n != 2 {
+		t.Errorf("PipelineDetail has %d fields, UnmarshalJSON reads 2", n)
 	}
 }
 

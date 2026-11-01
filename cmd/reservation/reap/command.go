@@ -30,10 +30,10 @@ That check reads the pull request through the GitHub API with the first of
 DEVCTL_GITHUB_TOKEN, GITHUB_TOKEN and OPSCTL_GITHUB_TOKEN that is set, else
 with the devctl auth login --github-only login (never under CI). Without a
 token the command still releases every expired reservation, but it never
-catches a rename.
+catches a closed pull request or a rename.
 
 For each release the command prints one tab-separated line to stdout: cluster,
-app, user, branch, pull request, reason ("expired" or "renamed"), until (RFC
+app, user, branch, pull request, reason ("expired", "closed" or "renamed"), until (RFC
 3339) and commit. It prints nothing when it finds nothing to release. With
 --output json it prints the same entries as a JSON array, [] when there are
 none. A failure on one cluster or reservation does not stop the sweep: the

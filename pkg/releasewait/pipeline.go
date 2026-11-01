@@ -87,6 +87,7 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result, needJobs boo
 		w.progress.Printf("no CircleCI pipeline for %s yet", result.Tag)
 		return &pipelineState{}, nil
 	}
+	w.statusPipelines.pipeline = pipeline
 	runs, err := w.circleci.ListPipelineWorkflows(ctx, pipeline.ID)
 	if err != nil {
 		return nil, fmt.Errorf("reading the workflows of pipeline %d: %w", pipeline.Number, err)

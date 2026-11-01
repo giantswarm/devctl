@@ -56,6 +56,20 @@ The first release of a repository with no stable tag is a candidate. On a mainte
 
 A push whose commits git-cliff all skips (`docs`, `style`, `test`) or drops as non-conventional tags nothing, so a README typo cannot spend an rc number and a publish pipeline. A candidate is flagged as a GitHub pre-release, so it does not surface as the repo's "Latest release", and the `/^v.*/` CircleCI tag filter publishes it like any other tag.
 
+A job of the repository's own that must not see a candidate, in a hand-written pipeline or in `.circleci/custom.yml`, filters on stable tags before the repository moves to `auto-release`. The krew index update of a CLI is one: krew-release-bot refuses a GitHub pre-release, so a `/^v.*/` filter turns the first candidate's pipeline red.
+
+```yaml
+workflows:
+  release:
+    jobs:
+      - update-krew-index:
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v\d+\.\d+\.\d+$/
+```
+
 A stable minor or major release is cut only by running the workflow by hand with `release-type: stable`. It promotes the latest candidate since the last stable release, or the one its `version` input names (`vX.Y.Z-rc.N`, one of those candidates: one built while a later one still builds, or the one proven; any other tag fails the run): the workflow checks that candidate out, so the version, the release notes and the tag's commit are all the candidate's, and whatever merged after it waits for the next candidate. The run fails when there is no candidate to promote, when the candidate has no GitHub pre-release (the run that cut it did not finish), or when a commit status of its commit failed or is still pending (the pipelines that build and publish it report there). A failed `ci/circleci: sync-china-registry`, the in-China mirror the release does not require, is a warning on the run, not a refusal, as in `devctl release wait` and `devctl release promote`. Only commit statuses count, which CircleCI writes; a GitHub Actions workflow of the repository's own that publishes on a tag reports check runs, and the promotion does not wait for it. A repository's own rules for a stable release go in `.github/release-gate.custom.sh`: when the released commit carries it (the promoted candidate, or a patch push's head), the run executes it with bash on that checkout, with the version about to be tagged as its argument, after the version is decided and before the tag and the GitHub release are created; a non-zero exit fails the run and cuts neither. A repository without the script has no gate. A check in the tag's own pipeline runs after the release exists, so a refusal there leaves a release that looks published with nothing built. One commit releases one version: every run that is about to tag, a candidate or a stable, first reads the remote's tags, and when the commit already carries the release tag (`vX.Y.Z`, `vX.Y.Z-rc.N`) of another version the run fails naming both and cuts no tag and no release. A stable on its own candidate's commit is the same version and passes; a tag outside that pattern (an upstream pre-release) counts for nothing. `release-type: auto` applies the same rule as a push. A `stable` run queued behind a push run waits in the branch's concurrency group, where GitHub keeps one waiting run: a further push replaces it, and the promotion has to be started again.
 
 `cliff.toml`'s `[remote.github].repo` is read from the consuming repo's `origin` git remote URL, its `giantswarm/<repo>` path. A checkout with no origin remote, or one outside `giantswarm`, needs `--repo-name <repo>` instead; without either the command fails rather than silently writing `repo = ""`.
@@ -76,6 +90,12 @@ In giantswarm/github the flag is `gen.helmDocsRegen: true` on the repository ent
 ```nohighlight
 devctl gen workflows --flavour app --language generic --helm-docs-regen
 ```
+
+### Reservation command workflow
+
+`--reservation-support` (app flavour only, off by default) adds `.github/workflows/zz_generated.reservation_command.yaml`, a self-contained workflow with one job. A pull request comment that starts a line with `/deploy`, `/undeploy` or `/extend`, and a closed pull request, are sent to giantswarm/mc-reservations as a `repository_dispatch`, which reserves a management cluster for the branch's dev build (see `devctl reservation`). The workflow is a pure trigger: it sends only the repository, the pull request number and the comment ID, and mc-reservations re-reads and checks the rest. A job filter skips other comments, bot comments and the close of a fork's pull request, so they start no run. The repository needs the `MC_RESERVATIONS_DISPATCH_CLIENT_ID` and `MC_RESERVATIONS_DISPATCH_APP_KEY` org secrets, and the `mc-reservations-github` App installed, or a command gets no answer.
+
+In giantswarm/github the flag is `gen.reservationSupport: true` on the repository entry.
 
 ### README link check workflow
 
@@ -108,6 +128,8 @@ The `--language` flag sets the primary language (`go`, `python`, `generic`). The
 - `helmchart` — Helm chart schema and docs hooks (auto-detects charts under `helm/`)
 
 A Go repository's config also refuses a `require` line in any `go.mod` (single or in a block) whose trailing comment has more than one word (`go-mod-require-comment`): Renovate's gomod manager reads only a one-word comment such as `// indirect` and skips the whole line otherwise, so that dependency is never updated and nothing says so. The explanation goes on a comment line above the require.
+
+A Go repository's `golangci-lint` hook, like `make lint` of `devctl gen makefile --language go`, passes no linter flags: the linters live in the repository's golangci-lint configuration, so a bare `golangci-lint run` lints with the same set. Both commands write `.golangci.yaml` (gosec and goconst on top of the standard set) when the repository has no configuration. A repository's own `.golangci.yml` or `.golangci.yaml` is kept as it is, except that gosec and goconst are added to `linters.enable` when it neither enables nor disables them (and govet too when `linters.default` replaces the standard set); a TOML or JSON configuration, or one whose `linters.enable` is a flow sequence, fails generation naming the linters to enable.
 
 No hook reads protobuf-generated code: the config's top-level `exclude` skips `*_pb.*` (protoc-gen-es, grpc-tools), `*_pb2.py`, `*_pb2.pyi`, `*_pb2_grpc.py` and `*.pb.go` with its `_grpc`, `.gw`, `.validate` and `_vtproto` variants. Their generator is the source of truth, so a hook that rewrote them (`end-of-file-fixer` on buf's TypeScript output, `go-imports -local`, `ruff --fix`) would be undone by the next generation. Hand-written files next to them, a `gen/` directory's `README.md` or `buf.gen.yaml` included, are still checked. The fixer hooks also skip `testdata/`, `.yarn/` and the vendored subcharts under `helm/<chart>/charts/`.
 

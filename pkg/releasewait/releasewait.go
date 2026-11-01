@@ -66,7 +66,7 @@ const (
 )
 
 // DefaultTimeout bounds a wait that gets no --timeout.
-const DefaultTimeout = 30 * time.Minute
+const DefaultTimeout = 60 * time.Minute
 
 // GitHub is what the wait reads from GitHub; *githubclient.Client is one.
 type GitHub interface {
@@ -654,6 +654,11 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 					return err
 				}
 			}
+		}
+		if done && result.Pipeline != nil && len(result.Pipeline.Unfinished) > 0 {
+			// The document is what the caller acts on: a release it lists
+			// unfinished workflows of is not available.
+			done = false
 		}
 		if done {
 			// The tag pipeline is not every status of its commit: a late

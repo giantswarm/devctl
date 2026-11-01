@@ -221,11 +221,41 @@ func TestReapReportsTheRecordItActuallyDeletedAfterARebase(t *testing.T) {
 	}
 }
 
-// constantHeadBranch stubs HeadBranchFunc: every pull request has the same
-// current head branch, whatever the reservation stored.
+// constantHeadBranch stubs HeadBranchFunc: every pull request is open and has
+// the same current head branch, whatever the reservation stored.
 func constantHeadBranch(branch string) reservation.HeadBranchFunc {
-	return func(ctx context.Context, pullRequest string) (string, error) {
-		return branch, nil
+	return func(ctx context.Context, pullRequest string) (string, bool, error) {
+		return branch, false, nil
+	}
+}
+
+// TestReapReleasesAReservationOfAClosedPullRequest covers a lost close
+// dispatch: a reservation not yet expired whose pull request is closed is
+// released, even though its branch is unchanged.
+func TestReapReleasesAReservationOfAClosedPullRequest(t *testing.T) {
+	dir, _ := newReapFixture(t, fixtureOptions{})
+
+	req := testRequest(dir)
+	req.Now = time.Date(2026, 9, 15, 10, 0, 0, 0, time.UTC)
+	req.Duration = 10 * time.Hour // still active at the Now below
+	reserveAndPush(t, dir, req)
+
+	reaped, err := reservation.Reap(context.Background(), reservation.ReapRequest{
+		RepoDir: dir,
+		User:    testReaper,
+		Now:     time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC),
+		HeadBranch: func(ctx context.Context, pullRequest string) (string, bool, error) {
+			return testBranch, true, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Reap: %v", err)
+	}
+	if len(reaped) != 1 {
+		t.Fatalf("got %d reaped reservations, want 1: %+v", len(reaped), reaped)
+	}
+	if got := reaped[0].Reason; got != reservation.ReasonClosed {
+		t.Errorf("Reason: got %q, want %q", got, reservation.ReasonClosed)
 	}
 }
 
