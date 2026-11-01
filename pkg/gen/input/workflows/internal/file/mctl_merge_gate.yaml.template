@@ -36,7 +36,7 @@ jobs:
       - name: Generate app token
         id: app-token
         continue-on-error: true
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
         with:
           app-id: ${{ secrets.MCTL_APP_ID }}
           private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
@@ -45,7 +45,7 @@ jobs:
 
       - name: Evaluate and publish status
         id: gate
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
@@ -216,7 +216,7 @@ jobs:
       - name: Comment on leftover branch overrides
         # Set only on the green path.
         if: steps.gate.outputs.installation != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           INSTALLATION:   ${{ steps.gate.outputs.installation }}
           PR_NUMBER:      ${{ steps.gate.outputs.pr_number }}
