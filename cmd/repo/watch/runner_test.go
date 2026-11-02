@@ -189,7 +189,9 @@ func TestRunEndsOnTheTagRunTheSetUpStarted(t *testing.T) {
 			require.Equal(t, 1, seq.calls, "the manager is not asked again")
 			if tc.green {
 				require.NoError(t, err)
-				require.Contains(t, out.String(), "ready: new (the release build the CircleCI set-up started is green)")
+				require.Contains(t, out.String(), "ready: https://github.com/giantswarm/new (the release build the CircleCI set-up started is green)")
+				require.NotContains(t, out.String(), "failed at released", "the manager's stale verdict is not printed")
+				require.Contains(t, out.String(), "  setUp      2026-09-22T10:01:40Z", "the phases reached are")
 				return
 			}
 			require.True(t, IsFailed(err), err)
@@ -203,4 +205,33 @@ func TestRunReleasedFailureWithoutCircleCI(t *testing.T) {
 	r, _, _ := newRunner(releasedMissed)
 	err := r.run(context.Background(), "new")
 	require.True(t, IsFailed(err), err)
+}
+
+// In JSON mode the document follows the run: ready on exit 0, the red
+// pipeline as the failure otherwise; never the manager's stale verdict.
+func TestRunTagRunJSON(t *testing.T) {
+	r, _, out := newRunner(releasedMissed)
+	r.flag.CircleCI = true
+	r.flag.Output = client.OutputJSON
+	r.setUpCircleCI = func(context.Context, string, string, func(string, ...any)) (tagWait, error) {
+		return func(context.Context) ([]circleciapp.Run, error) {
+			return []circleciapp.Run{{Ref: circleciclient.Ref{Tag: "v0.1.0"}, Outcome: &circleciapp.Outcome{Green: true}}}, nil
+		}, nil
+	}
+	require.NoError(t, r.run(context.Background(), "new"))
+	var doc manager.Watch
+	require.NoError(t, json.Unmarshal(out.Bytes(), &doc))
+	require.True(t, doc.Ready)
+	require.Nil(t, doc.Failure)
+}
+
+// A released phase failed on missed-tag-build, with nothing run by this
+// watch, names what clears the stale verdict.
+func TestRunStaleMissedTagBuildHint(t *testing.T) {
+	r, _, _ := newRunner(releasedMissed)
+	r.flag.CircleCI = true
+	r.setUpCircleCI = func(context.Context, string, string, func(string, ...any)) (tagWait, error) { return nil, nil }
+	err := r.run(context.Background(), "new")
+	require.True(t, IsFailed(err), err)
+	require.Contains(t, err.Error(), "run Align now for the repository and watch again")
 }

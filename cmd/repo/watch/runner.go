@@ -16,6 +16,7 @@ import (
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
 	"github.com/giantswarm/devctl/v8/pkg/circleciapp"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup/manager"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
 )
 
 type runner struct {
@@ -84,11 +85,12 @@ func (r *runner) run(ctx context.Context, arg string) error {
 		if err != nil {
 			return microerror.Mask(err)
 		}
-		if !r.flag.JSON() {
-			r.printProgress(watch, printed, &lastReason)
-		}
 		if !circleCIDone && needsCircleCI(watch) && r.flag.CircleCI {
 			circleCIDone = true
+			if !r.flag.JSON() {
+				// The phases reached so far; the verdict follows below.
+				r.printPhases(watch, printed)
+			}
 			wait, err := r.circleCI(watchCtx, repository)
 			if err != nil {
 				if r.flag.JSON() {
@@ -101,15 +103,18 @@ func (r *runner) run(ctx context.Context, arg string) error {
 				// pipeline existed: its verdict is that run's, read with the
 				// person's CircleCI login. The manager's released phase still
 				// carries the reconciler's missed-tag-build from before.
-				return r.waitTagRuns(watchCtx, repository, wait, last)
+				return r.waitTagRuns(watchCtx, repository, wait, watch)
 			}
+		}
+		if !r.flag.JSON() {
+			r.printProgress(watch, printed, &lastReason)
 		}
 		switch {
 		case watch.Failure != nil:
 			if r.flag.JSON() {
 				_ = client.PrintJSON(r.stdout, last)
 			}
-			return microerror.Maskf(failedError, "%s failed at %s: %s", repository, watch.Failure.Phase, watch.Failure.Reason)
+			return microerror.Maskf(failedError, "%s failed at %s: %s%s", repository, watch.Failure.Phase, watch.Failure.Reason, staleMissedTagBuild(watch.Failure))
 		case watch.Ready:
 			if r.flag.JSON() {
 				return microerror.Mask(client.PrintJSON(r.stdout, last))
@@ -176,43 +181,87 @@ func (r *runner) circleCIProgress(format string, args ...any) {
 type tagWait func(ctx context.Context) ([]circleciapp.Run, error)
 
 // waitTagRuns ends the watch on the release-tag runs the set-up started:
-// ready when every one is green, failed at released otherwise. In JSON mode
-// the manager's last answer is printed, as on every other exit.
-func (r *runner) waitTagRuns(ctx context.Context, repository string, wait tagWait, last json.RawMessage) error {
+// ready when every one is green, failed at released otherwise. The manager's
+// last answer w carries the phases, the release and the findings; its
+// released verdict is the stale one, so in JSON mode it is printed with
+// ready, failure and pending taken from the runs.
+func (r *runner) waitTagRuns(ctx context.Context, repository string, wait tagWait, w *manager.Watch) error {
 	runs, err := wait(ctx)
-	if r.flag.JSON() {
-		_ = client.PrintJSON(r.stdout, last)
-	}
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		r.printJSON(w)
 		return microerror.Maskf(timeoutError, "%s is not ready after %s: the release build the CircleCI set-up started has not settled", repository, r.flag.Timeout)
 	case err != nil:
-		return microerror.Mask(err)
+		r.printJSON(w)
+		return microerror.Maskf(circleCIError, "%s: reading the release build the CircleCI set-up started: %v; its pipeline is on https://app.circleci.com/pipelines/github/%s, and a later watch reads the result", repository, err, repository)
 	}
-	var red []string
+	var red, held []string
 	for _, run := range runs {
-		if run.Outcome != nil && !run.Outcome.Green {
+		switch {
+		case run.Outcome == nil:
+		case !run.Outcome.Green:
 			red = append(red, fmt.Sprintf("pipeline %d (%s): %s", run.Pipeline.Number, run.Ref, strings.Join(run.Outcome.Failed, ", ")))
+		case len(run.Outcome.OnHold) > 0:
+			held = append(held, fmt.Sprintf("pipeline %d (%s): %s", run.Pipeline.Number, run.Ref, strings.Join(run.Outcome.OnHold, ", ")))
 		}
 	}
+	w.Pending, w.PendingReason = "", ""
 	if len(red) > 0 {
-		if !r.flag.JSON() {
-			fmt.Fprintf(r.stdout, "failed at %s: %s\n", phaseReleased, strings.Join(red, "; "))
+		w.Ready, w.Failure = false, &manager.Failure{Phase: phaseReleased, Reason: strings.Join(red, "; ")}
+		if r.flag.JSON() {
+			r.printJSON(w)
+		} else {
+			fmt.Fprintf(r.stdout, "failed at %s: %s\n", phaseReleased, w.Failure.Reason)
 		}
-		return microerror.Maskf(failedError, "%s failed at %s: %s", repository, phaseReleased, strings.Join(red, "; "))
+		return microerror.Maskf(failedError, "%s failed at %s: %s", repository, phaseReleased, w.Failure.Reason)
 	}
-	if !r.flag.JSON() {
-		for _, run := range runs {
-			fmt.Fprintf(r.stdout, "  %-10s pipeline %d (%s) green\n", phaseReleased, run.Pipeline.Number, run.Ref)
+	w.Ready, w.Failure = true, nil
+	if r.flag.JSON() {
+		r.printJSON(w)
+		return nil
+	}
+	for _, run := range runs {
+		fmt.Fprintf(r.stdout, "  %-10s pipeline %d (%s) green\n", phaseReleased, run.Pipeline.Number, run.Ref)
+	}
+	line := "ready: " + w.Repository + " (the release build the CircleCI set-up started is green"
+	if w.Release != nil {
+		line += fmt.Sprintf("; release %s, %s", w.Release.Tag, w.Release.URL)
+	}
+	if len(held) > 0 {
+		line += "; on hold for an approval in CircleCI: " + strings.Join(held, "; ")
+	}
+	fmt.Fprintln(r.stdout, line+")")
+	for _, f := range w.Findings {
+		if f.Kind == reconcile.FindingMissedTagBuild {
+			continue // the stale verdict the run just answered
 		}
-		fmt.Fprintf(r.stdout, "ready: %s (the release build the CircleCI set-up started is green)\n", repository)
+		fmt.Fprintf(r.stdout, "  %s: %s -- fix: %s\n", f.Kind, f.Message, f.Fix)
 	}
 	return nil
 }
 
-// printProgress prints the phases not printed yet, the pending phase's
-// reason when it changed, and the closing line when ready.
-func (r *runner) printProgress(w *manager.Watch, printed map[string]bool, lastReason *string) {
+// printJSON prints w whole in JSON mode.
+func (r *runner) printJSON(w *manager.Watch) {
+	if r.flag.JSON() {
+		if data, err := json.Marshal(w); err == nil {
+			_ = client.PrintJSON(r.stdout, data)
+		}
+	}
+}
+
+// staleMissedTagBuild is the note on a released phase that failed on the
+// reconciler's missed-tag-build: a tag built since (devctl repo
+// follow-circleci, or a watch's set-up) keeps it until the reconciler runs
+// again.
+func staleMissedTagBuild(f *manager.Failure) string {
+	if f.Phase != phaseReleased || !strings.Contains(f.Reason, string(reconcile.FindingMissedTagBuild)) {
+		return ""
+	}
+	return "; if the tag was built since (devctl repo follow-circleci), the manager reports the reconciler's earlier missed-tag-build until the reconciler's next run: run Align now for the repository and watch again"
+}
+
+// printPhases prints the phases not printed yet.
+func (r *runner) printPhases(w *manager.Watch, printed map[string]bool) {
 	for _, p := range w.Phases {
 		if printed[p.Name] {
 			continue
@@ -220,6 +269,12 @@ func (r *runner) printProgress(w *manager.Watch, printed map[string]bool, lastRe
 		printed[p.Name] = true
 		fmt.Fprintf(r.stdout, "  %-10s %s (+%ds)\n", p.Name, p.At.UTC().Format("2006-01-02T15:04:05Z"), p.Seconds)
 	}
+}
+
+// printProgress prints the phases not printed yet, the pending phase's
+// reason when it changed, and the closing line when ready.
+func (r *runner) printProgress(w *manager.Watch, printed map[string]bool, lastReason *string) {
+	r.printPhases(w, printed)
 	switch {
 	case w.Failure != nil:
 		fmt.Fprintf(r.stdout, "failed at %s: %s\n", w.Failure.Phase, w.Failure.Reason)
