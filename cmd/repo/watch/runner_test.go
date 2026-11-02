@@ -152,6 +152,7 @@ func TestRunCircleCIFailure(t *testing.T) {
 	err := r.run(context.Background(), "giantswarm/new")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "devctl repo follow-circleci giantswarm/new")
+	require.Contains(t, err.Error(), "devctl auth login --circleci-only")
 	require.Equal(t, 1, seq.calls, "the watch ends at the failure")
 }
 

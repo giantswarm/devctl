@@ -190,7 +190,7 @@ func (r *runner) circleCI(ctx context.Context, repository string) error {
 	case circleciapp.IsNoConfig(err):
 		return nil
 	case err != nil:
-		return microerror.Maskf(circleCIError, "%s/%s is set up, and its CircleCI pipeline is not: %v; fix it, then run `devctl repo follow-circleci %s/%s` and watch again", owner, repo, err, owner, repo)
+		return microerror.Maskf(circleCIError, "%s/%s is set up, and its CircleCI pipeline is not: %v; log in with `devctl auth login --circleci-only` (grant Write) if that is the cause, then run `devctl repo follow-circleci %s/%s` and watch again, or watch with --circleci=false to leave the pipeline to someone else", owner, repo, err, owner, repo)
 	}
 	return nil
 }
