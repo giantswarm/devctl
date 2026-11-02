@@ -42,8 +42,9 @@ the pull request.
 CircleCI is the one step the reconciler cannot take: CircleCI has no service accounts, so its GitHub App
 pipeline is created by a person. The output names the `devctl repo watch` to run next: once the
 repository is set up, it creates the pipeline with your CircleCI login (as `devctl repo follow-circleci`
-does) and runs the first release on it, which was tagged before the pipeline existed. Nobody is
-load-bearing for the pipeline afterwards.
+does) and runs the first release on it, which was tagged before the pipeline existed. The watch then
+ends on that run, read with your CircleCI login: ready when it is green, failed at `released` with the
+red pipeline otherwise. Nobody is load-bearing for the pipeline afterwards.
 
 The output names the pull request; `--output json` prints the dry run and the pull request URL as one
 document. `--dry-run` prints the dry run and opens nothing.
@@ -166,7 +167,7 @@ and nothing runs locally in its place.
 | `repo refresh <repo>` | `refresh_repository` | the record rebuilt now (the engine's checks in read mode) and printed like `get`; the cache only, nothing on GitHub |
 | `repo status <repo>` | `get_repository` | the set-up state alone, as before: the steps and their verdicts, the opt-in to alignment and the declared branch and flavours from the entry, the last run and the run awaited |
 | `repo sweep` | `sweep_inventory` | the full sweep started now, for a member of the manager's owning teams |
-| `repo watch <repo> --pull-request N` | `watch_repository` | a new repository followed to readiness: created, scaffolded, declared, merged, set up, released; the phases printed as they complete, `--timeout` (15 m) for the whole; a repository declared without CI (`gen.ci.generate: false`) is ready once set up |
+| `repo watch <repo> --pull-request N` | `watch_repository` | a new repository followed to readiness: created, scaffolded, declared, merged, set up, released; the phases printed as they complete, `--timeout` (15 m) for the whole; a repository declared without CI (`gen.ci.generate: false`) is ready once set up; once set up, the CircleCI GitHub App pipeline is created with your CircleCI login and, when that runs the first release, the watch ends on that run (`--circleci=false` skips it) |
 | `repo adopt <repo> --team T [entry flags]` | `adopt_repository` | an existing, undeclared repository declared in the team's file; `--component-type`, `--description`, `--visibility`, `--language`, `--flavour`, `--ci-generate`, `--align`, `--lifecycle deprecated\|archived` |
 | `repo update <repo> --set path=value \| --unset path \| --entry-file f` | `update_repository` | the entry changed: `--set` edits the inventory's entry field by field (`gen.ci.generate=false`, `align=true`, `gen.flavours=[app, k8sapi]`; the value is YAML), `--entry-file` passes the whole entry |
 | `repo transfer <repo> --to-team T` | `transfer_repository` | the entry moved to another team's file; the receiving team approves, the giving team is told |

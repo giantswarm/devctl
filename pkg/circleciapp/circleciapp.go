@@ -246,18 +246,23 @@ const setupOnlyReads = 3
 // workflows that carry the build. The newest run of every workflow name
 // counts. The caller's context bounds the wait.
 func (w Waiter) Wait(ctx context.Context, id string) (*Outcome, error) {
-	setupOnly := 0
+	setupOnly, failedReads := 0, 0
 	for {
-		p, err := w.CircleCI.GetPipeline(ctx, id)
+		p, workflows, err := w.read(ctx, id)
 		if err != nil {
-			return nil, microerror.Mask(err)
+			// A CircleCI hiccup (a 5xx, a rate limit) is read again; only
+			// readFailures in a row, or the context ending, end the wait.
+			if failedReads++; failedReads >= readFailures || ctx.Err() != nil {
+				return nil, microerror.Mask(err)
+			}
+			if err := w.Sleep(ctx, w.Interval); err != nil {
+				return nil, microerror.Mask(err)
+			}
+			continue
 		}
+		failedReads = 0
 		if p.State == "errored" {
 			return &Outcome{Pipeline: p.Pipeline, Failed: []string{"pipeline (errored: its configuration did not compile)"}}, nil
-		}
-		workflows, err := w.CircleCI.ListPipelineWorkflows(ctx, id)
-		if err != nil {
-			return nil, microerror.Mask(err)
 		}
 		workflows = circleciclient.NewestWorkflows(workflows)
 		outcome := finished(p.Pipeline, workflows)
@@ -293,6 +298,22 @@ const (
 	workflowOnHold = "on_hold"
 	workflowNotRun = "not_run"
 )
+
+// readFailures is how many failed reads in a row end Wait.
+const readFailures = 3
+
+// read is one read of the pipeline and its workflows.
+func (w Waiter) read(ctx context.Context, id string) (*circleciclient.PipelineDetail, []circleciclient.Workflow, error) {
+	p, err := w.CircleCI.GetPipeline(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	workflows, err := w.CircleCI.ListPipelineWorkflows(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	return p, workflows, nil
+}
 
 // finished is the outcome of a pipeline whose listed workflows are all
 // finished, on hold or not run, nil while one runs or none is listed yet. A

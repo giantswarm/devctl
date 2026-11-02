@@ -27,6 +27,8 @@ type fakeCircleCI struct {
 	// read with 403.
 	setupWorkflows  bool
 	settingsRefused bool
+	// failReads answers that many pipeline reads with a 502 first.
+	failReads int
 }
 
 type pipelineRead struct {
@@ -109,6 +111,10 @@ func (f *fakeCircleCI) current() pipelineRead {
 }
 
 func (f *fakeCircleCI) GetPipeline(_ context.Context, id string) (*circleciclient.PipelineDetail, error) {
+	if f.failReads > 0 {
+		f.failReads--
+		return nil, clientError(502)
+	}
 	return &circleciclient.PipelineDetail{Pipeline: circleciclient.Pipeline{ID: id, State: f.current().state}}, nil
 }
 

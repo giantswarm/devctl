@@ -310,3 +310,18 @@ func TestSetupSkipsTheBranchOnTheTagsCommit(t *testing.T) {
 	require.Len(t, report.Runs, 1)
 	require.Equal(t, circleciclient.Ref{Tag: "v0.1.0"}, report.Runs[0].Ref)
 }
+
+// TestWaitRetriesFailedReads: a CircleCI hiccup is read again; three
+// failures in a row end the wait.
+func TestWaitRetriesFailedReads(t *testing.T) {
+	ci := newFake()
+	ci.failReads = 2
+	outcome, err := Waiter{CircleCI: ci, Sleep: noSleep}.Wait(context.Background(), "pl1")
+	require.NoError(t, err)
+	require.True(t, outcome.Green)
+
+	ci = newFake()
+	ci.failReads = readFailures
+	_, err = Waiter{CircleCI: ci, Sleep: noSleep}.Wait(context.Background(), "pl1")
+	require.Error(t, err)
+}
