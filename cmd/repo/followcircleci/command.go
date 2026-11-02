@@ -32,7 +32,10 @@ follow, which builds through the follower's GitHub grant.
 The command, idempotent:
   1. finds the project's GitHub App pipeline, or creates <repository>-app
      (config and checkout through the GitHub App, .circleci/config.yml);
-  2. gives it an all-pushes trigger (branches and tags) unless it has one;
+  2. gives it an all-pushes trigger (branches and tags) unless it has one,
+     and switches the project's setup workflows on when they are off (the
+     generated dynamic configuration needs them; a refused read is a
+     warning);
   3. with --migrate, deletes the OAuth pipeline's triggers, so a push builds
      once, on the App; without it a remaining OAuth trigger is reported;
   4. runs the default branch when anything changed, and the latest release

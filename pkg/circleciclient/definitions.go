@@ -181,3 +181,37 @@ func (c *Client) RunPipeline(ctx context.Context, org, repo, definitionID string
 func (c *Client) definitions(projectID string) string {
 	return "/api/v2/projects/" + url.PathEscape(projectID) + "/pipeline-definitions"
 }
+
+// ProjectSettings are the v2 project settings; only the advanced settings
+// devctl manages are modelled. Pointer fields are omitted when nil, so a
+// value can carry just the settings to change.
+type ProjectSettings struct {
+	Advanced AdvancedSettings `json:"advanced"`
+}
+
+// AdvancedSettings are the settings under "advanced".
+type AdvancedSettings struct {
+	// SetupWorkflows enables dynamic configuration: the setup workflow the
+	// generated pipeline needs (`Use of setup workflows must be enabled in
+	// project settings` otherwise).
+	SetupWorkflows *bool `json:"setup_workflows,omitempty"`
+}
+
+// GetProjectSettings returns the v2 project settings.
+func (c *Client) GetProjectSettings(ctx context.Context, org, repo string) (*ProjectSettings, error) {
+	var s ProjectSettings
+	if err := c.do(ctx, http.MethodGet, c.v2Project(org, repo)+"/settings", nil, &s); err != nil {
+		return nil, microerror.Mask(err)
+	}
+	return &s, nil
+}
+
+// UpdateProjectSettings patches the settings set in settings and returns the
+// settings as they are afterwards.
+func (c *Client) UpdateProjectSettings(ctx context.Context, org, repo string, settings ProjectSettings) (*ProjectSettings, error) {
+	var s ProjectSettings
+	if err := c.do(ctx, http.MethodPatch, c.v2Project(org, repo)+"/settings", settings, &s); err != nil {
+		return nil, microerror.Mask(err)
+	}
+	return &s, nil
+}

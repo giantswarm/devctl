@@ -175,3 +175,25 @@ func TestSetupRefusesARepositoryWithoutConfig(t *testing.T) {
 	require.True(t, IsNoConfig(err), "%v", err)
 	require.Empty(t, ci.writes)
 }
+
+// TestEnsureSwitchesSetupWorkflowsOn: a project with setup workflows off has
+// them switched on (the generated dynamic config needs them); a refused read
+// is noted and does not fail the set-up.
+func TestEnsureSwitchesSetupWorkflowsOn(t *testing.T) {
+	ci := newFake(appDef())
+	ci.triggers["app"] = []circleciclient.Trigger{{ID: "on"}}
+	ci.setupWorkflows = false
+	result, err := Ensure(context.Background(), ci, repo, false)
+	require.NoError(t, err)
+	require.True(t, result.EnabledSetupWorkflows)
+	require.True(t, result.Changed())
+	require.Equal(t, []string{"enable setup workflows"}, ci.writes)
+
+	ci = newFake(appDef())
+	ci.triggers["app"] = []circleciclient.Trigger{{ID: "on"}}
+	ci.settingsRefused = true
+	result, err = Ensure(context.Background(), ci, repo, false)
+	require.NoError(t, err)
+	require.NotEmpty(t, result.SetupWorkflowsUnread)
+	require.False(t, result.Changed())
+}

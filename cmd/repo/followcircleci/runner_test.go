@@ -153,3 +153,12 @@ func TestRun(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+func (f *fakeCircleCI) GetProjectSettings(context.Context, string, string) (*circleciclient.ProjectSettings, error) {
+	on := true
+	return &circleciclient.ProjectSettings{Advanced: circleciclient.AdvancedSettings{SetupWorkflows: &on}}, nil
+}
+
+func (f *fakeCircleCI) UpdateProjectSettings(_ context.Context, _, _ string, s circleciclient.ProjectSettings) (*circleciclient.ProjectSettings, error) {
+	return &s, nil
+}

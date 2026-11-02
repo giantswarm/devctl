@@ -146,6 +146,12 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 	if result.CreatedTrigger {
 		progress("%s: added the all-pushes trigger to %s", slug, def.Name)
 	}
+	switch {
+	case result.EnabledSetupWorkflows:
+		progress("%s: switched the project's setup workflows on", slug)
+	case result.SetupWorkflowsUnread != "":
+		progress("%s: could not read the project's setup workflows setting (%s); a project created since late 2023 has it on, and a pipeline that fails with \"Use of setup workflows must be enabled\" needs it switched on in the project settings", slug, result.SetupWorkflowsUnread)
+	}
 	for _, t := range result.DeletedOAuthTriggers {
 		progress("%s: deleted the OAuth pipeline's trigger %s", slug, t)
 	}

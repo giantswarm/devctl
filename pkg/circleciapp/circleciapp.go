@@ -32,6 +32,8 @@ type CircleCI interface {
 	DeleteTrigger(ctx context.Context, projectID, triggerID string) error
 	RunPipeline(ctx context.Context, org, repo, definitionID string, ref circleciclient.Ref) (*circleciclient.Pipeline, error)
 	GetPipeline(ctx context.Context, id string) (*circleciclient.PipelineDetail, error)
+	GetProjectSettings(ctx context.Context, org, repo string) (*circleciclient.ProjectSettings, error)
+	UpdateProjectSettings(ctx context.Context, org, repo string, settings circleciclient.ProjectSettings) (*circleciclient.ProjectSettings, error)
 	ListPipelineWorkflows(ctx context.Context, pipelineID string) ([]circleciclient.Workflow, error)
 }
 
@@ -63,11 +65,18 @@ type Result struct {
 	// DeletedOAuthTriggers are the OAuth pipeline's triggers migrate
 	// deleted.
 	DeletedOAuthTriggers []string
+	// EnabledSetupWorkflows says Ensure switched the project's setup
+	// workflows on.
+	EnabledSetupWorkflows bool
+	// SetupWorkflowsUnread is why the setting could not be read or written,
+	// empty when it was: CircleCI may refuse the person its project
+	// settings, and a project created since late 2023 has them on anyway.
+	SetupWorkflowsUnread string
 }
 
 // Changed says Ensure wrote anything.
 func (r *Result) Changed() bool {
-	return r.CreatedDefinition || r.CreatedTrigger || len(r.DeletedOAuthTriggers) > 0
+	return r.CreatedDefinition || r.CreatedTrigger || len(r.DeletedOAuthTriggers) > 0 || r.EnabledSetupWorkflows
 }
 
 // Ensure makes repo build on a GitHub App pipeline, idempotently: it finds
@@ -75,8 +84,11 @@ func (r *Result) Changed() bool {
 // gives it an all-pushes trigger unless it has an enabled trigger already.
 // With migrate the OAuth pipeline's triggers are deleted after, so a push
 // builds once, on the App; the OAuth definition itself is CircleCI's and
-// stays. A login that granted Read access only is refused with
-// circleciclient.IsForbidden on the first write.
+// stays. The project's setup workflows, which the generated dynamic
+// configuration needs, are switched on when they are off; CircleCI refusing
+// the person the settings (403) is noted in the result, not an error. A login
+// that granted Read access only is refused with circleciclient.IsForbidden on
+// the first write.
 func Ensure(ctx context.Context, ci CircleCI, repo Repository, migrate bool) (*Result, error) {
 	project, err := ci.GetProject(ctx, repo.Owner, repo.Name)
 	switch {
@@ -126,6 +138,10 @@ func Ensure(ctx context.Context, ci CircleCI, repo Repository, migrate bool) (*R
 		result.CreatedTrigger = true
 	}
 
+	if err := ensureSetupWorkflows(ctx, ci, repo, result); err != nil {
+		return nil, microerror.Mask(err)
+	}
+
 	for _, d := range oauth {
 		triggers, err := ci.ListTriggers(ctx, project.ID, d.ID)
 		if err != nil {
@@ -145,6 +161,34 @@ func Ensure(ctx context.Context, ci CircleCI, repo Repository, migrate bool) (*R
 		}
 	}
 	return result, nil
+}
+
+// ensureSetupWorkflows switches the project's setup workflows on when they
+// are off. A refusal (403, or 404 for settings the person may not see) is
+// noted in result.SetupWorkflowsUnread.
+func ensureSetupWorkflows(ctx context.Context, ci CircleCI, repo Repository, result *Result) error {
+	settings, err := ci.GetProjectSettings(ctx, repo.Owner, repo.Name)
+	switch {
+	case circleciclient.IsForbidden(err) || circleciclient.IsNotFound(err):
+		result.SetupWorkflowsUnread = err.Error()
+		return nil
+	case err != nil:
+		return microerror.Mask(err)
+	}
+	if sw := settings.Advanced.SetupWorkflows; sw != nil && *sw {
+		return nil
+	}
+	on := true
+	_, err = ci.UpdateProjectSettings(ctx, repo.Owner, repo.Name, circleciclient.ProjectSettings{Advanced: circleciclient.AdvancedSettings{SetupWorkflows: &on}})
+	switch {
+	case circleciclient.IsForbidden(err) || circleciclient.IsNotFound(err):
+		result.SetupWorkflowsUnread = err.Error()
+		return nil
+	case err != nil:
+		return microerror.Mask(err)
+	}
+	result.EnabledSetupWorkflows = true
+	return nil
 }
 
 func hasEnabled(triggers []circleciclient.Trigger) bool {

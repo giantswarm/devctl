@@ -267,7 +267,9 @@ The command is idempotent:
 
 1. It finds the project's GitHub App pipeline, or creates `<repository>-app` (config and checkout
    through the GitHub App, `.circleci/config.yml`).
-2. It gives the pipeline an `all-pushes` trigger (branches and tags) unless it has an enabled one.
+2. It gives the pipeline an `all-pushes` trigger (branches and tags) unless it has an enabled one, and
+   switches the project's setup workflows on when they are off: the generated dynamic configuration needs
+   them. CircleCI refusing the setting to you is a warning, not an error.
 3. With `--migrate` it deletes the OAuth pipeline's triggers, so a push builds once. Without it, a
    remaining OAuth trigger is reported: every push builds twice.
 4. It runs the default branch when anything changed, and the latest release when its tag carries no

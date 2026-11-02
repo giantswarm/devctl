@@ -23,6 +23,10 @@ type fakeCircleCI struct {
 	read   int
 	writes []string
 	seq    int
+	// setupWorkflows is the project's setting; settingsRefused answers its
+	// read with 403.
+	setupWorkflows  bool
+	settingsRefused bool
 }
 
 type pipelineRead struct {
@@ -31,7 +35,7 @@ type pipelineRead struct {
 }
 
 func newFake(defs ...circleciclient.PipelineDefinition) *fakeCircleCI {
-	return &fakeCircleCI{defs: defs, triggers: map[string][]circleciclient.Trigger{}}
+	return &fakeCircleCI{defs: defs, triggers: map[string][]circleciclient.Trigger{}, setupWorkflows: true}
 }
 
 func oauthDef() circleciclient.PipelineDefinition {
@@ -158,3 +162,17 @@ func status(context, state, workflow string, at time.Time) *github.RepoStatus {
 }
 
 func noSleep(context.Context, time.Duration) error { return nil }
+
+func (f *fakeCircleCI) GetProjectSettings(context.Context, string, string) (*circleciclient.ProjectSettings, error) {
+	if f.settingsRefused {
+		return nil, forbidden()
+	}
+	on := f.setupWorkflows
+	return &circleciclient.ProjectSettings{Advanced: circleciclient.AdvancedSettings{SetupWorkflows: &on}}, nil
+}
+
+func (f *fakeCircleCI) UpdateProjectSettings(_ context.Context, _, _ string, s circleciclient.ProjectSettings) (*circleciclient.ProjectSettings, error) {
+	f.setupWorkflows = *s.Advanced.SetupWorkflows
+	f.writes = append(f.writes, "enable setup workflows")
+	return &s, nil
+}

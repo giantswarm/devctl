@@ -13,7 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   who asks for them, and the reconciler writes nothing on CircleCI
   ([giantswarm/giantswarm#38799](https://github.com/giantswarm/giantswarm/issues/38799)).
   - `repo follow-circleci` sets a repository up on a GitHub App pipeline with your CircleCI login (Write access). It is
-    idempotent: it creates `<repository>-app` and an `all-pushes` trigger when they are missing, runs the default
+    idempotent: it creates `<repository>-app` and an `all-pushes` trigger when they are missing, switches setup workflows
+    on when they are off, runs the default
     branch and an unbuilt latest release, and waits for green. `--migrate` deletes the OAuth pipeline's triggers. It
     replaces the follow that repaired `circleci-webhook-missing`.
   - `repo watch` takes that step for the creator once the reconciler has set the repository up (`--circleci=false`
