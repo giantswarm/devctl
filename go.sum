@@ -160,8 +160,8 @@ github.com/fsnotify/fsnotify v1.9.0 h1:2Ml+OJNzbYCTzsxtv8vKSFD9PbJjmhYF14k/jKC7S
 github.com/fsnotify/fsnotify v1.9.0/go.mod h1:8jBTzvmWwFyi3Pb8djgCCO5IBqzKJ/Jwo8TRcHyHii0=
 github.com/fxamacker/cbor/v2 v2.9.2 h1:X4Ksno9+x3cz0TZv69ec1hxP/+tymuR8PXQJyDwfh78=
 github.com/fxamacker/cbor/v2 v2.9.2/go.mod h1:vM4b+DJCtHn+zz7h3FFp/hDAI9WNWCsZj23V5ytsSxQ=
-github.com/giantswarm/gitsemver/v3 v3.0.11 h1:j0cFo0W0B9ZHs6CaAJ+uo+XGvq+afVfz5xGal45E5dQ=
-github.com/giantswarm/gitsemver/v3 v3.0.11/go.mod h1:flJsKqFvqd+NV/fCVB67c1V1QIYWvNWBBQbjl+GoL0I=
+github.com/giantswarm/gitsemver/v3 v3.0.12 h1:40oNwDx7OfPPmDBU1gmksott79kftBdRGj6UOJkVmIY=
+github.com/giantswarm/gitsemver/v3 v3.0.12/go.mod h1:flJsKqFvqd+NV/fCVB67c1V1QIYWvNWBBQbjl+GoL0I=
 github.com/giantswarm/go-selfupdate v1.7.1 h1:43DYFwLqIKRC2iIJqLykRAw4hwuSwqSadqdQ/ORMgKM=
 github.com/giantswarm/go-selfupdate v1.7.1/go.mod h1:nqRW1Io8Ixo3x8tSnLKkpfenWn2PRf/Zcu548PZp780=
 github.com/giantswarm/microerror v0.4.1 h1:WMiD7HQASoUA9lZzPlPK+erCEOJ0uT4cyo18VfCXHD0=
