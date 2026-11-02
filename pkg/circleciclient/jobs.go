@@ -24,6 +24,23 @@ type PipelineDetail struct {
 	ProjectSlug string `json:"project_slug"`
 }
 
+// UnmarshalJSON reads the pipeline through [Pipeline.UnmarshalJSON], which the
+// embedding would otherwise let decode the whole of it, and the project slug
+// beside it.
+func (p *PipelineDetail) UnmarshalJSON(data []byte) error {
+	if err := json.Unmarshal(data, &p.Pipeline); err != nil {
+		return err
+	}
+	var slug struct {
+		ProjectSlug string `json:"project_slug"`
+	}
+	if err := json.Unmarshal(data, &slug); err != nil {
+		return err
+	}
+	p.ProjectSlug = slug.ProjectSlug
+	return nil
+}
+
 // GetPipeline returns the pipeline of id; IsNotFound when CircleCI knows
 // none the token's user sees.
 func (c *Client) GetPipeline(ctx context.Context, id string) (*PipelineDetail, error) {
@@ -45,12 +62,16 @@ func (c *Client) GetProjectPipeline(ctx context.Context, org, repo string, numbe
 }
 
 // ProjectJob is one job as the project's job endpoint answers it: its
-// number, name and status, and the pipeline and workflow it ran in.
+// number, name, status, page and times, and the pipeline and workflow it ran
+// in.
 type ProjectJob struct {
-	Number   int64  `json:"number"`
-	Name     string `json:"name"`
-	Status   string `json:"status"`
-	Pipeline struct {
+	Number    int64     `json:"number"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	WebURL    string    `json:"web_url"`
+	StartedAt time.Time `json:"started_at"`
+	StoppedAt time.Time `json:"stopped_at"`
+	Pipeline  struct {
 		ID string `json:"id"`
 	} `json:"pipeline"`
 	LatestWorkflow struct {

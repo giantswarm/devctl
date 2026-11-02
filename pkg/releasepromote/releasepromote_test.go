@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/require"
@@ -28,8 +29,11 @@ type dispatch struct {
 
 // fakeRepository is what the fake answers for one repository.
 type fakeRepository struct {
-	branch     string
-	noWorkflow bool
+	// branch carries the workflow and the candidates; it is the default
+	// branch unless defaultBranch names another.
+	branch        string
+	defaultBranch string
+	noWorkflow    bool
 	// outdated serves the workflow without the promotion step.
 	outdated bool
 	// noVersionInput serves a promoting workflow without the version input.
@@ -37,6 +41,8 @@ type fakeRepository struct {
 	// unreachable are the tags not on the default branch.
 	unreachable []string
 	releases    []githubclient.Release
+	// tagReleases answer GetReleaseByTag; releases too unless set.
+	tagReleases []githubclient.Release
 	status      githubclient.CombinedStatus
 	// statuses override status per ref.
 	statuses    map[string]githubclient.CombinedStatus
@@ -59,6 +65,7 @@ type fakeGitHub struct {
 	statusRefs   []string
 	compared     []string
 	runReads     int
+	tagReads     []string
 }
 
 var errNotFound = errors.New("404 Not Found")
@@ -73,6 +80,9 @@ func (f *fakeGitHub) repository(owner, repo string) (fakeRepository, error) {
 
 func (f *fakeGitHub) DefaultBranch(_ context.Context, owner, repo string) (string, error) {
 	r, err := f.repository(owner, repo)
+	if r.defaultBranch != "" {
+		return r.defaultBranch, err
+	}
 	return r.branch, err
 }
 
@@ -105,6 +115,24 @@ func (f *fakeGitHub) Reachable(_ context.Context, owner, repo, ref, branch strin
 func (f *fakeGitHub) ListReleases(_ context.Context, owner, repo string) ([]githubclient.Release, error) {
 	r, err := f.repository(owner, repo)
 	return r.releases, err
+}
+
+func (f *fakeGitHub) GetReleaseByTag(_ context.Context, owner, repo, tag string) (githubclient.Release, error) {
+	f.tagReads = append(f.tagReads, tag)
+	r, err := f.repository(owner, repo)
+	if err != nil {
+		return githubclient.Release{}, err
+	}
+	releases := r.tagReleases
+	if releases == nil {
+		releases = r.releases
+	}
+	for _, rel := range releases {
+		if rel.Tag == tag {
+			return rel, nil
+		}
+	}
+	return githubclient.Release{}, githubclient.NotFound("release %s in %s/%s", tag, owner, repo)
 }
 
 func (f *fakeGitHub) GetCombinedStatus(_ context.Context, owner, repo, ref string) (githubclient.CombinedStatus, error) {
@@ -400,6 +428,23 @@ func TestPromoteReadsTheCandidateStatusAndDispatchesOnTheDefaultBranch(t *testin
 	require.Equal(t, Repository{Repository: "giantswarm/fork", Candidate: "v0.2.0-rc.1", State: StateDispatched, Message: "dispatched zz_generated.auto_release.yaml on giantswarm-main to promote v0.2.0-rc.1"}, result.Repositories[0])
 }
 
+func TestPromoteOnAMaintenanceBranch(t *testing.T) {
+	maintenance := fakeRepository{branch: "release-1.16", defaultBranch: "giantswarm", releases: []githubclient.Release{candidate("v1.16.5-rc.1"), stable("v1.16.4")}}
+
+	gh := &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/fork": maintenance}}
+	result := NewResult("")
+	require.NoError(t, Promote(t.Context(), Config{GitHub: gh, Branch: "release-1.16", Version: "v1.16.5-rc.1"}, []string{"giantswarm/fork"}, &result))
+	require.Equal(t, []dispatch{{repository: "giantswarm/fork", file: Workflow, ref: "release-1.16", inputs: map[string]any{"release-type": "stable", "version": "v1.16.5-rc.1"}}}, gh.dispatches)
+	require.Equal(t, "dispatched zz_generated.auto_release.yaml on release-1.16 to promote v1.16.5-rc.1", result.Repositories[0].Message)
+
+	// Without --branch the default branch is read, which has neither.
+	gh = &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/fork": maintenance}}
+	result = NewResult("")
+	require.Error(t, Promote(t.Context(), Config{GitHub: gh, Version: "v1.16.5-rc.1"}, []string{"giantswarm/fork"}, &result))
+	require.Equal(t, StateNotAutoRelease, result.Repositories[0].State)
+	require.Empty(t, gh.dispatches)
+}
+
 func TestPromoteGoesOnAfterARepositoryFails(t *testing.T) {
 	built := fakeRepository{branch: "main", releases: []githubclient.Release{candidate("v1.0.0-rc.1")}, status: githubclient.CombinedStatus{State: "success", TotalCount: 1}}
 	gh := &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/a": built, "giantswarm/c": built}}
@@ -589,6 +634,14 @@ func TestPromoteVersion(t *testing.T) {
 			message:    "the commit statuses of v1.2.3-rc.15 are pending: promote it once its pipelines passed, or promote the newest built candidate with --version v1.2.3-rc.14",
 		},
 		{
+			name:       "a candidate the release list misses, read by its tag",
+			repository: fakeRepository{branch: "main", releases: []githubclient.Release{}, tagReleases: streamReleases, statuses: streamStatuses},
+			version:    "v1.2.3-rc.14",
+			state:      StateDispatched,
+			candidate:  "v1.2.3-rc.14",
+			message:    "dispatched zz_generated.auto_release.yaml on main to promote v1.2.3-rc.14",
+		},
+		{
 			name:       "a candidate without a published release",
 			repository: fakeRepository{branch: "main", releases: streamReleases, statuses: streamStatuses},
 			version:    "v1.2.3-rc.16",
@@ -607,7 +660,7 @@ func TestPromoteVersion(t *testing.T) {
 			repository: fakeRepository{branch: "main", releases: streamReleases, statuses: streamStatuses, unreachable: []string{"v1.2.3-rc.14"}},
 			version:    "v1.2.3-rc.14",
 			state:      StateFailed,
-			message:    "v1.2.3-rc.14 is not a release candidate to promote on main: not on the default branch",
+			message:    "v1.2.3-rc.14 is not a release candidate to promote on main: not on that branch",
 		},
 		{
 			name:       "a candidate that is a full release",
@@ -629,7 +682,7 @@ func TestPromoteVersion(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			gh := &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/kserve": tc.repository}}
 			result := NewResult("")
-			err := Promote(t.Context(), Config{GitHub: gh, Version: tc.version}, []string{"giantswarm/kserve"}, &result)
+			err := Promote(t.Context(), Config{GitHub: gh, Version: tc.version, Clock: agentcli.NewVirtualClock(time.Unix(0, 0))}, []string{"giantswarm/kserve"}, &result)
 
 			got := result.Repositories[0]
 			require.Equal(t, tc.state, got.State, got.Message)
@@ -645,6 +698,23 @@ func TestPromoteVersion(t *testing.T) {
 			require.Equal(t, []dispatch{{repository: "giantswarm/kserve", file: Workflow, ref: "main", inputs: map[string]any{"release-type": "stable", "version": tc.version}}}, gh.dispatches)
 		})
 	}
+}
+
+// A named candidate the release list lacks is read by its tag, and a 404 is
+// read again before the candidate is refused as missing; one the list
+// carries is not read again.
+func TestPromoteVersionReadsAMissingReleaseByItsTag(t *testing.T) {
+	gh := &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/kserve": {branch: "main", releases: streamReleases, statuses: streamStatuses}}}
+	config := Config{GitHub: gh, Version: "v1.2.3-rc.16", Clock: agentcli.NewVirtualClock(time.Unix(0, 0))}
+	result := NewResult("")
+	_ = Promote(t.Context(), config, []string{"giantswarm/kserve"}, &result)
+	require.Equal(t, "v1.2.3-rc.16 is not a release candidate to promote on main: no published GitHub release v1.2.3-rc.16", result.Repositories[0].Message)
+	require.Equal(t, []string{"v1.2.3-rc.16", "v1.2.3-rc.16", "v1.2.3-rc.16"}, gh.tagReads)
+
+	gh.tagReads = nil
+	config.Version = "v1.2.3-rc.14"
+	require.NoError(t, Promote(t.Context(), config, []string{"giantswarm/kserve"}, &result))
+	require.Empty(t, gh.tagReads)
 }
 
 // Without --version, a latest candidate still building is refused, and the

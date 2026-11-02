@@ -2,7 +2,6 @@ package promote
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -20,7 +19,7 @@ type runner struct {
 	// gate is versiongate.Check: an outdated devctl ends the run in the
 	// document.
 	gate func(noCache bool) error
-	// open is releasepromote.OpenSources; tests inject clients over mocks.
+	// open is laptop.ReleasePromoteSources; tests inject clients over mocks.
 	open func(ctx context.Context, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*releasepromote.Sources, error)
 }
 
@@ -51,24 +50,17 @@ func newDocument(f *flag) releasepromote.Document {
 }
 
 func (r *runner) promote(ctx context.Context, args []string, doc *releasepromote.Document) error {
-	if (len(args) == 0) == (r.flag.Team == "") {
-		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "usage: devctl %s (<owner/repo>... | --team <team>): pass exactly one of repositories and --team, got %d repository argument(s) and --team %q", releasepromote.Command, len(args), r.flag.Team)
+	call := releasepromote.Call{
+		Repositories:  args,
+		Team:          r.flag.Team,
+		DryRun:        r.flag.DryRun,
+		Version:       r.flag.Version,
+		Branch:        r.flag.Branch,
+		Follow:        !r.flag.NoFollow,
+		FollowTimeout: r.flag.FollowTimeout,
 	}
-	for _, arg := range args {
-		if _, _, ok := releasepromote.SplitRepository(arg); !ok {
-			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "%q is not a repository: expected owner/repo", arg)
-		}
-	}
-	if r.flag.FollowTimeout < 0 {
-		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--follow-timeout must not be negative, got %s", r.flag.FollowTimeout)
-	}
-	if r.flag.Version != "" {
-		if !releasepromote.ValidVersion(r.flag.Version) {
-			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--version %q is not a release candidate tag: expected vX.Y.Z-rc.N", r.flag.Version)
-		}
-		if len(unique(args)) != 1 {
-			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--version names a candidate of one repository: pass exactly one owner/repo with it, got %d repository argument(s) and --team %q", len(args), r.flag.Team)
-		}
+	if err := call.Check(); err != nil {
+		return err
 	}
 	if err := r.gate(false); err != nil {
 		return err
@@ -86,43 +78,5 @@ func (r *runner) promote(ctx context.Context, args []string, doc *releasepromote
 	if err != nil {
 		return err
 	}
-
-	doc.Identity = sources.Identity
-
-	repositories := unique(args)
-	if r.flag.Team != "" {
-		progress.Printf("listing the auto-release repositories of %s", r.flag.Team)
-		repositories, err = sources.Team(ctx, r.flag.Team)
-		if err != nil {
-			return err
-		}
-		if len(repositories) == 0 {
-			doc.Warn(fmt.Sprintf("the team file of %s declares no auto-release repository: nothing to promote", r.flag.Team))
-		}
-	}
-
-	return releasepromote.Promote(ctx, releasepromote.Config{
-		GitHub:        sources.GitHub,
-		DryRun:        r.flag.DryRun,
-		Version:       r.flag.Version,
-		NotFoundHint:  sources.NotFoundHint,
-		Follow:        !r.flag.NoFollow,
-		FollowTimeout: r.flag.FollowTimeout,
-		Clock:         clock,
-		Progress:      progress,
-	}, repositories, &doc.Result)
-}
-
-// unique is repositories without repeats, in first-seen order.
-func unique(repositories []string) []string {
-	seen := map[string]bool{}
-	out := make([]string, 0, len(repositories))
-	for _, repository := range repositories {
-		if seen[repository] {
-			continue
-		}
-		seen[repository] = true
-		out = append(out, repository)
-	}
-	return out
+	return call.Run(ctx, sources, clock, progress, doc)
 }

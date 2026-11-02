@@ -62,6 +62,9 @@ var failedConclusions = []string{"failure", "cancelled", "timed_out", "startup_f
 // included, for a while after the workflow exists and for as long as its
 // job data lags, and a green pipeline is green without them.
 func (w *Waiter) pipelineState(ctx context.Context, result *Result, needJobs bool) (*pipelineState, error) {
+	if w.statusesOnly {
+		return w.circleStatusesState(ctx, result)
+	}
 	if w.circleci == nil {
 		return w.actionsState(ctx, result)
 	}
@@ -84,6 +87,7 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result, needJobs boo
 		w.progress.Printf("no CircleCI pipeline for %s yet", result.Tag)
 		return &pipelineState{}, nil
 	}
+	w.statusPipelines.pipeline = pipeline
 	runs, err := w.circleci.ListPipelineWorkflows(ctx, pipeline.ID)
 	if err != nil {
 		return nil, fmt.Errorf("reading the workflows of pipeline %d: %w", pipeline.Number, err)

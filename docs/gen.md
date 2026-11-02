@@ -52,7 +52,23 @@ Every releasable push releases the version git-cliff computes from the conventio
 
 The first release of a repository with no stable tag is a candidate. On a maintenance branch (`release-v3.x`, a fork line's `release-X.Y`) every release is a patch of its series, so it is tagged stable on its push. A patch candidate cut before this rule is released by the next releasable push as its stable version.
 
+`--patch-candidates` (team file `gen.ci.patchCandidates: true`) drops the fast path: a patch is cut as a candidate too, `v1.2.10-rc.1` for `fix: x` above and `v1.2.10-rc.2` for the next fix, on the default branch and on a maintenance branch alike, so no push tags a stable release. It is for a repository whose consumers follow a semver range that takes its next patch on their own (`>=1.17.0 <1.18.0`): every stable release is then a promotion of a candidate proven first. A maintenance branch's candidate is promoted on that branch, `devctl release promote <owner/repo> --branch release-X.Y --version vX.Y.Z-rc.N`.
+
 A push whose commits git-cliff all skips (`docs`, `style`, `test`) or drops as non-conventional tags nothing, so a README typo cannot spend an rc number and a publish pipeline. A candidate is flagged as a GitHub pre-release, so it does not surface as the repo's "Latest release", and the `/^v.*/` CircleCI tag filter publishes it like any other tag.
+
+A job of the repository's own that must not see a candidate, in a hand-written pipeline or in `.circleci/custom.yml`, filters on stable tags before the repository moves to `auto-release`. The krew index update of a CLI is one: krew-release-bot refuses a GitHub pre-release, so a `/^v.*/` filter turns the first candidate's pipeline red.
+
+```yaml
+workflows:
+  release:
+    jobs:
+      - update-krew-index:
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v\d+\.\d+\.\d+$/
+```
 
 A stable minor or major release is cut only by running the workflow by hand with `release-type: stable`. It promotes the latest candidate since the last stable release, or the one its `version` input names (`vX.Y.Z-rc.N`, one of those candidates: one built while a later one still builds, or the one proven; any other tag fails the run): the workflow checks that candidate out, so the version, the release notes and the tag's commit are all the candidate's, and whatever merged after it waits for the next candidate. The run fails when there is no candidate to promote, when the candidate has no GitHub pre-release (the run that cut it did not finish), or when a commit status of its commit failed or is still pending (the pipelines that build and publish it report there). A failed `ci/circleci: sync-china-registry`, the in-China mirror the release does not require, is a warning on the run, not a refusal, as in `devctl release wait` and `devctl release promote`. Only commit statuses count, which CircleCI writes; a GitHub Actions workflow of the repository's own that publishes on a tag reports check runs, and the promotion does not wait for it. A repository's own rules for a stable release go in `.github/release-gate.custom.sh`: when the released commit carries it (the promoted candidate, or a patch push's head), the run executes it with bash on that checkout, with the version about to be tagged as its argument, after the version is decided and before the tag and the GitHub release are created; a non-zero exit fails the run and cuts neither. A repository without the script has no gate. A check in the tag's own pipeline runs after the release exists, so a refusal there leaves a release that looks published with nothing built. One commit releases one version: every run that is about to tag, a candidate or a stable, first reads the remote's tags, and when the commit already carries the release tag (`vX.Y.Z`, `vX.Y.Z-rc.N`) of another version the run fails naming both and cuts no tag and no release. A stable on its own candidate's commit is the same version and passes; a tag outside that pattern (an upstream pre-release) counts for nothing. `release-type: auto` applies the same rule as a push. A `stable` run queued behind a push run waits in the branch's concurrency group, where GitHub keeps one waiting run: a further push replaces it, and the promotion has to be started again.
 
@@ -74,6 +90,12 @@ In giantswarm/github the flag is `gen.helmDocsRegen: true` on the repository ent
 ```nohighlight
 devctl gen workflows --flavour app --language generic --helm-docs-regen
 ```
+
+### Reservation command workflow
+
+`--reservation-support` (app flavour only, off by default) adds `.github/workflows/zz_generated.reservation_command.yaml`, a self-contained workflow with one job. A pull request comment that starts a line with `/deploy`, `/undeploy` or `/extend`, and a closed pull request, are sent to giantswarm/mc-reservations as a `repository_dispatch`, which reserves a management cluster for the branch's dev build (see `devctl reservation`). The workflow is a pure trigger: it sends only the repository, the pull request number and the comment ID, and mc-reservations re-reads and checks the rest. A job filter skips other comments, bot comments and the close of a fork's pull request, so they start no run. The repository needs the `MC_RESERVATIONS_DISPATCH_CLIENT_ID` and `MC_RESERVATIONS_DISPATCH_APP_KEY` org secrets, and the `mc-reservations-github` App installed, or a command gets no answer.
+
+In giantswarm/github the flag is `gen.reservationSupport: true` on the repository entry.
 
 ### README link check workflow
 
@@ -106,6 +128,8 @@ The `--language` flag sets the primary language (`go`, `python`, `generic`). The
 - `helmchart` — Helm chart schema and docs hooks (auto-detects charts under `helm/`)
 
 A Go repository's config also refuses a `require` line in any `go.mod` (single or in a block) whose trailing comment has more than one word (`go-mod-require-comment`): Renovate's gomod manager reads only a one-word comment such as `// indirect` and skips the whole line otherwise, so that dependency is never updated and nothing says so. The explanation goes on a comment line above the require.
+
+A Go repository's `golangci-lint` hook, like `make lint` of `devctl gen makefile --language go`, passes no linter flags: the linters live in the repository's golangci-lint configuration, so a bare `golangci-lint run` lints with the same set. Both commands write `.golangci.yaml` (gosec and goconst on top of the standard set) when the repository has no configuration. A repository's own `.golangci.yml` or `.golangci.yaml` is kept as it is, except that gosec and goconst are added to `linters.enable` when it neither enables nor disables them (and govet too when `linters.default` replaces the standard set); a TOML or JSON configuration, or one whose `linters.enable` is a flow sequence, fails generation naming the linters to enable.
 
 No hook reads protobuf-generated code: the config's top-level `exclude` skips `*_pb.*` (protoc-gen-es, grpc-tools), `*_pb2.py`, `*_pb2.pyi`, `*_pb2_grpc.py` and `*.pb.go` with its `_grpc`, `.gw`, `.validate` and `_vtproto` variants. Their generator is the source of truth, so a hook that rewrote them (`end-of-file-fixer` on buf's TypeScript output, `go-imports -local`, `ruff --fix`) would be undone by the next generation. Hand-written files next to them, a `gen/` directory's `README.md` or `buf.gen.yaml` included, are still checked. The fixer hooks also skip `testdata/`, `.yarn/` and the vendored subcharts under `helm/<chart>/charts/`.
 
@@ -164,3 +188,45 @@ devctl gen circleci --repo-name template-app --language generic --flavour app --
 ```
 
 The app name (`sample-app`) and the Helm repository (`https://charts.example.com`) are fixtures; the team is the owning team from the team file (`team-honeybadger` and `honeybadger` both name it), because the team label is what the first chart build of a created repository is validated on. Green means a repository created from the template passes that first build. Nothing is released from a template, so the pipeline has no chart-test job, no push jobs and no release leg, the build runs on every branch including `main`, and no `tests/ats` files are written. A template without a chart (no `app` flavour) is unchanged by the flag; every other `--component-type` value is inert.
+
+### Multi-image repositories
+
+A repository of the [`multi-image` flavour](flavours.md#multi-image) holds several images, one per `toolchains/<name>/` directory with a `Dockerfile`, each released as its own `<name>/vX.Y.Z` line:
+
+```nohighlight
+devctl gen circleci --repo-name agent-toolchains --language generic --flavour multi-image
+devctl gen workflows --flavour multi-image --language generic --release-workflow auto-release
+```
+
+Every image is `giantswarm/<repo>/<name>` (`--image-name` sets the prefix), built with `toolchains/` as its context, so the images share the build files kept there beside them (`toolchains/lib/`).
+
+- `.circleci/config.yml` is a setup workflow that reads the image directories at pipeline runtime, so a pull request that adds an image builds it without a regeneration, and continues the pipeline with one copy of the per-image workflow of `.circleci/workflows.yml` for each image to build (`__IMAGE__` in it stands for the name). The optional `.circleci/custom.yml` is merged in last, as everywhere.
+- A branch pushes an amd64 dev image of each image whose directory changed against `main`; a change under `toolchains/` outside every image directory builds every image. `main` itself builds nothing: its merges are released by their tags.
+- A tag `<name>/vX.Y.Z` publishes that image multi-arch (`--image-platforms`, `linux/amd64,linux/arm64` by default) to gsoci.azurecr.io under its version and `latest`; `--force-public` for a private repository whose images are public, `--image-private-only` for gsociprivate alone. A tag that names no image fails the pipeline.
+- The repository's own check of an image is the job `check-image` in `.circleci/custom.yml`, with a string parameter `image`, the image's name: when it is defined, each release runs it first and the push requires it. Without it a release publishes straight away.
+
+```yaml
+# .circleci/custom.yml
+jobs:
+  check-image:
+    parameters:
+      image:
+        type: string
+    machine:
+      image: ubuntu-2404:current
+    steps:
+    - checkout
+    - run: scripts/check-toolchains.sh << parameters.image >>
+```
+
+`.github/workflows/zz_generated.auto_release.yaml` tags, on every push to the release branch, each image whose directory, or a shared file under `toolchains/`, changed since its latest `<name>/vX.Y.Z` with its next version, from the pushed commit's subject (the squash subject): a breaking change (`type!:` or a `BREAKING CHANGE` footer) the major, a `feat` the minor, anything else the patch, `v0.1.0` for a new image. There are no release candidates: each tag is stable and gets its GitHub release. `.github/release-gate.custom.sh`, when present, runs with each tag about to be cut; a refusal skips that tag and fails the run. The last step makes sure CircleCI built every tag, triggering a lost one through `CIRCLECI_API_TOKEN`. The flavour takes `auto-release` alone, and `cliff.toml` is removed.
+
+## Adding a generator option
+
+A repository's `gen` options are its entry in `repositories/<team>.yaml` of giantswarm/github. The align-files action (`.github/action/index.js` there) turns them into `devctl gen` flags: `installUpdateChart` is `--install-update-chart`, `helmDocsRegen` `--helm-docs-regen`, `ci.releaseWorkflow` `--release-workflow`. An entry without `ci.releaseWorkflow` gets `auto-release` when `ci.generate` is true and `legacy` otherwise, and pre-commit is generated when `ci.generate` is true or `preCommit` is a list (`[]` for the base hooks alone): a repository on GitHub Actions alone that wants Auto Release sets both keys explicitly.
+
+A new option therefore lands in three steps:
+
+1. In devctl: the flag, the template and its golden test. Each generator under `pkg/gen/input/<name>/` compares its output with goldens under `testdata/`, rewritten by `go test ./pkg/gen/input/<name>/ -update`; the workflow tests swap the provenance header for a fixed string (`withFixedHeader`), so a template that is not committed yet renders the same. The provenance files (`*.template.sha`) are gitignored and written by `go generate ./...`, which `make test` runs first.
+2. In giantswarm/github, once the release is out: the devctl pin at that release or later, and the option on the repository's entry. A merged change to an entry aligns that repository; `gh workflow run align-files.yaml --repo giantswarm/github -f repository=<name>` aligns it again, and the run's log names the pull request it opened from `teams-alignment-branch`.
+3. In the repository: review and merge that pull request, then prove the generated workflow with a pull request that exercises it.

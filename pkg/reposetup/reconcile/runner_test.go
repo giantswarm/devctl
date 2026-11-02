@@ -101,6 +101,16 @@ const (
     flavours: [app]
     language: go
 `
+	// multiImageEntryYAML declares a multi-image repository: one image per
+	// toolchains/<name>/ directory, each released as <name>/vX.Y.Z.
+	multiImageEntryYAML = `- name: sample-service
+  componentType: service
+  description: A sample service
+  visibility: public
+  gen:
+    flavours: [multi-image]
+    language: generic
+`
 	// customerEntryYAML declares a customer repository: the flavour is the
 	// profile, the component type the catalog's type.
 	customerEntryYAML = `- name: sample-service
@@ -2597,6 +2607,125 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// A multi-image repository releases one line per image. GitHub's
+			// latest release is the newest of any line; the step verifies the
+			// newest published release of each line instead, older ones,
+			// drafts, pre-releases and tags outside the grammar left out.
+			name: "release: a multi-image repository verifies the newest release of each image line", step: StepRelease, entry: multiImageEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				now := time.Now()
+				r.release, r.releaseAt = "python/v0.2.0", now.Add(-time.Hour)
+				r.releases = []fakeRelease{
+					{tag: "go/v0.3.0-rc.1", at: now.Add(-50 * time.Minute), prerelease: true},
+					{tag: "node/v0.3.0", at: now.Add(-55 * time.Minute), draft: true},
+					{tag: "python/v0.2.0", at: now.Add(-40 * time.Minute)},
+					{tag: "node/v0.2.0", at: now.Add(-time.Hour)},
+					{tag: "go/v0.10.0", at: now.Add(-time.Hour)},
+					{tag: "go/v0.9.0", at: now.Add(-2 * time.Hour)},
+					{tag: "v1.0.0", at: now.Add(-3 * time.Hour)},
+				}
+				r.releasesPage = 2
+				p := h.cc.follow(owner, name)
+				for _, tag := range []string{"go/v0.10.0", "node/v0.2.0", "python/v0.2.0"} {
+					h.cc.seedPipeline(p, circleciclient.PipelineVCS{Tag: tag}, now.Add(-time.Minute), "success")
+				}
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Empty(t, res.Findings())
+				summary := res.Step(StepRelease).Summary
+				// python/v0.2.0 is GitHub's latest, the newest published
+				// release: it leads, the others follow by image name.
+				require.Regexp(t, `^release python/v0\.2\.0 built: pipeline \d+, workflows build succeeded; release go/v0\.10\.0 built: .*; release node/v0\.2\.0 built: `, summary)
+				require.NotContains(t, summary, "go/v0.9.0")
+				require.NotContains(t, summary, "v0.3.0")
+				require.NotContains(t, summary, "v1.0.0")
+			},
+		},
+		{
+			// Each line is held against its own tag pipeline: a red release
+			// of one image is reported beside the built ones. Release wait
+			// follows vX.Y.Z tags only, so the fix does not name it.
+			name: "release: a multi-image repository reports a red image release", step: StepRelease, entry: multiImageEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				now := time.Now()
+				r.releases = []fakeRelease{{tag: "node/v0.2.0", at: now.Add(-time.Hour)}, {tag: "go/v0.2.0", at: now.Add(-time.Hour)}}
+				p := h.cc.follow(owner, name)
+				h.cc.seedPipeline(p, circleciclient.PipelineVCS{Tag: "go/v0.2.0"}, now.Add(-time.Minute), "success")
+				h.cc.seedPipeline(p, circleciclient.PipelineVCS{Tag: "node/v0.2.0"}, now.Add(-time.Minute), "failed")
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRedRelease, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Len(t, res.Findings(), 1)
+				f := res.Findings()[0]
+				require.Contains(t, f.Message, "release node/v0.2.0 of "+owner+"/"+name+" is red")
+				require.NotContains(t, f.Fix, "devctl release wait")
+				require.Contains(t, res.Step(StepRelease).Summary, "release go/v0.2.0 built")
+				require.Contains(t, res.Step(StepRelease).Summary, "release node/v0.2.0: pipeline")
+			},
+		},
+		{
+			// An image tag CircleCI never built is a missed build of that line.
+			name: "release: a multi-image repository reports an image release without a pipeline", step: StepRelease, entry: multiImageEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.releases = []fakeRelease{{tag: "go/v0.2.0", at: time.Now().Add(-time.Hour)}}
+				h.cc.seedPipeline(h.cc.follow(owner, name), circleciclient.PipelineVCS{Branch: "main"}, time.Now().Add(-2*time.Hour), "success")
+			},
+			wantCheck: VerdictReported, wantFinding: FindingMissedTagBuild, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Contains(t, res.Findings()[0].Message, "release go/v0.2.0 of "+owner+"/"+name+" has no pipeline")
+				require.Empty(t, h.cc.mutations, "no pipeline is triggered")
+			},
+		},
+		{
+			name: "release: a multi-image repository without an image release has none yet", step: StepRelease, entry: multiImageEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.releases = []fakeRelease{{tag: "v0.1.0", at: time.Now().Add(-time.Hour)}}
+				h.cc.follow(owner, name)
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "no <name>/vX.Y.Z release yet", res.Step(StepRelease).Summary)
+				require.Empty(t, h.cc.pages, "no pipeline list is read")
+			},
+		},
+		{
+			// giantswarm-repo-manager runs the engine without a CircleCI
+			// client: the skip names GitHub's latest release, the one its
+			// inventory reads and its clientless step verifies.
+			name: "release: a multi-image repository without a CircleCI client is skipped, naming the newest release", step: StepRelease, entry: multiImageEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				// Two releases of one commit tie on its date: GitHub's
+				// answer, not the list, names node/v0.2.1 its latest.
+				r.release, r.releaseAt = "node/v0.2.1", time.Now().Add(-time.Hour)
+				r.releases = []fakeRelease{{tag: "github/v0.1.0", at: time.Now().Add(-time.Hour)}, {tag: "node/v0.2.1", at: time.Now().Add(-time.Hour)}}
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "release node/v0.2.1: no CircleCI client to verify the pipeline", res.Step(StepRelease).Summary)
+			},
+		},
+		{
+			// The skip names the newest release, GitHub's latest, which a
+			// reader without CircleCI verifies from the tag's statuses.
+			name: "release: a multi-image repository not followed on CircleCI is skipped once, naming the newest release", step: StepRelease, entry: multiImageEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.releases = []fakeRelease{{tag: "node/v0.2.1", at: time.Now().Add(-time.Minute)}, {tag: "go/v0.2.0", at: time.Now().Add(-time.Hour)}}
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "release node/v0.2.1: project not followed on CircleCI", res.Step(StepRelease).Summary)
+				require.Empty(t, res.Findings())
+			},
+		},
+		{
 			name: "settings: a customer repository's default branch is never renamed", step: StepSettings, entry: customerEntryYAML,
 			seed:      func(h *harness) { h.gh.addRepo(owner, name).defaultBranch = "master" },
 			wantCheck: VerdictOK,
@@ -3032,14 +3161,14 @@ func TestRunFullRepositorySetUp(t *testing.T) {
 	require.Contains(t, string(data), `"repository":"giantswarm/sample-service"`)
 
 	// The budget: a check of the converged repository, every step, costs at
-	// most twenty-three GitHub requests (the webhooks and the deploy keys the
+	// most twenty-four GitHub requests (the webhooks and the deploy keys the
 	// circleci step reads are the last two), and the count is the fake's own.
 	before := len(h.gets())
 	check := h.run(ModeCheck, false)
 	require.True(t, check.Converged, "%+v", check.Steps)
 	gets := h.gets()[before:]
 	require.Equal(t, len(gets), check.Requests.GitHub, "the counter and the fake agree")
-	require.LessOrEqual(t, check.Requests.GitHub, 23, "a converged check within the budget of twenty-three; the reads:\n%s", strings.Join(gets, "\n"))
+	require.LessOrEqual(t, check.Requests.GitHub, 24, "a converged check within the budget of twenty-four; the reads:\n%s", strings.Join(gets, "\n"))
 	require.Positive(t, check.Requests.CircleCI, "the circleci and release steps read CircleCI")
 
 	// The override costs nothing: the caller hands it in with the entry

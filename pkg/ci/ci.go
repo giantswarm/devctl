@@ -1,8 +1,8 @@
-// Package ci is what `devctl ci jobs` and `devctl ci rerun` share: the
-// job-level view of a CircleCI pipeline, which tells a slow job (its step
-// still writing output) from a stuck one (no output for an hour), and the
-// rerun of one workflow, once an hour, with the CircleCI login of `devctl
-// auth login`. GitHub is not read: a pipeline or a workflow is named by what
+// Package ci is what `devctl ci jobs`, `devctl ci job` and `devctl ci rerun`
+// share: the job-level view of a CircleCI pipeline, which tells a slow job
+// (its step still writing output) from a stuck one (no output for an hour),
+// one job's steps with the end of its failed steps' output, and the rerun of
+// one workflow, once an hour, with the CircleCI login of `devctl auth login`. GitHub is not read: a pipeline or a workflow is named by what
 // CircleCI calls it, the number or id the UI and `devctl pr wait` show.
 package ci
 
@@ -17,6 +17,7 @@ import (
 // The commands, as their documents name them.
 const (
 	CommandJobs  = "ci jobs"
+	CommandJob   = "ci job"
 	CommandRerun = "ci rerun"
 )
 

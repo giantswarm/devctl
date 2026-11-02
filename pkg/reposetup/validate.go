@@ -399,6 +399,12 @@ func (v Validator) creationRules(ctx context.Context, owner string, entry *Entry
 		entry.refuse("gen.ci.maintenanceBranches", "needs gen.flavours fork and gen.ci.releaseWorkflow auto-release: it releases a fork line's release-X.Y branches")
 	}
 
+	// Patch candidates change what auto-release tags: the legacy flow cuts
+	// no candidate to promote.
+	if fields.Gen != nil && fields.Gen.CI != nil && fields.Gen.CI.PatchCandidates && effectiveReleaseWorkflow(fields.Gen.CI) != releaseWorkflowAutoRelease {
+		entry.refuse("gen.ci.patchCandidates", "needs gen.ci.releaseWorkflow auto-release: the legacy release flow cuts no release candidate")
+	}
+
 	// The name: lowercase, the chart's name where a chart exists, free on
 	// GitHub. A name the schema already refused is not checked on GitHub.
 	name := entry.Name
@@ -570,7 +576,8 @@ func GeneratesCircleCI(f Fields) bool {
 
 // hasCIJob says whether the CircleCI generator has a job for the
 // declaration: a Go or Node build, an image (a scaffold has a Dockerfile only
-// where gen.ci.image.dockerfile names one) or a chart.
+// where gen.ci.image.dockerfile names one), a chart, or the per-image
+// pipeline of a multi-image repository, whatever its language.
 func hasCIJob(f Fields) bool {
 	g := f.Gen
 	switch {
@@ -582,7 +589,7 @@ func hasCIJob(f Fields) bool {
 		return true
 	}
 	for _, flavour := range g.Flavours {
-		if flavour == gen.FlavourApp.String() {
+		if flavour == gen.FlavourApp.String() || flavour == gen.FlavourMultiImage.String() {
 			return true
 		}
 	}

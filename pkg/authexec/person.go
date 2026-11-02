@@ -20,6 +20,15 @@ const SourceGHLogin = "gh login"
 // own login is read with none of them set.
 var ghTokenVars = []string{EnvToken, "GITHUB_TOKEN"}
 
+// withoutGHTokens is environ without [ghTokenVars], so gh acts on its stored
+// login.
+func withoutGHTokens(environ []string) []string {
+	for _, name := range ghTokenVars {
+		environ = without(environ, name)
+	}
+	return environ
+}
+
 // RepositoryToken is the GitHub token a command acts with on owner's
 // repositories: the App login (app) for an owner in [AppOwners], where the
 // App is installed, and the person's own gh login (person) for every other
@@ -45,11 +54,7 @@ func personGitHub(ctx context.Context, path, self string, environ []string, outp
 	if err != nil {
 		return authstore.Token{}, personAuthRequired(err.Error())
 	}
-	env := environ
-	for _, name := range ghTokenVars {
-		env = without(env, name)
-	}
-	out, err := output(ctx, gh, []string{"auth", "token", "--hostname", "github.com"}, env)
+	out, err := output(ctx, gh, []string{"auth", "token", "--hostname", "github.com"}, withoutGHTokens(environ))
 	token := strings.TrimSpace(string(out))
 	if err != nil || token == "" {
 		return authstore.Token{}, personAuthRequired("gh has no login for github.com")

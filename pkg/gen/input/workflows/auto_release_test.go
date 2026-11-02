@@ -766,6 +766,31 @@ func Test_AutoReleaseDescribeExcludesNonReleaseTags(t *testing.T) {
 	}
 }
 
+// Test_AutoReleaseDecideSkipsATakenCandidateName pins that a candidate
+// number another branch's tag already holds (a candidate tagged by hand on a
+// pull request's branch, whose commits the rebase merge rewrote) is skipped:
+// the release is created by tag name, and GitHub would attach it to that
+// tag's commit.
+func Test_AutoReleaseDecideSkipsATakenCandidateName(t *testing.T) {
+	dir := repo(t, "v1.2.9")
+	mustGit(t, dir, "checkout", "-q", "-b", "pr")
+	mustGit(t, dir, "commit", "--allow-empty", "-m", "feat: add x")
+	mustGit(t, dir, "tag", "v1.3.0-rc.1")
+	mustGit(t, dir, "commit", "--allow-empty", "-m", "fix: y")
+	mustGit(t, dir, "tag", "v1.3.0-rc.2")
+	mustGit(t, dir, "checkout", "-q", "main")
+	// The rebase merge's rewrite of the pull request's commits.
+	mustGit(t, dir, "commit", "--allow-empty", "-m", "feat: add x (#12)")
+
+	got, log := decideWithLog(t, decideScript(t), dir, "v1.3.0", "auto")
+	if got["tag"] != "v1.3.0-rc.3" {
+		t.Errorf("tag = %q, want v1.3.0-rc.3\n%s", got["tag"], log)
+	}
+	if !strings.Contains(log, "v1.3.0-rc.1 is taken by") {
+		t.Errorf("the step does not say why it skipped a number:\n%s", log)
+	}
+}
+
 // Test_AutoReleaseDecideIgnoresBuildMetadataTags runs the case `*+*` exists
 // for. cliff.toml's tag_pattern does not count v1.2.3+build.1 as a release, so
 // git-cliff reports v1.2.3 as the target of a push that carries nothing

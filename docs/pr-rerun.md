@@ -25,8 +25,8 @@ on hold or failing (a job failed while others still run) is not: CircleCI reruns
 workflow only. The rerun is started, not waited for; wait for it with the wait you would use anyway:
 
 ```nohighlight
-devctl pr rerun giantswarm/devctl 2277 && beekeeper gate -- devctl pr wait giantswarm/devctl 2277
-devctl release rerun giantswarm/devctl v8.123.0 && beekeeper gate -- devctl release wait giantswarm/devctl v8.123.0
+devctl pr rerun giantswarm/devctl 2277 && devctl pr wait giantswarm/devctl 2277
+devctl release rerun giantswarm/devctl v8.123.0 && devctl release wait giantswarm/devctl v8.123.0
 ```
 
 ## A workflow wedged in running
@@ -47,7 +47,7 @@ workflow on hold waits for a person and is never canceled. A running workflow yo
 is refused as before (exit 5), the reason naming its age and the bound. `pr rerun` cancels nothing.
 
 ```nohighlight
-devctl release rerun giantswarm/kagent-upstream v1.17.0 && beekeeper gate -- devctl release wait giantswarm/kagent-upstream v1.17.0
+devctl release rerun giantswarm/kagent-upstream v1.17.0 && devctl release wait giantswarm/kagent-upstream v1.17.0
 ```
 
 ## A pipeline without a workflow

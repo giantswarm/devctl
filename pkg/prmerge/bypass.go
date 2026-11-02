@@ -36,7 +36,7 @@ func declinedByReviewRule(err error) bool {
 // token cannot read are said so; nothing is written.
 func (m *Merger) explainReviewRule(ctx context.Context, owner, repo, base, caller string, verdict Verdict) string {
 	team := verdict.Team
-	rules, _, err := m.github.GitHub().Repositories.ListRulesForBranch(ctx, owner, repo, base, &github.ListOptions{PerPage: 100})
+	rules, err := m.github.RulesForBranch(ctx, owner, repo, base)
 	switch {
 	case err != nil:
 		return fmt.Sprintf("devctl acts as %s, who has no bypass on the rules of %s (they could not be read: %v)%s", caller, base, err, mergeAdvice(team))
@@ -144,7 +144,6 @@ func joinViews(views []rulesetView, sep string) string {
 // or the organization that holds it: its name, its bypass actors and
 // whether the caller bypasses it.
 func (m *Merger) describeRuleset(ctx context.Context, owner, repo string, rule github.BranchRuleMetadata) rulesetView {
-	gh := m.github.GitHub()
 	var (
 		rs    *github.RepositoryRuleset
 		err   error
@@ -153,9 +152,9 @@ func (m *Merger) describeRuleset(ctx context.Context, owner, repo string, rule g
 	switch rule.RulesetSourceType {
 	case github.RulesetSourceTypeOrganization:
 		where = "the organization " + owner
-		rs, _, err = gh.Organizations.GetRepositoryRuleset(ctx, owner, rule.RulesetID)
+		rs, err = m.github.OrganizationRuleset(ctx, owner, rule.RulesetID)
 	default:
-		rs, _, err = gh.Repositories.GetRuleset(ctx, owner, repo, rule.RulesetID, false)
+		rs, err = m.github.RepositoryRuleset(ctx, owner, repo, rule.RulesetID)
 	}
 	if err != nil {
 		ref := fmt.Sprintf("the ruleset %d of %s", rule.RulesetID, where)

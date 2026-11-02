@@ -75,7 +75,7 @@ Exit codes:
      a GitHub identity without webhook access`
 	example = `  devctl release rerun giantswarm/devctl v8.123.0
   devctl release rerun giantswarm/devctl v8.123.0 --wedged-after 1h
-  devctl release rerun giantswarm/devctl v8.123.0 && beekeeper gate -- devctl release wait giantswarm/devctl v8.123.0`
+  devctl release rerun giantswarm/devctl v8.123.0 && devctl release wait giantswarm/devctl v8.123.0`
 )
 
 type Config struct {

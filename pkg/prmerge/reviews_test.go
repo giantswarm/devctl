@@ -43,8 +43,38 @@ func Test_feedback_unanswered(t *testing.T) {
 		{name: "a CHANGES_REQUESTED review on the head holds",
 			f:    feedback{reviews: []*github.PullRequestReview{review("marians", "CHANGES_REQUESTED", "abc123", 12)}},
 			want: []string{"review/marians"}},
-		{name: "a review of an older commit was answered by the head",
-			f: feedback{reviews: []*github.PullRequestReview{review("marians", "CHANGES_REQUESTED", "old", 5)}}},
+		{name: "a COMMENTED review of an older commit was answered by the head",
+			f: feedback{reviews: []*github.PullRequestReview{review("marians", "COMMENTED", "old", 5)}}},
+		{name: "a CHANGES_REQUESTED review stands after a new commit",
+			f:    feedback{reviews: []*github.PullRequestReview{review("marians", "CHANGES_REQUESTED", "old", 5)}},
+			want: []string{"review/marians"}},
+		{name: "a CHANGES_REQUESTED review stands after the author's reply",
+			f: feedback{
+				reviews:  []*github.PullRequestReview{review("marians", "CHANGES_REQUESTED", "abc123", 12)},
+				comments: []*github.IssueComment{comment(person("someone"), 13)},
+			},
+			want: []string{"review/marians"}},
+		{name: "the 3184 sequence: changes requested, author replies, newer commits",
+			f: feedback{
+				reviews:  []*github.PullRequestReview{review("marians", "CHANGES_REQUESTED", "old", 1), review("someone", "COMMENTED", "old", 3)},
+				comments: []*github.IssueComment{comment(person("someone"), 2), comment(person("someone"), 4)},
+			},
+			want: []string{"review/marians"}},
+		{name: "a CHANGES_REQUESTED review stands after the reviewer's COMMENTED review",
+			f:    feedback{reviews: []*github.PullRequestReview{review("marians", "CHANGES_REQUESTED", "old", 5), review("marians", "COMMENTED", "old", 6)}},
+			want: []string{"review/marians"}},
+		{name: "the reviewer's later approval clears a CHANGES_REQUESTED review",
+			f: feedback{reviews: []*github.PullRequestReview{review("marians", "CHANGES_REQUESTED", "old", 5), review("marians", "APPROVED", "abc123", 15)}}},
+		{name: "a dismissed CHANGES_REQUESTED review holds nothing",
+			f: feedback{reviews: []*github.PullRequestReview{review("marians", "DISMISSED", "old", 5)}}},
+		{name: "changes requested again after an approval stands",
+			f:    feedback{reviews: []*github.PullRequestReview{review("marians", "APPROVED", "old", 4), review("marians", "CHANGES_REQUESTED", "old", 5)}},
+			want: []string{"review/marians"}},
+		{name: "another reviewer's approval clears no CHANGES_REQUESTED review",
+			f:    feedback{reviews: []*github.PullRequestReview{review("marians", "CHANGES_REQUESTED", "old", 5), review("piontec", "APPROVED", "abc123", 15)}},
+			want: []string{"review/marians"}},
+		{name: "the author's own CHANGES_REQUESTED review never holds",
+			f: feedback{reviews: []*github.PullRequestReview{review("someone", "CHANGES_REQUESTED", "old", 5)}}},
 		{name: "a review with inline comments holds with each comment",
 			f: feedback{
 				reviews:        []*github.PullRequestReview{review("marians", "COMMENTED", "abc123", 12)},
@@ -179,6 +209,70 @@ func Test_Merge_reviewDuringTheWaitRefusesTheMerge(t *testing.T) {
 	}
 	if n := h.requested("PUT /repos/o/r/pulls/42/merge"); n != 0 {
 		t.Errorf("merged %d times", n)
+	}
+}
+
+// changesRequested is a CHANGES_REQUESTED review by marians of the commit
+// before the head, written before the head's commit date.
+var changesRequested = map[string]any{
+	"id": 8, "state": "CHANGES_REQUESTED", "commit_id": "old", "submitted_at": "2026-09-30T10:00:00Z",
+	"user":     map[string]any{"login": "marians", "type": "User"},
+	"html_url": "https://github.com/o/r/pull/42#pullrequestreview-8",
+}
+
+func Test_Merge_standingChangesRequestedRefuses(t *testing.T) {
+	reply := map[string]any{
+		"id": 9, "created_at": "2026-10-01T10:06:00Z", "user": map[string]any{"login": "someone", "type": "User"},
+		"html_url": "https://github.com/o/r/pull/42#issuecomment-9",
+	}
+	h := newHarness(t, routes(pull(nil), sequence.Routes{
+		"GET /repos/o/r/pulls/42/reviews":   {{Body: []any{changesRequested}}},
+		"GET /repos/o/r/issues/42/comments": {{Body: []any{reply}}},
+	}), nil)
+
+	result, err := h.merge(t)
+	if exitCode(err) != agentcli.ExitRefused {
+		t.Fatalf("want exit 5, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "changes requested: review CHANGES_REQUESTED by marians https://github.com/o/r/pull/42#pullrequestreview-8; a new commit or a reply leaves it standing") || strings.Contains(err.Error(), "unanswered review") {
+		t.Errorf("reason: %v", err)
+	}
+	if len(result.UnansweredReviews) != 1 || !result.UnansweredReviews[0].Standing {
+		t.Errorf("unansweredReviews: %+v", result.UnansweredReviews)
+	}
+	if n := h.requested("PUT /repos/o/r/pulls/42/merge"); n != 0 {
+		t.Errorf("merged %d times", n)
+	}
+}
+
+func Test_Merge_approvedAfterChangesRequestedMerges(t *testing.T) {
+	approval := map[string]any{
+		"id": 10, "state": "APPROVED", "commit_id": "abc123", "submitted_at": "2026-10-01T10:06:00Z",
+		"user":     map[string]any{"login": "marians", "type": "User"},
+		"html_url": "https://github.com/o/r/pull/42#pullrequestreview-10",
+	}
+	h := newHarness(t, routes(pull(nil), sequence.Routes{
+		"GET /repos/o/r/pulls/42/reviews": {{Body: []any{changesRequested, approval}}},
+	}), nil)
+
+	result, err := h.merge(t)
+	if err != nil {
+		t.Fatalf("want a merge, got %v", err)
+	}
+	if result.MergeCommitSHA != "m1" || len(result.UnansweredReviews) != 0 {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+func Test_reviewRefusal(t *testing.T) {
+	got := reviewRefusal([]UnansweredReview{
+		{Kind: FeedbackReview, Login: "marians", State: "CHANGES_REQUESTED", URL: "u1", Standing: true},
+		{Kind: FeedbackComment, Login: "piontec", URL: "u2"},
+	}, "alice or caller")
+	want := "changes requested: review CHANGES_REQUESTED by marians u1; a new commit or a reply leaves it standing, only the reviewer's approval or the review's dismissal clears it; " +
+		"unanswered review: 1 item(s) newer than the head wait for an answer: comment by piontec u2; a reply from alice or caller on the pull request, a new commit or the reviewer's approval clears them"
+	if got != want {
+		t.Errorf("want %q, got %q", want, got)
 	}
 }
 

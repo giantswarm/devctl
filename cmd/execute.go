@@ -9,6 +9,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/internal/termout"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 )
 
@@ -33,7 +34,7 @@ func Execute(root *cobra.Command, stderr io.Writer) int {
 		return exitErr.Code
 	}
 
-	fmt.Fprintf(stderr, "Error: %s\n", microerror.Pretty(err, debug(root)))
+	fmt.Fprintf(stderr, "%s: %s\n", termout.Error(stderr), microerror.Pretty(err, debug(root)))
 
 	var coder agentcli.ExitCoder
 	var usage *UsageError

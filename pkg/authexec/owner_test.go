@@ -43,3 +43,26 @@ func TestGHOwner(t *testing.T) {
 		})
 	}
 }
+
+func TestGHAttaches(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "issue comment --attach", args: []string{"issue", "comment", "12", "--repo", "giantswarm/devctl", "--attach", "./proof.png#The proof"}, want: true},
+		{name: "pr comment --attach=", args: []string{"pr", "comment", "5", "--attach=./proof.png"}, want: true},
+		{name: "pr create --attach", args: []string{"pr", "create", "--attach", "a.png", "--attach", "b.png"}, want: true},
+		{name: "comment without a file", args: []string{"pr", "comment", "5", "--body", "done"}, want: false},
+		{name: "after --", args: []string{"issue", "comment", "12", "--", "--attach"}, want: false},
+		{name: "not an issue or pr", args: []string{"api", "repos/giantswarm/devctl", "-f", "--attach"}, want: false},
+		{name: "no arguments", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := GHAttaches(tc.args); got != tc.want {
+				t.Fatalf("GHAttaches(%v) = %t, want %t", tc.args, got, tc.want)
+			}
+		})
+	}
+}

@@ -58,7 +58,7 @@ func (m *Merger) resolveMethod(ctx context.Context, owner, repo string, verdict 
 		}
 	}
 	method := githubclient.MergeMethod(result.Method)
-	repository, _, err := m.github.GitHub().Repositories.Get(ctx, owner, repo)
+	repository, err := m.github.Repository(ctx, owner, repo)
 	if err != nil {
 		return microerror.Mask(err)
 	}

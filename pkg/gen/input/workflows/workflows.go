@@ -18,6 +18,10 @@ type Config struct {
 	// (release-X.Y) cut releases too, each the patches of its X.Y series.
 	MaintenanceBranches bool
 
+	// PatchCandidates says a patch of the last stable release is cut as a
+	// release candidate too, never tagged stable on its push.
+	PatchCandidates bool
+
 	// RepoName is the repository's name under the giantswarm organization,
 	// for cliff.toml's `[remote.github].repo` field.
 	RepoName string
@@ -39,6 +43,7 @@ func New(config Config) (*Workflows, error) {
 			Flavours:            config.Flavours,
 			ReleaseBranch:       releaseBranch,
 			MaintenanceBranches: config.MaintenanceBranches,
+			PatchCandidates:     config.PatchCandidates,
 			RepoName:            config.RepoName,
 		},
 	}
@@ -65,6 +70,12 @@ func (w *Workflows) ChartTests() input.Input {
 	return file.NewChartTestsInput(w.params)
 }
 
+// ReservationCommand sends reservation commands from pull request comments,
+// and pull request closes, to giantswarm/mc-reservations.
+func (w *Workflows) ReservationCommand() input.Input {
+	return file.NewReservationCommandInput(w.params)
+}
+
 func (w *Workflows) ClusterAppDocumentationValidation() input.Input {
 	return file.NewClusterAppDocumentationValidation(w.params)
 }
@@ -78,6 +89,12 @@ func (w *Workflows) ClusterAppSchemaValidation() input.Input {
 
 func (w *Workflows) AutoRelease() input.Input {
 	return file.NewAutoReleaseInput(w.params)
+}
+
+// AutoReleaseMultiImage is the Auto Release of a multi-image repository: one
+// <name>/vX.Y.Z release line per image directory.
+func (w *Workflows) AutoReleaseMultiImage() input.Input {
+	return file.NewAutoReleaseMultiImageInput(w.params)
 }
 
 func (w *Workflows) AutoReleaseDeletion() input.Input {

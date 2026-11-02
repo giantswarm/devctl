@@ -107,8 +107,9 @@ func registryHost(private bool, endpoints agentcli.Endpoints) string {
 // gen.ci.appCatalog or the default catalog (gen.ci.appCatalogTest or the
 // default test catalog for a pre-release). The private registry holds a
 // private-only image and the artifacts of a private repository that does
-// not force them public.
-func GeneratedArtifacts(entry reposetup.Fields, repo, version string, content TagContent, privateRepo bool, endpoints agentcli.Endpoints, charts ChartNames) ([]Artifact, error) {
+// not force them public. A multi-image repository's release, image's tag
+// <image>/vX.Y.Z, publishes the one image <owner>/<repo>/<image>.
+func GeneratedArtifacts(entry reposetup.Fields, repo, image, version string, content TagContent, privateRepo bool, endpoints agentcli.Endpoints, charts ChartNames) ([]Artifact, error) {
 	if entry.Gen == nil {
 		return nil, usageErr("the team-file entry of %s has no gen block to derive the artifacts from", repo)
 	}
@@ -121,6 +122,13 @@ func GeneratedArtifacts(entry reposetup.Fields, repo, version string, content Ta
 	}
 	owner := reposetup.DefaultOwner
 	var artifacts []Artifact
+
+	if slices.Contains(entry.Gen.Flavours, string(gen.FlavourMultiImage)) {
+		if image == "" {
+			return nil, usageErr("%s releases one line per image, <image>/vX.Y.Z; %s names no image", repo, version)
+		}
+		return []Artifact{imageArtifact(owner+"/"+repo+"/"+image, version, privateRepo && !ci.ForcePublic, endpoints)}, nil
+	}
 
 	hasDockerfile := content.HasDockerfile() || (ci.Image != nil && ci.Image.Dockerfile != "")
 	if hasDockerfile {

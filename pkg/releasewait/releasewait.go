@@ -66,7 +66,7 @@ const (
 )
 
 // DefaultTimeout bounds a wait that gets no --timeout.
-const DefaultTimeout = 30 * time.Minute
+const DefaultTimeout = 60 * time.Minute
 
 // GitHub is what the wait reads from GitHub; *githubclient.Client is one.
 type GitHub interface {
@@ -168,6 +168,12 @@ type Config struct {
 	CircleCI     func(ctx context.Context) (CircleCI, error)
 	Registry     Prober
 	CatalogIndex CatalogReader
+	// CircleCIFromStatuses, without CircleCI, reads a tag pipeline on
+	// CircleCI through the commit statuses it posts to GitHub alone: the
+	// jobs the tag's configuration runs on the tag are listed from it, and
+	// the tag's CI is green once each has posted and none is pending or
+	// failed. FailedLogLines reads no CircleCI log then.
+	CircleCIFromStatuses bool
 
 	// Endpoints name the registries. Zero means production.
 	Endpoints agentcli.Endpoints
@@ -198,6 +204,11 @@ type Waiter struct {
 	clock    agentcli.Clock
 	progress *agentcli.Progress
 	circleci CircleCI
+	// statusesOnly: the tag's CI is on CircleCI and read through its commit
+	// statuses (Config.CircleCIFromStatuses); circleJobs are the jobs the
+	// tag's configuration runs, each expected to post a status.
+	statusesOnly bool
+	circleJobs   []string
 	// untagged is, while a pull request's tag is awaited, what the merge
 	// commit's auto-release run was doing at the last poll, for the
 	// timeout's reason.
@@ -231,8 +242,8 @@ func New(config Config) (*Waiter, error) {
 			return nil, err
 		}
 	}
-	if config.GitHub == nil || config.Entries == nil || config.Registry == nil || config.CircleCI == nil {
-		return nil, usageErr("%T.GitHub, Entries, CircleCI and Registry must not be empty", config)
+	if config.GitHub == nil || config.Entries == nil || config.Registry == nil || (config.CircleCI == nil) == !config.CircleCIFromStatuses {
+		return nil, usageErr("%T.GitHub, Entries and Registry must not be empty, and exactly one of CircleCI and CircleCIFromStatuses set", config)
 	}
 	if config.Catalog && config.CatalogIndex == nil {
 		return nil, usageErr("%T.CatalogIndex must not be empty with Catalog", config)
@@ -340,9 +351,14 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 	if err != nil {
 		return fmt.Errorf("reading the repository: %w", err)
 	}
-	version := strings.TrimPrefix(result.Tag, "v")
+	image, version := tagVersion(result.Tag)
 
-	if content.HasCircleCI() {
+	if content.HasCircleCI() && w.config.CircleCIFromStatuses {
+		w.statusesOnly = true
+		if err := w.listCircleJobs(ctx, result); err != nil {
+			return err
+		}
+	} else if content.HasCircleCI() {
 		client, err := w.config.CircleCI(ctx)
 		if err != nil {
 			return err
@@ -356,7 +372,7 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 		if entry == nil {
 			return usageErr("no team-file entry declares %s/%s, and the artifacts of its generated pipeline (%s at %s) are named by the entry", owner, repo, circleCIWorkflows, short(result.SHA))
 		}
-		artifacts, err := GeneratedArtifacts(*entry, repo, version, *content, private, w.config.Endpoints, TagChartNames(ctx, w.config.GitHub, owner, repo, result.SHA))
+		artifacts, err := GeneratedArtifacts(*entry, repo, image, version, *content, private, w.config.Endpoints, TagChartNames(ctx, w.config.GitHub, owner, repo, result.SHA))
 		if err != nil {
 			return err
 		}
@@ -368,6 +384,19 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 			}
 			plan.custom = len(plan.customJobs) > 0
 			w.progress.Printf("%s/%s at %s declares %d push job(s) beyond the entry's artifacts", circleCIDir, circleCICustom, short(result.SHA), len(plan.customJobs))
+		}
+	case CIModelHandWritten:
+		// An image's release of a multi-image repository cut before its
+		// generated pipeline: the flavour names the image the hand-written
+		// one pushed, which may generate its jobs at run time, out of reach
+		// of the configuration. An image the caller names is read from the
+		// pipeline's jobs as for any hand-written pipeline.
+		if entryNamesImage(entry, result.Tag) && len(w.config.Images) == 0 && len(w.config.Charts) == 0 {
+			artifacts, err := GeneratedArtifacts(*entry, repo, image, version, *content, private, w.config.Endpoints, nil)
+			if err != nil {
+				return err
+			}
+			plan.setArtifacts(result, artifacts)
 		}
 	case CIModelNone:
 		// Nothing to derive: no CircleCI means no image and no chart.
@@ -626,6 +655,11 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 				}
 			}
 		}
+		if done && result.Pipeline != nil && len(result.Pipeline.Unfinished) > 0 {
+			// The document is what the caller acts on: a release it lists
+			// unfinished workflows of is not available.
+			done = false
+		}
 		if done {
 			// The tag pipeline is not every status of its commit: a late
 			// job, the branch pipeline and other CIs report there too, and
@@ -665,7 +699,7 @@ func (w *Waiter) pending(result *Result, p *plan, state *pipelineState) string {
 		parts = append(parts, "the tag pipeline's jobs, which name the artifacts")
 	}
 	switch {
-	case !state.green && w.circleci == nil:
+	case !state.green && w.circleci == nil && !w.statusesOnly:
 		parts = append(parts, fmt.Sprintf("the Actions runs of %s", result.Tag))
 	case !state.green:
 		parts = append(parts, stillRunning(result.Pipeline))
@@ -957,12 +991,12 @@ func (w *Waiter) readModels(ctx context.Context, sha string, result *Result) (*T
 			return nil, nil, noReleaseErr("nothing tags the merge commit of %s/%s#%d: no team-file entry declares a release model and %s at %s holds no release workflow", w.config.Owner, w.config.Repo, w.config.PR, workflowsDir, short(sha))
 		}
 	}
-	models, err := ResolveModels(entry, *content)
+	models, err := ResolveModels(entry, *content, result.Tag)
 	if err != nil {
 		return nil, nil, err
 	}
-	if models.Warning != "" {
-		w.warn(models.Warning)
+	for _, warning := range models.Warnings {
+		w.warn(warning)
 	}
 	result.ReleaseModel, result.CIModel = models.Release, models.CI
 	return content, entry, nil
@@ -1049,6 +1083,8 @@ func stillRunning(p *Pipeline) string {
 	switch {
 	case p == nil:
 		return "no CircleCI pipeline for the tag yet"
+	case p.Number == 0 && len(p.Unfinished) > 0:
+		return "the tag's CI unfinished: " + strings.Join(p.Unfinished, ", ")
 	case len(p.Unfinished) == 0:
 		return fmt.Sprintf("pipeline %d has no successful workflow", p.Number)
 	}

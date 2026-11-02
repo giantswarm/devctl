@@ -51,11 +51,15 @@ type fakeRepo struct {
 	keysStatus    int // HTTP status of the deploy keys list when not 200
 	release       string
 	releaseAt     time.Time
-	createdAt     time.Time // when the repository was created; a month ago for a seeded one
-	statuses      []string  // commit statuses reported on the head
-	checkRuns     []string  // check runs reported on the head
-	checksStatus  int       // HTTP status of the status and check-run reads when not 200
-	prs           []*github.PullRequest
+	// releases is the release list, newest first, as GitHub lists it;
+	// releasesPage pages it when set.
+	releases     []fakeRelease
+	releasesPage int
+	createdAt    time.Time // when the repository was created; a month ago for a seeded one
+	statuses     []string  // commit statuses reported on the head
+	checkRuns    []string  // check runs reported on the head
+	checksStatus int       // HTTP status of the status and check-run reads when not 200
+	prs          []*github.PullRequest
 	// merged are the pull requests merged before the run, closed, as the
 	// discovery of the reported checks lists them; the statuses and check
 	// runs are served for their heads as for any ref.
@@ -458,6 +462,13 @@ func forbidden(w http.ResponseWriter) {
 
 func decode(r *http.Request, v any) {
 	_ = json.NewDecoder(r.Body).Decode(v)
+}
+
+// fakeRelease is one release of a repository's release list.
+type fakeRelease struct {
+	tag               string
+	at                time.Time
+	draft, prerelease bool
 }
 
 func (f *fakeGitHub) withRepo(h func(w http.ResponseWriter, r *http.Request, repo *fakeRepo)) http.HandlerFunc {
@@ -1083,6 +1094,24 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			return
 		}
 		writeJSON(w, 200, map[string]any{"tag_name": repo.release, "created_at": repo.releaseAt.Format(time.RFC3339)})
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/releases", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		list := repo.releases
+		if size := repo.releasesPage; size > 0 {
+			page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+			page = max(page, 1)
+			start := min((page-1)*size, len(list))
+			end := min(start+size, len(list))
+			if end < len(list) {
+				w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?page=%d>; rel="next"`, r.Host, r.URL.Path, page+1))
+			}
+			list = list[start:end]
+		}
+		out := []map[string]any{}
+		for _, rel := range list {
+			out = append(out, map[string]any{"tag_name": rel.tag, "created_at": rel.at.Format(time.RFC3339), "draft": rel.draft, "prerelease": rel.prerelease})
+		}
+		writeJSON(w, 200, out)
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/actions/workflows/{file}/runs", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		if !f.mayDispatch(r) {

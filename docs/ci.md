@@ -1,7 +1,8 @@
-# CircleCI pipelines at the job level: `devctl ci jobs` and `devctl ci rerun`
+# CircleCI pipelines at the job level: `devctl ci jobs`, `devctl ci job` and `devctl ci rerun`
 
 ```nohighlight
 devctl ci jobs <owner/repo> <pipeline number|id>
+devctl ci job <owner/repo> <job number> [--lines <n>]
 devctl ci rerun <owner/repo> <workflow id> [--from-failed] [--cancel]
 ```
 
@@ -55,6 +56,35 @@ devctl ci jobs giantswarm/devctl 3885
                  "lastOutputAt": "2026-10-09T17:24:00Z", "outputAgeSeconds": 2160}}
      ]}
   ]
+}
+```
+
+## `ci job`: why one job failed
+
+One job is read by its number in the project, the number its page
+(`https://circleci.com/gh/<owner>/<repo>/<number>`), a CircleCI commit status and `ci jobs` show: its
+name, status, page and times, every step (a parallel step once per action) with its status and times,
+and in `job.logTail` the last lines (`--lines`, 200 by default) of the output of its failed steps, led
+by the lines from its first failure when that lies before them, without terminal control sequences. It
+is the tail `devctl pr wait --failed-log` reads, for a job of any pipeline: a tag's, a branch's, one no
+pull request waits on. The CircleCI login is used in devctl's process only, a step's output is read
+from its signed URL without it, so a session reads a failed job without a token of its own, a browser
+or the CircleCI UI. Output CircleCI does not answer is `job.logError`; the steps still stand.
+
+```nohighlight
+devctl ci job giantswarm/agent-toolchains-lab 7 | jq -r .job.logTail
+```
+
+```json
+{
+  "command": "ci job", "schemaVersion": 1, "exitCode": 0, "verdict": "listed", "reason": "", "warnings": [],
+  "repository": "giantswarm/agent-toolchains-lab",
+  "job": {"number": 7, "name": "push-go", "status": "failed", "url": "https://circleci.com/gh/giantswarm/agent-toolchains-lab/7",
+          "pipelineId": "137d83a2-…", "workflowId": "3f96b11b-…",
+          "startedAt": "2026-10-22T23:25:44.983Z", "stoppedAt": "2026-10-22T23:25:47.057Z",
+          "steps": [{"name": "Checkout code", "index": 0, "status": "success", "startedAt": "…", "endedAt": "…"},
+                    {"name": "Build multi-arch image (pushed to all registries unless push=false)", "index": 0, "status": "failed", "startedAt": "…", "endedAt": "…"}],
+          "logTail": "Building for platforms: linux/amd64\nNo valid registry/tag combinations found for push. Exiting.\n\nExited with code exit status 1\n"}
 }
 ```
 

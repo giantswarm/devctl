@@ -127,7 +127,7 @@ const checkRollupQuery = `query($owner: String!, $name: String!, $oid: GitObject
             pageInfo { hasNextPage endCursor }
             nodes {
               __typename
-              ... on CheckRun { databaseId name status conclusion url startedAt checkSuite { databaseId app { slug } } }
+              ... on CheckRun { databaseId name status conclusion url startedAt completedAt checkSuite { databaseId app { slug } } }
               ... on StatusContext { context state targetUrl createdAt }
             }
           }
@@ -157,13 +157,14 @@ type checkRollupPage struct {
 type checkRollupNode struct {
 	Typename string `json:"__typename"`
 
-	DatabaseID int64             `json:"databaseId"`
-	Name       string            `json:"name"`
-	Status     string            `json:"status"`
-	Conclusion string            `json:"conclusion"`
-	URL        string            `json:"url"`
-	StartedAt  *github.Timestamp `json:"startedAt"`
-	CheckSuite *struct {
+	DatabaseID  int64             `json:"databaseId"`
+	Name        string            `json:"name"`
+	Status      string            `json:"status"`
+	Conclusion  string            `json:"conclusion"`
+	URL         string            `json:"url"`
+	StartedAt   *github.Timestamp `json:"startedAt"`
+	CompletedAt *github.Timestamp `json:"completedAt"`
+	CheckSuite  *struct {
 		DatabaseID int64 `json:"databaseId"`
 		App        *struct {
 			Slug string `json:"slug"`
@@ -202,12 +203,13 @@ func (c *Client) CheckRollup(ctx context.Context, owner, repo, sha string) ([]*g
 			switch node.Typename {
 			case "CheckRun":
 				run := &github.CheckRun{
-					ID:         new(node.DatabaseID),
-					Name:       new(node.Name),
-					Status:     new(strings.ToLower(node.Status)),
-					Conclusion: new(strings.ToLower(node.Conclusion)),
-					HTMLURL:    new(node.URL),
-					StartedAt:  node.StartedAt,
+					ID:          new(node.DatabaseID),
+					Name:        new(node.Name),
+					Status:      new(strings.ToLower(node.Status)),
+					Conclusion:  new(strings.ToLower(node.Conclusion)),
+					HTMLURL:     new(node.URL),
+					StartedAt:   node.StartedAt,
+					CompletedAt: node.CompletedAt,
 				}
 				if suite := node.CheckSuite; suite != nil {
 					run.CheckSuite = &github.CheckSuite{ID: new(suite.DatabaseID)}
@@ -263,6 +265,9 @@ func (c *Client) WorkflowRunsForSHA(ctx context.Context, owner, repo, sha string
 // ruleset in effect on it, sorted and without duplicates. A protection the
 // token may not read (404: none, or 403: no admin access) contributes
 // nothing; the rules endpoint answers for everyone with read access.
+// go-github answers a branch without classic protection with the bare
+// ErrBranchNotProtected, which carries no status: a branch guarded by
+// rulesets only.
 func (c *Client) RequiredStatusContexts(ctx context.Context, owner, repo, branch string) ([]string, error) {
 	set := map[string]bool{}
 
@@ -281,7 +286,7 @@ func (c *Client) RequiredStatusContexts(ctx context.Context, owner, repo, branch
 				}
 			}
 		}
-	case status == http.StatusNotFound, status == http.StatusForbidden:
+	case errors.Is(err, github.ErrBranchNotProtected), status == http.StatusNotFound, status == http.StatusForbidden:
 	default:
 		return nil, microerror.Mask(err)
 	}

@@ -35,7 +35,9 @@ func TestGeneratedArtifacts(t *testing.T) {
 		private bool
 		// charts are the Chart.yaml names of the helm/ directories at the
 		// tag; a directory not listed has none.
-		charts     map[string]string
+		charts map[string]string
+		// image is the image name of a multi-image release tag.
+		image      string
 		want       []string
 		wantErr    string
 		privateRef []string
@@ -217,6 +219,59 @@ func TestGeneratedArtifacts(t *testing.T) {
 			wantErr: "helm/widget-app has no Chart.yaml",
 		},
 		{
+			name: "multi-image release: the one image of the tag, under the repository",
+			entry: `- name: agent-toolchains
+  gen:
+    flavours: [multi-image]
+    language: generic
+    ci:
+      generate: true
+`,
+			root:  []string{"toolchains"},
+			image: "go",
+			want:  []string{"image public.example/giantswarm/agent-toolchains/go:1.2.3"},
+		},
+		{
+			name: "multi-image release of a private repository forced public",
+			entry: `- name: agent-toolchains-lab
+  visibility: private
+  gen:
+    flavours: [multi-image]
+    language: generic
+    ci:
+      generate: true
+      forcePublic: true
+`,
+			root:    []string{"toolchains"},
+			private: true,
+			image:   "lint1",
+			want:    []string{"image public.example/giantswarm/agent-toolchains-lab/lint1:1.2.3"},
+		},
+		{
+			name: "multi-image release of a private repository",
+			entry: `- name: agent-toolchains-lab
+  visibility: private
+  gen:
+    flavours: [multi-image]
+    language: generic
+`,
+			root:       []string{"toolchains"},
+			private:    true,
+			image:      "go",
+			want:       []string{"image private.example/giantswarm/agent-toolchains-lab/go:1.2.3"},
+			privateRef: []string{"private.example/giantswarm/agent-toolchains-lab/go:1.2.3"},
+		},
+		{
+			name: "multi-image repository without an image in the tag",
+			entry: `- name: agent-toolchains
+  gen:
+    flavours: [multi-image]
+    language: generic
+`,
+			root:    []string{"toolchains"},
+			wantErr: "names no image",
+		},
+		{
 			name: "no gen block",
 			entry: `- name: plain
 `,
@@ -228,7 +283,7 @@ func TestGeneratedArtifacts(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fields := fieldsFromYAML(t, tc.entry)
 			content := TagContent{SHA: "abc", Root: tc.root}
-			got, err := GeneratedArtifacts(fields, fields.Name, "1.2.3", content, tc.private, testEndpoints, fakeChartNames(tc.charts))
+			got, err := GeneratedArtifacts(fields, fields.Name, tc.image, "1.2.3", content, tc.private, testEndpoints, fakeChartNames(tc.charts))
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("want error containing %q, got %v", tc.wantErr, err)

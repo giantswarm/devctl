@@ -6,9 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/internal/laptop"
 	"github.com/giantswarm/devctl/v8/internal/versiongate"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
-	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 )
 
 const (
@@ -127,7 +127,7 @@ func New(config Config) (*cobra.Command, error) {
 		flag:   f,
 		stderr: config.Stderr,
 		stdout: config.Stdout,
-		open:   releasewait.OpenSources,
+		open:   laptop.ReleaseWaitSources,
 	}
 
 	c := &cobra.Command{

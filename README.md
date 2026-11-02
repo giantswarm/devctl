@@ -77,12 +77,13 @@ devctl pr rerun giantswarm/devctl 2277
 devctl release rerun giantswarm/devctl v8.123.0
 ```
 
-### CircleCI pipelines at the job level (`devctl ci jobs`, `devctl ci rerun`)
+### CircleCI pipelines at the job level (`devctl ci jobs`, `devctl ci job`, `devctl ci rerun`)
 
-`devctl ci jobs <owner/repo> <pipeline number|id>` reads a pipeline at the job level: every workflow run with its jobs, their start and stop times, and for a running job the step it is in and how long ago that step last wrote output, which tells a slow job from a stuck one while the workflow reads `running`. `devctl ci rerun <owner/repo> <workflow id> [--from-failed] [--cancel]` reruns one workflow, once an hour: a second rerun of the workflow's name in the same pipeline within an hour is refused (exit 5), as is a workflow still running unless `--cancel` cancels it first, the recovery of a stuck one. Both take the `devctl auth login` CircleCI login (Write access for the rerun) and read nothing on GitHub. See [docs/ci.md](docs/ci.md).
+`devctl ci jobs <owner/repo> <pipeline number|id>` reads a pipeline at the job level: every workflow run with its jobs, their start and stop times, and for a running job the step it is in and how long ago that step last wrote output, which tells a slow job from a stuck one while the workflow reads `running`. `devctl ci job <owner/repo> <job number>` reads one job: its steps with their status and the end of its failed steps' output, why it failed, without the CircleCI UI. `devctl ci rerun <owner/repo> <workflow id> [--from-failed] [--cancel]` reruns one workflow, once an hour: a second rerun of the workflow's name in the same pipeline within an hour is refused (exit 5), as is a workflow still running unless `--cancel` cancels it first, the recovery of a stuck one. All take the `devctl auth login` CircleCI login (Write access for the rerun) and read nothing on GitHub. See [docs/ci.md](docs/ci.md).
 
 ```nohighlight
 devctl ci jobs giantswarm/devctl 3885
+devctl ci job giantswarm/devctl 7781
 devctl ci rerun giantswarm/devctl f1290c29-9a4b-4e0e-8c6a-0b7d3e5f2a11 --from-failed
 ```
 
@@ -115,11 +116,15 @@ devctl rollout wait myinstallation giantswarm/app-operator v7.5.4 --progress
 
 ### Merging a pull request (`devctl pr merge`)
 
-`devctl pr merge <owner/repo> <number>` is the one call an agent makes to land its own pull request: it runs the wait of `pr wait`, squash-merges the pull request (`--rebase` for a rebase merge, the default on a fork line, whose team-file entry lists the `fork` flavour, where `--squash` squashes; a merge commit where the repository allows only that) through the merge API with the judged head as the expected head, deletes the branch through the refs API, and then runs the wait of `release wait --pr` on the merge commit until the release is pullable (`--release-timeout`, 30 minutes by default; `--no-release-wait` ends at the merge). A base with a merge queue is enqueued and waited for instead of merged. A merge that no release follows (a repository that does not tag merge commits, an auto-release run that tagged nothing) is exit 0. Refused before any wait: a draft, closed or conflicting pull request and one behind its base, strict or not, whose checks ran against an older base (exit 3; `--update-branch` updates it and waits for the new head); a base that moved during the wait is compared again before the merge, with the same rule, another human's pull request and a repository whose team-file entry says `agentMerge: false` (exit 5). A reviewer's `COMMENTED` or `CHANGES_REQUESTED` review or comment newer than the head that the author has not answered refuses it too (exit 5), read before the wait and again right before the merge. No protection setting is read to be changed or written: the merge is made as you, through the bypass the repository's ruleset grants its owning team and its admins. One JSON document (`pr wait`'s fields plus `mergeCommitSha`, `mergedBy`, `method`, `branchDeleted`, `enqueued`, `unansweredReviews` and `release`), exit 0, 1, 2, 3, 4, 5, 7 or 8, and after a merge 6 (the release failed) or 9 (the release not confirmed). `--detach` starts the same merge in a process of its own and returns within seconds with a handle; `devctl pr merge status <handle>` reads its outcome later, with the merge's exit code, and `--on-done <command>` runs a command when it ended. See [docs/pr-merge.md](docs/pr-merge.md).
+`devctl pr merge <owner/repo> <number>` is the one call an agent makes to land its own pull request: it runs the wait of `pr wait`, squash-merges the pull request (`--rebase` for a rebase merge, the default on a fork line, whose team-file entry lists the `fork` flavour, where `--squash` squashes; a merge commit where the repository allows only that) through the merge API with the judged head as the expected head, deletes the branch through the refs API, and then runs the wait of `release wait --pr` on the merge commit until the release is pullable (`--release-timeout`, 60 minutes by default; `--no-release-wait` ends at the merge). A base with a merge queue is enqueued and waited for instead of merged. A merge that no release follows (a repository that does not tag merge commits, an auto-release run that tagged nothing) is exit 0. Refused before any wait: a draft, closed or conflicting pull request and one behind its base, strict or not, whose checks ran against an older base (exit 3; `--update-branch` updates it and waits for the new head); a base that moved during the wait is compared again before the merge, with the same rule, another human's pull request and a repository whose team-file entry says `agentMerge: false` (exit 5). A reviewer's `COMMENTED` or `CHANGES_REQUESTED` review or comment newer than the head that the author has not answered refuses it too (exit 5), read before the wait and again right before the merge. No protection setting is read to be changed or written: the merge is made as you, through the bypass the repository's ruleset grants its owning team and its admins. One JSON document (`pr wait`'s fields plus `mergeCommitSha`, `mergedBy`, `method`, `branchDeleted`, `enqueued`, `unansweredReviews` and `release`), exit 0, 1, 2, 3, 4, 5, 7 or 8, and after a merge 6 (the release failed) or 9 (the release not confirmed). `--detach` starts the same merge in a process of its own and returns within seconds with a handle; `devctl pr merge status <handle>` reads its outcome later, with the merge's exit code, and `--on-done <command>` runs a command when it ended. See [docs/pr-merge.md](docs/pr-merge.md).
 
 ```bash
 devctl pr merge giantswarm/devctl 2278 --timeout 45m --progress
 ```
+
+### The agent-facing commands as MCP tools (`devctl serve`)
+
+`devctl serve` serves the agent-facing commands as MCP tools over streamable HTTP at `/mcp`: `pr_wait`, `pr_merge`, `pr_merge_status` and `release_wait` (and `release_promote` with `--release-promote`), the read-only ones with the MCP read-only annotation. A tool answers the command's JSON document as structured content, exit code included; the call is an MCP error only for `auth_required`. A wait is one call kept alive by `notifications/progress` on the caller's `progressToken`, which a gateway such as muster takes to restart its timeout; a wait without one answers within `--no-progress-timeout` (20s) with the verdict it reached, `timeout` while still pending, for the caller to call again. The server acts on GitHub as the person who calls it, with the token handed to it for them, and has no version gate, keychain, on-disk state, SIGHUP handling or `DEVCTL_TIME_SCALE`. See [docs/serve.md](docs/serve.md).
 
 ### Repository set-up (`devctl repo`)
 
@@ -130,6 +135,16 @@ devctl repo create --team bumblebee --name my-service --component-type service -
 devctl repo watch my-service --pull-request 4711
 devctl repo list --scope unassigned --inactive-days 365
 devctl repo set-lifecycle old-tool archived --reason "replaced by new-tool" --dry-run
+```
+
+### Reserving an MC for a branch (`devctl reservation`)
+
+`devctl reservation` deploys the dev builds of your branch of an app to one management cluster for a limited time, then puts the normal release back. It only commits to the GitOps repo and lets Flux apply it, so it works the same from a laptop and from CI. See [docs/reservation.md](docs/reservation.md).
+
+```bash
+devctl reservation reserve --cluster graveler --app hello-world --branch fix/crash --pull-request giantswarm/hello-world#123 --user alice
+devctl reservation list --cluster graveler
+devctl reservation release --pull-request giantswarm/hello-world#123 --user alice
 ```
 
 ### Running Tests

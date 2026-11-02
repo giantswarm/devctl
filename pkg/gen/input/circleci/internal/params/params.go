@@ -305,6 +305,23 @@ type Params struct {
 	TemplateHelmRepositoryPlaceholder string
 	TemplateAppName                   string
 	TemplateHelmRepository            string
+
+	// MultiImage selects the multi-image pipeline (the multi-image flavour):
+	// one image per ImagesDir/<name>/ directory, released as <name>/vX.Y.Z,
+	// rendered from its own setup and workflows templates. The fields below
+	// apply to it alone.
+	MultiImage bool
+	// ImagesDir is the directory whose subdirectories holding a Dockerfile
+	// are the images, and the build context of each.
+	ImagesDir string
+	// DefaultBranch is the branch a branch build diffs against and that
+	// builds nothing itself.
+	DefaultBranch string
+	// ImageNamePrefix is the image repository path the image's name is
+	// appended to (giantswarm/<repo>).
+	ImageNamePrefix string
+	// Registry is the one registries-data line every image job pushes with.
+	Registry string
 }
 
 // ImageBuild is one architect/build-image job: one platform, on a machine of

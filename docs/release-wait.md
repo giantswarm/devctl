@@ -1,7 +1,7 @@
 # Waiting for a release: `devctl release wait`
 
 ```nohighlight
-devctl release wait <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--timeout 30m] [--catalog] [--image <owner/name>]... [--chart <path>]... [--progress] [--failed-log [--failed-log-lines 50]]
+devctl release wait <owner/repo> (<vX.Y.Z | X.Y.Z | image/vX.Y.Z> | --pr <number>) [--timeout 60m] [--catalog] [--image <owner/name>]... [--chart <path>]... [--progress] [--failed-log [--failed-log-lines 50]]
 ```
 
 Blocks until every image and chart of a release is pullable and the tag's pipeline is green, then prints
@@ -28,6 +28,11 @@ the login command in `reason`, before anything is waited for.
 
 - `vX.Y.Z` or `X.Y.Z`: the tag is looked up under both spellings, the given one first, and the wait
   starts when it exists. A tag that never appears is a timeout (exit 2).
+- `<image>/vX.Y.Z`: a release of one image of a `multi-image` repository (one image per
+  `toolchains/<image>/` directory, each its own release line), under that one spelling. Its artifact is
+  the image `<owner>/<repo>/<image>:<X.Y.Z>`. With `--pr`, a merge commit that carries one image's
+  tag is followed like a `vX.Y.Z` tag. One that carries several (a change to the build files the images
+  share releases every image) ends with exit 11, naming each tag to wait for.
 - `--pr <number>`: the pull request must be merged (otherwise exit 3). In a repository on the
   **auto-release** model the tag is the one on the merge commit, on whatever branch the pull request
   was merged into (a release branch's tag of an older line included); the command waits for it to
@@ -77,7 +82,10 @@ Actions only: the check runs are the tag's pipeline, reported under `pipeline`, 
 every one finished successfully, `ci_failed` when one failed); a `.circleci/workflows.yml` beside it is the signature of
 `devctl gen circleci` and means `generated`; a `config.yml` alone is `hand-written`. The entry's
 `gen.ci.generate` is cross-checked against it (`true` without the generated files, or an explicit
-`false` with them, is exit 7).
+`false` with them, is exit 7). An `<image>/vX.Y.Z` tag of a `multi-image` entry cut by the hand-written
+pipeline that preceded the generated one is the exception: the flavour names its image
+`<owner>/<repo>/<image>:<X.Y.Z>` all the same, so the wait follows the tag's pipeline and probes that
+image, `ciModel` `hand-written`, with a warning (`--image` or `--chart` reads the pipeline's jobs instead).
 
 **Generated CI**: the artifacts are what devctl's generator emits for the entry, derived the way the
 generator derives them (an entry without a `gen.ci` block declares no override, so the generator's
@@ -188,7 +196,8 @@ orb at 10.12.0 or later, or at a dev version: from 10.12.0 the orb pushes a pre-
 Every poll reads the tag pipeline: the newest CircleCI pipeline whose `vcs.tag` is the tag, its
 workflows reduced to the **newest run per workflow name** (a rerun, from failed or in full, is a
 second workflow of the same name in the same pipeline, and the one it replaces keeps its failed
-status for ever). A workflow in `failed`, `error`, `failing`, `canceled` or `unauthorized` ends the
+status for ever). Once a listing named the tag pipeline, a later one that no longer does (a busy
+repository's newer pipelines push it off the pages read) leaves the wait reading that pipeline. A workflow in `failed`, `error`, `failing`, `canceled` or `unauthorized` ends the
 wait with exit 1 and `pipeline.failedJobs` (`workflow/job`, or the workflow alone when CircleCI does
 not list its jobs). The verdict is the workflows': their jobs are read only where they are needed,
 to name the failed ones and to derive the artifacts of hand-written CI and of a `custom.yml` that
@@ -304,7 +313,7 @@ stderr.
 | `releaseModel` | `auto-release` or `legacy`. |
 | `ciModel` | `generated`, `hand-written`, `actions` or `none`. |
 | `artifacts[]` | `kind` (`image`, `chart`, `release-asset`), `reference` (the pullable reference, or the asset's download URL), `digest` (empty while missing), `state` (`available`, `missing`). Empty until the artifacts are known (hand-written CI before its pipeline exists). |
-| `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status, conclusion}]` (newest run per name; for `ciModel` `actions` one entry per check run of the tag's commit, with its `conclusion`, `id`, `number` empty and `url` the commit's checks page), `failedJobs[]`, `unfinished[]` (the workflows not finished, `name (status)`, with `jobs not visible yet` when CircleCI does not list them yet; what a timeout was waiting for, empty at exit 0). `null` for a repository without CircleCI and without check runs on the tag, or while the CircleCI pipeline does not exist. |
+| `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status, conclusion}]` (newest run per name; for `ciModel` `actions` one entry per check run of the tag's commit, with its `conclusion`, `id`, `number` empty and `url` the commit's checks page), `failedJobs[]`, `unfinished[]` (the workflows not finished, `name (status)`, with `jobs not visible yet` when CircleCI does not list them yet; what a timeout was waiting for, empty at exit 0). When CircleCI names no pipeline for the tag and its commit's CircleCI statuses are the verdict, `workflows` are those statuses' jobs and `unfinished` the pending ones, with `id`, `number` and `url` empty. `null` for a repository without CircleCI and without check runs on the tag, or while the CircleCI pipeline does not exist. |
 | `actions[]` | The Actions runs the tag triggered, for a repository without CircleCI: `name`, `runId`, `status`, `conclusion`, `url`. |
 | `statuses[]` | The newest commit status of every context of the tag's commit, `context`, `state` (`pending`, `success`, `failure`, `error`) and `url`, read once the artifacts are available and the tag's CI is green; empty before. |
 | `conflictingTags[]` | Present at exit 11: every release tag on the commit the wait resolved to, newest first. Absent otherwise. |
@@ -321,7 +330,7 @@ stderr.
 | 3 | `no_release` | No release follows the pull request's merge: the repository does not tag merge commits (the legacy release model, or no release workflow at all), or the merge commit's auto-release run finished without a tag and no later tag on the pull request's base branch carries it; the reason names the branch. |
 | 7 | `usage` | A bad argument or flag; a newer devctl released (the reason names `devctl version update`); no source says how the repository releases; the sources disagree about the CI model or the artifacts; a registry answer that is neither a digest nor "manifest unknown"; a tooling error, a GitHub or CircleCI read that failed eight tries in a row among them. |
 | 8 | `auth_required` | No usable token in the keychain; `reason` names the `devctl auth login` invocation. |
-| 11 | `ambiguous_release` | With `--pr`, the commit the wait resolves to (the merge commit, or the first tagged commit after it) carries the release tags (`vX.Y.Z`, `vX.Y.Z-rc.N`) of more than one version: the wait does not choose. `reason` and `conflictingTags` name every release tag on the commit, newest first; a wait given the version waits on it. A candidate and its promoted stable on one commit are one version. |
+| 11 | `ambiguous_release` | With `--pr`, the commit the wait resolves to (the merge commit, or the first tagged commit after it) carries the release tags (`vX.Y.Z`, `vX.Y.Z-rc.N`) of more than one version, or the `<image>/vX.Y.Z` tags of more than one image: the wait does not choose. `reason` and `conflictingTags` name every release tag on the commit, newest first; a wait given the version waits on it. A candidate and its promoted stable on one commit are one version. |
 | 12 | `status_failed` | Every artifact is available and the tag's CI is green, and a commit status of the tag's commit (the branch pipeline's, another CI's) is `failure` or `error`: `devctl release promote` refuses the commit. `reason` and `statuses[]` name the failed contexts. |
 
 ## Environment
@@ -337,7 +346,7 @@ end-to-end tests.
 | `DEVCTL_REGISTRY_PRIVATE` | `gsociprivate.azurecr.io` | The private registry, probed with the docker keychain. |
 | `DEVCTL_REGISTRY_INSECURE` | unset | `1` talks plain HTTP to the registries (tests). |
 | `DEVCTL_CATALOG_URL` | `https://giantswarm.github.io` | The host of the catalog indexes (`<host>/<catalog>/index.yaml`). |
-| `DEVCTL_KEYRING_FILE` | unset | A 0600 JSON file in place of the OS keychain (tests). |
+| `DEVCTL_KEYRING_FILE` | unset | A JSON file that holds the records in place of the OS keychain; read from the environment when a command starts, created with mode 0600 on first write. Unset or empty keeps the keychain (tests, machines without a keychain daemon) |
 | `DEVCTL_TIME_SCALE` | `1` | Multiplies every sleep and the timeout. |
 
 ## The requests, for a mock

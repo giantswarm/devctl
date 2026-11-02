@@ -127,6 +127,11 @@ repository as gh resolves it (`gh repo set-default`, then the remotes `upstream`
 Everything else (a giantswarm repository, `gh api user`, `gh api graphql`, `gh search`) acts with the App
 token.
 
+**The upload rule.** `gh issue|pr` with `--attach` (`gh pr comment 5 --attach proof.png`) also runs on the
+person's own `gh` login, whatever the owner: GitHub's file upload endpoint refuses an App user token (404,
+which `gh` reports as "attaching files requires write access to the repository"). A person without write
+access to the repository is still refused.
+
 Every `gh` the agent runs, also from scripts and subprocesses, then acts by that rule, and
 `devctl version update` replacing the binary keeps the link working. `gh auth status` in such a shell
 names `GH_TOKEN` as the source; `gh api user/installations` answers only for an App user token and names
@@ -319,5 +324,5 @@ The defaults are production; the variables exist for other sites and for tests a
 | `DEVCTL_REGISTRY_PRIVATE` | `gsociprivate.azurecr.io` | private registry, docker keychain |
 | `DEVCTL_REGISTRY_INSECURE` | unset | `1` talks plain HTTP to the registries (tests) |
 | `DEVCTL_MUSTER_URL` | `https://muster.gazelle.awsprod.gigantic.io/mcp` | the muster MCP endpoint `--muster-only` signs in to and the `repo` commands reach giantswarm-repo-manager through |
-| `DEVCTL_KEYRING_FILE` | unset | a 0600 JSON file in place of the OS keychain (tests) |
+| `DEVCTL_KEYRING_FILE` | unset | a JSON file that holds the records in place of the OS keychain; read from the environment when a command starts, created with mode 0600 on first write. Unset or empty keeps the keychain (tests, machines without a keychain daemon) |
 | `DEVCTL_TIME_SCALE` | `1` | multiplies every sleep and timeout; the e2e suite runs at `0.001` |

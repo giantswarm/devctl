@@ -140,6 +140,8 @@ func TestRun(t *testing.T) {
 		{name: "no login", program: "gh", tokenErr: authErr, wantCode: agentcli.ExitAuthRequired, wantErr: "devctl auth login"},
 		{name: "not found", program: "nope", wantCode: agentcli.ExitUsage, wantErr: "not found"},
 		{name: "another owner's repository keeps the person's login", program: "gh", args: []string{"pr", "list", "--repo", "teemow/klaus-lab"}, wantExec: true, wantPerson: true},
+		{name: "an upload keeps the person's login", program: "gh", args: []string{"issue", "comment", "12", "--repo", "giantswarm/devctl", "--attach", "proof.png"}, wantExec: true, wantPerson: true},
+		{name: "a comment without an upload acts as the App", program: "gh", args: []string{"pr", "comment", "5", "--repo", "giantswarm/devctl", "--body", "done"}, wantExec: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -154,7 +156,7 @@ func TestRun(t *testing.T) {
 				},
 				Self:    self,
 				Path:    path,
-				Environ: []string{"PATH=" + path, "GH_TOKEN=person-token"},
+				Environ: []string{"PATH=" + path, "GH_TOKEN=person-token", "GITHUB_TOKEN=other-token"},
 				Stderr:  &stderr,
 				Exec: func(p string, argv, env []string) (int, error) {
 					execPath, execArgv, execEnv = p, argv, env
@@ -179,15 +181,18 @@ func TestRun(t *testing.T) {
 				return
 			}
 			if tc.wantPerson {
-				if gotValid != 0 || slices.ContainsFunc(execEnv, func(kv string) bool { return strings.HasPrefix(kv, "GH_TOKEN=") }) {
-					t.Fatalf("token handed over for another owner: env = %v", execEnv)
+				if gotValid != 0 || slices.ContainsFunc(execEnv, func(kv string) bool {
+					return strings.HasPrefix(kv, "GH_TOKEN=") || strings.HasPrefix(kv, "GITHUB_TOKEN=")
+				}) {
+					t.Fatalf("token handed over on the person's login: env = %v", execEnv)
 				}
 				return
 			}
+			wantArgv := append([]string{"gh"}, args...)
 			if gotValid != MinValidity {
 				t.Fatalf("token valid for %s, want %s", gotValid, MinValidity)
 			}
-			if execPath != filepath.Join(realBin, "gh") || !slices.Equal(execArgv, []string{"gh", "api", "user"}) {
+			if execPath != filepath.Join(realBin, "gh") || !slices.Equal(execArgv, wantArgv) {
 				t.Fatalf("exec %s %v", execPath, execArgv)
 			}
 			if !slices.Contains(execEnv, "GH_TOKEN=app-token") || slices.Contains(execEnv, "GH_TOKEN=person-token") {

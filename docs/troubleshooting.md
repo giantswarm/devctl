@@ -16,3 +16,13 @@ Workarounds:
 - Run `unset GITHUB_TOKEN`.
 - Run `git config --unset github.token`.
 - Set `GITHUB_TOKEN` to a token with enough permissions.
+
+## `make` stops with `VERSION is empty`
+
+The generated `Makefile.gen.go.mk` takes the version from `gitsemver get`. gitsemver cannot read a repository whose git configuration sets `extensions.worktreeConfig` while `core.repositoryformatversion` is 0:
+
+```nohighlight
+error: resolving version for "HEAD": core.repositoryformatversion does not support extension: worktreeconfig
+```
+
+This fails in the main checkout and in every worktree of such a repository. Pass the version yourself: `make build VERSION=1.2.3`.

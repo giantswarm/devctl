@@ -6,9 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/internal/laptop"
 	"github.com/giantswarm/devctl/v8/internal/versiongate"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
-	"github.com/giantswarm/devctl/v8/pkg/releasepromote"
 )
 
 const (
@@ -26,7 +26,9 @@ giantswarm/github whose release model is auto-release (releaseWorkflow,
 defaulting from gen.ci.generate), in the giantswarm organization. Pass
 exactly one of the two.
 
-For each repository, on its default branch:
+For each repository, on its default branch (--branch names another, for one
+repository: a fork line's maintenance branch release-X.Y, whose candidates
+are its own series'):
   1. The workflow file must be there (else not_auto_release) and carry the
      step "Resolve the candidate to promote" of devctl v8.102.0 or later
      (else outdated_workflow: an older workflow's release-type stable tags
@@ -40,10 +42,10 @@ For each repository, on its default branch:
      is taken. The command reads releases, not tags: a candidate tag whose
      GitHub release was deleted, or is a draft, is not seen, while the
      workflow stops on it.
-     With --version vX.Y.Z-rc.N, for exactly one repository, the candidate
-     is that one instead of the highest: a published pre-release newer than
-     the highest stable release and reachable from the default branch, else
-     failed. The workflow must take its version input, else
+     With --version vX.Y.Z-rc.N (or the bare X.Y.Z-rc.N), for exactly one
+     repository, the candidate is that one instead of the highest: a
+     published pre-release newer than the highest stable release and
+     reachable from the default branch, else failed. The workflow must take its version input, else
      outdated_workflow. This promotes a candidate that is built while a
      later one is still building, or the one proven live: the stable tag
      lands on that candidate's commit whatever was cut after it. The
@@ -99,8 +101,8 @@ Exit codes:
      names them
   7  usage or tooling: neither or both of repositories and --team, a
      malformed owner/repo, a negative --follow-timeout, --version not of
-     the form vX.Y.Z-rc.N or not
-     with exactly one repository, or a team without a team file, before
+     the form vX.Y.Z-rc.N or X.Y.Z-rc.N or not with exactly one repository, --branch not with exactly one
+     repository, or a team without a team file, before
      any repository is read
   8  authentication required: run ` + "`devctl auth login --github-only`" + `
 
@@ -117,6 +119,7 @@ Examples:
   devctl release promote giantswarm/devctl --dry-run
   devctl release promote giantswarm/devctl giantswarm/klaus
   devctl release promote giantswarm/devctl --version v1.2.3-rc.14
+  devctl release promote giantswarm/substrate --branch release-1.16 --version v1.16.5-rc.1
   devctl release promote --team team-bumblebee --progress`
 )
 
@@ -140,7 +143,7 @@ func New(config Config) (*cobra.Command, error) {
 		flag:   f,
 		stderr: config.Stderr,
 		stdout: config.Stdout,
-		open:   releasepromote.OpenSources,
+		open:   laptop.ReleasePromoteSources,
 	}
 
 	c := &cobra.Command{

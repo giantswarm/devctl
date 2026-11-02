@@ -1,0 +1,11 @@
+{{- if .Values.installations }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "devctl.fullname" . }}-installations
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "devctl.labels" . | nindent 4 }}
+data:
+  installations.json: {{ include "devctl.installations" . | quote }}
+{{- end }}

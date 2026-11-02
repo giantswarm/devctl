@@ -163,6 +163,78 @@ func TestFindPipelineByRevision(t *testing.T) {
 	}
 }
 
+// TestPipeline_githubAppTrigger: a pipeline the CircleCI GitHub App triggered
+// carries no vcs; what it built is read from trigger_parameters.git.
+func TestPipeline_githubAppTrigger(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want PipelineVCS
+	}{
+		{
+			name: "oauth webhook keeps vcs",
+			body: `{"id": "p1", "vcs": {"revision": "a", "branch": "main"}, "trigger_parameters": {"git": {"checkout_sha": "other", "branch": "other"}}}`,
+			want: PipelineVCS{Revision: "a", Branch: "main"},
+		},
+		{
+			name: "github app branch push",
+			body: `{"id": "p2", "vcs": null, "trigger_parameters": {"git": {"checkout_sha": "b", "branch": "feature", "ref": "refs/heads/feature"}}}`,
+			want: PipelineVCS{Revision: "b", Branch: "feature"},
+		},
+		{
+			name: "github app tag push",
+			body: `{"id": "p3", "trigger_parameters": {"git": {"checkout_sha": "c", "branch": "main", "ref": "refs/tags/v1.2.3"}}}`,
+			want: PipelineVCS{Revision: "c", Tag: "v1.2.3"},
+		},
+		{
+			name: "github app empty vcs and branch only in ref",
+			body: `{"id": "p4", "vcs": {}, "trigger_parameters": {"git": {"checkout_sha": "d", "ref": "refs/heads/feature"}}}`,
+			want: PipelineVCS{Revision: "d", Branch: "feature"},
+		},
+		{
+			name: "api parameter named git is ignored",
+			body: `{"id": "p5", "trigger_parameters": {"git": "yes"}}`,
+			want: PipelineVCS{},
+		},
+		{
+			name: "mistyped git fields are ignored",
+			body: `{"id": "p6", "trigger_parameters": {"git": {"checkout_sha": 7, "branch": true}}}`,
+			want: PipelineVCS{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var p Pipeline
+			if err := json.Unmarshal([]byte(tt.body), &p); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if p.VCS != tt.want {
+				t.Errorf("vcs: got %+v, want %+v", p.VCS, tt.want)
+			}
+		})
+	}
+}
+
+// TestFindPipelineByRevision_githubAppTrigger: the revision's pipeline is
+// found when the GitHub App triggered it, as on a project CircleCI builds
+// through its GitHub App.
+func TestFindPipelineByRevision_githubAppTrigger(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items": [{"id": "p2", "vcs": null, "trigger_parameters": {"git": {"checkout_sha": "b", "branch": "feature"}}}], "next_page_token": null}`))
+	}))
+	defer srv.Close()
+
+	c, err := New(Config{Token: "cci_test", BaseURL: srv.URL})
+	if err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	p, err := c.FindPipelineByRevision(context.Background(), "o", "r", "feature", "b")
+	if err != nil || p == nil || p.ID != "p2" {
+		t.Fatalf("revision b: pipeline=%+v err=%v", p, err)
+	}
+}
+
 func TestPullRequestBranch(t *testing.T) {
 	if got := PullRequestBranch("feature", false, 7); got != "feature" {
 		t.Errorf("own branch: got %q", got)

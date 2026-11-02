@@ -24,7 +24,9 @@ jobs are candidates: the generated workflows.yml and the repository's own
 custom.yml, or a hand-kept config.yml when there is no generated pipeline,
 read from the repository's .circleci, or from --circleci-dir when the
 pipeline was just generated and is not pushed yet. A scheduled or
-conditional workflow and an approval job are no candidates.
+conditional workflow and an approval job are no candidates. A repository with a
+tests/e2e directory has Heimdall's gatekeeper, 'Heimdall - PR Gatekeeper',
+as one more candidate.
 
 The command removes nothing it was not told to: a context already required
 stays, whether it reported or not and whatever system reports it, unless

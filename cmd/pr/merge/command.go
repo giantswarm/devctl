@@ -197,6 +197,7 @@ func New(config Config) (*cobra.Command, error) {
 		clock:           agentcli.SystemClock,
 		jobRoot:         mergejob.Root,
 		executable:      os.Executable,
+		github:          newClients,
 	}
 
 	c := &cobra.Command{

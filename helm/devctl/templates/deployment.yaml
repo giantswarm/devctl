@@ -1,0 +1,143 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "devctl.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "devctl.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "devctl.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- /* The installations are read at start: a changed list restarts the server. */}}
+        checksum/installations: {{ include "devctl.installations" . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "devctl.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "devctl.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- /*
+      A merge runs in the call that started it and is kept in memory
+      (pr_merge_status reads it): a terminating pod drains its calls for at
+      most the server's own shutdown timeout.
+      */}}
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- /* The image CircleCI pushes on every devctl tag: server and binary share a version. */}}
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - serve
+            - --address=:8080
+            - --progress-interval={{ .Values.progressInterval }}
+            - --no-progress-timeout={{ .Values.noProgressTimeout }}
+            {{- if .Values.metrics.enabled }}
+            - --metrics-address=:{{ .Values.metrics.port }}
+            {{- end }}
+            {{- with .Values.github.grantApp }}
+            - --grant-app={{ . }}
+            {{- end }}
+            {{- with .Values.github.app }}
+            - --github-app={{ . }}
+            {{- end }}
+            {{- if .Values.installations }}
+            - --installations=/etc/devctl/installations.json
+            {{- end }}
+            {{- with .Values.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            {{- /* A read-only root: whatever devctl resolves under the home directory is the emptyDir. */}}
+            - name: HOME
+              value: /tmp
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.installations }}
+            - name: installations
+              mountPath: /etc/devctl/installations.json
+              subPath: installations.json
+              readOnly: true
+            {{- range $name, $_ := .Values.installations }}
+            - name: exchange-{{ $name }}
+              mountPath: /etc/devctl/installations/{{ $name }}
+              readOnly: true
+            {{- end }}
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.installations }}
+        - name: installations
+          configMap:
+            name: {{ include "devctl.fullname" . }}-installations
+        {{- range $name, $i := .Values.installations }}
+        {{- /* The exchange client the hub's muster presents at the installation's Dex. */}}
+        - name: exchange-{{ $name }}
+          secret:
+            secretName: {{ include "devctl.credentialsSecret" (dict "name" $name "i" ($i | default dict)) }}
+            items:
+              - key: client-id
+                path: client-id
+              - key: client-secret
+                path: client-secret
+        {{- end }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

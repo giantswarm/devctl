@@ -33,6 +33,13 @@ func TestGenCommandsNothingForAForkLine(t *testing.T) {
 	predates := genContext{Knows: func(_, flag string) bool { return flag != "--maintenance-branches" }}
 	require.NotContains(t, genCommands(released, predates)[0], "--maintenance-branches")
 
+	released.Gen.CI.MaintenanceBranches = false
+	released.Gen.CI.PatchCandidates = true
+	require.Equal(t, [][]string{{"devctl", "gen", "workflows", "--flavour", "fork", "--language", "go", "--repo-name", "upstream-fork",
+		"--release-workflow", "auto-release", "--release-branch", "giantswarm", "--patch-candidates"}}, genCommands(released, genContext{}))
+	predates = genContext{Knows: func(_, flag string) bool { return flag != "--patch-candidates" }}
+	require.NotContains(t, genCommands(released, predates)[0], "--patch-candidates")
+
 	service := Fields{Name: "service", Gen: &GenFields{Flavours: []string{"app"}, Language: "go"}}
 	require.NotEmpty(t, genCommands(service, genContext{}))
 	require.True(t, hasCIJob(service))
@@ -167,6 +174,7 @@ func TestGenCommandsPassEveryGenCIKey(t *testing.T) {
 		"generate":              true, // turns the line on
 		"releaseWorkflow":       true, // a flag of gen workflows
 		"maintenanceBranches":   true, // a flag of gen workflows
+		"patchCandidates":       true, // a flag of gen workflows
 		"requireCircleCIChecks": true, // the protection step's
 		"atsBranchOnly":         true, // deprecated, the generator ignores it
 		"templateContent":       true, // the reconciler's: no pipeline to generate

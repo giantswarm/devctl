@@ -194,3 +194,43 @@ func TestProtectionRequiresTheRepositorysOwnJobs(t *testing.T) {
 		require.Equal(t, []string{ctxSemantic}, checkContexts(r.ruleset(RulesetName)), "none of the handed-in pipeline's jobs reported")
 	})
 }
+
+// TestProtectionRequiresHeimdallWithE2ETests covers a repository with a
+// tests/e2e directory: Heimdall's gatekeeper is required once it has
+// reported, and not without the directory.
+func TestProtectionRequiresHeimdallWithE2ETests(t *testing.T) {
+	seed := func(h *harness, e2e bool) *fakeRepo {
+		r := h.gh.addRepo(owner, name)
+		if e2e {
+			r.files[E2ETestsDir+"/main_test.go"] = "package e2e\n"
+		}
+		r.checkRuns = []string{HeimdallContext}
+		r.addRuleset(RulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+		return r
+	}
+
+	t.Run("a reported gatekeeper is required with tests/e2e", func(t *testing.T) {
+		h := newHarness(t, entryYAML)
+		r := seed(h, true)
+
+		h.run(ModeRepair, false, StepProtection)
+		require.Contains(t, checkContexts(r.ruleset(RulesetName)), HeimdallContext)
+	})
+
+	t.Run("a gatekeeper that has not reported is not required", func(t *testing.T) {
+		h := newHarness(t, entryYAML)
+		r := seed(h, true)
+		r.checkRuns = nil
+
+		h.run(ModeRepair, false, StepProtection)
+		require.NotContains(t, checkContexts(r.ruleset(RulesetName)), HeimdallContext)
+	})
+
+	t.Run("without tests/e2e the gatekeeper is not required", func(t *testing.T) {
+		h := newHarness(t, entryYAML)
+		r := seed(h, false)
+
+		h.run(ModeRepair, false, StepProtection)
+		require.NotContains(t, checkContexts(r.ruleset(RulesetName)), HeimdallContext)
+	})
+}

@@ -63,6 +63,25 @@ flags:
 	return remoteOwner(remotes)
 }
 
+// GHAttaches is whether a gh invocation uploads a file: `gh issue|pr` with
+// --attach. GitHub's upload endpoint (uploads.github.com/user-attachments)
+// refuses an App user token with a 404, which gh reports as missing write
+// access, so such an invocation keeps the person's own gh login.
+func GHAttaches(args []string) bool {
+	if len(args) == 0 || (args[0] != "issue" && args[0] != "pr") {
+		return false
+	}
+	for _, a := range args[1:] {
+		if a == "--" {
+			return false
+		}
+		if a == "--attach" || strings.HasPrefix(a, "--attach=") {
+			return true
+		}
+	}
+	return false
+}
+
 // apiValueFlags are the flags of `gh api` that take a separate value.
 var apiValueFlags = map[string]bool{
 	"-X": true, "--method": true, "-H": true, "--header": true, "-f": true, "--raw-field": true,

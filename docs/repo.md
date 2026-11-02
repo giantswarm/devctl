@@ -347,8 +347,8 @@ classic protection is removed; the dry run plans both.
 
 A ruleset the engine did not create is left alone -- the engine writes `devctl: default branch` and no
 other -- and reported as `foreign-ruleset` unless the entry names it in `rulesets`, the team's record of
-the decision to keep it: the fork lines declare `protect-giantswarm`, `protect-main`,
-`protect-mirror-main` and `protect-consumed-branch` there. A ruleset whose enforcement is `disabled`
+the decision to keep it: the fork lines declare `protect-main` and `protect-mirror-main`, which guard
+the upstream mirror, there. A ruleset whose enforcement is `disabled`
 enforces nothing, conflicts with nothing and is passed over in silence, declared or not; one on
 `evaluate` is reported like an active one. A declared name the repository carries no ruleset for is the
 finding `declared-ruleset-missing`, so a deleted ruleset does not leave its declaration standing. Both
