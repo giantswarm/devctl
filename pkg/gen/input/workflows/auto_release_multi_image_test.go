@@ -300,7 +300,7 @@ func Test_AutoReleaseMultiImageVerifiesCircleCI(t *testing.T) {
 		{name: "every tag built", statuses: multiImageStatuses(2), want: "CircleCI builds the 2 tag(s)"},
 		{name: "a lost tag fails", statuses: multiImageStatuses(1), fails: true, want: "::error::CircleCI started 1 build(s) for the 2 tag(s)"},
 		{name: "no pipeline yet warns", statuses: "[]", want: "::warning::"},
-		{name: "OAuth statuses alone warn, not verified", statuses: `[{"context":"ci/circleci: setup","state":"success","created_at":"2026-11-02T12:00:05Z","creator":{"login":"alice"},"target_url":"https://circleci.com/gh/giantswarm/agent-toolchains/9"}]`, want: "come from an OAuth follow"},
+		{name: "OAuth statuses alone warn, not verified", statuses: `[{"context":"ci/circleci: setup","state":"success","created_at":"2026-11-02T12:00:05Z","creator":{"login":"alice"},"target_url":"https://circleci.com/gh/giantswarm/agent-toolchains/9"}]`, want: "an OAuth follow builds"},
 		{name: "no tag cut on this push passes", tags: "\n", statuses: "[]", want: "no tag cut on this push"},
 	}
 

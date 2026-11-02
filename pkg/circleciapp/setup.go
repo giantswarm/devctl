@@ -129,21 +129,6 @@ func (r *Report) Green() bool {
 	return true
 }
 
-// oauthSince says an OAuth follow posted a status on the commit no earlier
-// than the release (less the slack the engine allows): its job ran after the
-// tag, which may have been the tag's.
-func oauthSince(statuses []*github.RepoStatus, published time.Time) bool {
-	for _, st := range statuses {
-		if st.GetCreator().GetLogin() != reconcile.CircleCIAppLogin && !st.GetCreatedAt().Before(published.Add(-oauthSlack)) {
-			return true
-		}
-	}
-	return false
-}
-
-// oauthSlack matches the engine's tagBuildSlack.
-const oauthSlack = 10 * time.Second
-
 // releasesToBuild are the releases Setup checks for their tag's build: the
 // latest release when it is a vX.Y.Z tag, and for a multi-image repository,
 // whose latest release is a <name>/vX.Y.Z tag, the newest release of every
@@ -275,7 +260,7 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 		// The App pipeline's statuses tell a tag build by its workflows; an
 		// OAuth follow's name jobs alone, so any of them after the release
 		// counts as built: a tag is never published a second time.
-		built := len(reconcile.TagBuildStatuses(reconcile.AppStatuses(statuses), published)) > 0 || oauthSince(statuses, published)
+		built := len(reconcile.TagBuildStatuses(reconcile.AppStatuses(statuses), published)) > 0 || reconcile.OAuthBuiltSince(statuses, published)
 		recent := now().Sub(published) < tagBuildGrace && !result.CreatedTrigger
 		switch {
 		case built:

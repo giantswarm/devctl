@@ -2514,6 +2514,24 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// The App pipeline built the branch before the release, and only
+			// an OAuth follow posted after it: the tag may have been built
+			// there. Not verified, not missed, as follow-circleci reads it.
+			name: "release: an OAuth build after the release beside an earlier App branch build is not verified", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				published := time.Now().Add(-time.Hour)
+				r.release, r.releaseAt = "v0.1.0", published
+				r.addStatus("v0.1.0", "go-build", "success", "wf-branch", CircleCIAppLogin, published.Add(-time.Minute))
+				r.addStatus("v0.1.0", "go-build", "success", "job-7", "alice", published.Add(time.Minute))
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Contains(t, res.Step(StepRelease).Summary, "built on an OAuth follow (alice), not verified")
+				require.Empty(t, res.Findings())
+			},
+		},
+		{
 			// The real shape (release-automation-sandbox): the release was
 			// published 11:20:53Z. The branch build of the same commit started
 			// at 11:20:41Z, before the release, and its go-build failed at

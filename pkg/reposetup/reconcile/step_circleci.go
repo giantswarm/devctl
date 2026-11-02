@@ -224,6 +224,21 @@ func AppStatuses(statuses []*github.RepoStatus) []*github.RepoStatus {
 	return out
 }
 
+// OAuthBuiltSince says an OAuth follow, a poster other than
+// CircleCIAppLogin, posted a status no earlier than a release published at
+// publishedAt (less tagBuildSlack): its job ran after the tag and may have
+// been the tag's. A status without a creator counts as nobody's.
+func OAuthBuiltSince(statuses []*github.RepoStatus, publishedAt time.Time) bool {
+	since := publishedAt.Add(-tagBuildSlack)
+	for _, st := range statuses {
+		login := st.GetCreator().GetLogin()
+		if login != "" && login != CircleCIAppLogin && !st.GetCreatedAt().Before(since) {
+			return true
+		}
+	}
+	return false
+}
+
 // CircleCIPosters says who posted statuses: whether CircleCIAppLogin did,
 // and the other logins, sorted.
 func CircleCIPosters(statuses []*github.RepoStatus) (app bool, others []string) {
@@ -589,6 +604,12 @@ func (r *Runner) verifyRelease(ctx context.Context, s *run, sr *StepResult, tag 
 		return fmt.Sprintf("release %s: built on an OAuth follow (%s), not verified from statuses; `devctl repo follow-circleci %s --migrate` moves it to the GitHub App pipeline", tag, strings.Join(others, ", "), s.slug()), true, nil
 	}
 	build := TagBuildStatuses(app, published)
+	if len(build) == 0 && OAuthBuiltSince(statuses, published) {
+		// No App build after the release, but an OAuth follow's: the tag
+		// may have been built there, and an OAuth status cannot say.
+		_, others := CircleCIPosters(statuses)
+		return fmt.Sprintf("release %s: built on an OAuth follow (%s), not verified from statuses; `devctl repo follow-circleci %s --migrate` moves it to the GitHub App pipeline", tag, strings.Join(others, ", "), s.slug()), true, nil
+	}
 	if len(build) == 0 {
 		if r.now().Sub(published) < tagBuildGrace {
 			return fmt.Sprintf("release %s: published %s ago, no status of its build yet", tag, r.now().Sub(published).Round(time.Second)), false, nil

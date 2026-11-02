@@ -174,13 +174,14 @@ jobs:
                 add // [] |
                 def wf: (.target_url // "") as $u | (($u | capture("/workflows?/(?<id>[^/]+)")? | .id) // $u);
                 (length) as $all |
+                (map(select((.creator.login // "") != "" and .creator.login != "circleci-app[bot]" and (.created_at | fromdateiso8601) >= $since)) | length) as $oauth |
                 map(select(.creator.login == "circleci-app[bot]")) |
                 (length) as $app |
                 (map(select(.context == "ci/circleci: setup")) | group_by(wf) | map(min_by(.created_at)) | map(select((.created_at | fromdateiso8601) >= $since)) | length) as $setups |
-                "\($all) \($app) \($setups)"'
+                "\($all) \($app) \($setups) \($oauth)"'
           }
           deadline=$((SECONDS + CIRCLECI_STATUS_WAIT_SECONDS))
-          since="" all="" app="" setups=""
+          since="" all="" app="" setups="" oauth=""
           while :; do
             # A failed read (rate limit, a 502) is retried within the wait;
             # only a wait without one good read fails the step.
@@ -188,11 +189,14 @@ jobs:
               since=$(jq -rn --arg at "$first" '($at | fromdateiso8601) - 10')
             fi
             if [ -n "$since" ] && out=$(counts); then
-              read -r all app setups <<<"$out"
+              read -r all app setups oauth <<<"$out"
               if [ "$setups" -ge "${#tags[@]}" ]; then
                 echo "CircleCI builds the ${#tags[@]} tag(s): ${setups} setup workflow(s) on ${sha:0:8} started after the first release"
                 exit 0
               fi
+              # An OAuth follow's statuses after the release settle
+              # nothing more by waiting: they are not judged.
+              [ "$oauth" -eq 0 ] || break
               echo "${setups} of ${#tags[@]} tag builds reported"
             else
               echo "reading the release or the commit statuses of ${sha:0:8} failed"
@@ -211,8 +215,8 @@ jobs:
               "Set the GitHub App pipeline up as you: devctl repo follow-circleci ${GITHUB_REPOSITORY}"
             exit 0
           fi
-          if [ "$app" -eq 0 ]; then
-            echo "::warning::${tags[*]}: the CircleCI statuses on ${sha:0:8} come from an OAuth follow, whose statuses cannot tell a tag's build from a branch build; not verified." \
+          if [ "$app" -eq 0 ] || [ "$oauth" -gt 0 ]; then
+            echo "::warning::${tags[*]}: an OAuth follow builds ${sha:0:8} without the GitHub App pipeline's builds of every tag, and its statuses cannot tell a tag's build from a branch build; not verified." \
               "Move the repository to the GitHub App pipeline as you: devctl repo follow-circleci ${GITHUB_REPOSITORY} --migrate"
             exit 0
           fi

@@ -1269,7 +1269,15 @@ func Test_AutoReleaseVerifyCircleCI(t *testing.T) {
 			// job after the release looks like the tag's. Not judged.
 			name:      "OAuth statuses alone warn and pass, not verified",
 			statuses:  `[{"context":"ci/circleci: go-build","state":"failure","created_at":"2026-10-22T11:22:00Z","creator":{"login":"alice"},"target_url":"https://circleci.com/gh/example/widget/12"}]`,
-			expectOut: []string{"::warning::v0.2.4: the CircleCI statuses on 01234567 come from an OAuth follow", "--migrate"},
+			expectOut: []string{"::warning::v0.2.4: an OAuth follow builds 01234567", "--migrate"},
+			rejectOut: []string{"::error::"},
+		},
+		{
+			// The App built the branch before the release; only an OAuth
+			// follow posted after it: not judged, as the engine reads it.
+			name:      "an OAuth build after the release beside an earlier App build warns",
+			statuses:  "[" + `{"context":"ci/circleci: go-build","state":"success","created_at":"2026-10-22T11:22:00Z","creator":{"login":"alice"},"target_url":"https://circleci.com/gh/example/widget/12"},` + branchStatuses + "]",
+			expectOut: []string{"::warning::v0.2.4: an OAuth follow builds 01234567"},
 			rejectOut: []string{"::error::"},
 		},
 		{
