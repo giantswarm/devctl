@@ -19,7 +19,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - `repo watch` takes that step for the creator once the reconciler has set the repository up (`--circleci=false`
     skips it); `repo create` prints the `repo watch` to run.
   - The engine's circleci step is check-only: a GitHub App pipeline present is `ok`, otherwise the finding
-    `circleci-pipeline-missing` (replacing `circleci-webhook-missing`) names `repo follow-circleci`. It reads the
+    `circleci-pipeline-missing` (replacing `circleci-webhook-missing`) names `repo follow-circleci`. A repository built
+    by an OAuth follow, alone or beside a GitHub App pipeline, is the advisory finding `circleci-oauth-follow` with
+    the `--migrate` fix: it builds today, so it does not keep the run from converging. It reads the
     project's pipeline definitions with a person's CircleCI login, and who posted the default branch's CircleCI
     statuses without one. The follow, the temporary admin grant, setup workflows, checkout keys and the webhook
     check are gone, and so are the unfollow on archive and delete.

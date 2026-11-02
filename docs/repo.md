@@ -215,8 +215,10 @@ The verdicts are the ones the Repositories page shows:
 The `circleci` line is the reconciler's run, which writes nothing on CircleCI: whether a CircleCI GitHub
 App pipeline builds the repository, read from who posted the CircleCI statuses of the default branch's
 head (`circleci-app[bot]`), or from the project's pipeline definitions when the run had a person's
-CircleCI login. A repository without one, or built by an OAuth follow, carries the finding
-`circleci-pipeline-missing`, fixed by `devctl repo follow-circleci`.
+CircleCI login. A repository nothing builds carries the finding `circleci-pipeline-missing`, fixed by
+`devctl repo follow-circleci`. One built by an OAuth follow, alone or beside a GitHub App pipeline, carries
+the advisory `circleci-oauth-follow`, fixed by `devctl repo follow-circleci --migrate`: it builds today and
+stops when the follower leaves, and the run still converges.
 
 Under the steps: the verdict line, the last reconciler run with what it was for (created, added,
 transferred, archived, deprecated, changed, dispatched, nightly), the run the record expects after a

@@ -1475,19 +1475,23 @@ func TestSteps(t *testing.T) {
 		},
 		{
 			// An OAuth definition that is triggered beside the App's builds
-			// every push twice: still ok, the summary names the fix.
-			name: "circleci: an App pipeline with a triggered OAuth definition beside it reads ok with a note", step: StepCircleCI,
+			// every push twice: the advisory circleci-oauth-follow names the
+			// migration, and the run converges.
+			name: "circleci: an App pipeline with a triggered OAuth definition beside it is an advisory double build", step: StepCircleCI,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)
 				p := h.cc.addApp(owner, name)
 				p.definitions[0].triggers = []circleciclient.Trigger{{EventSource: circleciclient.DefinitionSource{Provider: circleciclient.ProviderGitHubOAuth}}}
 			},
-			wantCheck: VerdictOK,
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIOAuthFollow, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, res *Result) {
-				summary := res.Step(StepCircleCI).Summary
-				require.Contains(t, summary, "GitHub App pipeline build")
-				require.Contains(t, summary, "the OAuth pipeline "+name+" is triggered too")
-				require.Contains(t, summary, "devctl repo follow-circleci "+owner+"/"+name+" --migrate")
+				sr := res.Step(StepCircleCI)
+				require.Contains(t, sr.Summary, "GitHub App pipeline build; OAuth pipeline "+name+" triggered too")
+				require.Len(t, sr.Findings, 1)
+				require.True(t, sr.Findings[0].Advisory)
+				require.Contains(t, sr.Findings[0].Message, "every push builds twice")
+				require.Contains(t, sr.Findings[0].Fix, "devctl repo follow-circleci "+owner+"/"+name+" --migrate")
+				require.True(t, sr.Converges(), "an advisory finding keeps the run converging")
 				require.Empty(t, h.cc.mutations, "the OAuth trigger is deleted by a person, not by the engine")
 			},
 		},
@@ -1495,19 +1499,20 @@ func TestSteps(t *testing.T) {
 			// Only the OAuth definition is triggered: it builds through the
 			// GitHub grant of whoever followed the project and stops when
 			// they leave. The fix migrates, deleting the OAuth trigger.
-			name: "circleci: an OAuth-only project is reported with --migrate in the fix", step: StepCircleCI,
+			name: "circleci: an OAuth-only project is an advisory OAuth follow with --migrate in the fix", step: StepCircleCI,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)
 				h.cc.addOAuth(owner, name)
 			},
-			wantCheck: VerdictReported, wantFinding: FindingCircleCIPipelineMissing, wantAfter: VerdictReported,
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIOAuthFollow, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, res *Result) {
 				sr := res.Step(StepCircleCI)
-				require.Equal(t, "no GitHub App pipeline", sr.Summary)
+				require.Equal(t, "OAuth follow, no GitHub App pipeline", sr.Summary)
 				require.Len(t, sr.Findings, 1)
+				require.True(t, sr.Findings[0].Advisory)
 				require.Contains(t, sr.Findings[0].Message, "OAuth pipeline "+name)
 				require.Contains(t, sr.Findings[0].Fix, "devctl repo follow-circleci "+owner+"/"+name+" --migrate")
-				require.False(t, sr.Converges(), "a person must run the command")
+				require.True(t, sr.Converges(), "it builds today: the fleet does not flip to non-converged")
 				require.Empty(t, h.cc.mutations, "nothing is followed, created or migrated by the engine")
 			},
 		},
@@ -1594,13 +1599,32 @@ func TestSteps(t *testing.T) {
 				r.addStatus("main", "go-build", "success", "wf-1", "alice", time.Now().Add(-time.Hour))
 				h.runner.CircleCI = nil
 			},
-			wantCheck: VerdictReported, wantFinding: FindingCircleCIPipelineMissing, wantAfter: VerdictReported,
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIOAuthFollow, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, res *Result) {
 				sr := res.Step(StepCircleCI)
 				require.Equal(t, "OAuth follow, no GitHub App pipeline", sr.Summary)
 				require.Contains(t, sr.Findings[0].Message, "alice")
 				require.Contains(t, sr.Findings[0].Fix, "devctl repo follow-circleci "+owner+"/"+name+" --migrate")
+				require.True(t, sr.Converges(), "advisory")
 				require.Empty(t, h.mutations())
+			},
+		},
+		{
+			// The App and a person both post on the head: two pipelines build
+			// every push. The advisory finding names the migration.
+			name: "circleci: without a client, statuses from the App and a person are an advisory double build", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.addStatus("main", "go-build", "success", "wf-1", "alice", time.Now().Add(-time.Hour))
+				r.addStatus("main", "go-build", "success", "wf-2", CircleCIAppLogin, time.Now().Add(-time.Hour))
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIOAuthFollow, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				sr := res.Step(StepCircleCI)
+				require.Contains(t, sr.Findings[0].Message, "every push builds twice")
+				require.Contains(t, sr.Findings[0].Fix, "--migrate")
+				require.True(t, sr.Converges())
 			},
 		},
 		{

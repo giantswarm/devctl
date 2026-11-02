@@ -27,7 +27,9 @@ const CircleCIAppLogin = "circleci-app[bot]"
 // CircleCI has no service accounts, so the pipeline is created by a person,
 // as that person: `devctl repo follow-circleci`, which `devctl repo watch`
 // runs for the creator of a new repository. A missing pipeline is the
-// finding FindingCircleCIPipelineMissing naming that command.
+// finding FindingCircleCIPipelineMissing naming that command; an OAuth follow,
+// alone or beside the App pipeline, is the advisory FindingCircleCIOAuthFollow:
+// it builds today, and stops when the follower leaves.
 //
 // With a CircleCI client (a person's `devctl repo reconcile`) the project's
 // pipeline definitions are read: a GitHub App definition with an enabled
@@ -87,18 +89,24 @@ func (r *Runner) circleCIDefinitions(ctx context.Context, s *run, sr *StepResult
 			oauth = append(oauth, d.Name)
 		}
 	}
-	if app == "" {
-		message := fmt.Sprintf("%s has no CircleCI GitHub App pipeline with an enabled trigger", s.slug())
-		if len(oauth) > 0 {
-			message += fmt.Sprintf("; it builds on the OAuth pipeline %s, through the GitHub grant of whoever follows it, and stops building when they leave", strings.Join(oauth, ", "))
-		}
-		s.report(sr, FindingCircleCIPipelineMissing, message, followCircleCIFix(s.slug(), len(oauth) > 0))
+	switch {
+	case app != "" && len(oauth) > 0:
+		s.report(sr, FindingCircleCIOAuthFollow,
+			fmt.Sprintf("%s builds on the GitHub App pipeline %s and on the OAuth pipeline %s: every push builds twice", s.slug(), app, strings.Join(oauth, ", ")),
+			followCircleCIFix(s.slug(), true))
+		sr.Summary = fmt.Sprintf("GitHub App pipeline %s; OAuth pipeline %s triggered too", app, strings.Join(oauth, ", "))
+	case app != "":
+		sr.Summary = fmt.Sprintf("GitHub App pipeline %s", app)
+	case len(oauth) > 0:
+		s.report(sr, FindingCircleCIOAuthFollow,
+			fmt.Sprintf("%s builds on the OAuth pipeline %s, through the GitHub grant of whoever follows it, and stops building when they leave", s.slug(), strings.Join(oauth, ", ")),
+			followCircleCIFix(s.slug(), true))
+		sr.Summary = "OAuth follow, no GitHub App pipeline"
+	default:
+		s.report(sr, FindingCircleCIPipelineMissing,
+			fmt.Sprintf("%s has no CircleCI pipeline with an enabled trigger: nothing builds it", s.slug()),
+			followCircleCIFix(s.slug(), false))
 		sr.Summary = "no GitHub App pipeline"
-		return nil
-	}
-	sr.Summary = fmt.Sprintf("GitHub App pipeline %s", app)
-	if len(oauth) > 0 {
-		sr.Summary += fmt.Sprintf("; the OAuth pipeline %s is triggered too, so every push builds twice: `devctl repo follow-circleci %s --migrate` deletes its trigger", strings.Join(oauth, ", "), s.slug())
 	}
 	return nil
 }
@@ -112,10 +120,15 @@ func (r *Runner) circleCIFromStatuses(ctx context.Context, s *run, sr *StepResul
 	}
 	app, others := CircleCIPosters(statuses)
 	switch {
+	case app && len(others) > 0:
+		s.report(sr, FindingCircleCIOAuthFollow,
+			fmt.Sprintf("the CircleCI statuses of %s's %s come from %s and from %s: it builds on the GitHub App pipeline and on an OAuth follow, so every push builds twice", s.slug(), s.branch(), CircleCIAppLogin, strings.Join(others, ", ")),
+			followCircleCIFix(s.slug(), true))
+		sr.Summary = fmt.Sprintf("CircleCI statuses on %s from %s and an OAuth follow", s.branch(), CircleCIAppLogin)
 	case app:
 		sr.Summary = fmt.Sprintf("CircleCI statuses on %s from %s: GitHub App pipeline", s.branch(), CircleCIAppLogin)
 	case len(others) > 0:
-		s.report(sr, FindingCircleCIPipelineMissing,
+		s.report(sr, FindingCircleCIOAuthFollow,
 			fmt.Sprintf("the CircleCI statuses of %s's %s come from %s: an OAuth follow, which builds through that person's GitHub grant and stops when they leave", s.slug(), s.branch(), strings.Join(others, ", ")),
 			followCircleCIFix(s.slug(), true))
 		sr.Summary = "OAuth follow, no GitHub App pipeline"

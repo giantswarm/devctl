@@ -156,6 +156,12 @@ const (
 	// accounts, so a person creates the pipeline with their own CircleCI
 	// login: `devctl repo follow-circleci`.
 	FindingCircleCIPipelineMissing FindingKind = "circleci-pipeline-missing"
+	// FindingCircleCIOAuthFollow: the repository builds through an OAuth
+	// follow, alone or beside a GitHub App pipeline. It builds today, through
+	// the follower's GitHub grant, and stops when they leave; beside the App
+	// pipeline every push builds twice. Advisory: the repository is built.
+	// The fix is the person's `devctl repo follow-circleci --migrate`.
+	FindingCircleCIOAuthFollow FindingKind = "circleci-oauth-follow"
 	// FindingRenovateNotScanned: the repository shows no sign that Renovate
 	// scans it — no configuration, or a configuration without a trace of a
 	// run (the Dependency Dashboard issue, a pull request, a commit).
@@ -213,7 +219,8 @@ const (
 // something a person must fix before the repository counts as in sync.
 func (k FindingKind) Advisory() bool {
 	switch k {
-	case FindingDefaultIcon, FindingForeignRuleset, FindingDeclaredRulesetMissing, FindingRulesetsNotEnabled, FindingOpenPullRequests:
+	case FindingDefaultIcon, FindingForeignRuleset, FindingDeclaredRulesetMissing, FindingRulesetsNotEnabled, FindingOpenPullRequests,
+		FindingCircleCIOAuthFollow:
 		return true
 	}
 	return false
