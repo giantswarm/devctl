@@ -1212,13 +1212,13 @@ func runVerify(t *testing.T, statuses string, env ...string) ([]byte, error) {
 // 60675be8, the latter finishing after the release) and the tag build's
 // (setup dc012fa3, build 04a3e5ed), newest first.
 const (
-	branchStatuses = `{"context":"ci/circleci: go-build","state":"success","created_at":"2026-10-22T11:21:34Z","target_url":"https://app.circleci.com/workflow/60675be8/job/409db27c"},` +
-		`{"context":"ci/circleci: setup","state":"success","created_at":"2026-10-22T11:20:41Z","target_url":"https://app.circleci.com/workflow/359214e5/job/2962c9c4"},` +
-		`{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:20:41Z","target_url":"https://app.circleci.com/workflow/60675be8/job/409db27c"},` +
-		`{"context":"ci/circleci: setup","state":"pending","created_at":"2026-10-22T11:20:33Z","target_url":"https://app.circleci.com/workflow/359214e5/job/2962c9c4"}`
-	tagStatuses = `{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:21:03Z","target_url":"https://app.circleci.com/workflow/04a3e5ed/job/76cd04bd"},` +
-		`{"context":"ci/circleci: setup","state":"success","created_at":"2026-10-22T11:21:03Z","target_url":"https://app.circleci.com/workflow/dc012fa3/job/84113292"},` +
-		`{"context":"ci/circleci: setup","state":"pending","created_at":"2026-10-22T11:20:55Z","target_url":"https://app.circleci.com/workflow/dc012fa3/job/84113292"}`
+	branchStatuses = `{"context":"ci/circleci: go-build","state":"success","created_at":"2026-10-22T11:21:34Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/60675be8/job/409db27c"},` +
+		`{"context":"ci/circleci: setup","state":"success","created_at":"2026-10-22T11:20:41Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/359214e5/job/2962c9c4"},` +
+		`{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:20:41Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/60675be8/job/409db27c"},` +
+		`{"context":"ci/circleci: setup","state":"pending","created_at":"2026-10-22T11:20:33Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/359214e5/job/2962c9c4"}`
+	tagStatuses = `{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:21:03Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/04a3e5ed/job/76cd04bd"},` +
+		`{"context":"ci/circleci: setup","state":"success","created_at":"2026-10-22T11:21:03Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/dc012fa3/job/84113292"},` +
+		`{"context":"ci/circleci: setup","state":"pending","created_at":"2026-10-22T11:20:55Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/dc012fa3/job/84113292"}`
 )
 
 // Test_AutoReleaseVerifyCircleCI pins what the verify step reads from the
@@ -1247,7 +1247,7 @@ func Test_AutoReleaseVerifyCircleCI(t *testing.T) {
 			// The branch build's continuation started after the release; its
 			// setup started before. No tag pipeline started.
 			name:       "a branch continuation started after the release is no tag build",
-			statuses:   `[{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:20:58Z","target_url":"https://app.circleci.com/workflow/late/job/j"},` + branchStatuses + "]",
+			statuses:   `[{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:20:58Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/late/job/j"},` + branchStatuses + "]",
 			expectFail: true,
 			expectOut:  []string{"::error::CircleCI never built v0.2.4"},
 		},
@@ -1262,7 +1262,15 @@ func Test_AutoReleaseVerifyCircleCI(t *testing.T) {
 			statuses:   "[]",
 			env:        []string{"STUB_API_FAIL=1"},
 			expectFail: true,
-			expectOut:  []string{"reading the commit statuses of 01234567 failed", "::error::could not read the commit statuses"},
+			expectOut:  []string{"reading the release or the commit statuses of 01234567 failed", "::error::could not read the release or the commit statuses"},
+		},
+		{
+			// An OAuth follow's statuses link jobs, not workflows: a branch
+			// job after the release looks like the tag's. Not judged.
+			name:      "OAuth statuses alone warn and pass, not verified",
+			statuses:  `[{"context":"ci/circleci: go-build","state":"failure","created_at":"2026-10-22T11:22:00Z","creator":{"login":"alice"},"target_url":"https://circleci.com/gh/example/widget/12"}]`,
+			expectOut: []string{"::warning::v0.2.4: the CircleCI statuses on 01234567 come from an OAuth follow", "--migrate"},
+			rejectOut: []string{"::error::"},
 		},
 		{
 			name:      "no CircleCI status at all warns and passes",

@@ -156,12 +156,17 @@ jobs:
           while read -r t; do
             [ -z "$t" ] || tags+=("$t")
           done < tags.txt
-          first=$(gh release view "${tags[0]}" --json publishedAt --jq .publishedAt)
-          since=$(jq -rn --arg at "$first" '($at | fromdateiso8601) - 10')
+          if [ "${#tags[@]}" -eq 0 ]; then
+            echo "no tag cut on this push, nothing for CircleCI to build"
+            exit 0
+          fi
           sha=${GITHUB_SHA} # the pushed commit, which every tag of the run names
-          # counts: "<CircleCI statuses on the commit> <setup workflows
-          # started since the first release>"; a workflow is the id in a
-          # status's target URL (…/workflow/<id>/job/<id>).
+          # counts: "<CircleCI statuses on the commit> <of them the GitHub App
+          # pipeline's> <its setup workflows started since the first
+          # release>"; a workflow is the id in a status's target URL
+          # (…/workflow/<id>/job/<id>). Only the App pipeline's statuses
+          # (circleci-app[bot]) are judged: an OAuth follow's link a job, not
+          # a workflow.
           counts() {
             gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${sha}/statuses?per_page=100" \
               --jq '[.[] | select(.context | startswith("ci/circleci"))]' |
@@ -169,30 +174,35 @@ jobs:
                 add // [] |
                 def wf: (.target_url // "") as $u | (($u | capture("/workflows?/(?<id>[^/]+)")? | .id) // $u);
                 (length) as $all |
+                map(select(.creator.login == "circleci-app[bot]")) |
+                (length) as $app |
                 (map(select(.context == "ci/circleci: setup")) | group_by(wf) | map(min_by(.created_at)) | map(select((.created_at | fromdateiso8601) >= $since)) | length) as $setups |
-                "\($all) \($setups)"'
+                "\($all) \($app) \($setups)"'
           }
           deadline=$((SECONDS + CIRCLECI_STATUS_WAIT_SECONDS))
-          all="" setups=""
+          since="" all="" app="" setups=""
           while :; do
             # A failed read (rate limit, a 502) is retried within the wait;
             # only a wait without one good read fails the step.
-            if out=$(counts); then
-              read -r all setups <<<"$out"
+            if [ -z "$since" ] && first=$(gh release view "${tags[0]}" --json publishedAt --jq .publishedAt); then
+              since=$(jq -rn --arg at "$first" '($at | fromdateiso8601) - 10')
+            fi
+            if [ -n "$since" ] && out=$(counts); then
+              read -r all app setups <<<"$out"
               if [ "$setups" -ge "${#tags[@]}" ]; then
                 echo "CircleCI builds the ${#tags[@]} tag(s): ${setups} setup workflow(s) on ${sha:0:8} started after the first release"
                 exit 0
               fi
               echo "${setups} of ${#tags[@]} tag builds reported"
             else
-              echo "reading the commit statuses of ${sha:0:8} failed"
+              echo "reading the release or the commit statuses of ${sha:0:8} failed"
             fi
             [ "$SECONDS" -lt "$deadline" ] || break
             echo "retrying in 10 s"
             sleep 10
           done
           if [ -z "$all" ]; then
-            echo "::error::could not read the commit statuses of ${sha:0:8} within ${CIRCLECI_STATUS_WAIT_SECONDS} s; cannot tell whether CircleCI built ${tags[*]}." \
+            echo "::error::could not read the release or the commit statuses of ${sha:0:8} within ${CIRCLECI_STATUS_WAIT_SECONDS} s; cannot tell whether CircleCI built ${tags[*]}." \
               "Check https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY}"
             exit 1
           fi
@@ -201,7 +211,12 @@ jobs:
               "Set the GitHub App pipeline up as you: devctl repo follow-circleci ${GITHUB_REPOSITORY}"
             exit 0
           fi
+          if [ "$app" -eq 0 ]; then
+            echo "::warning::${tags[*]}: the CircleCI statuses on ${sha:0:8} come from an OAuth follow, whose statuses cannot tell a tag's build from a branch build; not verified." \
+              "Move the repository to the GitHub App pipeline as you: devctl repo follow-circleci ${GITHUB_REPOSITORY} --migrate"
+            exit 0
+          fi
           echo "::error::CircleCI started ${setups} build(s) for the ${#tags[@]} tag(s) ${tags[*]} within ${CIRCLECI_STATUS_WAIT_SECONDS} s" \
             "(GitHub delivers the webhook once and never retries). Run a missing tag from https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY}" \
-            "(Trigger Pipeline, the GitHub App pipeline, the tag); devctl repo follow-circleci ${GITHUB_REPOSITORY} runs the latest release."
+            "(Trigger Pipeline, the GitHub App pipeline, the tag); devctl repo follow-circleci ${GITHUB_REPOSITORY} runs every line's newest unbuilt release."
           exit 1

@@ -279,9 +279,9 @@ func multiImageGhStub(t *testing.T) string {
 func multiImageStatuses(built int) string {
 	statuses := []string{}
 	for i := range built {
-		statuses = append(statuses, `{"context":"ci/circleci: setup","state":"pending","created_at":"2026-11-02T12:00:0`+strconv.Itoa(i+3)+`Z","target_url":"https://app.circleci.com/workflow/tag`+strconv.Itoa(i)+`/job/j"}`)
+		statuses = append(statuses, `{"context":"ci/circleci: setup","state":"pending","created_at":"2026-11-02T12:00:0`+strconv.Itoa(i+3)+`Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/tag`+strconv.Itoa(i)+`/job/j"}`)
 	}
-	statuses = append(statuses, `{"context":"ci/circleci: setup","state":"success","created_at":"2026-11-02T11:59:30Z","target_url":"https://app.circleci.com/workflow/branch/job/j"}`)
+	statuses = append(statuses, `{"context":"ci/circleci: setup","state":"success","created_at":"2026-11-02T11:59:30Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/branch/job/j"}`)
 	return "[" + strings.Join(statuses, ",") + "]"
 }
 
@@ -293,19 +293,26 @@ func Test_AutoReleaseMultiImageVerifiesCircleCI(t *testing.T) {
 	tests := []struct {
 		name     string
 		statuses string
+		tags     string
 		fails    bool
 		want     string
 	}{
 		{name: "every tag built", statuses: multiImageStatuses(2), want: "CircleCI builds the 2 tag(s)"},
 		{name: "a lost tag fails", statuses: multiImageStatuses(1), fails: true, want: "::error::CircleCI started 1 build(s) for the 2 tag(s)"},
 		{name: "no pipeline yet warns", statuses: "[]", want: "::warning::"},
+		{name: "OAuth statuses alone warn, not verified", statuses: `[{"context":"ci/circleci: setup","state":"success","created_at":"2026-11-02T12:00:05Z","creator":{"login":"alice"},"target_url":"https://circleci.com/gh/giantswarm/agent-toolchains/9"}]`, want: "come from an OAuth follow"},
+		{name: "no tag cut on this push passes", tags: "\n", statuses: "[]", want: "no tag cut on this push"},
 	}
 
 	script := multiImageVerifyStep(t)
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			writeRepoFile(t, filepath.Join(dir, "tags.txt"), "a/v0.2.0\nb/v0.1.1\n")
+			tags := tc.tags
+			if tags == "" {
+				tags = "a/v0.2.0\nb/v0.1.1\n"
+			}
+			writeRepoFile(t, filepath.Join(dir, "tags.txt"), tags)
 
 			_, out, err := runStep(t, script, dir, multiImageGhStub(t),
 				"GITHUB_REPOSITORY=giantswarm/agent-toolchains",

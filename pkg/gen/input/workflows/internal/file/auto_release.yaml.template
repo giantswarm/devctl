@@ -651,17 +651,18 @@ jobs:
           CIRCLECI_STATUS_WAIT_SECONDS: "120"
         run: |
           set -euo pipefail
-          published=$(gh release view "$TAG" --json publishedAt --jq .publishedAt)
-          since=$(jq -rn --arg at "$published" '($at | fromdateiso8601) - 10')
           fix="devctl repo follow-circleci ${GITHUB_REPOSITORY}"
-          # counts: "<CircleCI statuses on the commit> <tag pipelines started
-          # since the release>"; a workflow is the id in a status's target
-          # URL (…/workflow/<id>/job/<id>), the URL itself for an OAuth job.
-          # A generated (dynamic) pipeline starts with one setup workflow, so
-          # its setup workflows started since the release are the tag's; the
-          # branch build's continuation, started after its own setup, never
-          # counts. A commit without any setup status (a static
-          # configuration) counts every workflow started since the release.
+          # counts: "<CircleCI statuses on the commit> <of them the GitHub App
+          # pipeline's> <tag pipelines started since the release>". Only the
+          # App pipeline's statuses (circleci-app[bot]) are judged: they link
+          # their workflow (…/workflow/<id>/job/<id>), while an OAuth
+          # follow's link a job alone, which tells a branch job from the
+          # tag's no better than its time. A generated (dynamic) pipeline
+          # starts with one setup workflow, so its setup workflows started
+          # since the release are the tag's; the branch build's continuation,
+          # started after its own setup, never counts. A commit without any
+          # setup status (a static configuration) counts every App workflow
+          # started since the release.
           counts() {
             gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${TARGET}/statuses?per_page=100" \
               --jq '[.[] | select(.context | startswith("ci/circleci"))]' |
@@ -669,37 +670,47 @@ jobs:
                 add // [] |
                 def wf: (.target_url // "") as $u | (($u | capture("/workflows?/(?<id>[^/]+)")? | .id) // $u);
                 (length) as $all |
+                map(select(.creator.login == "circleci-app[bot]")) |
+                (length) as $app |
                 (if any(.[]; .context == "ci/circleci: setup") then map(select(.context == "ci/circleci: setup")) else . end) as $starts |
                 ($starts | group_by(wf) | map(min_by(.created_at)) | map(select((.created_at | fromdateiso8601) >= $since)) | length) as $tag |
-                "\($all) \($tag)"'
+                "\($all) \($app) \($tag)"'
           }
           deadline=$((SECONDS + CIRCLECI_STATUS_WAIT_SECONDS))
-          all="" tag=""
+          since="" all="" app="" tag=""
           while :; do
             # A failed read (rate limit, a 502) is retried within the wait;
             # only a wait without one good read fails the step.
-            if out=$(counts); then
-              read -r all tag <<<"$out"
+            if [ -z "$since" ] && published=$(gh release view "$TAG" --json publishedAt --jq .publishedAt); then
+              since=$(jq -rn --arg at "$published" '($at | fromdateiso8601) - 10')
+            fi
+            if [ -n "$since" ] && out=$(counts); then
+              read -r all app tag <<<"$out"
               if [ "$tag" -gt 0 ]; then
                 echo "CircleCI builds ${TAG}: ${tag} pipeline(s) on ${TARGET:0:8} started after the release"
                 exit 0
               fi
               echo "no CircleCI status of ${TAG}'s build yet"
             else
-              echo "reading the commit statuses of ${TARGET:0:8} failed"
+              echo "reading the release or the commit statuses of ${TARGET:0:8} failed"
             fi
             [ "$SECONDS" -lt "$deadline" ] || break
             echo "retrying in 10 s"
             sleep 10
           done
           if [ -z "$all" ]; then
-            echo "::error::could not read the commit statuses of ${TARGET:0:8} within ${CIRCLECI_STATUS_WAIT_SECONDS} s; cannot tell whether CircleCI built ${TAG}." \
+            echo "::error::could not read the release or the commit statuses of ${TARGET:0:8} within ${CIRCLECI_STATUS_WAIT_SECONDS} s; cannot tell whether CircleCI built ${TAG}." \
               "Check https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY} and, if the tag is missing: ${fix}"
             exit 1
           fi
           if [ "$all" -eq 0 ]; then
             echo "::warning::${TAG} is released and no CircleCI pipeline builds this repository yet: ${TARGET:0:8} carries no CircleCI status at all." \
               "Set the GitHub App pipeline up as you, which also runs ${TAG}: ${fix}"
+            exit 0
+          fi
+          if [ "$app" -eq 0 ]; then
+            echo "::warning::${TAG}: the CircleCI statuses on ${TARGET:0:8} come from an OAuth follow, whose statuses cannot tell the tag's build from a branch build; not verified." \
+              "Move the repository to the GitHub App pipeline as you: ${fix} --migrate"
             exit 0
           fi
           echo "::error::CircleCI never built ${TAG}: no CircleCI status on ${TARGET:0:8} from a workflow started in the ${CIRCLECI_STATUS_WAIT_SECONDS} s after the release" \
