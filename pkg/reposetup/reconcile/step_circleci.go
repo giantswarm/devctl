@@ -550,6 +550,24 @@ func isReleaseTag(tag string) bool {
 	return err == nil
 }
 
+// ReleaseLine reads a release tag of the platform's flow: a vX.Y.Z tag
+// (isReleaseTag), line empty, or a multi-image repository's
+// <name>/vX.Y.Z (imageReleaseTag), line the image's name. ok is false for any
+// other tag: CircleCI's generated tag filters build none.
+func ReleaseLine(tag string) (line string, version *semver.Version, ok bool) {
+	if image, v, ok := imageReleaseTag(tag); ok {
+		return image, v, true
+	}
+	if !isReleaseTag(tag) {
+		return "", nil, false
+	}
+	v, err := semver.StrictNewVersion(strings.TrimPrefix(tag, "v"))
+	if err != nil {
+		return "", nil, false
+	}
+	return "", v, true
+}
+
 // imageNamePattern is an image name of a multi-image repository: its
 // directory under toolchains/, a valid image repository path component —
 // the names the generated setup workflow and auto-release accept.

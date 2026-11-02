@@ -3,9 +3,11 @@ package circleciapp
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v93/github"
 
@@ -20,6 +22,9 @@ type GitHub interface {
 	// LatestRelease returns the repository's latest release, nil when it has
 	// none.
 	LatestRelease(ctx context.Context, owner, repo string) (*github.RepositoryRelease, error)
+	// Releases returns the repository's published releases, drafts and
+	// pre-releases left out.
+	Releases(ctx context.Context, owner, repo string) ([]*github.RepositoryRelease, error)
 	// CircleCIStatuses returns the CircleCI statuses of ref's commit, newest
 	// first.
 	CircleCIStatuses(ctx context.Context, owner, repo, ref string) ([]*github.RepoStatus, error)
@@ -46,6 +51,26 @@ func (g gitHub) LatestRelease(ctx context.Context, owner, repo string) (*github.
 		return nil, nil
 	}
 	return release, err
+}
+
+func (g gitHub) Releases(ctx context.Context, owner, repo string) ([]*github.RepositoryRelease, error) {
+	var out []*github.RepositoryRelease
+	opts := &github.ListOptions{PerPage: 100}
+	for {
+		page, resp, err := g.c.Repositories.ListReleases(ctx, owner, repo, opts)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range page {
+			if !r.GetDraft() && !r.GetPrerelease() {
+				out = append(out, r)
+			}
+		}
+		if resp.NextPage == 0 {
+			return out, nil
+		}
+		opts.Page = resp.NextPage
+	}
 }
 
 func (g gitHub) HasConfig(ctx context.Context, owner, repo, ref string) (bool, error) {
@@ -95,6 +120,54 @@ func (r *Report) Green() bool {
 		}
 	}
 	return true
+}
+
+// releasesToBuild are the releases Setup checks for their tag's build: the
+// latest release when it is a vX.Y.Z tag, and for a multi-image repository,
+// whose latest release is a <name>/vX.Y.Z tag, the newest release of every
+// image line. A latest release tagged otherwise is outside the generated tag
+// filters and is not run.
+func releasesToBuild(ctx context.Context, gh GitHub, owner, repo string, progress func(string, ...any)) ([]*github.RepositoryRelease, error) {
+	latest, err := gh.LatestRelease(ctx, owner, repo)
+	if err != nil {
+		return nil, fmt.Errorf("reading the latest release of %s/%s: %w", owner, repo, err)
+	}
+	if latest == nil {
+		return nil, nil
+	}
+	line, _, ok := reconcile.ReleaseLine(latest.TagName)
+	switch {
+	case !ok:
+		progress("%s/%s: latest release %s is no vX.Y.Z tag, not run", owner, repo, latest.TagName)
+		return nil, nil
+	case line == "":
+		return []*github.RepositoryRelease{latest}, nil
+	}
+	all, err := gh.Releases(ctx, owner, repo)
+	if err != nil {
+		return nil, fmt.Errorf("reading the releases of %s/%s: %w", owner, repo, err)
+	}
+	newest := map[string]*github.RepositoryRelease{}
+	versions := map[string]*semver.Version{}
+	for _, r := range all {
+		line, v, ok := reconcile.ReleaseLine(r.TagName)
+		if !ok || line == "" {
+			continue
+		}
+		if cur, seen := versions[line]; !seen || v.GreaterThan(cur) {
+			newest[line], versions[line] = r, v
+		}
+	}
+	lines := make([]string, 0, len(newest))
+	for l := range newest {
+		lines = append(lines, l)
+	}
+	slices.Sort(lines)
+	out := make([]*github.RepositoryRelease, 0, len(lines))
+	for _, l := range lines {
+		out = append(out, newest[l])
+	}
+	return out, nil
 }
 
 // tagBuildGrace is how long after its release a tag the App's trigger saw
@@ -163,28 +236,28 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 	if result.Changed() {
 		refs = append(refs, circleciclient.Ref{Branch: branch})
 	}
-	release, err := gh.LatestRelease(ctx, owner, repo)
+	releases, err := releasesToBuild(ctx, gh, owner, repo, progress)
 	if err != nil {
-		return nil, microerror.Mask(fmt.Errorf("reading the latest release of %s: %w", slug, err))
+		return nil, microerror.Mask(err)
 	}
-	if release != nil {
+	for _, release := range releases {
 		published := release.GetPublishedAt().Time
 		if published.IsZero() {
 			published = release.GetCreatedAt().Time
 		}
-		statuses, err := gh.CircleCIStatuses(ctx, owner, repo, release.GetTagName())
+		statuses, err := gh.CircleCIStatuses(ctx, owner, repo, release.TagName)
 		if err != nil {
-			return nil, microerror.Mask(fmt.Errorf("reading the statuses of %s: %w", release.GetTagName(), err))
+			return nil, microerror.Mask(fmt.Errorf("reading the statuses of %s: %w", release.TagName, err))
 		}
 		built := len(reconcile.TagBuildStatuses(statuses, published)) > 0
 		recent := now().Sub(published) < tagBuildGrace && !result.CreatedTrigger
 		switch {
 		case built:
-			progress("%s: release %s built", slug, release.GetTagName())
+			progress("%s: release %s built", slug, release.TagName)
 		case recent:
-			progress("%s: release %s published %s ago, its build has not reported yet", slug, release.GetTagName(), now().Sub(published).Round(time.Second))
+			progress("%s: release %s published %s ago, its build has not reported yet", slug, release.TagName, now().Sub(published).Round(time.Second))
 		default:
-			refs = append(refs, circleciclient.Ref{Tag: release.GetTagName()})
+			refs = append(refs, circleciclient.Ref{Tag: release.TagName})
 		}
 	}
 

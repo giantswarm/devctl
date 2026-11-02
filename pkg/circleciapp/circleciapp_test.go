@@ -246,3 +246,26 @@ func TestEnsureTriggersTheCheckoutRepository(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "42", ci.triggers["app"][0].EventSource.Repo.ExternalID)
 }
+
+// TestSetupRunsFlowReleasesOnly: a latest release outside the vX.Y.Z flow is
+// not run; a multi-image repository runs the newest unbuilt release of every
+// image line.
+func TestSetupRunsFlowReleasesOnly(t *testing.T) {
+	published := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	now := func() time.Time { return published.Add(time.Hour) }
+	ci := newFake(appDef())
+	ci.triggers["app"] = []circleciclient.Trigger{{ID: "on"}}
+	report, err := Setup(context.Background(), ci, &fakeGitHub{release: release("base/0.1", published)}, "giantswarm", "sample", Options{Now: now})
+	require.NoError(t, err)
+	require.Empty(t, report.Runs)
+
+	gh := &fakeGitHub{
+		release:  release("b/v0.2.0", published),
+		releases: []*github.RepositoryRelease{release("b/v0.2.0", published), release("a/v0.1.1", published), release("a/v0.1.0", published.Add(-time.Hour))},
+	}
+	report, err = Setup(context.Background(), ci, gh, "giantswarm", "sample", Options{Now: now})
+	require.NoError(t, err)
+	require.Len(t, report.Runs, 2)
+	require.Equal(t, circleciclient.Ref{Tag: "a/v0.1.1"}, report.Runs[0].Ref)
+	require.Equal(t, circleciclient.Ref{Tag: "b/v0.2.0"}, report.Runs[1].Ref)
+}

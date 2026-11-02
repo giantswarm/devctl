@@ -129,6 +129,7 @@ type fakeGitHub struct {
 	release  *github.RepositoryRelease
 	statuses []*github.RepoStatus
 	noConfig bool
+	releases []*github.RepositoryRelease
 }
 
 func (g *fakeGitHub) Repository(context.Context, string, string) (int64, string, error) {
@@ -137,6 +138,10 @@ func (g *fakeGitHub) Repository(context.Context, string, string) (int64, string,
 
 func (g *fakeGitHub) HasConfig(context.Context, string, string, string) (bool, error) {
 	return !g.noConfig, nil
+}
+
+func (g *fakeGitHub) Releases(context.Context, string, string) ([]*github.RepositoryRelease, error) {
+	return g.releases, nil
 }
 
 func (g *fakeGitHub) LatestRelease(context.Context, string, string) (*github.RepositoryRelease, error) {

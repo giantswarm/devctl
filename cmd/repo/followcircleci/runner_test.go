@@ -97,6 +97,10 @@ func (fakeGitHub) HasConfig(context.Context, string, string, string) (bool, erro
 	return true, nil
 }
 
+func (fakeGitHub) Releases(context.Context, string, string) ([]*github.RepositoryRelease, error) {
+	return nil, nil
+}
+
 func (fakeGitHub) LatestRelease(context.Context, string, string) (*github.RepositoryRelease, error) {
 	return nil, nil
 }
