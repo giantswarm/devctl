@@ -44,3 +44,17 @@ func TestResolveJobURL(t *testing.T) {
 		t.Error("a repository is no job URL")
 	}
 }
+
+// TestIsJobURL: the shapes ResolveJobURL takes, told without a read.
+func TestIsJobURL(t *testing.T) {
+	for raw, want := range map[string]bool{
+		"https://app.circleci.com/workflow/w/job/j":        true,
+		"https://circleci.com/gh/giantswarm/devctl/7781":   true,
+		"giantswarm/devctl":                                false,
+		"https://app.circleci.com/pipelines/github/a/b/12": false,
+	} {
+		if got := IsJobURL(raw); got != want {
+			t.Errorf("IsJobURL(%q) = %v, want %v", raw, got, want)
+		}
+	}
+}

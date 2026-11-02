@@ -62,6 +62,9 @@ func (r *runner) newDocument(args []string) document {
 func (r *runner) job(ctx context.Context, args []string, doc *document) error {
 	byURL := len(args) == 1
 	var owner, repo, number string
+	if byURL && !ci.IsJobURL(args[0]) {
+		return fmt.Errorf("usage: devctl %s <owner/repo> <job number>, or a CircleCI job URL; %q is neither", command, args[0])
+	}
 	if !byURL {
 		var err error
 		owner, repo, number, err = agentcli.ParseRepositoryArgument(command, "job number", args)
@@ -85,11 +88,7 @@ func (r *runner) job(ctx context.Context, args []string, doc *document) error {
 		return err
 	}
 	if byURL {
-		var ok bool
-		owner, repo, number, ok, err = ci.ResolveJobURL(ctx, circleci, args[0])
-		if !ok {
-			return fmt.Errorf("usage: devctl %s <owner/repo> <job number>, or a CircleCI job URL; %q is neither", command, args[0])
-		}
+		owner, repo, number, _, err = ci.ResolveJobURL(ctx, circleci, args[0])
 		if err != nil {
 			return err
 		}

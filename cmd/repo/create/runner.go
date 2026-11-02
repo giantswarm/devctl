@@ -28,6 +28,9 @@ type runner struct {
 type output struct {
 	DryRun      *reposetup.Result `json:"dryRun"`
 	PullRequest string            `json:"pullRequest,omitempty"`
+	// Next is the command that follows the repository to readiness and
+	// creates its CircleCI pipeline as the person, once it is set up.
+	Next string `json:"next,omitempty"`
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -161,9 +164,10 @@ func (r *runner) run(ctx context.Context) error {
 		return microerror.Mask(err)
 	}
 	out.PullRequest = pr.GetHTMLURL()
+	out.Next = fmt.Sprintf("devctl repo watch %s/%s --pull-request %d", r.flag.Owner, r.flag.Name, pr.GetNumber())
 	if r.flag.Output == outputText {
 		fmt.Fprintf(r.stdout, "pull request: %s (%s)\n", out.PullRequest, state)
-		fmt.Fprintf(r.stdout, "next: devctl repo watch %s/%s --pull-request %d (once merged and set up, it creates the CircleCI pipeline as you)\n", r.flag.Owner, r.flag.Name, pr.GetNumber())
+		fmt.Fprintf(r.stdout, "next: %s (once merged and set up, it creates the CircleCI pipeline as you)\n", out.Next)
 	}
 	r.print(out)
 

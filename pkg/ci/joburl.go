@@ -2,7 +2,6 @@ package ci
 
 import (
 	"context"
-	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -14,6 +13,21 @@ import (
 type jobURLReader interface {
 	GetWorkflow(ctx context.Context, id string) (*circleciclient.WorkflowDetail, error)
 	ListWorkflowJobs(ctx context.Context, workflowID string) ([]circleciclient.Job, error)
+}
+
+// IsJobURL says whether raw has the shape of a CircleCI job URL
+// ResolveJobURL takes, without reading anything: a usage error can be told
+// before any login is needed.
+func IsJobURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	if t, ok := circleciclient.ParseStatusTarget(raw); ok && t.Job > 0 {
+		return true
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	return u.Host == "app.circleci.com" && len(parts) == 4 && parts[0] == "workflow" && parts[2] == "job"
 }
 
 // ResolveJobURL names the job a CircleCI job URL points at by its project
@@ -44,8 +58,8 @@ func ResolveJobURL(ctx context.Context, client jobURLReader, raw string) (owner,
 		return "", "", "", true, err
 	}
 	slug := strings.Split(workflow.ProjectSlug, "/")
-	if len(slug) != 3 {
-		return "", "", "", true, fmt.Errorf("workflow %s names the project %q, not <vcs>/<owner>/<repo>", workflowID, workflow.ProjectSlug)
+	if len(slug) != 3 || (slug[0] != "gh" && slug[0] != "github") {
+		return "", "", "", true, notApplicable("workflow %s belongs to the project %q, not a GitHub project gh/<owner>/<repo>", workflowID, workflow.ProjectSlug)
 	}
 	jobs, err := client.ListWorkflowJobs(ctx, workflowID)
 	if err != nil {
