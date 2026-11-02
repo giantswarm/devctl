@@ -297,3 +297,16 @@ func TestSetupNeverRebuildsAnOAuthBuiltTag(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, report.Runs)
 }
+
+// TestSetupSkipsTheBranchOnTheTagsCommit: a new repository's first tag is
+// its branch's head, the scaffold commit; the tag run builds it, and no
+// branch run posts the same contexts after it.
+func TestSetupSkipsTheBranchOnTheTagsCommit(t *testing.T) {
+	published := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	gh := &fakeGitHub{release: release("v0.1.0", published), shas: map[string]string{"main": "scaffold", "v0.1.0": "scaffold"}}
+	ci := newFake(oauthDef())
+	report, err := Setup(context.Background(), ci, gh, "giantswarm", "sample", Options{Now: func() time.Time { return published.Add(time.Hour) }})
+	require.NoError(t, err)
+	require.Len(t, report.Runs, 1)
+	require.Equal(t, circleciclient.Ref{Tag: "v0.1.0"}, report.Runs[0].Ref)
+}

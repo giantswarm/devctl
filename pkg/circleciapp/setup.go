@@ -30,6 +30,8 @@ type GitHub interface {
 	CircleCIStatuses(ctx context.Context, owner, repo, ref string) ([]*github.RepoStatus, error)
 	// HasConfig says whether ref carries .circleci/config.yml.
 	HasConfig(ctx context.Context, owner, repo, ref string) (bool, error)
+	// CommitSHA returns the commit ref points at.
+	CommitSHA(ctx context.Context, owner, repo, ref string) (string, error)
 }
 
 // NewGitHub is the GitHub of a go-github client.
@@ -71,6 +73,11 @@ func (g gitHub) Releases(ctx context.Context, owner, repo string) ([]*github.Rep
 		}
 		opts.Page = resp.NextPage
 	}
+}
+
+func (g gitHub) CommitSHA(ctx context.Context, owner, repo, ref string) (string, error) {
+	sha, _, err := g.c.Repositories.GetCommitSHA1(ctx, owner, repo, ref, "")
+	return sha, err
 }
 
 func (g gitHub) HasConfig(ctx context.Context, owner, repo, ref string) (bool, error) {
@@ -249,9 +256,8 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 		progress("%s: the OAuth pipeline is still triggered (%s): every push builds twice until it is gone; --migrate deletes it", slug, strings.Join(result.OAuthTriggers, ", "))
 	}
 
-	// The release tags run first: a branch run on the same commit (the
-	// scaffold's, for a new repository) posts statuses that a later read
-	// would otherwise take for the tag's, were the tag's run to fail.
+	// The release tags run first, the default branch after them, and not at
+	// all when a tag run builds the branch's head already.
 	var refs []circleciclient.Ref
 	releases, err := releasesToBuild(ctx, gh, owner, repo, progress)
 	if err != nil {
@@ -292,6 +298,27 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 			return nil, microerror.Mask(fmt.Errorf("reading the statuses of %s: %w", branch, err))
 		}
 		runBranch = len(reconcile.AppStatuses(head)) == 0
+	}
+	if runBranch && len(refs) > 0 {
+		// A tag run on the branch's head builds that commit already; a
+		// second, branch run on it would post the same contexts after the
+		// tag's and could be read for the tag's build. The scaffold commit
+		// of a new repository is both.
+		head, err := gh.CommitSHA(ctx, owner, repo, branch)
+		if err != nil {
+			return nil, microerror.Mask(fmt.Errorf("reading the head of %s: %w", branch, err))
+		}
+		for _, ref := range refs {
+			sha, err := gh.CommitSHA(ctx, owner, repo, ref.Tag)
+			if err != nil {
+				return nil, microerror.Mask(fmt.Errorf("reading the commit of %s: %w", ref.Tag, err))
+			}
+			if sha == head {
+				runBranch = false
+				progress("%s: %s is the head of %s: its run builds the branch's commit too", slug, ref.Tag, branch)
+				break
+			}
+		}
 	}
 	if runBranch {
 		refs = append(refs, circleciclient.Ref{Branch: branch})

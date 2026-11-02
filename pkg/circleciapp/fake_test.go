@@ -133,6 +133,8 @@ type fakeGitHub struct {
 	// head are the statuses of the default branch's head; statuses those
 	// of every other ref (the release tags).
 	head []*github.RepoStatus
+	// shas maps refs to commits; every other ref has a commit of its own.
+	shas map[string]string
 }
 
 func (g *fakeGitHub) Repository(context.Context, string, string) (int64, string, error) {
@@ -141,6 +143,13 @@ func (g *fakeGitHub) Repository(context.Context, string, string) (int64, string,
 
 func (g *fakeGitHub) HasConfig(context.Context, string, string, string) (bool, error) {
 	return !g.noConfig, nil
+}
+
+func (g *fakeGitHub) CommitSHA(_ context.Context, _, _, ref string) (string, error) {
+	if sha, ok := g.shas[ref]; ok {
+		return sha, nil
+	}
+	return "sha-" + ref, nil
 }
 
 func (g *fakeGitHub) Releases(context.Context, string, string) ([]*github.RepositoryRelease, error) {

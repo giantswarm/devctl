@@ -97,6 +97,10 @@ func (fakeGitHub) HasConfig(context.Context, string, string, string) (bool, erro
 	return true, nil
 }
 
+func (fakeGitHub) CommitSHA(_ context.Context, _, _, ref string) (string, error) {
+	return "sha-" + ref, nil
+}
+
 func (fakeGitHub) Releases(context.Context, string, string) ([]*github.RepositoryRelease, error) {
 	return nil, nil
 }
