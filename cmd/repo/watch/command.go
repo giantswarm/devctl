@@ -71,7 +71,7 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	f := &flag{}
-	r := &runner{flag: f, logger: config.Logger, stderr: config.Stderr, stdout: config.Stdout, open: client.Open, setUpCircleCI: setUpCircleCI}
+	r := &runner{flag: f, logger: config.Logger, stderr: config.Stderr, stdout: config.Stdout, open: client.Open, setUpCircleCI: setUpCircleCI, sleep: sleep}
 
 	c := &cobra.Command{
 		Use:   fmt.Sprintf("%s [flags] [OWNER/]REPOSITORY", name),
@@ -127,6 +127,17 @@ func setUpCircleCI(ctx context.Context, owner, repo string, progress func(format
 	}
 	_, err = circleciapp.Setup(ctx, ci, gh, owner, repo, circleciapp.Options{Progress: progress})
 	return microerror.Mask(err)
+}
+
+func sleep(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }
 
 var invalidConfigError = &microerror.Error{

@@ -27,6 +27,8 @@ type runner struct {
 	// setUpCircleCI sets the repository up on its CircleCI GitHub App
 	// pipeline as the person, once the reconciler has set it up.
 	setUpCircleCI func(ctx context.Context, owner, repo string, progress func(format string, args ...any)) error
+	// sleep pauses between calls the manager answers at once.
+	sleep func(ctx context.Context, d time.Duration) error
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -54,6 +56,7 @@ func (r *runner) run(ctx context.Context, arg string) error {
 
 	printed := map[string]bool{}
 	circleCIDone := false
+	var circleCIAt time.Time
 	lastReason := ""
 	var last json.RawMessage
 	for {
@@ -82,14 +85,24 @@ func (r *runner) run(ctx context.Context, arg string) error {
 		if err != nil {
 			return microerror.Mask(err)
 		}
-		if !r.flag.JSON() {
-			r.printProgress(watch, printed, &lastReason)
-		}
 		if !circleCIDone && needsCircleCI(watch) && r.flag.CircleCI {
 			circleCIDone = true
+			circleCIAt = time.Now()
 			if err := r.circleCI(watchCtx, repository); err != nil {
 				return microerror.Mask(err)
 			}
+		}
+		masked := maskReleasedFailure(watch, circleCIAt, time.Now())
+		if !r.flag.JSON() {
+			r.printProgress(watch, printed, &lastReason)
+		}
+		if masked {
+			// The manager answers the stale failure at once until the tag
+			// build reports; ask again after a pause, not in a tight loop.
+			if err := r.sleep(watchCtx, releasedRecheck); err != nil {
+				return microerror.Maskf(timeoutError, "%s is not ready after %s: waiting for the tag build the CircleCI set-up started", repository, r.flag.Timeout)
+			}
+			continue
 		}
 		switch {
 		case watch.Failure != nil:
@@ -116,7 +129,7 @@ func (r *runner) run(ctx context.Context, arg string) error {
 // the CircleCI pipeline up: the reconciler set the repository up, it is
 // declared with CI, and it is not ready yet (its release waits for CircleCI).
 func needsCircleCI(w *manager.Watch) bool {
-	if w.Ready || w.WithoutCI || w.Failure != nil {
+	if w.Ready || w.WithoutCI || (w.Failure != nil && w.Failure.Phase != phaseReleased) {
 		return false
 	}
 	for _, p := range w.Phases {
@@ -127,8 +140,37 @@ func needsCircleCI(w *manager.Watch) bool {
 	return false
 }
 
-// phaseSetUp is the phase the reconciler's run of the pull request reported.
-const phaseSetUp = "setUp"
+// The phases the CircleCI step hangs on: setUp, the reconciler's run of the
+// pull request reported; released, the first release's build.
+const (
+	phaseSetUp    = "setUp"
+	phaseReleased = "released"
+)
+
+// releasedGrace is how long after the CircleCI set-up a failed released
+// phase is taken for the stale verdict it is: the first tag was cut before
+// the pipeline existed, so the reconciler's run reported missed-tag-build,
+// and the manager repeats that until the run the set-up started reports on
+// the tag. releasedRecheck is the pause between the calls meanwhile.
+const (
+	releasedGrace   = 10 * time.Minute
+	releasedRecheck = 15 * time.Second
+)
+
+// maskReleasedFailure turns a failed released phase into a pending one while
+// the CircleCI set-up of this watch (at) is younger than releasedGrace, and
+// says so. needsCircleCI lets the set-up run on exactly that answer: it is
+// the normal answer for a repository whose first tag came before its
+// pipeline.
+func maskReleasedFailure(w *manager.Watch, at, now time.Time) bool {
+	if at.IsZero() || w.Failure == nil || w.Failure.Phase != phaseReleased || now.Sub(at) > releasedGrace {
+		return false
+	}
+	w.Pending = phaseReleased
+	w.PendingReason = "the tag build the CircleCI set-up started has not reported yet (the manager still reports: " + w.Failure.Reason + ")"
+	w.Failure = nil
+	return true
+}
 
 // circleCI runs setUpCircleCI for repository ([OWNER/]REPOSITORY, the owner
 // giantswarm by default). A repository without a CircleCI configuration is

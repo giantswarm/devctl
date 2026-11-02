@@ -44,6 +44,7 @@ func newRunner(answers ...string) (*runner, *sequence, *bytes.Buffer) {
 		open: func(context.Context) (*client.Session, error) {
 			return &client.Session{Caller: seq, Endpoint: "https://muster.example/mcp"}, nil
 		},
+		sleep: func(context.Context, time.Duration) error { return nil },
 	}
 	return r, seq, &out
 }
@@ -156,3 +157,33 @@ func TestRunCircleCIFailure(t *testing.T) {
 
 // setUpDone is a watch past the set-up, waiting for the release.
 const setUpDone = `{"repository":"https://github.com/giantswarm/new","phases":[{"name":"created","at":"2026-09-22T10:00:00Z","seconds":0},{"name":"setUp","at":"2026-09-22T10:01:40Z","seconds":40}],"changed":true,"ready":false,"pending":"released","waited":3}`
+
+// releasedMissed is the answer for a first tag cut before the pipeline
+// existed: set up, and the released phase failed on the reconciler's
+// missed-tag-build.
+const releasedMissed = `{"repository":"https://github.com/giantswarm/new","phases":[{"name":"created","at":"2026-09-22T10:00:00Z","seconds":0},{"name":"setUp","at":"2026-09-22T10:01:40Z","seconds":40}],"ready":false,"failure":{"phase":"released","reason":"missed-tag-build: release v0.1.0 carries no CircleCI status of its build"},"waited":1}`
+
+// The first tag's missed build is the answer the CircleCI set-up exists
+// for: the watch sets CircleCI up on it, takes the stale failure for pending
+// while the run it started reports, and ends ready.
+func TestRunSetsCircleCIUpOnAMissedFirstTag(t *testing.T) {
+	r, seq, out := newRunner(releasedMissed, releasedMissed, ready)
+	r.flag.CircleCI = true
+	calls := 0
+	r.setUpCircleCI = func(context.Context, string, string, func(string, ...any)) error {
+		calls++
+		return nil
+	}
+	require.NoError(t, r.run(context.Background(), "new"))
+	require.Equal(t, 1, calls)
+	require.Equal(t, 3, seq.calls)
+	require.Contains(t, out.String(), "waiting for released: the tag build the CircleCI set-up started has not reported yet")
+	require.NotContains(t, out.String(), "failed at released")
+}
+
+// Without the set-up, a released failure still ends the watch.
+func TestRunReleasedFailureWithoutCircleCI(t *testing.T) {
+	r, _, _ := newRunner(releasedMissed)
+	err := r.run(context.Background(), "new")
+	require.True(t, IsFailed(err), err)
+}
