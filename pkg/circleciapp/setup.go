@@ -206,11 +206,15 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 			return report, microerror.Mask(fmt.Errorf("waiting for pipeline %d (%s) of %s: %w", run.Pipeline.Number, run.Ref, slug, err))
 		}
 		run.Outcome = outcome
-		if outcome.Green {
+		switch {
+		case outcome.Green && len(outcome.OnHold) > 0:
+			progress("%s: pipeline %d (%s) green so far, %s on hold for an approval in CircleCI", slug, run.Pipeline.Number, run.Ref, strings.Join(outcome.OnHold, ", "))
+		case outcome.Green:
 			progress("%s: pipeline %d (%s) green", slug, run.Pipeline.Number, run.Ref)
-		} else {
+		default:
 			progress("%s: pipeline %d (%s) red: %s", slug, run.Pipeline.Number, run.Ref, strings.Join(outcome.Failed, ", "))
 		}
+
 	}
 	return report, nil
 }

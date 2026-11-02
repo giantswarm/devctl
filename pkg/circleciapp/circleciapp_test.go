@@ -197,3 +197,24 @@ func TestEnsureSwitchesSetupWorkflowsOn(t *testing.T) {
 	require.NotEmpty(t, result.SetupWorkflowsUnread)
 	require.False(t, result.Changed())
 }
+
+// TestWaitEndsOnHoldAndOnEmptyPipelines: a workflow waiting for an approval
+// and one not run end the wait; a settled pipeline without any workflow ends
+// it green after a few reads.
+func TestWaitEndsOnHoldAndOnEmptyPipelines(t *testing.T) {
+	ci := newFake()
+	ci.reads = []pipelineRead{{state: "created", workflows: []circleciclient.Workflow{
+		{Name: "build", Status: "success"}, {Name: "deploy", Status: "on_hold"}, {Name: "nightly", Status: "not_run"},
+	}}}
+	outcome, err := Waiter{CircleCI: ci, Sleep: noSleep}.Wait(context.Background(), "pl1")
+	require.NoError(t, err)
+	require.True(t, outcome.Green)
+	require.Equal(t, []string{"deploy"}, outcome.OnHold)
+
+	ci = newFake()
+	ci.reads = []pipelineRead{{state: "created"}}
+	outcome, err = Waiter{CircleCI: ci, Sleep: noSleep}.Wait(context.Background(), "pl1")
+	require.NoError(t, err)
+	require.True(t, outcome.Green)
+	require.Equal(t, setupOnlyReads, ci.read)
+}

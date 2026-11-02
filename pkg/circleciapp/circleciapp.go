@@ -207,6 +207,9 @@ type Outcome struct {
 	// not, with their status.
 	Green  bool
 	Failed []string
+	// OnHold names the workflows waiting for an approval: settled as far as
+	// the wait goes, a person approves them in the CircleCI UI.
+	OnHold []string
 }
 
 // Waiter follows one pipeline until it settles.
@@ -244,6 +247,12 @@ func (w Waiter) Wait(ctx context.Context, id string) (*Outcome, error) {
 		workflows = circleciclient.NewestWorkflows(workflows)
 		outcome := finished(p.Pipeline, workflows)
 		switch {
+		case len(workflows) == 0 && !circleciclient.PipelineContinuing(p.State):
+			// A settled pipeline without a workflow: its filters run
+			// nothing on this ref, or the listing lags behind.
+			if setupOnly++; setupOnly >= setupOnlyReads {
+				return &Outcome{Pipeline: p.Pipeline, Green: true}, nil
+			}
 		case outcome == nil:
 			setupOnly = 0
 		case outcome.Green && circleciclient.SetupOnly(workflows):
@@ -263,9 +272,16 @@ func (w Waiter) Wait(ctx context.Context, id string) (*Outcome, error) {
 	}
 }
 
+// The workflow states that end the wait without a verdict of their own: a
+// workflow waiting for an approval, and one CircleCI did not run.
+const (
+	workflowOnHold = "on_hold"
+	workflowNotRun = "not_run"
+)
+
 // finished is the outcome of a pipeline whose listed workflows are all
-// finished, nil while one runs or none is listed yet. A setup workflow that
-// failed is a red outcome: nothing continues it.
+// finished, on hold or not run, nil while one runs or none is listed yet. A
+// setup workflow that failed is a red outcome: nothing continues it.
 func finished(p circleciclient.Pipeline, workflows []circleciclient.Workflow) *Outcome {
 	if len(workflows) == 0 {
 		return nil
@@ -273,6 +289,9 @@ func finished(p circleciclient.Pipeline, workflows []circleciclient.Workflow) *O
 	outcome := &Outcome{Pipeline: p, Green: true}
 	for _, wf := range workflows {
 		switch {
+		case wf.Status == workflowOnHold:
+			outcome.OnHold = append(outcome.OnHold, wf.Name)
+		case wf.Status == workflowNotRun:
 		case !circleciclient.WorkflowFinished(wf.Status):
 			return nil
 		case circleciclient.WorkflowFailed(wf.Status):
