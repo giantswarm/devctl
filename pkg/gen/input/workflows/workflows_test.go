@@ -429,3 +429,79 @@ func Test_ReservationCommandGolden(t *testing.T) {
 	got := renderInput(t, withFixedHeader(t, newWorkflows(t, gen.FlavourApp).ReservationCommand()))
 	assertGolden(t, "testdata/reservation_command.yaml.golden", got)
 }
+
+// Test_PullRequestWorkflowsConcurrency verifies that generated pull request
+// workflows group runs by workflow and pull request number (falling back to
+// ref) and cancel in-progress runs only for pull_request events, while release
+// workflows retain their non-cancelling per-ref serialization.
+func Test_PullRequestWorkflowsConcurrency(t *testing.T) {
+	w := newWorkflows(t, gen.FlavourApp)
+
+	prWorkflows := []struct {
+		name  string
+		input input.Input
+	}{
+		{name: "chart-tests", input: w.ChartTests()},
+		{name: "check-values-schema", input: w.CheckValuesSchema()},
+		{name: "check-readme-links", input: w.CheckReadmeLinks()},
+		{name: "gitleaks", input: w.Gitleaks()},
+		{name: "semantic-pull-request", input: w.SemanticPullRequest()},
+	}
+
+	wantGroup := "${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
+	wantCancel := "${{ github.event_name == 'pull_request' }}"
+
+	for _, tc := range prWorkflows {
+		t.Run(tc.name, func(t *testing.T) {
+			got := renderInput(t, tc.input)
+
+			var wf struct {
+				Concurrency struct {
+					Group            string `yaml:"group"`
+					CancelInProgress string `yaml:"cancel-in-progress"`
+				} `yaml:"concurrency"`
+			}
+			if err := yaml.Unmarshal([]byte(got), &wf); err != nil {
+				t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, got)
+			}
+
+			if wf.Concurrency.Group != wantGroup {
+				t.Errorf("concurrency.group = %q, want %q", wf.Concurrency.Group, wantGroup)
+			}
+			if wf.Concurrency.CancelInProgress != wantCancel {
+				t.Errorf("concurrency.cancel-in-progress = %q, want %q", wf.Concurrency.CancelInProgress, wantCancel)
+			}
+		})
+	}
+
+	releaseWorkflows := []struct {
+		name  string
+		input input.Input
+	}{
+		{name: "auto-release", input: w.AutoRelease()},
+		{name: "auto-release-multi-image", input: newWorkflows(t, gen.FlavourMultiImage).AutoReleaseMultiImage()},
+	}
+
+	for _, tc := range releaseWorkflows {
+		t.Run(tc.name, func(t *testing.T) {
+			got := renderInput(t, tc.input)
+
+			var wf struct {
+				Concurrency struct {
+					Group            string `yaml:"group"`
+					CancelInProgress string `yaml:"cancel-in-progress"`
+				} `yaml:"concurrency"`
+			}
+			if err := yaml.Unmarshal([]byte(got), &wf); err != nil {
+				t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, got)
+			}
+
+			if wf.Concurrency.Group != "auto-release-${{ github.ref_name }}" {
+				t.Errorf("concurrency.group = %q, want %q", wf.Concurrency.Group, "auto-release-${{ github.ref_name }}")
+			}
+			if wf.Concurrency.CancelInProgress != "false" {
+				t.Errorf("concurrency.cancel-in-progress = %q, want false", wf.Concurrency.CancelInProgress)
+			}
+		})
+	}
+}
