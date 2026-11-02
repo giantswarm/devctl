@@ -162,6 +162,13 @@ const (
 	// pipeline every push builds twice. Advisory: the repository is built.
 	// The fix is the person's `devctl repo follow-circleci --migrate`.
 	FindingCircleCIOAuthFollow FindingKind = "circleci-oauth-follow"
+	// FindingCircleCIWebhookMissing was the finding of an OAuth follow
+	// without CircleCI's webhook.
+	//
+	// Deprecated: the engine no longer follows on CircleCI and never reports
+	// it; it stays for readers of older run artifacts, such as
+	// giantswarm-repo-manager. Use FindingCircleCIPipelineMissing.
+	FindingCircleCIWebhookMissing FindingKind = "circleci-webhook-missing"
 	// FindingRenovateNotScanned: the repository shows no sign that Renovate
 	// scans it — no configuration, or a configuration without a trace of a
 	// run (the Dependency Dashboard issue, a pull request, a commit).
