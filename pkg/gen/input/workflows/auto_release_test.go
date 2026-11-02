@@ -1177,14 +1177,14 @@ const verifyGhStub = `#!/usr/bin/env bash
 set -euo pipefail
 case "$1" in
   release) printf '%s\n' "$STUB_PUBLISHED" ;;
-  api) printf '%s\n' "$STUB_STATUSES" ;;
+  api) [ -z "${STUB_API_FAIL:-}" ] || { echo "HTTP 502" >&2; exit 1; }; printf '%s\n' "$STUB_STATUSES" ;;
   *) echo "unexpected gh $*" >&2; exit 2 ;;
 esac
 `
 
 // runVerify runs the extracted verify step against the gh stub and returns
 // its combined output. The wait is zero so the statuses read once are final.
-func runVerify(t *testing.T, statuses string) ([]byte, error) {
+func runVerify(t *testing.T, statuses string, env ...string) ([]byte, error) {
 	t.Helper()
 
 	bin := t.TempDir()
@@ -1202,6 +1202,7 @@ func runVerify(t *testing.T, statuses string) ([]byte, error) {
 		"STUB_STATUSES="+statuses,
 		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
 	)
+	cmd.Env = append(cmd.Env, env...)
 
 	return cmd.CombinedOutput()
 }
@@ -1231,6 +1232,7 @@ func Test_AutoReleaseVerifyCircleCI(t *testing.T) {
 	testCases := []struct {
 		name       string
 		statuses   string
+		env        []string
 		expectFail bool
 		expectOut  []string
 		rejectOut  []string
@@ -1248,6 +1250,13 @@ func Test_AutoReleaseVerifyCircleCI(t *testing.T) {
 			expectOut:  []string{"::error::CircleCI never built v0.2.4", "devctl repo follow-circleci example/widget"},
 		},
 		{
+			name:       "unreadable statuses fail with an error, not silently",
+			statuses:   "[]",
+			env:        []string{"STUB_API_FAIL=1"},
+			expectFail: true,
+			expectOut:  []string{"reading the commit statuses of 01234567 failed", "::error::could not read the commit statuses"},
+		},
+		{
 			name:      "no CircleCI status at all warns and passes",
 			statuses:  "[]",
 			expectOut: []string{"::warning::v0.2.4 is released and no CircleCI pipeline builds this repository yet", "devctl repo follow-circleci example/widget"},
@@ -1257,7 +1266,7 @@ func Test_AutoReleaseVerifyCircleCI(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := runVerify(t, tc.statuses)
+			out, err := runVerify(t, tc.statuses, tc.env...)
 
 			if tc.expectFail && err == nil {
 				t.Fatalf("verify step passed:\n%s", out)

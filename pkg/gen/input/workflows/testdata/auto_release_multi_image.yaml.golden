@@ -176,16 +176,29 @@ jobs:
                 "\($all) \($setups)"'
           }
           deadline=$((SECONDS + CIRCLECI_STATUS_WAIT_SECONDS))
+          all="" setups=""
           while :; do
-            read -r all setups < <(counts)
-            if [ "$setups" -ge "${#tags[@]}" ]; then
-              echo "CircleCI builds the ${#tags[@]} tag(s): ${setups} setup workflow(s) on ${sha:0:8} started after the first release"
-              exit 0
+            # A failed read (rate limit, a 502) is retried within the wait;
+            # only a wait without one good read fails the step.
+            if out=$(counts); then
+              read -r all setups <<<"$out"
+              if [ "$setups" -ge "${#tags[@]}" ]; then
+                echo "CircleCI builds the ${#tags[@]} tag(s): ${setups} setup workflow(s) on ${sha:0:8} started after the first release"
+                exit 0
+              fi
+              echo "${setups} of ${#tags[@]} tag builds reported"
+            else
+              echo "reading the commit statuses of ${sha:0:8} failed"
             fi
             [ "$SECONDS" -lt "$deadline" ] || break
-            echo "${setups} of ${#tags[@]} tag builds reported; retrying in 10 s"
+            echo "retrying in 10 s"
             sleep 10
           done
+          if [ -z "$all" ]; then
+            echo "::error::could not read the commit statuses of ${sha:0:8} within ${CIRCLECI_STATUS_WAIT_SECONDS} s; cannot tell whether CircleCI built ${tags[*]}." \
+              "Check https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY}"
+            exit 1
+          fi
           if [ "$all" -eq 0 ]; then
             echo "::warning::${tags[*]} released and no CircleCI pipeline builds this repository yet: ${sha:0:8} carries no CircleCI status at all." \
               "Set the GitHub App pipeline up as you: devctl repo follow-circleci ${GITHUB_REPOSITORY}"

@@ -1199,16 +1199,29 @@ jobs:
                 "\($all) \($tag)"'
           }
           deadline=$((SECONDS + CIRCLECI_STATUS_WAIT_SECONDS))
+          all="" tag=""
           while :; do
-            read -r all tag < <(counts)
-            if [ "$tag" -gt 0 ]; then
-              echo "CircleCI builds ${TAG}: ${tag} workflow(s) on ${TARGET:0:8} started after the release"
-              exit 0
+            # A failed read (rate limit, a 502) is retried within the wait;
+            # only a wait without one good read fails the step.
+            if out=$(counts); then
+              read -r all tag <<<"$out"
+              if [ "$tag" -gt 0 ]; then
+                echo "CircleCI builds ${TAG}: ${tag} workflow(s) on ${TARGET:0:8} started after the release"
+                exit 0
+              fi
+              echo "no CircleCI status of ${TAG}'s build yet"
+            else
+              echo "reading the commit statuses of ${TARGET:0:8} failed"
             fi
             [ "$SECONDS" -lt "$deadline" ] || break
-            echo "no CircleCI status of ${TAG}'s build yet; retrying in 10 s"
+            echo "retrying in 10 s"
             sleep 10
           done
+          if [ -z "$all" ]; then
+            echo "::error::could not read the commit statuses of ${TARGET:0:8} within ${CIRCLECI_STATUS_WAIT_SECONDS} s; cannot tell whether CircleCI built ${TAG}." \
+              "Check https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY} and, if the tag is missing: ${fix}"
+            exit 1
+          fi
           if [ "$all" -eq 0 ]; then
             echo "::warning::${TAG} is released and no CircleCI pipeline builds this repository yet: ${TARGET:0:8} carries no CircleCI status at all." \
               "Set the GitHub App pipeline up as you, which also runs ${TAG}: ${fix}"
