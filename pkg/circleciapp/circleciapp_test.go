@@ -218,3 +218,31 @@ func TestWaitEndsOnHoldAndOnEmptyPipelines(t *testing.T) {
 	require.True(t, outcome.Green)
 	require.Equal(t, setupOnlyReads, ci.read)
 }
+
+// TestEnsurePrefersTheTriggeredAppDefinition: a dormant App definition
+// listed before the triggered one gets no trigger; the triggered one is the
+// pipeline, and nothing is written.
+func TestEnsurePrefersTheTriggeredAppDefinition(t *testing.T) {
+	dormant := circleciclient.AppDefinition("sample-old", "", "42")
+	dormant.ID = "dormant"
+	ci := newFake(oauthDef(), dormant, appDef())
+	ci.triggers["app"] = []circleciclient.Trigger{{ID: "on"}}
+	result, err := Ensure(context.Background(), ci, repo, false)
+	require.NoError(t, err)
+	require.Equal(t, "app", result.Definition.ID)
+	require.False(t, result.Changed())
+	require.Empty(t, ci.writes)
+}
+
+// TestEnsureTriggersTheCheckoutRepository: the trigger watches the
+// repository the definition checks out, not the one its configuration comes
+// from.
+func TestEnsureTriggersTheCheckoutRepository(t *testing.T) {
+	d := circleciclient.AppDefinition("sample-app", "", "42")
+	d.ID = "app"
+	d.ConfigSource.Repo.ExternalID = "7" // a shared configuration repository
+	ci := newFake(d)
+	_, err := Ensure(context.Background(), ci, repo, false)
+	require.NoError(t, err)
+	require.Equal(t, "42", ci.triggers["app"][0].EventSource.Repo.ExternalID)
+}

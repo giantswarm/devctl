@@ -102,15 +102,31 @@ func Ensure(ctx context.Context, ci CircleCI, repo Repository, migrate bool) (*R
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
-	var app *circleciclient.PipelineDefinition
+	// The App definition that is triggered already is the pipeline, as the
+	// reconciler's circleci step reads it; an untriggered one is taken only
+	// when none is, so a dormant definition never gets a second trigger.
+	var app, dormant *circleciclient.PipelineDefinition
 	var oauth []circleciclient.PipelineDefinition
+	triggered := map[string]bool{}
 	for i, d := range defs {
-		switch {
-		case d.GitHubApp() && app == nil:
-			app = &defs[i]
-		case !d.GitHubApp():
+		if !d.GitHubApp() {
 			oauth = append(oauth, d)
+			continue
 		}
+		triggers, err := ci.ListTriggers(ctx, project.ID, d.ID)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		triggered[d.ID] = hasEnabled(triggers)
+		switch {
+		case triggered[d.ID] && app == nil:
+			app = &defs[i]
+		case dormant == nil:
+			dormant = &defs[i]
+		}
+	}
+	if app == nil {
+		app = dormant
 	}
 	if app == nil {
 		id := strconv.FormatInt(repo.ID, 10)
@@ -123,12 +139,11 @@ func Ensure(ctx context.Context, ci CircleCI, repo Repository, migrate bool) (*R
 	}
 	result.Definition = *app
 
-	triggers, err := ci.ListTriggers(ctx, project.ID, app.ID)
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
-	if !hasEnabled(triggers) {
-		repoID := app.ConfigSource.Repo.ExternalID
+	if !triggered[app.ID] {
+		// The trigger watches the repository the pipeline checks out: a
+		// definition reading its configuration from another repository
+		// still builds this one.
+		repoID := app.CheckoutSource.Repo.ExternalID
 		if repoID == "" {
 			repoID = strconv.FormatInt(repo.ID, 10)
 		}
