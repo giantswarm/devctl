@@ -4,7 +4,7 @@
   "type": "array",
   "items": {
     "type": "object",
-    "description": "One repository of the team whose file the entry lives in. The entry is the request for the repository and its desired state: what it declares (settings, branch protection, CircleCI, description, visibility, lifecycle, generated files) is what the automation keeps true. There is no template field; the template a repository is created from is derived from componentType, gen.flavours and gen.language.",
+    "description": "One repository of the team whose file the entry lives in. The entry is the request for the repository and its desired state: what it declares (settings, branch protection, description, visibility, lifecycle, generated files) is what the automation keeps true; that a CircleCI GitHub App pipeline builds it is checked, and a person sets the pipeline up. There is no template field; the template a repository is created from is derived from componentType, gen.flavours and gen.language.",
     "required": [
       "name",
       "componentType"
