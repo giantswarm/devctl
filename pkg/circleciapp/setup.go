@@ -291,8 +291,9 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 		// of a new repository is both. The read only saves that run: when it
 		// fails, the branch runs.
 		head, err := gh.CommitSHA(ctx, owner, repo, branch)
+		var unread []string
 		if err != nil {
-			progress("%s: could not read the head of %s (%v): running the branch too", slug, branch, err)
+			unread = append(unread, fmt.Sprintf("the head of %s (%v)", branch, err))
 		}
 		for _, ref := range refs {
 			if err != nil {
@@ -300,7 +301,7 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 			}
 			sha, terr := gh.CommitSHA(ctx, owner, repo, ref.Tag)
 			if terr != nil {
-				progress("%s: could not read the commit of %s (%v): running the branch too", slug, ref.Tag, terr)
+				unread = append(unread, fmt.Sprintf("the commit of %s (%v)", ref.Tag, terr))
 				continue
 			}
 			if sha == head {
@@ -308,6 +309,9 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 				progress("%s: %s is the head of %s: its run builds the branch's commit too", slug, ref.Tag, branch)
 				break
 			}
+		}
+		if runBranch && len(unread) > 0 {
+			progress("%s: could not read %s: running the branch too", slug, strings.Join(unread, ", "))
 		}
 	}
 	if runBranch {
