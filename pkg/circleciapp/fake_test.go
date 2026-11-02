@@ -130,6 +130,9 @@ type fakeGitHub struct {
 	statuses []*github.RepoStatus
 	noConfig bool
 	releases []*github.RepositoryRelease
+	// head are the statuses of the default branch's head; statuses those
+	// of every other ref (the release tags).
+	head []*github.RepoStatus
 }
 
 func (g *fakeGitHub) Repository(context.Context, string, string) (int64, string, error) {
@@ -148,8 +151,17 @@ func (g *fakeGitHub) LatestRelease(context.Context, string, string) (*github.Rep
 	return g.release, nil
 }
 
-func (g *fakeGitHub) CircleCIStatuses(context.Context, string, string, string) ([]*github.RepoStatus, error) {
+func (g *fakeGitHub) CircleCIStatuses(_ context.Context, _, _, ref string) ([]*github.RepoStatus, error) {
+	if ref == "main" {
+		return g.head, nil
+	}
 	return g.statuses, nil
+}
+
+// built gives the default branch's head a status of the App pipeline.
+func (g *fakeGitHub) built() *fakeGitHub {
+	g.head = []*github.RepoStatus{status("go-build", "success", "head", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))}
+	return g
 }
 
 func release(tag string, published time.Time) *github.RepositoryRelease {

@@ -211,6 +211,18 @@ func ListCircleCIStatuses(ctx context.Context, gh *github.Client, owner, repo, r
 	return out, nil
 }
 
+// AppStatuses are the statuses CircleCIAppLogin posted: the GitHub App
+// pipeline's, each linking its workflow.
+func AppStatuses(statuses []*github.RepoStatus) []*github.RepoStatus {
+	var out []*github.RepoStatus
+	for _, st := range statuses {
+		if st.GetCreator().GetLogin() == CircleCIAppLogin {
+			out = append(out, st)
+		}
+	}
+	return out
+}
+
 // CircleCIPosters says who posted statuses: whether CircleCIAppLogin did,
 // and the other logins, sorted.
 func CircleCIPosters(statuses []*github.RepoStatus) (app bool, others []string) {
@@ -297,7 +309,13 @@ func TagBuildStatuses(statuses []*github.RepoStatus, publishedAt time.Time) []*g
 		// The setup workflow that settled last before this one started.
 		owner, settled := "", time.Time{}
 		for sid, sw := range workflows {
-			if sw.setup && !sw.settled.IsZero() && !sw.settled.After(w.first) && sw.settled.After(settled) {
+			if !sw.setup || sw.settled.IsZero() || sw.settled.After(w.first) {
+				continue
+			}
+			// GitHub's timestamps are to the second: two setups settling in
+			// the same second break on the workflow id, so the verdict does
+			// not depend on map order.
+			if sw.settled.After(settled) || (sw.settled.Equal(settled) && sid < owner) {
 				owner, settled = sid, sw.settled
 			}
 		}
@@ -385,11 +403,12 @@ func templateContent(fields reposetup.Fields) bool {
 	return g != nil && g.CI != nil && g.CI.TemplateContent
 }
 
-// stepRelease verifies the latest release from the CircleCI statuses its
-// tag's commit carries, read on GitHub: no CircleCI identity is needed, and
-// a GitHub App pipeline, which CircleCI's API lists without the tag
-// (devctl#3010), is read like an OAuth one. Of the commit's statuses those
-// of the tag's own build count (TagBuildStatuses). None is a missed build;
+// stepRelease verifies the latest release from the GitHub App pipeline's
+// CircleCI statuses on its tag's commit, read on GitHub: no CircleCI identity
+// is needed. Of the commit's statuses those of the tag's own build count
+// (TagBuildStatuses). A commit built by an OAuth follow alone is skipped,
+// not verified: an OAuth status names its job, not its workflow, so a branch
+// job cannot be told from the tag's. None is a missed build;
 // the fix is `devctl repo follow-circleci`, which runs an unbuilt latest
 // release as the person, or the next tag. A failed one is a release nothing
 // was published for; the fix is a rerun of the failed workflow from failed
@@ -423,7 +442,10 @@ func (r *Runner) stepRelease(ctx context.Context, s *run, sr *StepResult) error 
 		sr.Summary = fmt.Sprintf("release %s: not a vX.Y.Z tag, not verified", tag)
 		return nil
 	}
-	summary, err := r.verifyRelease(ctx, s, sr, tag, publishedAt(release))
+	summary, oauth, err := r.verifyRelease(ctx, s, sr, tag, publishedAt(release))
+	if oauth {
+		sr.Verdict = VerdictSkipped
+	}
 	sr.Summary = summary
 	return err
 }
@@ -449,20 +471,23 @@ func (r *Runner) stepImageReleases(ctx context.Context, s *run, sr *StepResult) 
 	if err != nil {
 		return err
 	}
-	summary, err := r.verifyRelease(ctx, s, sr, newest.GetTagName(), publishedAt(newest))
+	summary, oauth, err := r.verifyRelease(ctx, s, sr, newest.GetTagName(), publishedAt(newest))
 	if err != nil {
 		return err
 	}
-	summaries := []string{summary}
+	summaries, allOAuth := []string{summary}, oauth
 	for _, release := range releases {
 		if release == newest {
 			continue
 		}
-		summary, err := r.verifyRelease(ctx, s, sr, release.GetTagName(), publishedAt(release))
+		summary, oauth, err := r.verifyRelease(ctx, s, sr, release.GetTagName(), publishedAt(release))
 		if err != nil {
 			return err
 		}
-		summaries = append(summaries, summary)
+		summaries, allOAuth = append(summaries, summary), allOAuth && oauth
+	}
+	if allOAuth {
+		sr.Verdict = VerdictSkipped
 	}
 	sr.Summary = strings.Join(summaries, "; ")
 	return nil
@@ -550,20 +575,27 @@ const tagBuildGrace = 2 * time.Minute
 // verifyRelease verifies one release, tag, of the platform's flow, as
 // stepRelease describes: findings go on sr, the line on the state found is
 // returned.
-func (r *Runner) verifyRelease(ctx context.Context, s *run, sr *StepResult, tag string, published time.Time) (string, error) {
+func (r *Runner) verifyRelease(ctx context.Context, s *run, sr *StepResult, tag string, published time.Time) (summary string, oauth bool, err error) {
 	statuses, err := r.circleCIStatuses(ctx, s, tag)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	build := TagBuildStatuses(statuses, published)
+	app := AppStatuses(statuses)
+	if _, others := CircleCIPosters(statuses); len(app) == 0 && len(others) > 0 {
+		// An OAuth status names its job alone, not its workflow or ref: a
+		// branch job that starts after the release cannot be told from the
+		// tag's. The repository carries circleci-oauth-follow already.
+		return fmt.Sprintf("release %s: built on an OAuth follow (%s), not verified from statuses; `devctl repo follow-circleci %s --migrate` moves it to the GitHub App pipeline", tag, strings.Join(others, ", "), s.slug()), true, nil
+	}
+	build := TagBuildStatuses(app, published)
 	if len(build) == 0 {
 		if r.now().Sub(published) < tagBuildGrace {
-			return fmt.Sprintf("release %s: published %s ago, no status of its build yet", tag, r.now().Sub(published).Round(time.Second)), nil
+			return fmt.Sprintf("release %s: published %s ago, no status of its build yet", tag, r.now().Sub(published).Round(time.Second)), false, nil
 		}
 		s.report(sr, FindingMissedTagBuild,
 			fmt.Sprintf("release %s of %s carries no CircleCI status of a build started after the release: nothing was built or published for the tag", tag, s.slug()),
 			fmt.Sprintf("`devctl repo follow-circleci %s`: it runs the tag on the GitHub App pipeline as you, creating the pipeline first when there is none; or cut the next tag", s.slug()))
-		return fmt.Sprintf("release %s: no tag build", tag), nil
+		return fmt.Sprintf("release %s: no tag build", tag), false, nil
 	}
 	var failed, pending, succeeded, publishedJobs []string
 	for _, st := range build {
@@ -593,15 +625,15 @@ func (r *Runner) verifyRelease(ctx context.Context, s *run, sr *StepResult, tag 
 		s.report(sr, FindingRedRelease,
 			fmt.Sprintf("release %s of %s is red: %s", tag, s.slug(), strings.Join(failed, ", ")),
 			fmt.Sprintf("nothing was published for %s: rerun the failed workflow from failed on CircleCI (the rerun checks out the same commit and runs the publish jobs)%s; when the cause is in the code, fix it and let the next tag be the release", tag, confirm))
-		return fmt.Sprintf("release %s: red", tag), nil
+		return fmt.Sprintf("release %s: red", tag), false, nil
 	case len(pending) > 0:
-		return fmt.Sprintf("release %s: building: %s", tag, strings.Join(pending, ", ")), nil
+		return fmt.Sprintf("release %s: building: %s", tag, strings.Join(pending, ", ")), false, nil
 	}
-	summary := fmt.Sprintf("release %s built: %s succeeded", tag, strings.Join(succeeded, ", "))
+	summary = fmt.Sprintf("release %s built: %s succeeded", tag, strings.Join(succeeded, ", "))
 	if len(publishedJobs) > 0 {
 		summary += fmt.Sprintf("; %s failed, the GitHub release it publishes exists", strings.Join(publishedJobs, ", "))
 	}
-	return summary, nil
+	return summary, false, nil
 }
 
 // GitHubReleaseJob is the generated tag pipeline's job whose one output is

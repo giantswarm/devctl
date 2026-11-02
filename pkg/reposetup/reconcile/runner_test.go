@@ -2495,6 +2495,25 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// A tag commit built by an OAuth follow alone: its statuses name
+			// jobs, not workflows, so a late branch job cannot be told from
+			// the tag's. Skipped, not verified, and no finding of its own.
+			name: "release: a tag built by an OAuth follow is not verified from statuses", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				published := time.Now().Add(-time.Hour)
+				r.release, r.releaseAt = "v0.1.0", published
+				r.addStatus("v0.1.0", "go-build", "failure", "job-12", "alice", published.Add(5*time.Minute))
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				sr := res.Step(StepRelease)
+				require.Contains(t, sr.Summary, "built on an OAuth follow (alice), not verified from statuses")
+				require.Contains(t, sr.Summary, "--migrate")
+				require.Empty(t, res.Findings())
+			},
+		},
+		{
 			// The real shape (release-automation-sandbox): the release was
 			// published 11:20:53Z. The branch build of the same commit started
 			// at 11:20:41Z, before the release, and its go-build failed at

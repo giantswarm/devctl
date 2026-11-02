@@ -104,10 +104,12 @@ func TestSetupRunsWhatWasNotBuilt(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, report.Runs, 2)
 	require.True(t, report.Green())
-	require.Equal(t, "run created on branch main", ci.writes[2])
-	require.Equal(t, "run created on tag v0.1.0", ci.writes[3])
+	require.Equal(t, "run created on tag v0.1.0", ci.writes[2], "the tag runs first")
+	require.Equal(t, "run created on branch main", ci.writes[3])
 
-	// The tag's own build, started after the release, counts as built.
+	// The tag's own build, started after the release, counts as built, and
+	// the branch carries the App pipeline's status: nothing runs.
+	gh.built()
 	gh.statuses = append([]*github.RepoStatus{status("go-build", "success", "tag-build", published.Add(70*time.Second)), status("setup", "pending", "tag-setup", published.Add(2*time.Second))}, gh.statuses...)
 	ci.writes = nil
 	report, err = Setup(context.Background(), ci, gh, "giantswarm", "sample", Options{Now: now})
@@ -122,7 +124,7 @@ func TestSetupRunsWhatWasNotBuilt(t *testing.T) {
 func TestSetupLeavesAFreshTagToItsTrigger(t *testing.T) {
 	published := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
 	now := func() time.Time { return published.Add(time.Minute) }
-	gh := &fakeGitHub{release: release("v1.2.0", published)}
+	gh := (&fakeGitHub{release: release("v1.2.0", published)}).built()
 
 	ci := newFake(appDef())
 	ci.triggers["app"] = []circleciclient.Trigger{{ID: "on"}}
@@ -134,7 +136,7 @@ func TestSetupLeavesAFreshTagToItsTrigger(t *testing.T) {
 	report, err = Setup(context.Background(), ci, gh, "giantswarm", "sample", Options{Now: now})
 	require.NoError(t, err)
 	require.Len(t, report.Runs, 2)
-	require.Equal(t, circleciclient.Ref{Tag: "v1.2.0"}, report.Runs[1].Ref)
+	require.Equal(t, circleciclient.Ref{Tag: "v1.2.0"}, report.Runs[0].Ref)
 }
 
 // TestWaitFollowsTheSetupContinuation: the setup workflow's success alone
@@ -255,17 +257,43 @@ func TestSetupRunsFlowReleasesOnly(t *testing.T) {
 	now := func() time.Time { return published.Add(time.Hour) }
 	ci := newFake(appDef())
 	ci.triggers["app"] = []circleciclient.Trigger{{ID: "on"}}
-	report, err := Setup(context.Background(), ci, &fakeGitHub{release: release("base/0.1", published)}, "giantswarm", "sample", Options{Now: now})
+	report, err := Setup(context.Background(), ci, (&fakeGitHub{release: release("base/0.1", published)}).built(), "giantswarm", "sample", Options{Now: now})
 	require.NoError(t, err)
 	require.Empty(t, report.Runs)
 
-	gh := &fakeGitHub{
+	gh := (&fakeGitHub{
 		release:  release("b/v0.2.0", published),
 		releases: []*github.RepositoryRelease{release("b/v0.2.0", published), release("a/v0.1.1", published), release("a/v0.1.0", published.Add(-time.Hour))},
-	}
+	}).built()
 	report, err = Setup(context.Background(), ci, gh, "giantswarm", "sample", Options{Now: now})
 	require.NoError(t, err)
 	require.Len(t, report.Runs, 2)
 	require.Equal(t, circleciclient.Ref{Tag: "a/v0.1.1"}, report.Runs[0].Ref)
 	require.Equal(t, circleciclient.Ref{Tag: "b/v0.2.0"}, report.Runs[1].Ref)
+}
+
+// TestSetupRunsAnUnbuiltBranch: a set-up in place whose default branch
+// carries no App status (a pipeline made by hand, a run that failed after the
+// set-up) runs the branch, so "nothing to do" never leaves it unbuilt.
+func TestSetupRunsAnUnbuiltBranch(t *testing.T) {
+	ci := newFake(appDef())
+	ci.triggers["app"] = []circleciclient.Trigger{{ID: "on"}}
+	report, err := Setup(context.Background(), ci, &fakeGitHub{}, "giantswarm", "sample", Options{})
+	require.NoError(t, err)
+	require.Len(t, report.Runs, 1)
+	require.Equal(t, circleciclient.Ref{Branch: "main"}, report.Runs[0].Ref)
+}
+
+// TestSetupNeverRebuildsAnOAuthBuiltTag: a tag an OAuth follow built after
+// the release reads built, so the App pipeline does not publish it again.
+func TestSetupNeverRebuildsAnOAuthBuiltTag(t *testing.T) {
+	published := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	oauth := status("go-build", "success", "job", published.Add(time.Minute))
+	oauth.Creator = &github.User{Login: new("alice")}
+	gh := (&fakeGitHub{release: release("v1.0.0", published), statuses: []*github.RepoStatus{oauth}}).built()
+	ci := newFake(appDef())
+	ci.triggers["app"] = []circleciclient.Trigger{{ID: "on"}}
+	report, err := Setup(context.Background(), ci, gh, "giantswarm", "sample", Options{Now: func() time.Time { return published.Add(time.Hour) }})
+	require.NoError(t, err)
+	require.Empty(t, report.Runs)
 }

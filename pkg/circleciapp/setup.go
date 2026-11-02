@@ -122,6 +122,21 @@ func (r *Report) Green() bool {
 	return true
 }
 
+// oauthSince says an OAuth follow posted a status on the commit no earlier
+// than the release (less the slack the engine allows): its job ran after the
+// tag, which may have been the tag's.
+func oauthSince(statuses []*github.RepoStatus, published time.Time) bool {
+	for _, st := range statuses {
+		if st.GetCreator().GetLogin() != reconcile.CircleCIAppLogin && !st.GetCreatedAt().Before(published.Add(-oauthSlack)) {
+			return true
+		}
+	}
+	return false
+}
+
+// oauthSlack matches the engine's tagBuildSlack.
+const oauthSlack = 10 * time.Second
+
 // releasesToBuild are the releases Setup checks for their tag's build: the
 // latest release when it is a vX.Y.Z tag, and for a multi-image repository,
 // whose latest release is a <name>/vX.Y.Z tag, the newest release of every
@@ -176,9 +191,11 @@ func releasesToBuild(ctx context.Context, gh GitHub, owner, repo string, progres
 const tagBuildGrace = 2 * time.Minute
 
 // Setup sets owner/repo up on a GitHub App pipeline as the person (Ensure)
-// and runs what the pipeline has not built: the default branch when Ensure
-// wrote anything, and the latest release when its tag carries no status of
-// its own build (reconcile.TagBuildStatuses) — a tag cut before the trigger
+// and runs what the pipeline has not built: the release tags whose commit
+// carries no status of their own build (reconcile.TagBuildStatuses on the App
+// pipeline's statuses; any OAuth status after the release counts as built),
+// then the default branch when Ensure wrote anything or its head carries no
+// App status — a tag cut before the trigger
 // existed reached no pipeline, as the scaffold's v0.1.0 of a new repository
 // does. A repository without .circleci/config.yml on its default branch is
 // IsNoConfig, before any write. With Wait set the runs are followed until they settle.
@@ -232,10 +249,10 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 		progress("%s: the OAuth pipeline is still triggered (%s): every push builds twice until it is gone; --migrate deletes it", slug, strings.Join(result.OAuthTriggers, ", "))
 	}
 
+	// The release tags run first: a branch run on the same commit (the
+	// scaffold's, for a new repository) posts statuses that a later read
+	// would otherwise take for the tag's, were the tag's run to fail.
 	var refs []circleciclient.Ref
-	if result.Changed() {
-		refs = append(refs, circleciclient.Ref{Branch: branch})
-	}
 	releases, err := releasesToBuild(ctx, gh, owner, repo, progress)
 	if err != nil {
 		return nil, microerror.Mask(err)
@@ -249,7 +266,10 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 		if err != nil {
 			return nil, microerror.Mask(fmt.Errorf("reading the statuses of %s: %w", release.TagName, err))
 		}
-		built := len(reconcile.TagBuildStatuses(statuses, published)) > 0
+		// The App pipeline's statuses tell a tag build by its workflows; an
+		// OAuth follow's name jobs alone, so any of them after the release
+		// counts as built: a tag is never published a second time.
+		built := len(reconcile.TagBuildStatuses(reconcile.AppStatuses(statuses), published)) > 0 || oauthSince(statuses, published)
 		recent := now().Sub(published) < tagBuildGrace && !result.CreatedTrigger
 		switch {
 		case built:
@@ -259,6 +279,22 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 		default:
 			refs = append(refs, circleciclient.Ref{Tag: release.TagName})
 		}
+	}
+
+	// The default branch runs when the set-up changed anything, or when its
+	// head carries no status of the App pipeline: a pipeline made by hand, or
+	// a run of this command that failed after the set-up, leaves it unbuilt
+	// until the next push.
+	runBranch := result.Changed()
+	if !runBranch {
+		head, err := gh.CircleCIStatuses(ctx, owner, repo, branch)
+		if err != nil {
+			return nil, microerror.Mask(fmt.Errorf("reading the statuses of %s: %w", branch, err))
+		}
+		runBranch = len(reconcile.AppStatuses(head)) == 0
+	}
+	if runBranch {
+		refs = append(refs, circleciclient.Ref{Branch: branch})
 	}
 
 	for _, ref := range refs {

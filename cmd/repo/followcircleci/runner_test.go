@@ -106,7 +106,9 @@ func (fakeGitHub) LatestRelease(context.Context, string, string) (*github.Reposi
 }
 
 func (fakeGitHub) CircleCIStatuses(context.Context, string, string, string) ([]*github.RepoStatus, error) {
-	return nil, nil
+	// The default branch carries the App pipeline's status: a set-up in
+	// place has nothing to run.
+	return []*github.RepoStatus{{Context: new("ci/circleci: go-build"), State: new("success"), Creator: &github.User{Login: new("circleci-app[bot]")}}}, nil
 }
 
 func newRunner(ci *fakeCircleCI, out *bytes.Buffer) *runner {
