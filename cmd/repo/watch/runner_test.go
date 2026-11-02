@@ -165,7 +165,7 @@ const setUpDone = `{"repository":"https://github.com/giantswarm/new","phases":[{
 // missed-tag-build.
 // The reason is worded as the manager words it, from the finding's message
 // and fix; the finding carries the kind.
-const releasedMissed = `{"repository":"https://github.com/giantswarm/new","phases":[{"name":"created","at":"2026-09-22T10:00:00Z","seconds":0},{"name":"setUp","at":"2026-09-22T10:01:40Z","seconds":40}],"ready":false,"failure":{"phase":"released","reason":"release v0.1.0 of giantswarm/new carries no CircleCI status of a build started after the release: nothing was built or published for the tag"},"findings":[{"kind":"missed-tag-build","message":"release v0.1.0 of giantswarm/new carries no CircleCI status of a build started after the release","fix":"devctl repo follow-circleci giantswarm/new"},{"kind":"default-icon","message":"the default icon","fix":"replace it"}],"waited":1}`
+const releasedMissed = `{"repository":"https://github.com/giantswarm/new","phases":[{"name":"created","at":"2026-09-22T10:00:00Z","seconds":0},{"name":"scaffolded","at":"2026-09-22T10:00:05Z","seconds":5},{"name":"declared","at":"2026-09-22T10:00:09Z","seconds":4},{"name":"merged","at":"2026-09-22T10:01:00Z","seconds":51},{"name":"setUp","at":"2026-09-22T10:01:40Z","seconds":40}],"ready":false,"failure":{"phase":"released","reason":"release v0.1.0 of giantswarm/new carries no CircleCI status of a build started after the release: nothing was built or published for the tag — ` + "`devctl repo follow-circleci giantswarm/new`" + `: it runs the tag on the GitHub App pipeline as you, creating the pipeline first when there is none; or cut the next tag (https://github.com/giantswarm/github/actions/runs/1)"},"findings":[{"kind":"missed-tag-build","message":"release v0.1.0 of giantswarm/new carries no CircleCI status of a build started after the release: nothing was built or published for the tag","fix":"` + "`devctl repo follow-circleci giantswarm/new`" + `: it runs the tag on the GitHub App pipeline as you, creating the pipeline first when there is none; or cut the next tag"},{"kind":"default-icon","message":"the default icon","fix":"replace it"}],"waited":1}`
 
 // The first tag's missed build is the answer the CircleCI set-up exists
 // for: the watch sets CircleCI up on it, and ends on the release-tag run the
@@ -229,9 +229,9 @@ func TestRunTagRunJSON(t *testing.T) {
 	require.Equal(t, "default-icon", string(doc.Findings[0].Kind))
 }
 
-// A tag run still unsettled at the timeout is pending in JSON, not failed on
-// the reconciler's earlier verdict.
-func TestRunTagRunTimeoutJSON(t *testing.T) {
+// A tag run that cannot be read is pending in JSON, not failed on the
+// reconciler's earlier verdict, and the stale finding is gone.
+func TestRunTagRunReadErrorJSON(t *testing.T) {
 	r, _, out := newRunner(releasedMissed)
 	r.flag.CircleCI = true
 	r.flag.Output = client.OutputJSON
@@ -240,19 +240,50 @@ func TestRunTagRunTimeoutJSON(t *testing.T) {
 	}
 	err := r.run(context.Background(), "new")
 	require.Error(t, err)
+	require.Contains(t, err.Error(), "reading the release build the CircleCI set-up started")
 	var doc manager.Watch
 	require.NoError(t, json.Unmarshal(out.Bytes(), &doc))
 	require.Nil(t, doc.Failure)
 	require.Equal(t, "released", doc.Pending)
+	require.Contains(t, doc.PendingReason, "https://app.circleci.com/pipelines/github/new")
+	require.Len(t, doc.Findings, 1)
+	require.Equal(t, "default-icon", string(doc.Findings[0].Kind))
 }
 
-// A released phase failed on missed-tag-build, with nothing run by this
-// watch, names what clears the stale verdict.
-func TestRunStaleMissedTagBuildHint(t *testing.T) {
-	r, _, _ := newRunner(releasedMissed)
+// A red tag run fails released with the run's jobs, in JSON too, and the
+// stale missed-tag-build is not offered as the cause.
+func TestRunTagRunRedJSON(t *testing.T) {
+	r, _, out := newRunner(releasedMissed)
 	r.flag.CircleCI = true
-	r.setUpCircleCI = func(context.Context, string, string, func(string, ...any)) (tagWait, error) { return nil, nil }
+	r.flag.Output = client.OutputJSON
+	r.setUpCircleCI = func(context.Context, string, string, func(string, ...any)) (tagWait, error) {
+		return func(context.Context) ([]circleciapp.Run, error) {
+			return []circleciapp.Run{{Ref: circleciclient.Ref{Tag: "v0.1.0"}, Pipeline: circleciclient.Pipeline{Number: 4}, Outcome: &circleciapp.Outcome{Failed: []string{"build (failed)"}}}}, nil
+		}, nil
+	}
+	require.True(t, IsFailed(r.run(context.Background(), "new")))
+	var doc manager.Watch
+	require.NoError(t, json.Unmarshal(out.Bytes(), &doc))
+	require.Contains(t, doc.Failure.Reason, "pipeline 4 (tag v0.1.0): build (failed)")
+	require.Len(t, doc.Findings, 1)
+	require.Empty(t, doc.PendingReason)
+}
+
+// A timeout while the tag run is still going prints the pending document.
+func TestRunTagRunTimeoutJSON(t *testing.T) {
+	r, _, out := newRunner(releasedMissed)
+	r.flag.CircleCI = true
+	r.flag.Output = client.OutputJSON
+	r.flag.Timeout = 50 * time.Millisecond
+	r.setUpCircleCI = func(context.Context, string, string, func(string, ...any)) (tagWait, error) {
+		return func(ctx context.Context) ([]circleciapp.Run, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}, nil
+	}
 	err := r.run(context.Background(), "new")
-	require.True(t, IsFailed(err), err)
-	require.Contains(t, err.Error(), "run Align now for the repository and watch again")
+	require.True(t, IsTimeout(err), err)
+	var doc manager.Watch
+	require.NoError(t, json.Unmarshal(out.Bytes(), &doc))
+	require.Equal(t, "released", doc.Pending)
 }

@@ -114,7 +114,7 @@ func (r *runner) run(ctx context.Context, arg string) error {
 			if r.flag.JSON() {
 				_ = client.PrintJSON(r.stdout, last)
 			}
-			return microerror.Maskf(failedError, "%s failed at %s: %s%s", repository, watch.Failure.Phase, watch.Failure.Reason, staleMissedTagBuild(watch))
+			return microerror.Maskf(failedError, "%s failed at %s: %s", repository, watch.Failure.Phase, watch.Failure.Reason)
 		case watch.Ready:
 			if r.flag.JSON() {
 				return microerror.Mask(client.PrintJSON(r.stdout, last))
@@ -187,16 +187,19 @@ type tagWait func(ctx context.Context) ([]circleciapp.Run, error)
 // ready, failure and pending taken from the runs.
 func (r *runner) waitTagRuns(ctx context.Context, repository string, wait tagWait, w *manager.Watch) error {
 	runs, err := wait(ctx)
-	if err != nil {
+	timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
+	// The reconciler's missed-tag-build is answered by the run, whatever
+	// its verdict: the tag was built.
+	w.Findings = withoutMissedTagBuild(w.Findings)
+	if err != nil || timedOut {
 		// Still running, or unreadable: released is pending on the run, not
 		// failed on the reconciler's earlier verdict.
 		w.Ready, w.Failure = false, nil
 		w.Pending, w.PendingReason = phaseReleased, "the release build the CircleCI set-up started has not settled: https://app.circleci.com/pipelines/github/"+repository
-		w.Findings = withoutMissedTagBuild(w.Findings)
 		r.printJSON(w)
 	}
 	switch {
-	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+	case timedOut:
 		return microerror.Maskf(timeoutError, "%s is not ready after %s: the release build the CircleCI set-up started has not settled", repository, r.flag.Timeout)
 	case err != nil:
 		return microerror.Maskf(circleCIError, "%s: reading the release build the CircleCI set-up started: %v; its pipeline is on https://app.circleci.com/pipelines/github/%s, and a later watch reads the result", repository, err, repository)
@@ -222,10 +225,6 @@ func (r *runner) waitTagRuns(ctx context.Context, repository string, wait tagWai
 		return microerror.Maskf(failedError, "%s failed at %s: %s", repository, phaseReleased, w.Failure.Reason)
 	}
 	w.Ready, w.Failure = true, nil
-	w.Findings = withoutMissedTagBuild(w.Findings)
-	if len(held) > 0 {
-		w.PendingReason = "on hold for an approval in CircleCI: " + strings.Join(held, "; ")
-	}
 	if r.flag.JSON() {
 		r.printJSON(w)
 		return nil
@@ -259,27 +258,6 @@ func (r *runner) printJSON(w *manager.Watch) {
 		return
 	}
 	_ = client.PrintJSON(r.stdout, data)
-}
-
-// staleMissedTagBuild is the note on a released phase that failed with the
-// reconciler's missed-tag-build among the findings: a tag built since (devctl
-// repo follow-circleci, or a watch's set-up) keeps it until the reconciler
-// runs again. The manager words the failure from the finding's message, so
-// the finding's kind is what tells it.
-func staleMissedTagBuild(w *manager.Watch) string {
-	if w.Failure == nil || w.Failure.Phase != phaseReleased || !hasMissedTagBuild(w.Findings) {
-		return ""
-	}
-	return "; if the tag was built since (devctl repo follow-circleci), the manager reports the reconciler's earlier missed-tag-build until the reconciler's next run: run Align now for the repository and watch again"
-}
-
-func hasMissedTagBuild(findings []reconcile.Finding) bool {
-	for _, f := range findings {
-		if f.Kind == reconcile.FindingMissedTagBuild {
-			return true
-		}
-	}
-	return false
 }
 
 // withoutMissedTagBuild drops the reconciler's missed-tag-build: the tag run

@@ -290,13 +290,23 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 		// tag's and could be read for the tag's build. The scaffold commit
 		// of a new repository is both. The read only saves that run: when it
 		// fails, the branch runs.
-		if head, err := gh.CommitSHA(ctx, owner, repo, branch); err == nil {
-			for _, ref := range refs {
-				if sha, err := gh.CommitSHA(ctx, owner, repo, ref.Tag); err == nil && sha == head {
-					runBranch = false
-					progress("%s: %s is the head of %s: its run builds the branch's commit too", slug, ref.Tag, branch)
-					break
-				}
+		head, err := gh.CommitSHA(ctx, owner, repo, branch)
+		if err != nil {
+			progress("%s: could not read the head of %s (%v): running the branch too", slug, branch, err)
+		}
+		for _, ref := range refs {
+			if err != nil {
+				break
+			}
+			sha, terr := gh.CommitSHA(ctx, owner, repo, ref.Tag)
+			if terr != nil {
+				progress("%s: could not read the commit of %s (%v): running the branch too", slug, ref.Tag, terr)
+				continue
+			}
+			if sha == head {
+				runBranch = false
+				progress("%s: %s is the head of %s: its run builds the branch's commit too", slug, ref.Tag, branch)
+				break
 			}
 		}
 	}
