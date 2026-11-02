@@ -187,7 +187,7 @@ const tagBuildGrace = 2 * time.Minute
 // carries no status of their own build (reconcile.TagBuildStatuses on the App
 // pipeline's statuses; any OAuth status after the release counts as built),
 // then the default branch when Ensure wrote anything or its head carries no
-// App status — a tag cut before the trigger
+// App status, unless a tag run builds the branch's head already — a tag cut before the trigger
 // existed reached no pipeline, as the scaffold's v0.1.0 of a new repository
 // does. A repository without .circleci/config.yml on its default branch is
 // IsNoConfig, before any write. With Wait set the runs are followed until they settle.
@@ -288,20 +288,15 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 		// A tag run on the branch's head builds that commit already; a
 		// second, branch run on it would post the same contexts after the
 		// tag's and could be read for the tag's build. The scaffold commit
-		// of a new repository is both.
-		head, err := gh.CommitSHA(ctx, owner, repo, branch)
-		if err != nil {
-			return nil, microerror.Mask(fmt.Errorf("reading the head of %s: %w", branch, err))
-		}
-		for _, ref := range refs {
-			sha, err := gh.CommitSHA(ctx, owner, repo, ref.Tag)
-			if err != nil {
-				return nil, microerror.Mask(fmt.Errorf("reading the commit of %s: %w", ref.Tag, err))
-			}
-			if sha == head {
-				runBranch = false
-				progress("%s: %s is the head of %s: its run builds the branch's commit too", slug, ref.Tag, branch)
-				break
+		// of a new repository is both. The read only saves that run: when it
+		// fails, the branch runs.
+		if head, err := gh.CommitSHA(ctx, owner, repo, branch); err == nil {
+			for _, ref := range refs {
+				if sha, err := gh.CommitSHA(ctx, owner, repo, ref.Tag); err == nil && sha == head {
+					runBranch = false
+					progress("%s: %s is the head of %s: its run builds the branch's commit too", slug, ref.Tag, branch)
+					break
+				}
 			}
 		}
 	}
