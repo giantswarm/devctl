@@ -35,9 +35,15 @@ Once the pull request merges, the reconciler (`Reconcile repositories` in `giant
 the repository as the `giantswarm-align-files` App -- description and visibility from the declaration
 (private when it declares none) --, pushes the rendered scaffold as the one commit on `main` (the
 scaffold's auto-release workflow tags `v0.1.0` from it), and sets it up from the entry: settings, team
-permissions, branch protection and the required checks, CircleCI and the first release's build,
-webhooks, CODEOWNERS, the catalog. Nobody needs the organisation's owner role; the token is the devctl
-App login (`devctl auth login`), which only opens the pull request.
+permissions, branch protection and the required checks, webhooks, CODEOWNERS, the catalog. Nobody needs
+the organisation's owner role; the token is the devctl App login (`devctl auth login`), which only opens
+the pull request.
+
+CircleCI is the one step the reconciler cannot take: CircleCI has no service accounts, so its GitHub App
+pipeline is created by a person. The output names the `devctl repo watch` to run next: once the
+repository is set up, it creates the pipeline with your CircleCI login (as `devctl repo follow-circleci`
+does) and runs the first release on it, which was tagged before the pipeline existed. Nobody is
+load-bearing for the pipeline afterwards.
 
 The output names the pull request; `--output json` prints the dry run and the pull request URL as one
 document. `--dry-run` prints the dry run and opens nothing.
@@ -85,7 +91,7 @@ in giantswarm/github.
 
 `gen.ci.templateContent: true` says the `.circleci/config.yml` a template repository carries is content for the
 repositories created from it, not its own pipeline: the reconciler's circleci and release steps skip the repository
-(`no CircleCI pipeline: .circleci/config.yml is template content`), no follow, no deploy key, no tag build to verify,
+(`no CircleCI pipeline: .circleci/config.yml is template content`), no pipeline to check, no tag build to verify,
 and the branch is not read for it. It sits beside `generate: false` (the `ci` block requires `generate`); `generate:
 true` beside it is refused. A template that builds itself, like template-app, leaves the field out.
 
@@ -206,11 +212,11 @@ The verdicts are the ones the Repositories page shows:
 | `skipped` | the step does not apply (repository missing or empty, archived or deleted, no client for the system) |
 | `failed` | the step could not run to its end |
 
-The `circleci` line is the reconciler's run: beside the follow, the setup workflows and the webhook it
-names the repository's deploy keys on GitHub as the run read them, every key with its title and
-access (`deploy keys on GitHub: CircleCI (read-only)`), and a CircleCI key gone from GitHub is created
-again. Listing the keys needs the administration permission (the devctl App login answers 403 on
-`GET /repos/{owner}/{repo}/keys`), so the record is where that login reads them.
+The `circleci` line is the reconciler's run, which writes nothing on CircleCI: whether a CircleCI GitHub
+App pipeline builds the repository, read from who posted the CircleCI statuses of the default branch's
+head (`circleci-app[bot]`), or from the project's pipeline definitions when the run had a person's
+CircleCI login. A repository without one, or built by an OAuth follow, carries the finding
+`circleci-pipeline-missing`, fixed by `devctl repo follow-circleci`.
 
 Under the steps: the verdict line, the last reconciler run with what it was for (created, added,
 transferred, archived, deprecated, changed, dispatched, nightly), the run the record expects after a
@@ -240,23 +246,36 @@ first align run changes nothing.
 
 ## `devctl repo follow-circleci`
 
-Repairs the reconciler's finding `circleci-webhook-missing`: a repository followed on CircleCI without
-CircleCI's webhook (`https://circleci.com/hooks/github`), so no push and no tag reaches CircleCI.
+Sets a repository up on a CircleCI GitHub App pipeline with your CircleCI login. It fixes the
+reconciler's finding `circleci-pipeline-missing`, and it is the step `devctl repo watch` takes for the
+creator of a new repository.
 
 ```nohighlight
 devctl repo follow-circleci my-service
+devctl repo follow-circleci giantswarm/my-service --migrate
 ```
 
-CircleCI installs that webhook, signed with a secret of its own, only for a follow by a GitHub admin of
-the repository whose CircleCI grant carries the hook scope, and the reconciler's follow is not one; a
-hook created through GitHub's API would lack CircleCI's secret. The command follows the project again
-with your CircleCI login from the keychain (`devctl auth login --circleci-only`, Write access): an
-unfollow first when you follow it already, then the follow, and it reads the repository's webhooks
-until CircleCI's is there, up to a minute. A repository that carries the webhook is left alone. A
-webhook still missing after the follow ends the command with an error naming your login: you are no
-GitHub admin of the repository, or your CircleCI grant on GitHub lacks the hook scope (sign out of
-CircleCI and sign in again through GitHub). The next reconciler run reads the circleci step `ok` with
-"webhook present".
+CircleCI has no service accounts, and the reconciler holds no CircleCI identity, so a person creates
+the pipeline. Afterwards nobody is load-bearing: the GitHub App checks out, receives the pushes and posts
+the statuses (as `circleci-app[bot]`, under the same `ci/circleci:` contexts), so the pipeline keeps
+building when whoever created it leaves. An OAuth follow builds through the follower's GitHub grant and
+stops when they leave.
+
+The command is idempotent:
+
+1. It finds the project's GitHub App pipeline, or creates `<repository>-app` (config and checkout
+   through the GitHub App, `.circleci/config.yml`).
+2. It gives the pipeline an `all-pushes` trigger (branches and tags) unless it has an enabled one.
+3. With `--migrate` it deletes the OAuth pipeline's triggers, so a push builds once. Without it, a
+   remaining OAuth trigger is reported: every push builds twice.
+4. It runs the default branch when anything changed, and the latest release when its tag carries no
+   CircleCI status of its own build: a tag cut before the trigger existed reached no pipeline.
+5. It waits for those runs (`--wait=false` returns at once, `--timeout` bounds the wait). The exit is 0
+   when every run is green.
+
+The login is `devctl auth login --circleci-only`, granted **Write** on the consent page; a Read-only
+login is refused on the first write with exit 8. A repository without `.circleci/config.yml` on its
+default branch is refused before any write.
 
 ## `devctl repo validate`
 

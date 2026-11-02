@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -111,3 +112,47 @@ func TestRunJSON(t *testing.T) {
 func countOf(text, want string) int {
 	return bytes.Count([]byte(text), []byte(want))
 }
+
+// Once the reconciler set the repository up, the watch sets its CircleCI
+// pipeline up as the person, once, and goes on waiting for the release.
+func TestRunSetsCircleCIUpOnceSetUp(t *testing.T) {
+	r, _, out := newRunner(pending, setUpPending, setUpDone, setUpDone, ready)
+	r.flag.CircleCI = true
+	var calls []string
+	r.setUpCircleCI = func(_ context.Context, owner, repo string, progress func(string, ...any)) error {
+		calls = append(calls, owner+"/"+repo)
+		progress("created the GitHub App pipeline %s", repo+"-app")
+		return nil
+	}
+	require.NoError(t, r.run(context.Background(), "new"))
+	require.Equal(t, []string{"giantswarm/new"}, calls)
+	require.Contains(t, out.String(), "  circleci   created the GitHub App pipeline new-app")
+}
+
+// The CircleCI step is skipped for a repository without CI: it is ready
+// once set up.
+func TestRunCircleCISkippedWithoutCI(t *testing.T) {
+	r, _, _ := newRunner(setUpPending, readyNoCI)
+	r.flag.CircleCI = true
+	r.setUpCircleCI = func(context.Context, string, string, func(string, ...any)) error {
+		t.Fatal("no CircleCI set-up for a repository without CI")
+		return nil
+	}
+	require.NoError(t, r.run(context.Background(), "new"))
+}
+
+// A CircleCI set-up that fails ends the watch, naming the person's fix.
+func TestRunCircleCIFailure(t *testing.T) {
+	r, seq, _ := newRunner(setUpDone, ready)
+	r.flag.CircleCI = true
+	r.setUpCircleCI = func(context.Context, string, string, func(string, ...any)) error {
+		return errors.New("CircleCI authentication required")
+	}
+	err := r.run(context.Background(), "giantswarm/new")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "devctl repo follow-circleci giantswarm/new")
+	require.Equal(t, 1, seq.calls, "the watch ends at the failure")
+}
+
+// setUpDone is a watch past the set-up, waiting for the release.
+const setUpDone = `{"repository":"https://github.com/giantswarm/new","phases":[{"name":"created","at":"2026-09-22T10:00:00Z","seconds":0},{"name":"setUp","at":"2026-09-22T10:01:40Z","seconds":40}],"changed":true,"ready":false,"pending":"released","waited":3}`

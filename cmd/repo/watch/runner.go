@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/giantswarm/microerror"
@@ -13,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
+	"github.com/giantswarm/devctl/v8/pkg/circleciapp"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup/manager"
 )
 
@@ -22,6 +24,9 @@ type runner struct {
 	stdout io.Writer
 	stderr io.Writer
 	open   client.Opener
+	// setUpCircleCI sets the repository up on its CircleCI GitHub App
+	// pipeline as the person, once the reconciler has set it up.
+	setUpCircleCI func(ctx context.Context, owner, repo string, progress func(format string, args ...any)) error
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -48,6 +53,7 @@ func (r *runner) run(ctx context.Context, arg string) error {
 	defer cancel()
 
 	printed := map[string]bool{}
+	circleCIDone := false
 	lastReason := ""
 	var last json.RawMessage
 	for {
@@ -79,6 +85,12 @@ func (r *runner) run(ctx context.Context, arg string) error {
 		if !r.flag.JSON() {
 			r.printProgress(watch, printed, &lastReason)
 		}
+		if !circleCIDone && needsCircleCI(watch) && r.flag.CircleCI {
+			circleCIDone = true
+			if err := r.circleCI(watchCtx, repository); err != nil {
+				return microerror.Mask(err)
+			}
+		}
 		switch {
 		case watch.Failure != nil:
 			if r.flag.JSON() {
@@ -98,6 +110,47 @@ func (r *runner) run(ctx context.Context, arg string) error {
 			return microerror.Maskf(timeoutError, "%s is not ready after %s: waiting for %s", repository, r.flag.Timeout, watch.Pending)
 		}
 	}
+}
+
+// needsCircleCI says the watch has reached the point where the person sets
+// the CircleCI pipeline up: the reconciler set the repository up, it is
+// declared with CI, and it is not ready yet (its release waits for CircleCI).
+func needsCircleCI(w *manager.Watch) bool {
+	if w.Ready || w.WithoutCI || w.Failure != nil {
+		return false
+	}
+	for _, p := range w.Phases {
+		if p.Name == phaseSetUp {
+			return true
+		}
+	}
+	return false
+}
+
+// phaseSetUp is the phase the reconciler's run of the pull request reported.
+const phaseSetUp = "setUp"
+
+// circleCI runs setUpCircleCI for repository ([OWNER/]REPOSITORY, the owner
+// giantswarm by default). A repository without a CircleCI configuration is
+// left alone: its generated CI is GitHub Actions only.
+func (r *runner) circleCI(ctx context.Context, repository string) error {
+	owner, repo, found := strings.Cut(repository, "/")
+	if !found {
+		owner, repo = defaultOwner, repository
+	}
+	progress := func(format string, args ...any) {
+		if !r.flag.JSON() {
+			fmt.Fprintf(r.stdout, "  circleci   "+format+"\n", args...)
+		}
+	}
+	err := r.setUpCircleCI(ctx, owner, repo, progress)
+	switch {
+	case circleciapp.IsNoConfig(err):
+		return nil
+	case err != nil:
+		return microerror.Maskf(circleCIError, "%s/%s is set up, and its CircleCI pipeline is not: %v; fix it, then run `devctl repo follow-circleci %s/%s` and watch again", owner, repo, err, owner, repo)
+	}
+	return nil
 }
 
 // printProgress prints the phases not printed yet, the pending phase's
@@ -144,6 +197,10 @@ var failedError = &microerror.Error{
 // IsFailed asserts failedError: a phase of the creation failed.
 func IsFailed(err error) bool {
 	return microerror.Cause(err) == failedError
+}
+
+var circleCIError = &microerror.Error{
+	Kind: "circleCIError",
 }
 
 var timeoutError = &microerror.Error{

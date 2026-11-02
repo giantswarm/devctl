@@ -33,8 +33,8 @@ steps apply; the scaffold cannot be rendered.
 The steps: create (only with --added), scaffold, settings, permissions,
 protection (required checks on the reported-only rule: a context is
 required once it has reported on the default branch or a recently merged
-pull request, ghosts are removed), circleci (follow, setup workflows,
-checkout key), webhooks, renovate (check only), codeowners (a pull
+pull request, ghosts are removed), circleci (check only: a CircleCI GitHub
+App pipeline builds the repository), webhooks, renovate (check only), codeowners (a pull
 request; the file align-files writes: the repository's override,
 override/<repository>/CODEOWNERS beside --team-file, when it has one, the
 file naming the team otherwise), metadata, labels (the owning team's
@@ -42,10 +42,15 @@ team/<team>, created in the default colour when missing, an existing one
 left as it is), lifecycle (archives or deletes
 as the entry declares; with --unarchived, the change at hand took
 lifecycle: archived from the entry, it unarchives the repository ahead of
-the other steps, which then restore its set-up), catalog, release. The CircleCI steps need a
-token: $CIRCLECI_TOKEN when set, the CircleCI login of devctl auth login in
-the keychain otherwise (with $CI set, the variable only); they are skipped
-without one, and the log names the token's source. The catalog step
+the other steps, which then restore its set-up), catalog, release. Nothing is written on
+CircleCI: it has no service accounts, so a person creates the GitHub App
+pipeline, with devctl repo follow-circleci, and the finding
+circleci-pipeline-missing names that command. With a CircleCI token --
+$CIRCLECI_TOKEN when set, the CircleCI login of devctl auth login in the
+keychain otherwise (with $CI set, the variable only) -- the circleci step
+reads the project's pipeline definitions; without one it reads who posted the
+CircleCI statuses of the default branch's head. The release step reads the
+CircleCI statuses of the release tag's commit on GitHub, token or not. The catalog step
 dispatches the catalog and mapping workflows of the catalog repository, which
 needs an Actions permission there: --dispatch-token-envvar names a second
 token for those two calls when the GitHub token's identity has none (a

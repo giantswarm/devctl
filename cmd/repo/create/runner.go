@@ -163,6 +163,7 @@ func (r *runner) run(ctx context.Context) error {
 	out.PullRequest = pr.GetHTMLURL()
 	if r.flag.Output == outputText {
 		fmt.Fprintf(r.stdout, "pull request: %s (%s)\n", out.PullRequest, state)
+		fmt.Fprintf(r.stdout, "next: devctl repo watch %s/%s --pull-request %d (once merged and set up, it creates the CircleCI pipeline as you)\n", r.flag.Owner, r.flag.Name, pr.GetNumber())
 	}
 	r.print(out)
 

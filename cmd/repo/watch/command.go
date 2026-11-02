@@ -3,6 +3,7 @@
 package watch
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
+	"github.com/giantswarm/devctl/v8/pkg/circleciapp"
 )
 
 const (
@@ -23,6 +25,15 @@ or the agent) to readiness, and print each phase as it completes: created,
 scaffolded, declared (the pull request is open), merged, set up (the
 reconciler's run of the pull request has reported) and released (the first
 release exists and its CircleCI statuses are green, complete and settled).
+
+Once set up, the command sets the repository up on CircleCI as you, the one
+step the reconciler cannot take: CircleCI has no service accounts. It does
+what ` + "`devctl repo follow-circleci`" + ` does -- the GitHub App pipeline and its
+all-pushes trigger, created with your CircleCI login (devctl auth login
+--circleci-only, Write access), and a run of the default branch and of the
+first release, which was tagged before the pipeline existed -- and then waits
+for the release as before. Nobody is load-bearing for the pipeline
+afterwards. --circleci=false leaves it to someone's follow-circleci later.
 A repository declared without CI (gen.ci.generate: false) has no release to
 wait for: it is ready once set up.
 giantswarm-repo-manager answers each call as soon as a phase completes or
@@ -60,7 +71,7 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	f := &flag{}
-	r := &runner{flag: f, logger: config.Logger, stderr: config.Stderr, stdout: config.Stdout, open: client.Open}
+	r := &runner{flag: f, logger: config.Logger, stderr: config.Stderr, stdout: config.Stdout, open: client.Open, setUpCircleCI: setUpCircleCI}
 
 	c := &cobra.Command{
 		Use:   fmt.Sprintf("%s [flags] [OWNER/]REPOSITORY", name),
@@ -77,12 +88,14 @@ type flag struct {
 	client.Flags
 	PullRequest int
 	Timeout     time.Duration
+	CircleCI    bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
 	f.Flags.Init(cmd)
 	cmd.Flags().IntVar(&f.PullRequest, "pull-request", 0, "The declaration pull request's number in giantswarm/github, as `devctl repo create` printed it. Required.")
 	cmd.Flags().DurationVar(&f.Timeout, "timeout", defaultTimeout, "How long to follow before giving up.")
+	cmd.Flags().BoolVar(&f.CircleCI, "circleci", true, "Set the repository up on its CircleCI GitHub App pipeline as you once it is set up.")
 }
 
 func (f *flag) Validate() error {
@@ -96,6 +109,24 @@ func (f *flag) Validate() error {
 		return microerror.Maskf(client.InvalidFlagError, "--timeout must be positive")
 	}
 	return nil
+}
+
+// defaultOwner is the owner of a repository named without one.
+const defaultOwner = "giantswarm"
+
+// setUpCircleCI is circleciapp.Setup as the person, without the wait: the
+// watch's released phase waits for the release's build.
+func setUpCircleCI(ctx context.Context, owner, repo string, progress func(format string, args ...any)) error {
+	gh, ci, err := circleciapp.OpenAsPerson(ctx, owner, func(w string) {
+		if w != "" {
+			progress("%s", w)
+		}
+	})
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	_, err = circleciapp.Setup(ctx, ci, gh, owner, repo, circleciapp.Options{Progress: progress})
+	return microerror.Mask(err)
 }
 
 var invalidConfigError = &microerror.Error{

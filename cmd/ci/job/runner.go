@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"time"
 
@@ -59,11 +60,16 @@ func (r *runner) newDocument(args []string) document {
 }
 
 func (r *runner) job(ctx context.Context, args []string, doc *document) error {
-	owner, repo, number, err := agentcli.ParseRepositoryArgument(command, "job number", args)
-	if err != nil {
-		return err
+	byURL := len(args) == 1
+	var owner, repo, number string
+	if !byURL {
+		var err error
+		owner, repo, number, err = agentcli.ParseRepositoryArgument(command, "job number", args)
+		if err != nil {
+			return err
+		}
+		doc.Repository = owner + "/" + repo
 	}
-	doc.Repository = owner + "/" + repo
 	if err := r.flag.Validate(); err != nil {
 		return err
 	}
@@ -77,6 +83,17 @@ func (r *runner) job(ctx context.Context, args []string, doc *document) error {
 	circleci, err := rerun.NewCircleCI(ctx, r.requireCircleCI, r.endpoints(), &agentcli.Retrying{Warn: doc.Warn, Clock: clock}, doc.Warn)
 	if err != nil {
 		return err
+	}
+	if byURL {
+		var ok bool
+		owner, repo, number, ok, err = ci.ResolveJobURL(ctx, circleci, args[0])
+		if !ok {
+			return fmt.Errorf("usage: devctl %s <owner/repo> <job number>, or a CircleCI job URL; %q is neither", command, args[0])
+		}
+		if err != nil {
+			return err
+		}
+		doc.Repository = owner + "/" + repo
 	}
 	return ci.ReadJob(ctx, circleci, owner, repo, number, r.flag.Lines, doc.JobResult, doc.Warn)
 }

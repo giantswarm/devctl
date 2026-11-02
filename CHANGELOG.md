@@ -9,6 +9,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- CircleCI without a shared identity: new repositories build on a CircleCI GitHub App pipeline created by the person
+  who asks for them, and the reconciler writes nothing on CircleCI
+  ([giantswarm/giantswarm#38799](https://github.com/giantswarm/giantswarm/issues/38799)).
+  - `repo follow-circleci` sets a repository up on a GitHub App pipeline with your CircleCI login (Write access). It is
+    idempotent: it creates `<repository>-app` and an `all-pushes` trigger when they are missing, runs the default
+    branch and an unbuilt latest release, and waits for green. `--migrate` deletes the OAuth pipeline's triggers. It
+    replaces the follow that repaired `circleci-webhook-missing`.
+  - `repo watch` takes that step for the creator once the reconciler has set the repository up (`--circleci=false`
+    skips it); `repo create` prints the `repo watch` to run.
+  - The engine's circleci step is check-only: a GitHub App pipeline present is `ok`, otherwise the finding
+    `circleci-pipeline-missing` (replacing `circleci-webhook-missing`) names `repo follow-circleci`. It reads the
+    project's pipeline definitions with a person's CircleCI login, and who posted the default branch's CircleCI
+    statuses without one. The follow, the temporary admin grant, setup workflows, checkout keys and the webhook
+    check are gone, and so are the unfollow on archive and delete.
+  - The release step reads the CircleCI statuses of the release tag's commit on GitHub, keeping the workflows that
+    started after the release, and never triggers: GitHub App pipelines carry no `vcs` in CircleCI's API. A missed
+    tag build (`missed-tag-build`) names `repo follow-circleci`.
+  - The generated auto-release workflows (single and multi-image) watch for the tag's CircleCI statuses with
+    `GITHUB_TOKEN` (`statuses: read`) instead of reading and triggering pipelines with `CIRCLECI_API_TOKEN`. A
+    commit without any CircleCI status warns; a missed tag fails, naming the person's fix.
+
 - `gen precommit` and `gen workflows`: the generated `pre-commit`, `chart-tests`, `check-values-schema`,
   `check-readme-links`, `gitleaks` and `semantic-pull-request` workflows group runs by workflow and pull request
   number (falling back to ref) and cancel superseded runs only on `pull_request` events, leaving `main`/`master`
@@ -20,6 +41,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `.github/workflows/zz_generated.*`, which align-files regenerates.
 
 ### Added
+
+- `ci job` takes the URL a CircleCI commit status links, alone, including a GitHub App pipeline's
+  `app.circleci.com/workflow/<id>/job/<id>`, which it resolves to the project and job number through the workflow.
 
 - `gen workflows --reservation-support` (app flavour only, off by default) generates
   `zz_generated.reservation_command.yaml`, which sends `/deploy`, `/undeploy` and `/extend` pull request comments and

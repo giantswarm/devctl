@@ -9,7 +9,6 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v93/github"
 
-	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
 
@@ -180,10 +179,9 @@ func sortedCopy(v []string) []string {
 
 // stepLifecycle applies the lifecycle that ends a repository's life.
 // lifecycle: archived — CircleCI left (leaveCircleCI), then archived on
-// GitHub. lifecycle: deleted — the CircleCI project unfollowed first (a
-// deleted repository's project answers nothing afterwards), then the
-// repository deleted on GitHub with its code, issues, pull requests,
-// releases, packages and CircleCI's deploy key; an organization owner can
+// GitHub. lifecycle: deleted — the repository deleted on GitHub with its
+// code, issues, pull requests, releases, packages and CircleCI's deploy key;
+// its CircleCI pipeline has nothing to trigger after; an organization owner can
 // restore it on GitHub for 90 days. Either entry stays in the team file as
 // the record: a later run finds a deleted repository gone and reports
 // nothing. The way back from archived is the entry without the lifecycle:
@@ -237,9 +235,6 @@ func (r *Runner) archiveRepository(ctx context.Context, s *run, sr *StepResult) 
 		}
 	}
 	sr.Summary = "archived"
-	if r.CircleCI == nil {
-		sr.Summary = "archived; CircleCI not checked (no client)"
-	}
 	return nil
 }
 
@@ -281,13 +276,10 @@ func openPullRequestsMessage(slug string, numbers []string) string {
 	return fmt.Sprintf("%s open in %s and %s open, read-only, in the archive: %s", subject, slug, verb, strings.Join(numbers, ", "))
 }
 
-// deleteRepository applies lifecycle: deleted: CircleCI first, then GitHub.
+// deleteRepository applies lifecycle: deleted. CircleCI needs nothing: a
+// GitHub App pipeline of a deleted repository has nothing to trigger, and an
+// OAuth follow of one builds nothing either.
 func (r *Runner) deleteRepository(ctx context.Context, s *run, sr *StepResult) error {
-	if r.CircleCI != nil {
-		if err := r.unfollowCircleCI(ctx, s, sr); err != nil {
-			return err
-		}
-	}
 	err := s.plan(sr, "delete on GitHub", func() error {
 		_, err := r.GitHub.Repositories.Delete(ctx, s.owner, s.name)
 		return err
@@ -296,34 +288,30 @@ func (r *Runner) deleteRepository(ctx context.Context, s *run, sr *StepResult) e
 		return err
 	}
 	sr.Summary = "deleted"
-	if r.CircleCI == nil {
-		sr.Summary = "deleted; CircleCI not checked (no client)"
-	}
 	return nil
 }
 
-// leaveCircleCI ends CircleCI's hold on an archived repository: the token's
-// user unfollows the project, and CircleCI's deploy key is deleted on
-// GitHub, so no pipeline can check the repository out any more. That is
-// CircleCI's own way to stop building a project whose "Stop Building"
-// fails: CircleCI refuses it for a renamed repository (DELETE …/enable
-// answered 403 Permission denied, with the user a GitHub admin of the
-// repository at that moment, seen live 2026-09-24), and its support
-// documents removing the webhook and the deploy key on GitHub instead. The
-// webhook stays: the reconciler's identity reads webhooks and writes none,
-// and an archived repository sends no push through it. Both states are
-// read, so a repository left half done — unfollowed, its key still there —
-// is finished by the next run; either write works on an archived
-// repository. Nothing is checked without a CircleCI client.
+// leaveCircleCI ends CircleCI's hold on an archived repository: CircleCI's
+// deploy key is deleted on GitHub, so no pipeline of an OAuth project can
+// check the repository out any more. That is CircleCI's own way to stop
+// building a project whose "Stop Building" fails: CircleCI refuses it for a
+// renamed repository (DELETE …/enable answered 403 Permission denied, with
+// the user a GitHub admin of the repository at that moment, seen live
+// 2026-09-24), and its support documents removing the webhook and the deploy
+// key on GitHub instead. A GitHub App pipeline needs nothing: an archived
+// repository sends it no push. Nothing is unfollowed: the reconciler holds
+// no CircleCI identity, and a follow left behind builds nothing. The webhook
+// stays: the reconciler's identity reads webhooks and writes none, and an
+// archived repository sends no push through it. The keys are read, so a
+// repository left half done is finished by the next run.
 func (r *Runner) leaveCircleCI(ctx context.Context, s *run, sr *StepResult) error {
-	if r.CircleCI == nil {
+	keys, resp, err := r.GitHub.Repositories.ListKeys(ctx, s.owner, s.name, &github.ListOptions{PerPage: 100})
+	switch {
+	case isNotFound(resp, err) || isForbidden(err):
+		// An identity without the administration permission reads no
+		// deploy keys: the reconciler's run deletes the key.
 		return nil
-	}
-	if err := r.unfollowCircleCI(ctx, s, sr); err != nil {
-		return err
-	}
-	keys, _, err := r.GitHub.Repositories.ListKeys(ctx, s.owner, s.name, &github.ListOptions{PerPage: 100})
-	if err != nil {
+	case err != nil:
 		return err
 	}
 	for _, k := range keys {
@@ -342,53 +330,8 @@ func (r *Runner) leaveCircleCI(ctx context.Context, s *run, sr *StepResult) erro
 }
 
 // circleCIDeployKeyTitle is the title of the deploy key CircleCI adds to a
-// repository it builds.
+// repository an OAuth project builds.
 const circleCIDeployKeyTitle = "CircleCI"
-
-// unfollowCircleCI unfollows the project as the token's user, when the user
-// follows it; a project CircleCI does not know is left alone. The state read
-// is the one the unfollow changes, the user's follow in the v1.1 project
-// settings: the v2 project answers 200 for ever, unfollowed or not (checked
-// live 2026-09-17). The unfollow needs no admin: CircleCI takes it from any
-// follower.
-func (r *Runner) unfollowCircleCI(ctx context.Context, s *run, sr *StepResult) error {
-	following, err := r.CircleCI.Following(ctx, s.owner, s.name)
-	switch {
-	case circleciclient.IsNotFound(err):
-		return nil // never set up on CircleCI
-	case err != nil:
-		return err
-	case !following:
-		return nil
-	}
-	return s.plan(sr, "unfollow on CircleCI", func() error {
-		if err := r.CircleCI.Unfollow(ctx, s.owner, s.name); err != nil {
-			return err
-		}
-		// The unfollow is done when CircleCI says so; a follow that
-		// stuck is a failed step, not a repair planned again next run.
-		still, err := r.CircleCI.Following(ctx, s.owner, s.name)
-		if err != nil && !circleciclient.IsNotFound(err) {
-			return err
-		}
-		if still {
-			return fmt.Errorf("CircleCI still reports the token's user following %s after the unfollow", s.slug())
-		}
-		return nil
-	})
-}
-
-// circleCIFollowed says whether CircleCI knows the project.
-func (r *Runner) circleCIFollowed(ctx context.Context, s *run) (bool, error) {
-	_, err := r.CircleCI.GetProject(ctx, s.owner, s.name)
-	switch {
-	case circleciclient.IsNotFound(err):
-		return false, nil
-	case err != nil:
-		return false, err
-	}
-	return true, nil
-}
 
 func firstOr(v, fallback string) string {
 	if v != "" {

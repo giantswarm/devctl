@@ -144,18 +144,18 @@ const (
 	// FindingRedRelease: the latest release's tag pipeline failed in a job
 	// that leaves something unpublished (UnpublishedJobs).
 	FindingRedRelease FindingKind = "red-release"
-	// FindingMissedTagBuild: the latest release's tag has no pipeline. The
-	// reconciler rebuilds no tag but a creation's first release; the fix is
-	// the next tag, or the tag's pipeline triggered by hand.
+	// FindingMissedTagBuild: the latest release's tag carries no CircleCI
+	// status of its own build. The reconciler rebuilds no tag; the fix is
+	// `devctl repo follow-circleci`, which runs it as the person, or the
+	// next tag.
 	FindingMissedTagBuild FindingKind = "missed-tag-build"
-	// FindingCircleCIWebhookMissing: the project is followed on CircleCI
-	// but the repository carries no active CircleCI webhook for push
-	// events, so no push and no tag reaches CircleCI: no branch builds,
-	// and the first release tag goes unbuilt. CircleCI installs the hook on
-	// a follow by a GitHub admin of the repository whose CircleCI grant
-	// carries the hook scope; devctl cannot create it, CircleCI signs it
-	// with its own secret.
-	FindingCircleCIWebhookMissing FindingKind = "circleci-webhook-missing"
+	// FindingCircleCIPipelineMissing: the repository has a CircleCI
+	// configuration but no CircleCI GitHub App pipeline builds it: no
+	// pipeline at all, or an OAuth follow that builds through one person's
+	// GitHub grant and stops when they leave. CircleCI has no service
+	// accounts, so a person creates the pipeline with their own CircleCI
+	// login: `devctl repo follow-circleci`.
+	FindingCircleCIPipelineMissing FindingKind = "circleci-pipeline-missing"
 	// FindingRenovateNotScanned: the repository shows no sign that Renovate
 	// scans it — no configuration, or a configuration without a trace of a
 	// run (the Dependency Dashboard issue, a pull request, a commit).

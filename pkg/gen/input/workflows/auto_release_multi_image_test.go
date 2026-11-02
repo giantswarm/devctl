@@ -255,44 +255,50 @@ func multiImageVerifyStep(t *testing.T) string {
 	return ""
 }
 
-// multiImageCurlStub answers the pipeline list with the pipelines of the tags in
-// built and a trigger with 201, logging each trigger; it returns the PATH
-// entry and the trigger log.
-func multiImageCurlStub(t *testing.T, listCode string, built ...string) (string, string) {
+// multiImageGhStub writes a gh answering `gh release view` with the first
+// tag's publishedAt and `gh api` with $STUB_STATUSES, and returns the PATH
+// entry.
+func multiImageGhStub(t *testing.T) string {
 	t.Helper()
 
 	dir := t.TempDir()
-	log := filepath.Join(dir, "triggers")
-	items := make([]string, 0, len(built))
-	for i, tag := range built {
-		items = append(items, `{"number":`+strconv.Itoa(i+1)+`,"vcs":{"tag":"`+tag+`"}}`)
-	}
-	curl := "#!/usr/bin/env bash\n" +
-		"if [[ \" $* \" == *' -X POST '* ]]; then echo \"$*\" >> '" + log + "'; printf '{\"number\":9}\\n201'; exit 0; fi\n" +
-		"printf '%s\\n%s' '{\"items\":[" + strings.Join(items, ",") + "]}' '" + listCode + "'\n"
-	for name, script := range map[string]string{"curl": curl, "sleep": "#!/usr/bin/env bash\n"} {
+	gh := "#!/usr/bin/env bash\n" +
+		"case \"$1\" in release) echo 2026-11-02T12:00:00Z ;; api) printf '%s\\n' \"$STUB_STATUSES\" ;; esac\n"
+	for name, script := range map[string]string{"gh": gh, "sleep": "#!/usr/bin/env bash\n"} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o700); err != nil { // #nosec G306 -- test-only executable stub
 			t.Fatalf("write %s stub: %v", name, err)
 		}
 	}
 
-	return "PATH=" + dir + string(os.PathListSeparator) + os.Getenv("PATH"), log
+	return "PATH=" + dir + string(os.PathListSeparator) + os.Getenv("PATH")
 }
 
+// multiImageStatuses are the CircleCI statuses of the pushed commit: the
+// branch build's setup, started before the release at 12:00:00Z, and one
+// setup workflow started after it per tag built.
+func multiImageStatuses(built int) string {
+	statuses := []string{}
+	for i := range built {
+		statuses = append(statuses, `{"context":"ci/circleci: setup","state":"pending","created_at":"2026-11-02T12:00:0`+strconv.Itoa(i+3)+`Z","target_url":"https://app.circleci.com/workflow/tag`+strconv.Itoa(i)+`/job/j"}`)
+	}
+	statuses = append(statuses, `{"context":"ci/circleci: setup","state":"success","created_at":"2026-11-02T11:59:30Z","target_url":"https://app.circleci.com/workflow/branch/job/j"}`)
+	return "[" + strings.Join(statuses, ",") + "]"
+}
+
+// Test_AutoReleaseMultiImageVerifiesCircleCI pins the tags' check: one setup
+// workflow per tag started after the first release passes, fewer fail
+// naming the fix, and a commit without any CircleCI status warns. The step
+// holds no CircleCI credential and triggers nothing.
 func Test_AutoReleaseMultiImageVerifiesCircleCI(t *testing.T) {
 	tests := []struct {
 		name     string
-		listCode string
-		built    []string
-		token    string
-		triggers []string
+		statuses string
 		fails    bool
+		want     string
 	}{
-		{name: "every tag built", listCode: "200", built: []string{"a/v0.2.0", "b/v0.1.1"}},
-		{name: "a lost tag is triggered", listCode: "200", built: []string{"a/v0.2.0"}, token: "t", triggers: []string{"b/v0.1.1"}},
-		{name: "a lost tag without a token fails", listCode: "200", built: []string{"a/v0.2.0"}, fails: true},
-		{name: "an unfollowed project warns", listCode: "404"},
-		{name: "an unreadable API fails", listCode: "500", fails: true},
+		{name: "every tag built", statuses: multiImageStatuses(2), want: "CircleCI builds the 2 tag(s)"},
+		{name: "a lost tag fails", statuses: multiImageStatuses(1), fails: true, want: "::error::CircleCI started 1 build(s) for the 2 tag(s)"},
+		{name: "no pipeline yet warns", statuses: "[]", want: "::warning::"},
 	}
 
 	script := multiImageVerifyStep(t)
@@ -300,25 +306,18 @@ func Test_AutoReleaseMultiImageVerifiesCircleCI(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			writeRepoFile(t, filepath.Join(dir, "tags.txt"), "a/v0.2.0\nb/v0.1.1\n")
-			path, log := multiImageCurlStub(t, tc.listCode, tc.built...)
 
-			_, out, err := runStep(t, script, dir, path,
+			_, out, err := runStep(t, script, dir, multiImageGhStub(t),
 				"GITHUB_REPOSITORY=giantswarm/agent-toolchains",
-				"CIRCLECI_API_TOKEN="+tc.token,
-				"CIRCLECI_PIPELINE_WAIT_SECONDS=0",
+				"GITHUB_SHA=0123456789abcdef",
+				"CIRCLECI_STATUS_WAIT_SECONDS=0",
+				"STUB_STATUSES="+tc.statuses,
 			)
 			if (err != nil) != tc.fails {
 				t.Fatalf("verify step error = %v, want failure %v\n%s", err, tc.fails, out)
 			}
-
-			triggered, _ := os.ReadFile(log) // #nosec G304 -- t.TempDir() path, test-only
-			for _, tag := range tc.triggers {
-				if !strings.Contains(string(triggered), `"tag":"`+tag+`"`) {
-					t.Errorf("no trigger for %s; triggers:\n%s\n%s", tag, triggered, out)
-				}
-			}
-			if len(tc.triggers) == 0 && len(triggered) > 0 {
-				t.Errorf("unexpected triggers:\n%s", triggered)
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("output lacks %q:\n%s", tc.want, out)
 			}
 		})
 	}

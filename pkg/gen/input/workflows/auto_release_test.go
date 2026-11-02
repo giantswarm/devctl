@@ -1170,100 +1170,94 @@ func tagJobStepNamed(t *testing.T, name string) autoReleaseStep {
 	return autoReleaseStep{}
 }
 
-// curlStub is the curl the verify step's cases run: it answers a GET with the
-// GET body and code it is handed and a POST with the POST body and code, in
-// the body-newline-code shape the step's `-w '\n%{http_code}'` produces.
-const curlStub = `#!/usr/bin/env bash
+// verifyGhStub is the gh the verify step's cases run: `gh release view` answers
+// the release's publishedAt, `gh api` the CircleCI statuses of the commit as
+// the step's --jq filter leaves them, one JSON array.
+const verifyGhStub = `#!/usr/bin/env bash
 set -euo pipefail
-method=GET
-while [ $# -gt 0 ]; do
-  case "$1" in
-    -X) method=$2; shift 2 ;;
-    *) shift ;;
-  esac
-done
-if [ "$method" = POST ]; then
-  printf '%s\n%s' "$STUB_POST_BODY" "$STUB_POST_CODE"
-else
-  printf '%s\n%s' "$STUB_GET_BODY" "$STUB_GET_CODE"
-fi
+case "$1" in
+  release) printf '%s\n' "$STUB_PUBLISHED" ;;
+  api) printf '%s\n' "$STUB_STATUSES" ;;
+  *) echo "unexpected gh $*" >&2; exit 2 ;;
+esac
 `
 
-// runVerify runs the extracted verify step against the curl stub and returns
-// its combined output. The wait is zero so an empty list is final after one
-// pass; the codes that end the wait at once (404, 401, 403) never reach it.
-func runVerify(t *testing.T, token string, get, post [2]string) ([]byte, error) {
+// runVerify runs the extracted verify step against the gh stub and returns
+// its combined output. The wait is zero so the statuses read once are final.
+func runVerify(t *testing.T, statuses string) ([]byte, error) {
 	t.Helper()
 
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "curl"), []byte(curlStub), 0o700); err != nil { // #nosec G306 -- the stub has to be executable
-		t.Fatalf("write curl stub: %v", err)
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(verifyGhStub), 0o700); err != nil { // #nosec G306 -- the stub has to be executable
+		t.Fatalf("write gh stub: %v", err)
 	}
 
 	cmd := exec.CommandContext(t.Context(), "bash", "-c", tagJobStepNamed(t, "Verify CircleCI picked up the tag").Run) // #nosec G204 -- the script is the rendered template, test-only
 	cmd.Env = append(os.Environ(),
-		"TAG=v0.1.0",
+		"TAG=v0.2.4",
+		"TARGET=0123456789abcdef",
 		"GITHUB_REPOSITORY=example/widget",
-		"CIRCLECI_API_TOKEN="+token,
-		"CIRCLECI_PIPELINE_WAIT_SECONDS=0",
-		"STUB_GET_BODY="+get[0], "STUB_GET_CODE="+get[1],
-		"STUB_POST_BODY="+post[0], "STUB_POST_CODE="+post[1],
+		"CIRCLECI_STATUS_WAIT_SECONDS=0",
+		"STUB_PUBLISHED=2026-10-22T11:20:53Z",
+		"STUB_STATUSES="+statuses,
 		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
 	)
 
 	return cmd.CombinedOutput()
 }
 
-// Test_AutoReleaseVerifyCircleCI pins what the verify step does with each
-// answer of the pipeline list. A project CircleCI does not follow (404 with a
-// token) is the first tag of a repository created pull-request-last: the
-// repository set-up reconciler follows the project and reports the missed
-// build, so the step warns and passes instead of failing every new
-// repository's first run. A followed project whose list stays empty is
-// triggered by the step itself, and a rejected token still fails the run.
+// The CircleCI statuses of release-automation-sandbox's v0.2.4 commit, as
+// GitHub listed them: the branch build's workflows (setup 359214e5, go-build
+// 60675be8, the latter finishing after the release) and the tag build's
+// (setup dc012fa3, build 04a3e5ed), newest first.
+const (
+	branchStatuses = `{"context":"ci/circleci: go-build","state":"success","created_at":"2026-10-22T11:21:34Z","target_url":"https://app.circleci.com/workflow/60675be8/job/409db27c"},` +
+		`{"context":"ci/circleci: setup","state":"success","created_at":"2026-10-22T11:20:41Z","target_url":"https://app.circleci.com/workflow/359214e5/job/2962c9c4"},` +
+		`{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:20:41Z","target_url":"https://app.circleci.com/workflow/60675be8/job/409db27c"},` +
+		`{"context":"ci/circleci: setup","state":"pending","created_at":"2026-10-22T11:20:33Z","target_url":"https://app.circleci.com/workflow/359214e5/job/2962c9c4"}`
+	tagStatuses = `{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:21:03Z","target_url":"https://app.circleci.com/workflow/04a3e5ed/job/76cd04bd"},` +
+		`{"context":"ci/circleci: setup","state":"success","created_at":"2026-10-22T11:21:03Z","target_url":"https://app.circleci.com/workflow/dc012fa3/job/84113292"},` +
+		`{"context":"ci/circleci: setup","state":"pending","created_at":"2026-10-22T11:20:55Z","target_url":"https://app.circleci.com/workflow/dc012fa3/job/84113292"}`
+)
+
+// Test_AutoReleaseVerifyCircleCI pins what the verify step reads from the
+// CircleCI statuses of the tag's commit. It holds no CircleCI credential and
+// triggers nothing. A workflow started after the release is the tag's build;
+// the branch build of the same commit, which started before and posts the
+// same contexts after, is not. A commit without any CircleCI status has no
+// pipeline yet (a new repository before its creator's set-up): a warning.
+// A missed tag fails the run, naming the person's fix.
 func Test_AutoReleaseVerifyCircleCI(t *testing.T) {
 	testCases := []struct {
 		name       string
-		token      string
-		get, post  [2]string
+		statuses   string
 		expectFail bool
 		expectOut  []string
 		rejectOut  []string
 	}{
 		{
-			name:      "an unfollowed project warns and passes",
-			token:     "token",
-			get:       [2]string{`{"message":"Project not found"}`, "404"},
-			expectOut: []string{"::warning::v0.1.0 is released; CircleCI does not follow this project yet.", "reconciler"},
-			rejectOut: []string{"::error::"},
-		},
-		{
-			name:      "no token cannot verify and passes",
-			token:     "",
-			get:       [2]string{`{"message":"Project not found"}`, "404"},
-			expectOut: []string{"::warning::cannot verify that CircleCI built v0.1.0"},
-			rejectOut: []string{"::error::"},
-		},
-		{
-			name:      "a followed project with no pipeline is triggered",
-			token:     "token",
-			get:       [2]string{`{"items":[],"next_page_token":null}`, "200"},
-			post:      [2]string{`{"number":7,"state":"pending"}`, "201"},
-			expectOut: []string{"triggered CircleCI pipeline #7 for v0.1.0"},
+			name:      "the tag's own build passes",
+			statuses:  "[" + tagStatuses + "," + branchStatuses + "]",
+			expectOut: []string{"CircleCI builds v0.2.4: 2 workflow(s)"},
 			rejectOut: []string{"::error::", "::warning::"},
 		},
 		{
-			name:       "a rejected token fails",
-			token:      "token",
-			get:        [2]string{`{"message":"Unauthorized"}`, "401"},
+			name:       "the branch build alone is a missed tag build",
+			statuses:   "[" + branchStatuses + "]",
 			expectFail: true,
-			expectOut:  []string{"::error::CircleCI rejected CIRCLECI_API_TOKEN (HTTP 401)"},
+			expectOut:  []string{"::error::CircleCI never built v0.2.4", "devctl repo follow-circleci example/widget"},
+		},
+		{
+			name:      "no CircleCI status at all warns and passes",
+			statuses:  "[]",
+			expectOut: []string{"::warning::v0.2.4 is released and no CircleCI pipeline builds this repository yet", "devctl repo follow-circleci example/widget"},
+			rejectOut: []string{"::error::"},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := runVerify(t, tc.token, tc.get, tc.post)
+			out, err := runVerify(t, tc.statuses)
 
 			if tc.expectFail && err == nil {
 				t.Fatalf("verify step passed:\n%s", out)
