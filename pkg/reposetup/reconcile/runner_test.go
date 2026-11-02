@@ -2186,18 +2186,21 @@ func TestSteps(t *testing.T) {
 		{
 			// An identity without the administration permission reads no
 			// deploy keys (404 to a user, 403 to an App): the archive goes
-			// on silently, and the reconciler's run deletes the key.
-			name: "lifecycle: deploy keys the identity cannot read are skipped silently, the archive proceeds", step: StepLifecycle, entry: archivedEntryYAML,
+			// on, and whether CircleCI's key is still there is reported as
+			// unchecked, for an identity that reads the keys.
+			name: "lifecycle: deploy keys the identity cannot read are unchecked, the archive proceeds", step: StepLifecycle, entry: archivedEntryYAML,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.deployKeys = []*github.Key{circleCIDeployKey()}
 				r.keysStatus = 403
 			},
-			wantCheck: VerdictDrift, wantChange: "archive on GitHub",
+			wantCheck: VerdictDrift, wantChange: "archive on GitHub", wantFinding: FindingUnchecked,
+			wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, repair *Result) {
 				require.True(t, h.repo().archived)
 				require.Equal(t, []string{"archive on GitHub"}, repair.Step(StepLifecycle).Changes)
-				require.Empty(t, repair.Findings(), "unreadable keys are no finding")
+				require.Equal(t, []FindingKind{FindingUnchecked}, kinds(repair.Findings()))
+				require.Contains(t, repair.Findings()[0].Message, "CircleCI's deploy key")
 				require.Equal(t, []string{"PATCH /repos/giantswarm/sample-service"}, h.gh.mutations)
 			},
 		},

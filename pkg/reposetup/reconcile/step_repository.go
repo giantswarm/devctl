@@ -309,7 +309,10 @@ func (r *Runner) leaveCircleCI(ctx context.Context, s *run, sr *StepResult) erro
 	switch {
 	case isNotFound(resp, err) || isForbidden(err):
 		// An identity without the administration permission reads no
-		// deploy keys: the reconciler's run deletes the key.
+		// deploy keys: whether CircleCI's is still there is unknown.
+		s.report(sr, FindingUnchecked,
+			fmt.Sprintf("the deploy keys of %s are not readable by this identity (GET /repos/{owner}/{repo}/keys needs the administration permission or admin rights): whether CircleCI's deploy key is still on the archived repository is unknown", s.slug()),
+			"run the archive as an identity that reads the repository's deploy keys (the reconciler's Align now); it deletes CircleCI's key if it is there")
 		return nil
 	case err != nil:
 		return err
