@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen precommit` and `gen workflows`: the generated `pre-commit`, `chart-tests`, `check-values-schema`,
+  `check-readme-links`, `gitleaks` and `semantic-pull-request` workflows group runs by workflow and pull request
+  number (falling back to ref) and cancel superseded runs only on `pull_request` events, leaving `main`/`master`
+  pushes, `merge_group`, scheduled and manual runs untouched.
 - `pr wait`, `pr merge` (`--timeout`, `--release-timeout`), `release wait` and `rollout wait --release-timeout` default to
   60 minutes instead of 30. The `serve` tools keep a 30 minute default within their 55 minute cap.
 - The generated auto-release, changelog validation, helm-docs and pre-commit workflows run on `ubuntu-26.04`

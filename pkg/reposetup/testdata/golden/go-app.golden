@@ -1289,6 +1289,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   chart-tests:
     uses: giantswarm/github-workflows/.github/workflows/chart-tests.yaml@main
@@ -1330,6 +1334,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check-readme-links:
     uses: giantswarm/github-workflows/.github/workflows/check-readme-links.yaml@main
@@ -1357,6 +1365,10 @@ on:
   merge_group: {}
 
 permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check-values-schema:
@@ -1420,6 +1432,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   publish:
     uses: giantswarm/github-workflows/.github/workflows/gitleaks.yaml@main
@@ -1442,6 +1458,10 @@ on:
     branches:
       - main
       - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   HELM_DOCS_VERSION: "1.14.2"
@@ -1556,6 +1576,10 @@ on:
   merge_group: {}
 
 permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   semantic-pull-request:

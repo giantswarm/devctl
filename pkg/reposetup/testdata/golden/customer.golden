@@ -189,6 +189,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   publish:
     uses: giantswarm/github-workflows/.github/workflows/gitleaks.yaml@main
@@ -213,6 +217,10 @@ on:
   merge_group: {}
 
 permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   semantic-pull-request:
