@@ -3,6 +3,7 @@ package reconcile
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
 	"slices"
@@ -114,7 +115,7 @@ func (r *Runner) circleCIDefinitions(ctx context.Context, s *run, sr *StepResult
 // circleCIFromStatuses is the circleci step read from GitHub: who posted the
 // CircleCI statuses of the default branch's head.
 func (r *Runner) circleCIFromStatuses(ctx context.Context, s *run, sr *StepResult) error {
-	statuses, err := r.circleCIStatuses(ctx, s, s.branch())
+	statuses, err := r.recentCircleCIStatuses(ctx, s)
 	if err != nil {
 		return err
 	}
@@ -134,11 +135,43 @@ func (r *Runner) circleCIFromStatuses(ctx context.Context, s *run, sr *StepResul
 		sr.Summary = "OAuth follow, no GitHub App pipeline"
 	default:
 		s.report(sr, FindingCircleCIPipelineMissing,
-			fmt.Sprintf("the head of %s's %s carries no CircleCI status: no CircleCI pipeline builds it", s.slug(), s.branch()),
+			fmt.Sprintf("none of the last %d commits of %s's %s carries a CircleCI status: no CircleCI pipeline builds it", recentCommits, s.slug(), s.branch()),
 			followCircleCIFix(s.slug(), false))
 		sr.Summary = "no CircleCI status on " + s.branch()
 	}
 	return nil
+}
+
+// recentCommits is how many commits of the default branch the circleci step
+// reads for CircleCI statuses without a client: a commit pushed seconds ago
+// has none yet, and neither has a [skip ci] commit.
+const recentCommits = 5
+
+// recentCircleCIStatuses returns the CircleCI statuses of the newest of the
+// default branch's last recentCommits commits that carries any: the head
+// first, then the ones before it. None when no such commit carries one.
+func (r *Runner) recentCircleCIStatuses(ctx context.Context, s *run) ([]*github.RepoStatus, error) {
+	statuses, err := r.circleCIStatuses(ctx, s, s.branch())
+	if err != nil || len(statuses) > 0 {
+		return statuses, err
+	}
+	commits, resp, err := r.GitHub.Repositories.ListCommits(ctx, s.owner, s.name, &github.CommitsListOptions{SHA: s.branch(), ListOptions: github.ListOptions{PerPage: recentCommits}})
+	switch {
+	case isNotFound(resp, err) || (resp != nil && resp.StatusCode == http.StatusConflict):
+		return nil, nil
+	case err != nil:
+		return nil, err
+	}
+	for i, c := range commits {
+		if i == 0 || i >= recentCommits {
+			continue // the head is the branch's, read above
+		}
+		statuses, err := r.circleCIStatuses(ctx, s, c.GetSHA())
+		if err != nil || len(statuses) > 0 {
+			return statuses, err
+		}
+	}
+	return nil, nil
 }
 
 // circleCIStatusPages bounds the statuses read of one commit: three pages

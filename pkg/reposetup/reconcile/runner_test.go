@@ -1628,6 +1628,21 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// The head was pushed seconds ago (or skips CI) and carries no
+			// status yet; the commit before it does, from the App: ok.
+			name: "circleci: without a client, the App's statuses on a recent commit before the head read ok", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.history = []*github.RepositoryCommit{{SHA: new("older")}}
+				r.addStatus("older", "go-build", "success", "wf-1", CircleCIAppLogin, time.Now().Add(-time.Hour))
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Contains(t, res.Step(StepCircleCI).Summary, "GitHub App pipeline")
+			},
+		},
+		{
 			// Neither the App nor a person posted a CircleCI status on the
 			// head; another system's status is no CircleCI status.
 			name: "circleci: without a client, no CircleCI status on the head is a missing pipeline", step: StepCircleCI,
