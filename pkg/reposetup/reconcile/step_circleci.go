@@ -35,7 +35,8 @@ const CircleCIAppLogin = "circleci-app[bot]"
 // With a CircleCI client (a person's `devctl repo reconcile`) the project's
 // pipeline definitions are read: a GitHub App definition with an enabled
 // trigger is the pipeline. Without one (the reconciler) the CircleCI
-// statuses of the default branch's head say it: statuses posted by
+// statuses of the newest of the default branch's last recentCommits commits
+// that carries any say it: statuses posted by
 // CircleCIAppLogin are a GitHub App pipeline's, statuses posted by a person
 // are an OAuth follow's, which stops building when that person leaves.
 func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) error {
@@ -113,7 +114,7 @@ func (r *Runner) circleCIDefinitions(ctx context.Context, s *run, sr *StepResult
 }
 
 // circleCIFromStatuses is the circleci step read from GitHub: who posted the
-// CircleCI statuses of the default branch's head.
+// CircleCI statuses of the default branch's recent commits.
 func (r *Runner) circleCIFromStatuses(ctx context.Context, s *run, sr *StepResult) error {
 	statuses, err := r.recentCircleCIStatuses(ctx, s)
 	if err != nil {

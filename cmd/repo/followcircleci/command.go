@@ -38,9 +38,12 @@ The command, idempotent:
      warning);
   3. with --migrate, deletes the OAuth pipeline's triggers, so a push builds
      once, on the App; without it a remaining OAuth trigger is reported;
-  4. runs the default branch when anything changed, and the latest release
-     when its tag carries no CircleCI status of its own build (a tag cut
-     before the trigger existed reached no pipeline);
+  4. runs every release whose tag carries no CircleCI status of its own
+     build -- the latest vX.Y.Z release, or the newest of every line on a
+     multi-image repository; a tag cut before the trigger existed reached no
+     pipeline, and one an OAuth follow built is never run again -- then the
+     default branch, when anything changed or it carries no status of the
+     GitHub App pipeline;
   5. waits for those runs to settle (--wait=false returns at once).
 The exit is 0 when every run is green.
 

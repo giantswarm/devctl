@@ -18,17 +18,16 @@
 // as added — never from a missing repository), scaffold (rendered by the
 // front half and pushed as the first commit before protection), settings
 // baseline, team permissions, branch protection with the required checks on
-// the reported-only rule, CircleCI (follow, setup workflows, checkout key,
-// and the webhook CircleCI installs on the follow, verified), webhooks,
+// the reported-only rule, CircleCI (check only: a GitHub App pipeline builds
+// the repository; nothing is written on CircleCI), webhooks,
 // Renovate (check only), CODEOWNERS (a pull request), description
 // and visibility, labels (the owning team's team/<team>, created when
-// missing), lifecycle (archived → unfollowed on CircleCI and
-// CircleCI's deploy key deleted, then archived on GitHub; deleted →
-// unfollowed, then deleted on GitHub, the entry the record),
+// missing), lifecycle (archived → CircleCI's deploy key deleted, then
+// archived on GitHub; deleted → deleted on GitHub, the entry the record),
 // catalog and mapping (the giantswarm/github workflows), first-release
-// verification (a vX.Y.Z tag → pipeline → workflows; a missed tag build is
-// reported, never rebuilt, except a creation's first release, which is
-// built once; a release tagged otherwise is not verified).
+// verification (a vX.Y.Z tag → the GitHub App pipeline's statuses on its
+// commit; a missed tag build is reported, never rebuilt; a release tagged
+// otherwise, or built by an OAuth follow alone, is not verified).
 //
 // What a run costs in requests is counted at the clients' transports
 // ([Counter]) into [Result.Requests], and per step in the log. A check of a

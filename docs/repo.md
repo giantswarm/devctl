@@ -213,8 +213,9 @@ The verdicts are the ones the Repositories page shows:
 | `failed` | the step could not run to its end |
 
 The `circleci` line is the reconciler's run, which writes nothing on CircleCI: whether a CircleCI GitHub
-App pipeline builds the repository, read from who posted the CircleCI statuses of the default branch's
-head (`circleci-app[bot]`), or from the project's pipeline definitions when the run had a person's
+App pipeline builds the repository, read from who posted the CircleCI statuses of the newest of the
+default branch's last 5 commits that carries any (`circleci-app[bot]`), or from the project's pipeline
+definitions when the run had a person's
 CircleCI login. A repository nothing builds carries the finding `circleci-pipeline-missing`, fixed by
 `devctl repo follow-circleci`. One built by an OAuth follow, alone or beside a GitHub App pipeline, carries
 the advisory `circleci-oauth-follow`, fixed by `devctl repo follow-circleci --migrate`: it builds today and
@@ -272,8 +273,10 @@ The command is idempotent:
    them. CircleCI refusing the setting to you is a warning, not an error.
 3. With `--migrate` it deletes the OAuth pipeline's triggers, so a push builds once. Without it, a
    remaining OAuth trigger is reported: every push builds twice.
-4. It runs the default branch when anything changed, and the latest release when its tag carries no
-   CircleCI status of its own build: a tag cut before the trigger existed reached no pipeline.
+4. It runs every release that carries no CircleCI status of its own build (the latest `vX.Y.Z` release,
+   or the newest release of every line on a multi-image repository): a tag cut before the trigger
+   existed reached no pipeline. A tag an OAuth follow built is never run again. Then it runs the default
+   branch, when anything changed or the branch carries no status of the GitHub App pipeline.
 5. It waits for those runs (`--wait=false` returns at once, `--timeout` bounds the wait). The exit is 0
    when every run is green.
 

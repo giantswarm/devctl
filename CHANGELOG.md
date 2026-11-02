@@ -15,7 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   - `repo follow-circleci` sets a repository up on a GitHub App pipeline with your CircleCI login (Write access). It is
     idempotent: it creates `<repository>-app` and an `all-pushes` trigger when they are missing, switches setup workflows
     on when they are off, runs the default
-    branch and an unbuilt latest release, and waits for green. `--migrate` deletes the OAuth pipeline's triggers. It
+    branch and every unbuilt release (the newest of each multi-image line), and waits for green. `--migrate` deletes the OAuth pipeline's triggers. It
     replaces the follow that repaired `circleci-webhook-missing`.
   - `repo watch` takes that step for the creator once the reconciler has set the repository up (`--circleci=false`
     skips it). When the set-up ran the first release, whose tag came before the pipeline, the watch ends on that run,
@@ -24,15 +24,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
     `circleci-pipeline-missing` (replacing `circleci-webhook-missing`) names `repo follow-circleci`. A repository built
     by an OAuth follow, alone or beside a GitHub App pipeline, is the advisory finding `circleci-oauth-follow` with
     the `--migrate` fix: it builds today, so it does not keep the run from converging. It reads the
-    project's pipeline definitions with a person's CircleCI login, and who posted the default branch's CircleCI
-    statuses without one. The follow, the temporary admin grant, setup workflows, checkout keys and the webhook
-    check are gone, and so are the unfollow on archive and delete.
-  - The release step reads the CircleCI statuses of the release tag's commit on GitHub, keeping the workflows that
-    started after the release (for the generated pipeline: setup workflows started after it and the workflows each one continues into), and never triggers: GitHub App pipelines carry no `vcs` in CircleCI's API. A missed
-    tag build (`missed-tag-build`) names `repo follow-circleci`.
+    project's pipeline definitions with a person's CircleCI login, and without one who posted the CircleCI statuses
+    of the newest of the default branch's last 5 commits that carries any. The follow, the temporary admin grant,
+    setup workflows, checkout keys and the webhook check are gone, and so are the unfollow on archive and delete.
+  - The release step reads the GitHub App pipeline's statuses on the release tag's commit, on GitHub: the setup
+    workflows started after the release and the workflows each one continues into. It never triggers (GitHub App
+    pipelines carry no `vcs` in CircleCI's API). A missed tag build (`missed-tag-build`) names `repo follow-circleci`.
+    A tag built by an OAuth follow alone is skipped, not verified: its statuses name jobs, not workflows.
   - The generated auto-release workflows (single and multi-image) watch for the tag's CircleCI statuses with
     `GITHUB_TOKEN` (`statuses: read`) instead of reading and triggering pipelines with `CIRCLECI_API_TOKEN`. A
-    commit without any CircleCI status warns; a missed tag fails, naming the person's fix.
+    commit without any CircleCI status, or with an OAuth follow's only, warns; a missed tag fails, naming the
+    person's fix.
 
 - `gen precommit` and `gen workflows`: the generated `pre-commit`, `chart-tests`, `check-values-schema`,
   `check-readme-links`, `gitleaks` and `semantic-pull-request` workflows group runs by workflow and pull request
