@@ -27,7 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
     statuses without one. The follow, the temporary admin grant, setup workflows, checkout keys and the webhook
     check are gone, and so are the unfollow on archive and delete.
   - The release step reads the CircleCI statuses of the release tag's commit on GitHub, keeping the workflows that
-    started after the release, and never triggers: GitHub App pipelines carry no `vcs` in CircleCI's API. A missed
+    started after the release (for the generated pipeline: setup workflows started after it and the workflows each one continues into), and never triggers: GitHub App pipelines carry no `vcs` in CircleCI's API. A missed
     tag build (`missed-tag-build`) names `repo follow-circleci`.
   - The generated auto-release workflows (single and multi-image) watch for the tag's CircleCI statuses with
     `GITHUB_TOKEN` (`statuses: read`) instead of reading and triggering pipelines with `CIRCLECI_API_TOKEN`. A

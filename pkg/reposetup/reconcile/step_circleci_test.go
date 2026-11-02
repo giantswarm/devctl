@@ -99,6 +99,30 @@ func TestTagBuildStatuses(t *testing.T) {
 	// The slack: a first status 10 s before the release is the tag's.
 	early := []*github.RepoStatus{status("go-build", "success", "wf-early", "11:20:43")}
 	require.Len(t, TagBuildStatuses(early, published), 1)
+
+	// Dynamic config: the branch build's setup settles before the release
+	// and its continuation starts after it, under a workflow id of its own.
+	// It belongs to the branch setup and drops out; the tag's setup and its
+	// continuation count. Without the tag pipeline the branch alone reads
+	// no tag build.
+	dynamic := []*github.RepoStatus{
+		status("go-build", "failure", "wf-branch-build", "11:21:40"),
+		status("go-build", "success", "wf-tag-build", "11:21:30"),
+		status("go-build", "pending", "wf-tag-build", "11:21:05"),
+		status("setup", "success", "wf-tag-setup", "11:21:04"),
+		status("go-build", "pending", "wf-branch-build", "11:20:58"),
+		status("setup", "pending", "wf-tag-setup", "11:20:55"),
+		status("setup", "success", "wf-branch-setup", "11:20:50"),
+		status("setup", "pending", "wf-branch-setup", "11:20:40"),
+	}
+	got = TagBuildStatuses(dynamic, published)
+	require.Len(t, got, 2)
+	require.Equal(t, CircleCIContextPrefix+"go-build", got[0].GetContext())
+	require.Equal(t, "success", got[0].GetState(), "the tag's go-build, not the branch continuation's later failure")
+	require.Equal(t, setupContext, got[1].GetContext())
+
+	branchContinuationOnly := []*github.RepoStatus{dynamic[0], dynamic[4], dynamic[6], dynamic[7]}
+	require.Empty(t, TagBuildStatuses(branchContinuationOnly, published), "a branch continuation started after the release is no tag build")
 }
 
 // TestUnpublishedJobs: publish-github-release leaves nothing unpublished.

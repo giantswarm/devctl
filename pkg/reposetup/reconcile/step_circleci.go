@@ -200,27 +200,83 @@ func CircleCIPosters(statuses []*github.RepoStatus) (app bool, others []string) 
 // (2 s on release-automation-sandbox v0.2.4).
 const tagBuildSlack = 10 * time.Second
 
+// setupContext is the status context of a dynamic-config pipeline's setup
+// workflow: the first workflow of every pipeline the generated configuration
+// starts, one per pipeline.
+const setupContext = CircleCIContextPrefix + "setup"
+
 // TagBuildStatuses are the statuses of the build of a release tag among the
 // CircleCI statuses of its commit, newest first: the newest of every
-// context, of the workflows whose first status is no older than the release
-// (publishedAt, less tagBuildSlack). A commit's statuses are the commit's,
-// not the ref's: the branch build of the commit the tag points at posts the
-// same contexts, and keeps posting after the tag when its jobs finish late.
-// Its workflows started before the tag, so they drop out; a workflow is
-// what a status's target URL names (StatusWorkflow).
+// context. A commit's statuses are the commit's, not the ref's: the branch
+// build of the commit the tag points at posts the same contexts, and keeps
+// posting after the tag when its jobs finish late. So the statuses are read
+// by workflow (StatusWorkflow), and a workflow is the tag's when its pipeline
+// started after the release (publishedAt, less tagBuildSlack).
+//
+// A dynamic-config pipeline, the generated one, starts with one setup
+// workflow (setupContext), and its continuation starts the build's
+// workflows once the setup succeeded, under workflow ids of their own. Each
+// such workflow belongs to the setup workflow that settled last before it
+// started: the branch build's continuation, which may start after the
+// release, belongs to the branch build's setup, which started before it, and
+// drops out. A commit without a setup status (a hand-kept, static
+// configuration) is read by each workflow's own first status. A branch
+// pipeline started on the same commit after the release (a person's run on
+// the default branch) is not told apart from the tag's: statuses do not
+// name the ref.
 func TagBuildStatuses(statuses []*github.RepoStatus, publishedAt time.Time) []*github.RepoStatus {
-	first := map[string]time.Time{}
+	type workflow struct {
+		first, settled time.Time
+		setup          bool
+	}
+	workflows := map[string]*workflow{}
 	for _, st := range statuses {
-		w := StatusWorkflow(st.GetTargetURL())
-		if at, ok := first[w]; !ok || st.GetCreatedAt().Before(at) {
-			first[w] = st.GetCreatedAt().Time
+		id := StatusWorkflow(st.GetTargetURL())
+		w := workflows[id]
+		if w == nil {
+			w = &workflow{first: st.GetCreatedAt().Time}
+			workflows[id] = w
+		}
+		at := st.GetCreatedAt().Time
+		if at.Before(w.first) {
+			w.first = at
+		}
+		if st.GetContext() == setupContext {
+			w.setup = true
+			if st.GetState() != "pending" && (w.settled.IsZero() || at.Before(w.settled)) {
+				w.settled = at
+			}
 		}
 	}
 	since := publishedAt.Add(-tagBuildSlack)
+	tags := map[string]bool{}
+	for id, w := range workflows {
+		if !w.setup {
+			continue
+		}
+		tags[id] = !w.first.Before(since)
+	}
+	tag := func(id string) bool {
+		w := workflows[id]
+		if w.setup || len(tags) == 0 {
+			return !w.first.Before(since)
+		}
+		// The setup workflow that settled last before this one started.
+		owner, settled := "", time.Time{}
+		for sid, sw := range workflows {
+			if sw.setup && !sw.settled.IsZero() && !sw.settled.After(w.first) && sw.settled.After(settled) {
+				owner, settled = sid, sw.settled
+			}
+		}
+		if owner == "" {
+			return !w.first.Before(since)
+		}
+		return tags[owner]
+	}
 	var out []*github.RepoStatus
 	seen := map[string]bool{}
 	for _, st := range statuses {
-		if first[StatusWorkflow(st.GetTargetURL())].Before(since) || seen[st.GetContext()] {
+		if seen[st.GetContext()] || !tag(StatusWorkflow(st.GetTargetURL())) {
 			continue
 		}
 		seen[st.GetContext()] = true

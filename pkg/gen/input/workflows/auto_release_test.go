@@ -1240,8 +1240,16 @@ func Test_AutoReleaseVerifyCircleCI(t *testing.T) {
 		{
 			name:      "the tag's own build passes",
 			statuses:  "[" + tagStatuses + "," + branchStatuses + "]",
-			expectOut: []string{"CircleCI builds v0.2.4: 2 workflow(s)"},
+			expectOut: []string{"CircleCI builds v0.2.4: 1 pipeline(s)"},
 			rejectOut: []string{"::error::", "::warning::"},
+		},
+		{
+			// The branch build's continuation started after the release; its
+			// setup started before. No tag pipeline started.
+			name:       "a branch continuation started after the release is no tag build",
+			statuses:   `[{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:20:58Z","target_url":"https://app.circleci.com/workflow/late/job/j"},` + branchStatuses + "]",
+			expectFail: true,
+			expectOut:  []string{"::error::CircleCI never built v0.2.4"},
 		},
 		{
 			name:       "the branch build alone is a missed tag build",
