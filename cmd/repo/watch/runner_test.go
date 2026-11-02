@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
+	"github.com/giantswarm/devctl/v8/pkg/circleciapp"
+	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup/manager"
 )
 
@@ -44,7 +46,6 @@ func newRunner(answers ...string) (*runner, *sequence, *bytes.Buffer) {
 		open: func(context.Context) (*client.Session, error) {
 			return &client.Session{Caller: seq, Endpoint: "https://muster.example/mcp"}, nil
 		},
-		sleep: func(context.Context, time.Duration) error { return nil },
 	}
 	return r, seq, &out
 }
@@ -120,10 +121,10 @@ func TestRunSetsCircleCIUpOnceSetUp(t *testing.T) {
 	r, _, out := newRunner(pending, setUpPending, setUpDone, setUpDone, ready)
 	r.flag.CircleCI = true
 	var calls []string
-	r.setUpCircleCI = func(_ context.Context, owner, repo string, progress func(string, ...any)) error {
+	r.setUpCircleCI = func(_ context.Context, owner, repo string, progress func(string, ...any)) (tagWait, error) {
 		calls = append(calls, owner+"/"+repo)
 		progress("created the GitHub App pipeline %s", repo+"-app")
-		return nil
+		return nil, nil
 	}
 	require.NoError(t, r.run(context.Background(), "new"))
 	require.Equal(t, []string{"giantswarm/new"}, calls)
@@ -135,9 +136,9 @@ func TestRunSetsCircleCIUpOnceSetUp(t *testing.T) {
 func TestRunCircleCISkippedWithoutCI(t *testing.T) {
 	r, _, _ := newRunner(setUpPending, readyNoCI)
 	r.flag.CircleCI = true
-	r.setUpCircleCI = func(context.Context, string, string, func(string, ...any)) error {
+	r.setUpCircleCI = func(context.Context, string, string, func(string, ...any)) (tagWait, error) {
 		t.Fatal("no CircleCI set-up for a repository without CI")
-		return nil
+		return nil, nil
 	}
 	require.NoError(t, r.run(context.Background(), "new"))
 }
@@ -146,8 +147,8 @@ func TestRunCircleCISkippedWithoutCI(t *testing.T) {
 func TestRunCircleCIFailure(t *testing.T) {
 	r, seq, _ := newRunner(setUpDone, ready)
 	r.flag.CircleCI = true
-	r.setUpCircleCI = func(context.Context, string, string, func(string, ...any)) error {
-		return errors.New("CircleCI authentication required")
+	r.setUpCircleCI = func(context.Context, string, string, func(string, ...any)) (tagWait, error) {
+		return nil, errors.New("CircleCI authentication required")
 	}
 	err := r.run(context.Background(), "giantswarm/new")
 	require.Error(t, err)
@@ -165,21 +166,36 @@ const setUpDone = `{"repository":"https://github.com/giantswarm/new","phases":[{
 const releasedMissed = `{"repository":"https://github.com/giantswarm/new","phases":[{"name":"created","at":"2026-09-22T10:00:00Z","seconds":0},{"name":"setUp","at":"2026-09-22T10:01:40Z","seconds":40}],"ready":false,"failure":{"phase":"released","reason":"missed-tag-build: release v0.1.0 carries no CircleCI status of its build"},"waited":1}`
 
 // The first tag's missed build is the answer the CircleCI set-up exists
-// for: the watch sets CircleCI up on it, takes the stale failure for pending
-// while the run it started reports, and ends ready.
-func TestRunSetsCircleCIUpOnAMissedFirstTag(t *testing.T) {
-	r, seq, out := newRunner(releasedMissed, releasedMissed, ready)
-	r.flag.CircleCI = true
-	calls := 0
-	r.setUpCircleCI = func(context.Context, string, string, func(string, ...any)) error {
-		calls++
-		return nil
+// for: the watch sets CircleCI up on it, and ends on the release-tag run the
+// set-up started, read as the person, not on the manager's stale verdict.
+func TestRunEndsOnTheTagRunTheSetUpStarted(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		green bool
+	}{{"green", true}, {"red", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, seq, out := newRunner(releasedMissed)
+			r.flag.CircleCI = true
+			r.setUpCircleCI = func(context.Context, string, string, func(string, ...any)) (tagWait, error) {
+				return func(context.Context) ([]circleciapp.Run, error) {
+					outcome := &circleciapp.Outcome{Green: tc.green}
+					if !tc.green {
+						outcome.Failed = []string{"build (failed)"}
+					}
+					return []circleciapp.Run{{Ref: circleciclient.Ref{Tag: "v0.1.0"}, Pipeline: circleciclient.Pipeline{Number: 3}, Outcome: outcome}}, nil
+				}, nil
+			}
+			err := r.run(context.Background(), "new")
+			require.Equal(t, 1, seq.calls, "the manager is not asked again")
+			if tc.green {
+				require.NoError(t, err)
+				require.Contains(t, out.String(), "ready: new (the release build the CircleCI set-up started is green)")
+				return
+			}
+			require.True(t, IsFailed(err), err)
+			require.Contains(t, err.Error(), "pipeline 3 (tag v0.1.0): build (failed)")
+		})
 	}
-	require.NoError(t, r.run(context.Background(), "new"))
-	require.Equal(t, 1, calls)
-	require.Equal(t, 3, seq.calls)
-	require.Contains(t, out.String(), "waiting for released: the tag build the CircleCI set-up started has not reported yet")
-	require.NotContains(t, out.String(), "failed at released")
 }
 
 // Without the set-up, a released failure still ends the watch.

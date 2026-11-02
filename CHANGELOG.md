@@ -18,7 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
     branch and an unbuilt latest release, and waits for green. `--migrate` deletes the OAuth pipeline's triggers. It
     replaces the follow that repaired `circleci-webhook-missing`.
   - `repo watch` takes that step for the creator once the reconciler has set the repository up (`--circleci=false`
-    skips it); `repo create` prints the `repo watch` to run.
+    skips it). When the set-up ran the first release, whose tag came before the pipeline, the watch ends on that run,
+    read with the person's CircleCI login. `repo create` prints the `repo watch` to run, in JSON too.
   - The engine's circleci step is check-only: a GitHub App pipeline present is `ok`, otherwise the finding
     `circleci-pipeline-missing` (replacing `circleci-webhook-missing`) names `repo follow-circleci`. A repository built
     by an OAuth follow, alone or beside a GitHub App pipeline, is the advisory finding `circleci-oauth-follow` with

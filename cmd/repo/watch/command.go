@@ -31,8 +31,9 @@ step the reconciler cannot take: CircleCI has no service accounts. It does
 what ` + "`devctl repo follow-circleci`" + ` does -- the GitHub App pipeline and its
 all-pushes trigger, created with your CircleCI login (devctl auth login
 --circleci-only, Write access), and a run of the default branch and of the
-first release, which was tagged before the pipeline existed -- and then waits
-for the release as before. Nobody is load-bearing for the pipeline
+first release, which was tagged before the pipeline existed. When it ran that
+release, the watch ends on that run, read with your CircleCI login: ready when
+it is green. Otherwise it waits for the release as before. Nobody is load-bearing for the pipeline
 afterwards. --circleci=false leaves it to someone's follow-circleci later.
 A repository declared without CI (gen.ci.generate: false) has no release to
 wait for: it is ready once set up.
@@ -71,7 +72,7 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	f := &flag{}
-	r := &runner{flag: f, logger: config.Logger, stderr: config.Stderr, stdout: config.Stdout, open: client.Open, setUpCircleCI: setUpCircleCI, sleep: sleep}
+	r := &runner{flag: f, logger: config.Logger, stderr: config.Stderr, stdout: config.Stdout, open: client.Open, setUpCircleCI: setUpCircleCI}
 
 	c := &cobra.Command{
 		Use:   fmt.Sprintf("%s [flags] [OWNER/]REPOSITORY", name),
@@ -114,20 +115,47 @@ func (f *flag) Validate() error {
 // defaultOwner is the owner of a repository named without one.
 const defaultOwner = "giantswarm"
 
-// setUpCircleCI is circleciapp.Setup as the person, without the wait: the
-// watch's released phase waits for the release's build.
-func setUpCircleCI(ctx context.Context, owner, repo string, progress func(format string, args ...any)) error {
+// setUpCircleCI is circleciapp.Setup as the person, without its own wait.
+// When it ran release tags, the returned wait follows those runs with the
+// person's CircleCI login: the watch's verdict on the release is theirs.
+func setUpCircleCI(ctx context.Context, owner, repo string, progress func(format string, args ...any)) (tagWait, error) {
 	gh, ci, err := circleciapp.OpenAsPerson(ctx, owner, func(w string) {
 		if w != "" {
 			progress("%s", w)
 		}
 	})
 	if err != nil {
-		return microerror.Mask(err)
+		return nil, microerror.Mask(err)
 	}
-	_, err = circleciapp.Setup(ctx, ci, gh, owner, repo, circleciapp.Options{Progress: progress})
-	return microerror.Mask(err)
+	report, err := circleciapp.Setup(ctx, ci, gh, owner, repo, circleciapp.Options{Progress: progress})
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	var tags []circleciapp.Run
+	for _, run := range report.Runs {
+		if run.Ref.Tag != "" {
+			tags = append(tags, run)
+		}
+	}
+	if len(tags) == 0 {
+		return nil, nil
+	}
+	waiter := circleciapp.Waiter{CircleCI: ci, Sleep: sleep, Interval: tagPollInterval}
+	return func(ctx context.Context) ([]circleciapp.Run, error) {
+		for i := range tags {
+			progress("waiting for pipeline %d (%s)", tags[i].Pipeline.Number, tags[i].Ref)
+			outcome, err := waiter.Wait(ctx, tags[i].Pipeline.ID)
+			if err != nil {
+				return nil, microerror.Mask(err)
+			}
+			tags[i].Outcome = outcome
+		}
+		return tags, nil
+	}, nil
 }
+
+// tagPollInterval is how often the release-tag runs are read.
+const tagPollInterval = 10 * time.Second
 
 func sleep(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)

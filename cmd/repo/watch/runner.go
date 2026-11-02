@@ -25,10 +25,10 @@ type runner struct {
 	stderr io.Writer
 	open   client.Opener
 	// setUpCircleCI sets the repository up on its CircleCI GitHub App
-	// pipeline as the person, once the reconciler has set it up.
-	setUpCircleCI func(ctx context.Context, owner, repo string, progress func(format string, args ...any)) error
-	// sleep pauses between calls the manager answers at once.
-	sleep func(ctx context.Context, d time.Duration) error
+	// pipeline as the person, once the reconciler has set it up. wait is
+	// non-nil when the set-up ran a release tag: it follows those runs to
+	// their verdict.
+	setUpCircleCI func(ctx context.Context, owner, repo string, progress func(format string, args ...any)) (wait tagWait, err error)
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -56,7 +56,6 @@ func (r *runner) run(ctx context.Context, arg string) error {
 
 	printed := map[string]bool{}
 	circleCIDone := false
-	var circleCIAt time.Time
 	lastReason := ""
 	var last json.RawMessage
 	for {
@@ -85,24 +84,25 @@ func (r *runner) run(ctx context.Context, arg string) error {
 		if err != nil {
 			return microerror.Mask(err)
 		}
-		if !circleCIDone && needsCircleCI(watch) && r.flag.CircleCI {
-			circleCIDone = true
-			circleCIAt = time.Now()
-			if err := r.circleCI(watchCtx, repository); err != nil {
-				return microerror.Mask(err)
-			}
-		}
-		masked := maskReleasedFailure(watch, circleCIAt, time.Now())
 		if !r.flag.JSON() {
 			r.printProgress(watch, printed, &lastReason)
 		}
-		if masked {
-			// The manager answers the stale failure at once until the tag
-			// build reports; ask again after a pause, not in a tight loop.
-			if err := r.sleep(watchCtx, releasedRecheck); err != nil {
-				return microerror.Maskf(timeoutError, "%s is not ready after %s: waiting for the tag build the CircleCI set-up started", repository, r.flag.Timeout)
+		if !circleCIDone && needsCircleCI(watch) && r.flag.CircleCI {
+			circleCIDone = true
+			wait, err := r.circleCI(watchCtx, repository)
+			if err != nil {
+				if r.flag.JSON() {
+					_ = client.PrintJSON(r.stdout, last)
+				}
+				return microerror.Mask(err)
 			}
-			continue
+			if wait != nil {
+				// The set-up ran the release tag, which was cut before the
+				// pipeline existed: its verdict is that run's, read with the
+				// person's CircleCI login. The manager's released phase still
+				// carries the reconciler's missed-tag-build from before.
+				return r.waitTagRuns(watchCtx, repository, wait, last)
+			}
 		}
 		switch {
 		case watch.Failure != nil:
@@ -147,50 +147,65 @@ const (
 	phaseReleased = "released"
 )
 
-// releasedGrace is how long after the CircleCI set-up a failed released
-// phase is taken for the stale verdict it is: the first tag was cut before
-// the pipeline existed, so the reconciler's run reported missed-tag-build,
-// and the manager repeats that until the run the set-up started reports on
-// the tag. releasedRecheck is the pause between the calls meanwhile.
-const (
-	releasedGrace   = 10 * time.Minute
-	releasedRecheck = 15 * time.Second
-)
-
-// maskReleasedFailure turns a failed released phase into a pending one while
-// the CircleCI set-up of this watch (at) is younger than releasedGrace, and
-// says so. needsCircleCI lets the set-up run on exactly that answer: it is
-// the normal answer for a repository whose first tag came before its
-// pipeline.
-func maskReleasedFailure(w *manager.Watch, at, now time.Time) bool {
-	if at.IsZero() || w.Failure == nil || w.Failure.Phase != phaseReleased || now.Sub(at) > releasedGrace {
-		return false
-	}
-	w.Pending = phaseReleased
-	w.PendingReason = "the tag build the CircleCI set-up started has not reported yet (the manager still reports: " + w.Failure.Reason + ")"
-	w.Failure = nil
-	return true
-}
-
 // circleCI runs setUpCircleCI for repository ([OWNER/]REPOSITORY, the owner
 // giantswarm by default). A repository without a CircleCI configuration is
 // left alone: its generated CI is GitHub Actions only.
-func (r *runner) circleCI(ctx context.Context, repository string) error {
+func (r *runner) circleCI(ctx context.Context, repository string) (tagWait, error) {
 	owner, repo, found := strings.Cut(repository, "/")
 	if !found {
 		owner, repo = defaultOwner, repository
 	}
-	progress := func(format string, args ...any) {
-		if !r.flag.JSON() {
-			fmt.Fprintf(r.stdout, "  circleci   "+format+"\n", args...)
-		}
-	}
-	err := r.setUpCircleCI(ctx, owner, repo, progress)
+	wait, err := r.setUpCircleCI(ctx, owner, repo, r.circleCIProgress)
 	switch {
 	case circleciapp.IsNoConfig(err):
-		return nil
+		return nil, nil
 	case err != nil:
-		return microerror.Maskf(circleCIError, "%s/%s is set up, and its CircleCI pipeline is not: %v; log in with `devctl auth login --circleci-only` (grant Write) if that is the cause, then run `devctl repo follow-circleci %s/%s` and watch again, or watch with --circleci=false to leave the pipeline to someone else", owner, repo, err, owner, repo)
+		return nil, microerror.Maskf(circleCIError, "%s/%s is set up, and its CircleCI pipeline is not: %v; log in with `devctl auth login --circleci-only` (grant Write) if that is the cause, then run `devctl repo follow-circleci %s/%s` and watch again, or watch with --circleci=false to leave the pipeline to someone else", owner, repo, err, owner, repo)
+	}
+	return wait, nil
+}
+
+func (r *runner) circleCIProgress(format string, args ...any) {
+	if !r.flag.JSON() {
+		fmt.Fprintf(r.stdout, "  circleci   "+format+"\n", args...)
+	}
+}
+
+// tagWait follows the release-tag runs the CircleCI set-up started, as the
+// person, until they settle.
+type tagWait func(ctx context.Context) ([]circleciapp.Run, error)
+
+// waitTagRuns ends the watch on the release-tag runs the set-up started:
+// ready when every one is green, failed at released otherwise. In JSON mode
+// the manager's last answer is printed, as on every other exit.
+func (r *runner) waitTagRuns(ctx context.Context, repository string, wait tagWait, last json.RawMessage) error {
+	runs, err := wait(ctx)
+	if r.flag.JSON() {
+		_ = client.PrintJSON(r.stdout, last)
+	}
+	switch {
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		return microerror.Maskf(timeoutError, "%s is not ready after %s: the release build the CircleCI set-up started has not settled", repository, r.flag.Timeout)
+	case err != nil:
+		return microerror.Mask(err)
+	}
+	var red []string
+	for _, run := range runs {
+		if run.Outcome != nil && !run.Outcome.Green {
+			red = append(red, fmt.Sprintf("pipeline %d (%s): %s", run.Pipeline.Number, run.Ref, strings.Join(run.Outcome.Failed, ", ")))
+		}
+	}
+	if len(red) > 0 {
+		if !r.flag.JSON() {
+			fmt.Fprintf(r.stdout, "failed at %s: %s\n", phaseReleased, strings.Join(red, "; "))
+		}
+		return microerror.Maskf(failedError, "%s failed at %s: %s", repository, phaseReleased, strings.Join(red, "; "))
+	}
+	if !r.flag.JSON() {
+		for _, run := range runs {
+			fmt.Fprintf(r.stdout, "  %-10s pipeline %d (%s) green\n", phaseReleased, run.Pipeline.Number, run.Ref)
+		}
+		fmt.Fprintf(r.stdout, "ready: %s (the release build the CircleCI set-up started is green)\n", repository)
 	}
 	return nil
 }
