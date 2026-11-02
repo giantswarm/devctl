@@ -113,17 +113,17 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (er
 // notFoundHint is added to GitHub's 404 for a pull request the token cannot
 // read (authstore.GitHubNotFoundHint).
 func headBranchFunc(client *githubclient.Client, notFoundHint string) reservation.HeadBranchFunc {
-	return func(ctx context.Context, pullRequest string) (string, error) {
+	return func(ctx context.Context, pullRequest string) (string, bool, error) {
 		owner, repo, number, err := reservation.SplitPullRequest(pullRequest)
 		if err != nil {
-			return "", microerror.Mask(err)
+			return "", false, microerror.Mask(err)
 		}
 
 		pr, _, err := client.GetUnderlyingClient(ctx).PullRequests.Get(ctx, owner, repo, number)
 		if err != nil {
-			return "", githubclient.ExplainNotFound(microerror.Mask(err), notFoundHint)
+			return "", false, githubclient.ExplainNotFound(microerror.Mask(err), notFoundHint)
 		}
 
-		return pr.GetHead().GetRef(), nil
+		return pr.GetHead().GetRef(), pr.GetState() == "closed", nil
 	}
 }

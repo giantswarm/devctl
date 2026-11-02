@@ -528,8 +528,21 @@ func TestReserveTakesOverAnExpiredEntryOfTheSameApp(t *testing.T) {
 	reserveAt(t, dir, testUser, start)
 	first := commitAt(t, repo)
 
-	reserveAt(t, dir, testOtherUser, start.Add(30*24*time.Hour))
+	takeover := testRequest(dir)
+	takeover.User = testOtherUser
+	takeover.Branch = testOtherBranch
+	takeover.PullRequest = "giantswarm/hello-world#456"
+	takeover.Now = start.Add(30 * 24 * time.Hour)
+	result, err := reservation.Reserve(takeover)
+	if err != nil {
+		t.Fatal(err)
+	}
 	second := commitAt(t, repo)
+
+	// The result names the old holder, so the caller can tell its pull request.
+	if r := result.Replaced; r == nil || r.User != testUser || r.PullRequest != testPullRequest {
+		t.Errorf("replaced: got %+v, want the %s reservation of %s", r, testPullRequest, testUser)
+	}
 
 	if len(second.ParentHashes) != 1 || second.ParentHashes[0] != first.Hash {
 		t.Fatalf("the takeover is not exactly one commit on top of the first reservation")

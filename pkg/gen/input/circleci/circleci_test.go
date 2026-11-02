@@ -1842,7 +1842,7 @@ func Test_SkipATSOmitsChartTests(t *testing.T) {
 		}
 	}
 	// The chart push jobs gate on build-chart now that the test jobs are gone.
-	if !contains(got, "requires:\n        - build-chart") {
+	if !contains(got, "requires:\n        - pin-version\n        - build-chart") {
 		t.Errorf("SkipATS chart push should require build-chart directly:\n%s", got)
 	}
 
@@ -1880,7 +1880,7 @@ func Test_DefaultChartTestsRunOnBranchesOnly(t *testing.T) {
 	}
 	// push-chart-release gates on build-chart and the release image, and is
 	// the only job with that requires block.
-	if n := strings.Count(got, "requires:\n        - build-chart\n        - push-to-registries-release"); n != 1 {
+	if n := strings.Count(got, "requires:\n        - pin-version\n        - build-chart\n        - push-to-registries-release"); n != 1 {
 		t.Errorf("default chart push should require build-chart + push-to-registries-release exactly once, found %d:\n%s", n, got)
 	}
 
@@ -1918,7 +1918,7 @@ func Test_ATSOnReleaseAddsTagRun(t *testing.T) {
 	if !contains(tagJob, "requires:\n        - build-chart\n        - push-to-registries-release") {
 		t.Errorf("ATSOnRelease tag test should require build-chart + push-to-registries-release:\n%s", got)
 	}
-	if !contains(got, "requires:\n        - execute-chart-tests-release\n        - push-to-registries-release") {
+	if !contains(got, "requires:\n        - pin-version\n        - execute-chart-tests-release\n        - push-to-registries-release") {
 		t.Errorf("ATSOnRelease chart push should require execute-chart-tests-release:\n%s", got)
 	}
 	if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 4 {
@@ -2345,8 +2345,8 @@ func Test_ImageNativeBuilds(t *testing.T) {
 		"name: build-image-release-arm64\n        platform: linux/arm64\n        resource_class: arm.medium",
 		"name: push-to-registries\n        merge-digests: true\n        platforms: \"linux/amd64,linux/arm64\"",
 		"name: push-to-registries-release\n        merge-digests: true\n        platforms: \"linux/amd64,linux/arm64\"",
-		"requires:\n        - build-image-amd64\n        - build-image-arm64",
-		"requires:\n        - build-image-release-amd64\n        - build-image-release-arm64",
+		"requires:\n        - pin-version\n        - build-image-amd64\n        - build-image-arm64",
+		"requires:\n        - pin-version\n        - build-image-release-amd64\n        - build-image-release-arm64",
 	} {
 		if !contains(got, want) {
 			t.Errorf("native builds output missing %q:\n%s", want, got)

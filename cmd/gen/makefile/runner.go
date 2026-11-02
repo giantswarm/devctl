@@ -10,6 +10,7 @@ import (
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/golangci"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/makefile"
 )
 
@@ -75,6 +76,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 		if r.flag.Language == gen.LanguageGo {
 			inputs = append(inputs, in.MakefileGenGo()...)
+			inputs = append(inputs, golangci.NewInput("."))
 		}
 
 		if r.flag.Language == "kyverno-policy" {

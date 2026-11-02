@@ -117,6 +117,13 @@ func TestExtendResetsTheExpiryOfAMatchingReservation(t *testing.T) {
 	if head != tip {
 		t.Errorf("the extension did not land on origin: local HEAD %s, origin %s", head, tip)
 	}
+	// The report links the commit and keeps the scope.
+	if got.Commit != head {
+		t.Errorf("extended commit: got %q, want HEAD %q", got.Commit, head)
+	}
+	if got.Scope != reservation.ScopeApp {
+		t.Errorf("extended scope: got %q, want %q", got.Scope, reservation.ScopeApp)
+	}
 }
 
 // TestExtendUpdatesTheReservationSourceAnnotations is the spec's own

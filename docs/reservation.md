@@ -58,13 +58,15 @@ The first one releases everything the PR holds on every cluster; if the PR holds
 devctl reservation reap --user reservation-reaper
 ```
 
-Releases every expired reservation on every enabled cluster. With a GitHub token (the first set of `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` and `OPSCTL_GITHUB_TOKEN`, else the `devctl auth login --github-only` login, never under CI) it also releases reservations whose PR branch was renamed, as the old branch doesn't build anything anymore. Without a token it warns and skips that check.
+Releases every expired reservation on every enabled cluster. With a GitHub token (the first set of `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` and `OPSCTL_GITHUB_TOKEN`, else the `devctl auth login --github-only` login, never under CI) it also releases reservations whose PR is closed or merged (in case the close event got lost), and reservations whose PR branch was renamed, as the old branch doesn't build anything anymore. Without a token it warns and skips these checks.
 
 ## Output
 
 By default (`--output table`) `reserve` prints one line: what, where, for whom and until when. `--log-level debug` also shows the source object, the version filter and the commit. `extend`, `reap` and `release --pull-request` print one tab-separated line per change. `list` prints a table.
 
 `--output json` prints the same data as JSON, for scripts. `reserve` and `release --cluster` print one object. `extend`, `reap`, `release --pull-request` and `list` print an array, `[]` when there is nothing.
+
+The `reserve` object carries `replaced` when it took over an expired reservation of another branch or pull request, so a caller can tell that pull request. Each `extend` entry carries the reservation's `scope` and the `commit` it made.
 
 ## Dry run
 

@@ -2,7 +2,7 @@
 
 ```nohighlight
 devctl rollout wait <installation> <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--context <kube-context>] [--kubeconfig <file>]
-    [--timeout 30m] [--release-timeout 30m] [--image <owner/name>]... [--chart <path>]... [--helmrelease [<namespace>/]<name>]...
+    [--timeout 30m] [--release-timeout 60m] [--image <owner/name>]... [--chart <path>]... [--helmrelease [<namespace>/]<name>]...
     [--reconcile] [--progress] [--failed-log [--failed-log-lines 50]]
 ```
 
@@ -24,7 +24,7 @@ devctl rollout wait myinstallation giantswarm/giantswarm-configs --pr 1234
 ### The release first
 
 The command starts with the wait of `devctl release wait` for the same version or `--pr`, with the
-same rules, tokens and exit codes (`--release-timeout`, 30 minutes by default; `--image` and `--chart` name the image and the chart a hand-written tag job pushes outside the architect orb, as there: the kagent line's charts under `giantswarm/kagent/helm/`; `--failed-log` and `--failed-log-lines` read the tail of each failed job's log when the release's CI failed, as there and as in [`devctl pr wait`](pr-wait.md), into `release.failedJobs[]` and stderr). That wait names the
+same rules, tokens and exit codes (`--release-timeout`, 60 minutes by default; `--image` and `--chart` name the image and the chart a hand-written tag job pushes outside the architect orb, as there: the kagent line's charts under `giantswarm/kagent/helm/`; `--failed-log` and `--failed-log-lines` read the tail of each failed job's log when the release's CI failed, as there and as in [`devctl pr wait`](pr-wait.md), into `release.failedJobs[]` and stderr). That wait names the
 release's charts from the sources that define them (the team-file entry, the tag pipeline's push
 jobs, `helm/<dir>/Chart.yaml` at the tag), so a repository that publishes several charts is waited for
 on all of them (a second chart a generated pipeline's `custom.yml` pushes off the same tag included:

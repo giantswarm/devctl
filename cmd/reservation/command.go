@@ -28,7 +28,7 @@ applies the change to the cluster.
   release  undoes a reservation, by cluster and app or by pull request.
   extend   resets the expiry of every reservation a pull request holds.
   list     shows the reservations on a management cluster.
-  reap     releases every expired or renamed reservation.
+  reap     releases every expired, closed or renamed reservation.
 
 Every command except list takes --dry-run, which pushes nothing. Every command
 takes --output table|json.`

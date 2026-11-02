@@ -125,16 +125,29 @@ func Test_FreeTextValuesEscaped(t *testing.T) {
 	}
 }
 
-// Test_CircleCIGeneratedOffOmitsPackageRules verifies the default: without the
+// Test_CircleCIGeneratedOffOmitsArchitectOrb verifies the default: without the
 // flag the generated Renovate config has no architect orb override.
-func Test_CircleCIGeneratedOffOmitsPackageRules(t *testing.T) {
+func Test_CircleCIGeneratedOffOmitsArchitectOrb(t *testing.T) {
 	got := render(t, Config{Language: "go"})
 
-	if strings.Contains(got, "packageRules") {
-		t.Errorf("default renovate config should not contain packageRules:\n%s", got)
-	}
 	if strings.Contains(got, "giantswarm/architect") {
 		t.Errorf("default renovate config should not reference the architect orb:\n%s", got)
+	}
+}
+
+// Test_GeneratedWorkflowRunnersDisabled verifies that every generated Renovate
+// config leaves the runner images of the zz_generated workflows to devctl.
+func Test_GeneratedWorkflowRunnersDisabled(t *testing.T) {
+	for _, cfg := range []Config{{Language: "go"}, {Language: "go", CircleCIGenerated: true}} {
+		got := render(t, cfg)
+		for _, want := range []string{
+			`'.github/workflows/zz_generated.*',`,
+			`'github-runners',`,
+		} {
+			if !strings.Contains(got, want) {
+				t.Errorf("renovate config (CircleCIGenerated=%v) missing %q:\n%s", cfg.CircleCIGenerated, want, got)
+			}
+		}
 	}
 }
 

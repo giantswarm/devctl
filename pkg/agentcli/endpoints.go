@@ -27,8 +27,9 @@ const (
 	// logs in to, and the one the repo commands reach giantswarm-repo-manager
 	// through (https://muster.gazelle.awsprod.gigantic.io/mcp).
 	EnvMusterURL = "DEVCTL_MUSTER_URL"
-	// EnvKeyringFile names a 0600 JSON file that replaces the OS keychain
-	// (tests only).
+	// EnvKeyringFile names a JSON file that holds the records in place of the
+	// OS keychain, created with mode 0600 on first write; unset or empty keeps
+	// the keychain.
 	EnvKeyringFile = "DEVCTL_KEYRING_FILE"
 )
 

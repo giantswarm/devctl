@@ -13,6 +13,7 @@ import (
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/golangci"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/precommit"
 )
 
@@ -87,6 +88,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		// the just-generated zz_generated.app-platform.values.yaml back off disk.
 		inputs = append(inputs, precommitInput.CreateValuesSchemaInputs()...)
 		inputs = append(inputs, precommitInput.CreateHelmReadmeInputs()...)
+		if r.flag.Language == "go" {
+			inputs = append(inputs, golangci.NewInput("."))
+		}
 	}
 
 	err = gen.Execute(ctx, inputs...)

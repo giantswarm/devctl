@@ -2520,3 +2520,46 @@ func TestWaitFailedChinaSyncStatusIsAWarning(t *testing.T) {
 		t.Errorf("warnings: %v", warnings)
 	}
 }
+
+// A tag pipeline the listing named while its build still ran, and that a
+// later listing no longer names while the commit carries only the statuses
+// of the jobs that finished: the wait keeps reading that pipeline, so it
+// does not end available while the build runs, and its timeout names the
+// unfinished workflow.
+func TestWaitTagPipelineDroppedFromTheListingStaysUnfinished(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.timeout = 45 * time.Second
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"},
+		[3]string{"ci/circleci: push-chart-release", "success", "https://circleci.com/gh/giantswarm/kserve/102"},
+	)
+	circleci := pipelineRoutes(
+		[][]map[string]any{{wf("w1", "build", "running", "2026-09-23T14:19:18Z")}},
+		map[string][]map[string]any{"w1": {job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("guest-image", "running")}},
+	)
+	listing := circleci["GET /api/v2/project/gh/giantswarm/kserve/pipeline"][0]
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/pipeline"] = []sequence.Response{listing, branchPipelineOnly()["GET /api/v2/project/gh/giantswarm/kserve/pipeline"][0]}
+	fx.circleci = circleci
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "the tag pipeline did not finish within 45s; pipeline 12 unfinished: build (running)")
+	if result.Pipeline == nil || result.Pipeline.Number != 12 || len(result.Pipeline.Unfinished) != 1 {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+// A pending status of the statuses that are the verdict is in the document's
+// unfinished list and the timeout's reason.
+func TestWaitTagStatusPendingIsUnfinished(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.timeout = 45 * time.Second
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"},
+		[3]string{"ci/circleci: push-chart-release", "pending", "https://circleci.com/gh/giantswarm/kserve/102"},
+	)
+	fx.circleci = noPipelineYet()
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "the tag's CI unfinished: push-chart-release (pending)")
+	if result.Pipeline == nil || len(result.Pipeline.Workflows) != 2 || len(result.Pipeline.Unfinished) != 1 {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}

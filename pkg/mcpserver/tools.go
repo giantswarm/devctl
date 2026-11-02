@@ -58,7 +58,7 @@ func (s *Server) runPRWait(ctx context.Context, request mcp.CallToolRequest, doc
 	if number <= 0 {
 		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "number must be a pull request's number, got %d", number)
 	}
-	timeout, err := timeoutOf(request, prwait.DefaultTimeout)
+	timeout, err := timeoutOf(request, DefaultTimeout)
 	if err != nil {
 		return err
 	}
@@ -152,7 +152,7 @@ func (s *Server) runReleaseWait(ctx context.Context, request mcp.CallToolRequest
 			return err
 		}
 	}
-	timeout, err := timeoutOf(request, releasewait.DefaultTimeout)
+	timeout, err := timeoutOf(request, DefaultTimeout)
 	if err != nil {
 		return err
 	}

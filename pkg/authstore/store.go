@@ -66,8 +66,10 @@ type Store interface {
 	Lock(user string) (unlock func(), err error)
 }
 
-// OpenStore is the store the environment selects: the file of
-// [agentcli.EnvKeyringFile] when set, the OS keychain otherwise.
+// OpenStore is the store the environment selects: the JSON file of
+// [agentcli.EnvKeyringFile], read from the environment when the endpoints are
+// built and created with mode 0600 on first write, when it is non-empty; the
+// OS keychain otherwise.
 func OpenStore(endpoints agentcli.Endpoints) Store {
 	if endpoints.KeyringFile != "" {
 		return &FileStore{Path: endpoints.KeyringFile}

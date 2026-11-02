@@ -47,6 +47,10 @@ type Extended struct {
 	Cluster string `json:"cluster"`
 	// App is the reservation's chart.
 	App string `json:"app"`
+	// Scope is the reservation's scope, e.g. ScopeApp. Extend keeps it.
+	Scope string `json:"scope"`
+	// Commit is the hash of the commit Extend made.
+	Commit string `json:"commit"`
 	// From and Until bound the new window, in UTC.
 	From  time.Time `json:"from"`
 	Until time.Time `json:"until"`
@@ -209,12 +213,13 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 			clusterPath(cluster, ConfigMapFile),
 			clusterPath(cluster, collectionsDir, reservationsDir, current.App, current.App+SourceNameSuffix+".yaml"),
 		}
-		if _, err := commitAll(req.RepoDir, fmt.Sprintf(
-			"extend %s on %s for %s (until %s)", current.App, cluster, req.User, until.Format(time.RFC3339)), files); err != nil {
+		commit, err := commitAll(req.RepoDir, fmt.Sprintf(
+			"extend %s on %s for %s (until %s)", current.App, cluster, req.User, until.Format(time.RFC3339)), files)
+		if err != nil {
 			return microerror.Mask(err)
 		}
 
-		result = Extended{Cluster: cluster, App: current.App, From: now, Until: until}
+		result = Extended{Cluster: cluster, App: current.App, Scope: current.Scope, Commit: commit, From: now, Until: until}
 		return nil
 	}
 
