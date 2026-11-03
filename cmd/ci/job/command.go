@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	name        = "job <owner/repo> <job number>"
+	name        = "job <owner/repo> <job number> | job <job URL>"
 	description = "One CircleCI job: its status, its steps and the end of its failed steps' output; one JSON document, an exit code."
 	long        = `Read one CircleCI job: its name, status, page and times, every step of it
 (a parallel step once per action) with its status and times, and the last
@@ -22,7 +22,10 @@ That is why a job failed, read without the CircleCI UI.
 
 The job is named by its number in the project: the number its page
 (https://circleci.com/gh/<owner>/<repo>/<number>), a CircleCI commit status
-and devctl ci jobs show. GitHub is not read. The read takes the CircleCI
+and devctl ci jobs show. Or by the URL a CircleCI commit status links, alone:
+an OAuth project's job page, or a GitHub App pipeline's
+(https://app.circleci.com/workflow/<id>/job/<id>), which names no number and
+is looked up through its workflow. GitHub is not read. The read takes the CircleCI
 login of devctl auth login, used in devctl's process only; a login that
 granted Read access suffices. A step's output is read from its signed URL,
 without the token.
@@ -38,7 +41,8 @@ Exit codes:
   7  usage or a tooling failure
   8  authentication required: no CircleCI login (devctl auth login --circleci-only)`
 	example = `  devctl ci job giantswarm/devctl 7781
-  devctl ci job giantswarm/devctl 7781 --lines 500 | jq -r .job.logTail`
+  devctl ci job giantswarm/devctl 7781 --lines 500 | jq -r .job.logTail
+  devctl ci job https://app.circleci.com/workflow/04a3e5ed-6254-405e-aaf7-4cefb7984eb4/job/76cd04bd-82b8-4562-8054-41a2b3f93b2a`
 )
 
 type Config struct {

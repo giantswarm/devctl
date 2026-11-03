@@ -3,6 +3,7 @@
 ```nohighlight
 devctl ci jobs <owner/repo> <pipeline number|id>
 devctl ci job <owner/repo> <job number> [--lines <n>]
+devctl ci job <job URL> [--lines <n>]
 devctl ci rerun <owner/repo> <workflow id> [--from-failed] [--cancel]
 ```
 
@@ -70,6 +71,11 @@ is the tail `devctl pr wait --failed-log` reads, for a job of any pipeline: a ta
 pull request waits on. The CircleCI login is used in devctl's process only, a step's output is read
 from its signed URL without it, so a session reads a failed job without a token of its own, a browser
 or the CircleCI UI. Output CircleCI does not answer is `job.logError`; the steps still stand.
+
+The job can also be named by the URL a CircleCI commit status links, alone. A GitHub App pipeline's
+status links `https://app.circleci.com/workflow/<id>/job/<id>`, which names neither the project nor the
+number: the command reads the workflow for its project and finds the job's number among its jobs. A job
+that has not started has no number yet and is not applicable (exit 3).
 
 ```nohighlight
 devctl ci job giantswarm/agent-toolchains-lab 7 | jq -r .job.logTail

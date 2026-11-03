@@ -289,8 +289,8 @@ func (r *Runner) stepPermissions(ctx context.Context, s *run, sr *StepResult) er
 	return nil
 }
 
-// readHooks lists the repository's webhooks once per run: the circleci step
-// verifies CircleCI's among them, the webhooks step ensures the baseline's.
+// readHooks lists the repository's webhooks once per run: the webhooks step
+// ensures the baseline's among them.
 func (r *Runner) readHooks(ctx context.Context, s *run) ([]*github.Hook, *github.Response, error) {
 	if !s.hooksRead {
 		s.hooks, s.hooksResp, s.hooksErr = r.GitHub.Repositories.ListHooks(ctx, s.owner, s.name, &github.ListOptions{PerPage: 100})

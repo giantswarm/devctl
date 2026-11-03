@@ -76,7 +76,8 @@ type ScaffoldRenderer interface {
 
 // Runner runs the set-up steps. GitHub is required; the others are optional
 // and their absence skips what needs them: without CircleCI the CircleCI
-// and release steps are skipped, without Checks no check is required on the
+// step reads the default branch's CircleCI statuses instead of the
+// project's pipeline definitions, without Checks no check is required on the
 // reported-only rule (none is removed on a guess either), without Renderer
 // the scaffold cannot be repaired.
 type Runner struct {
@@ -93,7 +94,9 @@ type Runner struct {
 	Dispatch *github.Client
 	// Checks answers which check contexts have reported.
 	Checks ReportedChecker
-	// CircleCI is the client for follow, settings, keys and pipelines.
+	// CircleCI is a person's CircleCI client the circleci step reads the
+	// project's pipeline definitions with; nil reads GitHub's statuses. The
+	// engine writes nothing on CircleCI.
 	CircleCI *circleciclient.Client
 	// Renderer renders the scaffold the scaffold step pushes.
 	Renderer ScaffoldRenderer
@@ -211,11 +214,7 @@ type run struct {
 	repo           *github.Repository // nil when the repository does not exist
 	// created says the create step created the repository in this run.
 	created bool
-	// followedNow says the circleci step followed the project in this run
-	// (planned the follow, in check mode): CircleCI never saw a tag pushed
-	// before it.
-	followedNow bool
-	renamed     bool
+	renamed bool
 	// unarchive is the lifecycle step's unarchive, applied by the lookup
 	// ahead of the steps an archived repository refuses (unarchiveRepository);
 	// unarchiveErr is its error. The lifecycle step reports both.
@@ -241,9 +240,7 @@ type run struct {
 	reportedErr  error
 	reportedRead bool
 	// hooks are the repository's webhooks, once readHooks has read them
-	// (hooksRead); the response and the error are kept the same way. The
-	// circleci step (CircleCI's hook) and the webhooks step (the baseline's)
-	// share the one read.
+	// (hooksRead); the response and the error are kept the same way.
 	hooks     []*github.Hook
 	hooksResp *github.Response
 	hooksErr  error
