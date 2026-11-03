@@ -1,12 +1,11 @@
-// Package circleciclient is devctl's client for the CircleCI API: the calls
-// the repository set-up engine makes for a project — follow and unfollow
-// (v1.1), the token's user, the project, its settings and
-// checkout keys, its pipelines (paged) and their workflows and jobs (v2), a
-// job's steps and their output (v1.1), a workflow's cancel and rerun (v2) —
-// and nothing else. The token is a personal
-// API token (architectbot's `CIRCLECI_API_TOKEN` for the reconciler, the
-// person's for `devctl repo reconcile`); the org and repository name a
-// project by their GitHub slug. A reader without a token of its own reads a
+// Package circleciclient is devctl's client for the CircleCI API: the token's
+// user, the project, its pipeline definitions and their triggers, a
+// pipeline run of a definition, its pipelines (paged) and their workflows
+// and jobs (v2), a job's steps and their output (v1.1), a workflow's cancel
+// and rerun (v2) — and nothing else. The token is the person's: their devctl
+// CircleCI login. CircleCI has no service accounts, and the reconciler holds
+// no CircleCI token; the org and repository name a project by their GitHub
+// slug. A reader without a token of its own reads a
 // public project's pipelines, workflows and jobs anonymously
 // ([Config.Anonymous]): CircleCI answers those reads for a public project
 // without one, and a private project with 404.
@@ -29,10 +28,6 @@ import (
 
 // DefaultBaseURL is CircleCI's public API host.
 const DefaultBaseURL = "https://circleci.com"
-
-// KeyTypeDeployKey is the checkout key type CircleCI creates as a deploy key
-// on the GitHub repository; a project without one cannot check out.
-const KeyTypeDeployKey = "deploy-key"
 
 // Config configures a Client.
 type Config struct {
@@ -131,30 +126,6 @@ type VCSInfo struct {
 	VCSURL        string `json:"vcs_url"`
 	Provider      string `json:"provider"`
 	DefaultBranch string `json:"default_branch"`
-}
-
-// ProjectSettings are the v2 project settings; only the advanced settings
-// the engine manages are modelled. Pointer fields are omitted when nil, so a
-// value can carry just the settings to change.
-type ProjectSettings struct {
-	Advanced AdvancedSettings `json:"advanced"`
-}
-
-// AdvancedSettings are the settings under "advanced".
-type AdvancedSettings struct {
-	// SetupWorkflows enables dynamic configuration: the setup workflow the
-	// generated pipeline needs (`Use of setup workflows must be enabled in
-	// project settings` otherwise).
-	SetupWorkflows *bool `json:"setup_workflows,omitempty"`
-}
-
-// CheckoutKey is a key CircleCI checks the repository out with.
-type CheckoutKey struct {
-	Type        string    `json:"type"`
-	Preferred   bool      `json:"preferred"`
-	Fingerprint string    `json:"fingerprint"`
-	PublicKey   string    `json:"public_key"`
-	CreatedAt   time.Time `json:"created_at"`
 }
 
 // Pipeline is one pipeline of a project.
@@ -348,96 +319,6 @@ func (c *Client) GetProject(ctx context.Context, org, repo string) (*Project, er
 		return nil, microerror.Mask(err)
 	}
 	return &p, nil
-}
-
-// Follow follows the GitHub repository org/repo (v1.1). CircleCI builds the
-// default branch at once with whatever .circleci/config.yml it carries and
-// refuses an empty repository, so the scaffold is pushed first.
-func (c *Client) Follow(ctx context.Context, org, repo string) error {
-	var out struct {
-		Followed bool `json:"followed"`
-	}
-	if err := c.do(ctx, http.MethodPost, c.v1Project(org, repo)+"/follow", nil, &out); err != nil {
-		return microerror.Mask(err)
-	}
-	if out.Followed {
-		return nil
-	}
-	// The first follow of a fresh project answers followed=false although
-	// the project is followed from then on (seen live on a repository
-	// created minutes before); the project itself is the truth.
-	if _, err := c.GetProject(ctx, org, repo); err != nil {
-		if IsNotFound(err) {
-			return microerror.Maskf(apiError, "follow %s/%s: CircleCI answered followed=false and knows no such project", org, repo)
-		}
-		return microerror.Mask(err)
-	}
-	return nil
-}
-
-// Unfollow makes the token's user unfollow org/repo (v1.1). The project
-// stays, set up and building for the organization; what the unfollow
-// changes is Following.
-func (c *Client) Unfollow(ctx context.Context, org, repo string) error {
-	return microerror.Mask(c.do(ctx, http.MethodPost, c.v1Project(org, repo)+"/unfollow", nil, nil))
-}
-
-// v1ProjectSettings is the part of the v1.1 project settings the engine
-// reads.
-type v1ProjectSettings struct {
-	Following bool `json:"following"`
-}
-
-// Following says whether the token's user follows org/repo (v1.1 project
-// settings): the state Follow and Unfollow change. IsNotFound when CircleCI
-// does not know the project.
-func (c *Client) Following(ctx context.Context, org, repo string) (bool, error) {
-	var settings v1ProjectSettings
-	if err := c.do(ctx, http.MethodGet, c.v1Project(org, repo)+"/settings", nil, &settings); err != nil {
-		return false, microerror.Mask(err)
-	}
-	return settings.Following, nil
-}
-
-// GetProjectSettings returns the v2 project settings.
-func (c *Client) GetProjectSettings(ctx context.Context, org, repo string) (*ProjectSettings, error) {
-	var s ProjectSettings
-	if err := c.do(ctx, http.MethodGet, c.v2Project(org, repo)+"/settings", nil, &s); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return &s, nil
-}
-
-// UpdateProjectSettings patches the settings set in settings and returns the
-// settings as they are afterwards.
-func (c *Client) UpdateProjectSettings(ctx context.Context, org, repo string, settings ProjectSettings) (*ProjectSettings, error) {
-	var s ProjectSettings
-	if err := c.do(ctx, http.MethodPatch, c.v2Project(org, repo)+"/settings", settings, &s); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return &s, nil
-}
-
-// ListCheckoutKeys returns the project's checkout keys.
-func (c *Client) ListCheckoutKeys(ctx context.Context, org, repo string) ([]CheckoutKey, error) {
-	var out struct {
-		Items []CheckoutKey `json:"items"`
-	}
-	if err := c.do(ctx, http.MethodGet, c.v2Project(org, repo)+"/checkout-key", nil, &out); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return out.Items, nil
-}
-
-// CreateCheckoutKey creates a checkout key of keyType ([KeyTypeDeployKey] or
-// user-key); CircleCI installs a deploy key on the GitHub repository.
-func (c *Client) CreateCheckoutKey(ctx context.Context, org, repo, keyType string) (*CheckoutKey, error) {
-	body := map[string]string{"type": keyType}
-	var k CheckoutKey
-	if err := c.do(ctx, http.MethodPost, c.v2Project(org, repo)+"/checkout-key", body, &k); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return &k, nil
 }
 
 // PipelinePage is one page of a project's pipelines, newest first, and the

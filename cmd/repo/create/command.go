@@ -24,9 +24,15 @@ App (description and visibility from the declaration; without --visibility
 it is private, the org's default, and the entry says so), pushes the
 rendered scaffold as the one commit on main -- the scaffold's auto-release
 workflow tags v0.1.0 from it -- and sets it up: settings, permissions,
-protection, CircleCI, the catalog. The entry declares align: true, the
-repository's opt-in to alignment. Nobody needs the organization's owner
-role.
+protection, the catalog. The entry declares align: true, the repository's
+opt-in to alignment. Nobody needs the organization's owner role.
+
+CircleCI is the one step the reconciler cannot take: CircleCI has no service
+accounts, so its GitHub App pipeline is created by a person. The command
+prints the ` + "`devctl repo watch`" + ` that follows the repository to readiness;
+it creates the pipeline with your CircleCI login once the reconciler has set
+the repository up, and runs the first release on it. Nobody is load-bearing
+for the pipeline afterwards.
 
 A refusal of the declaration (a taken name, a wrong flavour, a schema
 violation) ends the command before the pull request; the problems name the
