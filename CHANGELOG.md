@@ -11,7 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch (newest merge first) when the default branch's last 5 commits
-  carry no CircleCI status. A list GitHub refuses makes the verdict `unchecked`, naming what could not be read. A pipeline whose
+  carry no CircleCI status. When nothing is found and GitHub refused one of
+  those reads, the step reports the finding `unchecked`, naming what it could not read, instead of
+  `circleci-pipeline-missing`. A pipeline whose
   workflows ignore the default branch (`branches: ignore: main`, as on envoy-gateway-app and ingress-nginx-app) was
   reported `circleci-pipeline-missing`, and so non-converged, although CircleCI builds its pull requests and tags.
 

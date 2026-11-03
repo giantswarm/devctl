@@ -52,7 +52,9 @@ reads the project's pipeline definitions; without one it reads who posted the
 CircleCI statuses of the newest of the default branch's last 5 commits that
 carries any, else of the latest release's tag, else of the heads of the last
 3 pull requests merged into it (a pipeline that ignores the default branch).
-A list GitHub refuses makes the verdict unchecked, not a missing pipeline. The release step reads the GitHub App pipeline's statuses of the
+When nothing is found and GitHub refused one of those reads, the step
+reports the finding unchecked, naming what it could not read, not a missing
+pipeline. The release step reads the GitHub App pipeline's statuses of the
 release tag's commit on GitHub, token or not; a tag built by an OAuth follow
 alone is not verified. The catalog step
 dispatches the catalog and mapping workflows of the catalog repository, which

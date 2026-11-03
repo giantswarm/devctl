@@ -138,7 +138,7 @@ func (r *Runner) circleCIFromStatuses(ctx context.Context, s *run, sr *StepResul
 	case len(src.refused) > 0:
 		s.report(sr, FindingUnchecked,
 			fmt.Sprintf("no CircleCI status on %s in what this identity could read (%s), and GitHub refused %s: whether a CircleCI pipeline builds it is unknown", s.slug(), strings.Join(src.read, ", "), strings.Join(src.refused, ", ")),
-			"run the check as an identity that reads the repository's commits, releases and pull requests (the reconciler's Align now)")
+			"grant the identity the run uses contents: read and pull_requests: read on the repository (for the reconciler, its GitHub App), then run the check again")
 		sr.Summary = "CircleCI pipeline not checked: " + strings.Join(src.refused, ", ") + " not readable"
 	default:
 		s.report(sr, FindingCircleCIPipelineMissing,
