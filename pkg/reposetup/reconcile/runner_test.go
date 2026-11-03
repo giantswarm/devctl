@@ -1754,7 +1754,11 @@ func TestSteps(t *testing.T) {
 			},
 			wantCheck: VerdictReported, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, res *Result) {
-				require.Contains(t, res.Step(StepCircleCI).Findings[0].Message, "the statuses of the latest release v2.0.0")
+				f := res.Step(StepCircleCI).Findings[0]
+				read, refused, _ := strings.Cut(f.Message, "and GitHub refused")
+				require.NotContains(t, read, "v2.0.0", "the refused release is not named as read")
+				require.Contains(t, refused, "the statuses of the latest release v2.0.0")
+				require.Contains(t, f.Fix, "statuses: read")
 			},
 		},
 		{
@@ -1786,7 +1790,7 @@ func TestSteps(t *testing.T) {
 			wantCheck: VerdictReported, wantFinding: FindingCircleCIPipelineMissing, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, res *Result) {
 				sr := res.Step(StepCircleCI)
-				require.Equal(t, "no CircleCI status on the head of main, the head of the last pull request merged into main", sr.Summary)
+				require.Equal(t, "no CircleCI status on the head of main, the head of a pull request merged into main", sr.Summary)
 				require.Contains(t, sr.Findings[0].Fix, "devctl repo follow-circleci "+owner+"/"+name)
 				require.NotContains(t, sr.Findings[0].Fix, "--migrate")
 				require.Empty(t, h.mutations())

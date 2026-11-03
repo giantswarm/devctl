@@ -138,7 +138,7 @@ func (r *Runner) circleCIFromStatuses(ctx context.Context, s *run, sr *StepResul
 	case len(src.refused) > 0:
 		s.report(sr, FindingUnchecked,
 			fmt.Sprintf("no CircleCI status on %s in what this identity could read (%s), and GitHub refused %s: whether a CircleCI pipeline builds it is unknown", s.slug(), strings.Join(src.read, ", "), strings.Join(src.refused, ", ")),
-			"grant the identity the run uses contents: read and pull_requests: read on the repository (for the reconciler, its GitHub App), then run the check again")
+			"grant the identity the run uses contents: read, pull_requests: read and statuses: read on the repository (for the reconciler, its GitHub App), then run the check again")
 		sr.Summary = "CircleCI pipeline not checked: " + strings.Join(src.refused, ", ") + " not readable"
 	default:
 		s.report(sr, FindingCircleCIPipelineMissing,
@@ -217,6 +217,7 @@ func (r *Runner) recentCircleCIStatuses(ctx context.Context, s *run) ([]*github.
 	type candidate struct {
 		ref, where string
 		at         time.Time
+		pull       bool
 	}
 	var candidates []candidate
 	release, resp, err := r.GitHub.Repositories.GetLatestRelease(ctx, s.owner, s.name)
@@ -227,8 +228,7 @@ func (r *Runner) recentCircleCIStatuses(ctx context.Context, s *run) ([]*github.
 	case err != nil:
 		return nil, "", src, err
 	case release.TagName != "":
-		src.read = append(src.read, "the latest release "+release.TagName)
-		candidates = append(candidates, candidate{release.TagName, "the latest release " + release.TagName, publishedAt(release)})
+		candidates = append(candidates, candidate{release.TagName, "the latest release " + release.TagName, publishedAt(release), false})
 	}
 	merged, refused, err := r.recentlyMerged(ctx, s)
 	switch {
@@ -236,28 +236,35 @@ func (r *Runner) recentCircleCIStatuses(ctx context.Context, s *run) ([]*github.
 		return nil, "", src, err
 	case refused:
 		src.refused = append(src.refused, "the pull requests")
-	case len(merged) > 1:
-		src.read = append(src.read, fmt.Sprintf("the heads of the last %d pull requests merged into %s", len(merged), s.branch()))
-	case len(merged) == 1:
-		src.read = append(src.read, "the head of the last pull request merged into "+s.branch())
 	}
 	for _, pr := range merged {
-		candidates = append(candidates, candidate{pr.GetHead().GetSHA(), fmt.Sprintf("the head of the merged pull request #%d", pr.GetNumber()), pr.MergedAt.Time})
+		candidates = append(candidates, candidate{pr.GetHead().GetSHA(), fmt.Sprintf("the head of the merged pull request #%d", pr.GetNumber()), pr.MergedAt.Time, true})
 	}
 	slices.SortStableFunc(candidates, func(a, b candidate) int { return b.at.Compare(a.at) })
+	// What was read is recorded once its statuses were: a refused read is
+	// named as refused, not as read.
+	pulls := 0
 	for _, c := range candidates {
 		statuses, err := r.circleCIStatuses(ctx, s, c.ref)
 		switch {
 		case isForbidden(err):
-			// Statuses this identity may not read are passed over like a
-			// refused list: the verdict names them.
 			src.refused = append(src.refused, "the statuses of "+c.where)
 			continue
 		case err != nil:
 			return nil, "", src, err
 		case len(statuses) > 0:
 			return statuses, c.where, src, nil
+		case c.pull:
+			pulls++
+		default:
+			src.read = append(src.read, c.where)
 		}
+	}
+	switch {
+	case pulls > 1:
+		src.read = append(src.read, fmt.Sprintf("the heads of the last %d pull requests merged into %s", pulls, s.branch()))
+	case pulls == 1:
+		src.read = append(src.read, "the head of a pull request merged into "+s.branch())
 	}
 	return nil, "", src, nil
 }
