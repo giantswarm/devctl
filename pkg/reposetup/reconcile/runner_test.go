@@ -1643,6 +1643,41 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// A pipeline that ignores the default branch builds the release
+			// tags and the pull requests' branches only (envoy-gateway-app,
+			// ingress-nginx-app): the latest release's tag carries the
+			// statuses, an OAuth follow's. Advisory, not a missing pipeline.
+			name: "circleci: without a client, a pipeline that skips the default branch is read on the latest release", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "v1.2.0", time.Now().Add(-time.Hour)
+				r.addStatus("v1.2.0", "push-to-registries", "success", "job-4", "taylorbot", time.Now().Add(-time.Hour))
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIOAuthFollow, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				sr := res.Step(StepCircleCI)
+				require.Contains(t, sr.Findings[0].Message, "on the latest release v1.2.0 come from taylorbot")
+				require.True(t, sr.Converges())
+			},
+		},
+		{
+			// No release yet: the head of the last merged pull request carries
+			// the App pipeline's statuses.
+			name: "circleci: without a client, a pipeline that skips the default branch is read on a merged pull request", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				merged := github.Timestamp{Time: time.Now().Add(-time.Hour)}
+				r.merged = append(r.merged, &github.PullRequest{Number: new(12), State: new("closed"), MergedAt: &merged, Head: &github.PullRequestBranch{Ref: new("feature"), SHA: new("pr-head")}})
+				r.addStatus("pr-head", "go-build", "success", "wf-pr", CircleCIAppLogin, merged.Time)
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "CircleCI statuses on the head of the merged pull request #12 from circleci-app[bot]: GitHub App pipeline", res.Step(StepCircleCI).Summary)
+			},
+		},
+		{
 			// Neither the App nor a person posted a CircleCI status on the
 			// head; another system's status is no CircleCI status.
 			name: "circleci: without a client, no CircleCI status on the head is a missing pipeline", step: StepCircleCI,
@@ -1654,7 +1689,7 @@ func TestSteps(t *testing.T) {
 			wantCheck: VerdictReported, wantFinding: FindingCircleCIPipelineMissing, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, res *Result) {
 				sr := res.Step(StepCircleCI)
-				require.Equal(t, "no CircleCI status on main", sr.Summary)
+				require.Equal(t, "no CircleCI status on main, the latest release or recent pull requests", sr.Summary)
 				require.Contains(t, sr.Findings[0].Fix, "devctl repo follow-circleci "+owner+"/"+name)
 				require.NotContains(t, sr.Findings[0].Fix, "--migrate")
 				require.Empty(t, h.mutations())

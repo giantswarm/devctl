@@ -214,8 +214,10 @@ The verdicts are the ones the Repositories page shows:
 | `failed` | the step could not run to its end |
 
 The `circleci` line is the reconciler's run, which writes nothing on CircleCI: whether a CircleCI GitHub
-App pipeline builds the repository, read from who posted the CircleCI statuses of the newest of the
-default branch's last 5 commits that carries any (`circleci-app[bot]`), or from the project's pipeline
+App pipeline builds the repository, read from who posted the CircleCI statuses (`circleci-app[bot]`) of the
+newest of the default branch's last 5 commits that carries any, else of the latest release's tag, else of the
+heads of the last 3 merged pull requests (a pipeline that ignores the default branch builds only those), or
+from the project's pipeline
 definitions when the run had a person's
 CircleCI login. A repository nothing builds carries the finding `circleci-pipeline-missing`, fixed by
 `devctl repo follow-circleci`. One built by an OAuth follow, alone or beside a GitHub App pipeline, carries

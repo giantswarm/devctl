@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
+  last 3 merged pull requests when the default branch's last 5 commits carry no CircleCI status. A pipeline whose
+  workflows ignore the default branch (`branches: ignore: main`, as on envoy-gateway-app and ingress-nginx-app) was
+  reported `circleci-pipeline-missing`, and so non-converged, although CircleCI builds its pull requests and tags.
+
 ### Changed
 
 - CircleCI without a shared identity: new repositories build on a CircleCI GitHub App pipeline created by the person

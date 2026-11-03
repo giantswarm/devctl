@@ -50,7 +50,8 @@ $CIRCLECI_TOKEN when set, the CircleCI login of devctl auth login in the
 keychain otherwise (with $CI set, the variable only) -- the circleci step
 reads the project's pipeline definitions; without one it reads who posted the
 CircleCI statuses of the newest of the default branch's last 5 commits that
-carries any. The release step reads the GitHub App pipeline's statuses of the
+carries any, else of the latest release's tag, else of the heads of the last
+3 merged pull requests (a pipeline that ignores the default branch). The release step reads the GitHub App pipeline's statuses of the
 release tag's commit on GitHub, token or not; a tag built by an OAuth follow
 alone is not verified. The catalog step
 dispatches the catalog and mapping workflows of the catalog repository, which
