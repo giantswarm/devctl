@@ -216,11 +216,9 @@ The verdicts are the ones the Repositories page shows:
 The `circleci` line is the reconciler's run, which writes nothing on CircleCI: whether a CircleCI GitHub
 App pipeline builds the repository, read from who posted the CircleCI statuses (`circleci-app[bot]`) of the
 newest of the default branch's last 5 commits that carries any, else of the latest release's tag, else of the
-heads of the last 3 pull requests merged into it (a pipeline that ignores the default branch builds only those;
-a release or a merge older than 90 days counts for nothing, so a pipeline that stopped reads as missing), or
-from the project's pipeline
-definitions when the run had a person's
-CircleCI login. A repository nothing builds carries the finding `circleci-pipeline-missing`, fixed by
+heads of the last 3 pull requests merged into it (a pipeline that ignores the default branch builds only those),
+or from the project's pipeline definitions when the run had a person's CircleCI login. A list GitHub refuses
+makes the line `unchecked`, naming what could not be read. A repository nothing builds carries the finding `circleci-pipeline-missing`, fixed by
 `devctl repo follow-circleci`. One built by an OAuth follow, alone or beside a GitHub App pipeline, carries
 the advisory `circleci-oauth-follow`, fixed by `devctl repo follow-circleci --migrate`: it builds today and
 stops when the follower leaves, and the run still converges.

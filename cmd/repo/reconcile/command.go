@@ -51,8 +51,8 @@ keychain otherwise (with $CI set, the variable only) -- the circleci step
 reads the project's pipeline definitions; without one it reads who posted the
 CircleCI statuses of the newest of the default branch's last 5 commits that
 carries any, else of the latest release's tag, else of the heads of the last
-3 pull requests merged into it (a pipeline that ignores the default branch),
-each no older than 90 days. The release step reads the GitHub App pipeline's statuses of the
+3 pull requests merged into it (a pipeline that ignores the default branch).
+A list GitHub refuses makes the verdict unchecked, not a missing pipeline. The release step reads the GitHub App pipeline's statuses of the
 release tag's commit on GitHub, token or not; a tag built by an OAuth follow
 alone is not verified. The catalog step
 dispatches the catalog and mapping workflows of the catalog repository, which

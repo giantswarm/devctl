@@ -1701,35 +1701,43 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			// A pipeline that stopped building long ago leaves its old
-			// statuses on its last release and pull requests: older than the
-			// window, they say nothing about today, and the pipeline is missing.
-			name: "circleci: without a client, statuses older than the window read as a missing pipeline", step: StepCircleCI,
+			// A quiet repository whose pipeline ignores the default branch:
+			// nothing merged or released for months, its last pull request
+			// built by the App. No age limit: it reads as built. A pull request
+			// into another branch counts for nothing.
+			name: "circleci: without a client, a quiet repository's old merged pull request still counts", step: StepCircleCI,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
-				long := time.Now().Add(-200 * 24 * time.Hour)
-				r.release, r.releaseAt = "v0.3.0", long
-				r.addStatus("v0.3.0", "go-build", "success", "wf-old", CircleCIAppLogin, long)
-				merged := github.Timestamp{Time: long}
-				r.merged = append(r.merged, &github.PullRequest{Number: new(5), State: new("closed"), MergedAt: &merged, Head: &github.PullRequestBranch{Ref: new("x"), SHA: new("x-head")}})
-				r.addStatus("x-head", "go-build", "success", "wf-x", CircleCIAppLogin, long)
+				long := github.Timestamp{Time: time.Now().Add(-200 * 24 * time.Hour)}
+				r.merged = append(r.merged,
+					&github.PullRequest{Number: new(9), State: new("closed"), MergedAt: &long, Base: &github.PullRequestBranch{Ref: new("release-1.x")}, Head: &github.PullRequestBranch{Ref: new("y"), SHA: new("other-base")}},
+					&github.PullRequest{Number: new(5), State: new("closed"), MergedAt: &long, Base: &github.PullRequestBranch{Ref: new("main")}, Head: &github.PullRequestBranch{Ref: new("x"), SHA: new("x-head")}},
+				)
+				r.addStatus("other-base", "go-build", "failure", "job-2", "alice", long.Time)
+				r.addStatus("x-head", "go-build", "success", "wf-x", CircleCIAppLogin, long.Time)
 				h.runner.CircleCI = nil
 			},
-			wantCheck: VerdictReported, wantFinding: FindingCircleCIPipelineMissing, wantAfter: VerdictReported,
+			wantCheck: VerdictOK,
 			verify: func(t *testing.T, h *harness, res *Result) {
-				require.Contains(t, res.Step(StepCircleCI).Findings[0].Message, "in the last 90 days")
+				require.Equal(t, "CircleCI statuses on the head of the merged pull request #5 from circleci-app[bot]: GitHub App pipeline", res.Step(StepCircleCI).Summary)
 			},
 		},
 		{
 			// An identity without pull-request read is answered 403 on the
-			// list: passed over, the step reports what it read, not failed.
-			name: "circleci: without a client, an unreadable pull request list is passed over", step: StepCircleCI,
+			// list: the step reports what it read and what it could not, as
+			// unchecked, not as a missing pipeline, and does not fail.
+			name: "circleci: without a client, an unreadable pull request list is unchecked, not a missing pipeline", step: StepCircleCI,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.pullsStatus = http.StatusForbidden
 				h.runner.CircleCI = nil
 			},
-			wantCheck: VerdictReported, wantFinding: FindingCircleCIPipelineMissing, wantAfter: VerdictReported,
+			wantCheck: VerdictReported, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				f := res.Step(StepCircleCI).Findings[0]
+				require.Contains(t, f.Message, "GitHub refused the pull requests")
+				require.NotContains(t, f.Message, "heads of the last")
+			},
 		},
 		{
 			// Neither the App nor a person posted a CircleCI status on the
@@ -1743,7 +1751,7 @@ func TestSteps(t *testing.T) {
 			wantCheck: VerdictReported, wantFinding: FindingCircleCIPipelineMissing, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, res *Result) {
 				sr := res.Step(StepCircleCI)
-				require.Equal(t, "no CircleCI status on main, the latest release or recent pull requests", sr.Summary)
+				require.Equal(t, "no CircleCI status on the head of main, the head of the last pull request merged into main", sr.Summary)
 				require.Contains(t, sr.Findings[0].Fix, "devctl repo follow-circleci "+owner+"/"+name)
 				require.NotContains(t, sr.Findings[0].Fix, "--migrate")
 				require.Empty(t, h.mutations())

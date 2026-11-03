@@ -667,6 +667,9 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			if h := r.URL.Query().Get("head"); h != "" && repo.owner+":"+pr.GetHead().GetRef() != h {
 				continue
 			}
+			if b := r.URL.Query().Get("base"); b != "" && pr.GetBase().GetRef() != "" && pr.GetBase().GetRef() != b {
+				continue
+			}
 			out = append(out, pr)
 		}
 		if out == nil {
