@@ -524,4 +524,21 @@ func Test_MctlInstallationsContacts(t *testing.T) {
 	if !strings.Contains(renders["config"], `Edit \S+ in the installations PR`) {
 		t.Error("config does not match mctl's installations contacts line")
 	}
+
+	// validate-config warns (exit 0) on missing contacts; the prompt must show mctl's "  ⚠ <file>: <reason>" lines.
+	validate := renders["validate_config"]
+	prompt := validate[strings.Index(validate, "- name: Post create-mc prompt"):]
+	for _, want := range []string{
+		"MCTL_OUTPUT:  ${{ steps.mctl.outputs.output }}",
+		".map(l => l.trim()).filter(l => l.startsWith('⚠'))",
+		"'Checks passed with warnings'",
+		"the merge gate blocks until these are fixed",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("validate_config create-mc prompt does not contain %s", want)
+		}
+	}
+	if strings.Contains(prompt[strings.Index(prompt, "script: |"):], "${{") {
+		t.Error("validate_config create-mc prompt must read mctl's output from env, not interpolate it into the script")
+	}
 }

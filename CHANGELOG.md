@@ -92,8 +92,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `gen workflows` flavour `fleet`: for customer installations the mctl merge gate fails, and the merge cascade does not
   land the installations PR, while its `<installation>/cluster.yaml` lacks `slack.support`, `accountEngineer` or
-  `accountEngineersHandle` or holds mctl's `FILL_IN_` placeholders; the `/config` comment asks to fill them in
-  (giantswarm/giantswarm#38847).
+  `accountEngineersHandle` or holds mctl's `FILL_IN_` placeholders; the `/config` comment asks to fill them in, and
+  the `/create-mc` prompt lists `mctl validate-config`'s warnings (giantswarm/giantswarm#38847).
 - `gen workflows`: the customer repositories' `add_customer_board_automation` workflow passes the
   `giantswarm-project-automation` App's `PROJECT_AUTOMATION_CLIENT_ID` and `PROJECT_AUTOMATION_PRIVATE_KEY` to
   `issue-to-customer-board.yaml` instead of architectbot's `ISSUE_AUTOMATION` token (giantswarm/giantswarm#38800).
