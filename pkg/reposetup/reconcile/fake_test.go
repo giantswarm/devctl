@@ -66,16 +66,22 @@ type fakeRepo struct {
 	// merged are the pull requests merged before the run, closed, as the
 	// discovery of the reported checks lists them; the statuses and check
 	// runs are served for their heads as for any ref.
-	merged       []*github.PullRequest
-	issues       []*github.Issue            // what GET /repos/{owner}/{repo}/issues lists
-	labels       map[string]*github.Label   // by lower-cased name: GitHub compares label names case-insensitively
-	history      []*github.RepositoryCommit // the commits behind the head of the default branch
-	issuesStatus int                        // HTTP status of the issues list when not 200
-	blobs        map[string][]byte
-	trees        map[string][]*github.TreeEntry
-	commits      map[string]fakeCommit // commit sha → tree sha and message
-	heads        map[string]string     // branch → sha of its head commit
-	seq          int
+	merged []*github.PullRequest
+	// pullsStatus, when set, answers the pull request list with it (403 for
+	// an identity without pull-request read).
+	pullsStatus int
+	// refStatusesStatus answers the statuses of a ref with the code set for
+	// it (403 for an identity without statuses read on that commit).
+	refStatusesStatus map[string]int
+	issues            []*github.Issue            // what GET /repos/{owner}/{repo}/issues lists
+	labels            map[string]*github.Label   // by lower-cased name: GitHub compares label names case-insensitively
+	history           []*github.RepositoryCommit // the commits behind the head of the default branch
+	issuesStatus      int                        // HTTP status of the issues list when not 200
+	blobs             map[string][]byte
+	trees             map[string][]*github.TreeEntry
+	commits           map[string]fakeCommit // commit sha → tree sha and message
+	heads             map[string]string     // branch → sha of its head commit
+	seq               int
 
 	// releaseSubject is the subject of the commit the release's tag names;
 	// empty leaves the tag's commit unknown (404).
@@ -634,6 +640,10 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			notFound(w, "Not Found")
 			return
 		}
+		if code := repo.refStatusesStatus[ref]; code != 0 {
+			writeJSON(w, code, map[string]string{"message": "Resource not accessible by integration"})
+			return
+		}
 		list := repo.refStatuses[ref]
 		out := []map[string]any{}
 		for _, st := range list {
@@ -652,12 +662,19 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]any{"total_count": len(runs), "check_runs": runs})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/pulls", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if repo.pullsStatus != 0 {
+			writeJSON(w, repo.pullsStatus, map[string]string{"message": "Resource not accessible by integration"})
+			return
+		}
 		var out []*github.PullRequest
 		for _, pr := range append(append([]*github.PullRequest{}, repo.prs...), repo.merged...) {
 			if s := r.URL.Query().Get("state"); s != "" && s != "all" && pr.GetState() != s {
 				continue
 			}
 			if h := r.URL.Query().Get("head"); h != "" && repo.owner+":"+pr.GetHead().GetRef() != h {
+				continue
+			}
+			if b := r.URL.Query().Get("base"); b != "" && pr.GetBase().GetRef() != "" && pr.GetBase().GetRef() != b {
 				continue
 			}
 			out = append(out, pr)

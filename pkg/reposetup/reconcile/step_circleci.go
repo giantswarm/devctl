@@ -35,10 +35,11 @@ const CircleCIAppLogin = "circleci-app[bot]"
 // With a CircleCI client (a person's `devctl repo reconcile`) the project's
 // pipeline definitions are read: a GitHub App definition with an enabled
 // trigger is the pipeline. Without one (the reconciler) the CircleCI
-// statuses of the newest of the default branch's last recentCommits commits
-// that carries any say it: statuses posted by
-// CircleCIAppLogin are a GitHub App pipeline's, statuses posted by a person
-// are an OAuth follow's, which stops building when that person leaves.
+// statuses say it, read on the default branch's recent commits, else the
+// latest release's tag, else recently merged pull requests' heads
+// (recentCircleCIStatuses): statuses posted by CircleCIAppLogin are a GitHub
+// App pipeline's, statuses posted by a person are an OAuth follow's, which
+// stops building when that person leaves.
 func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) error {
 	if r.CircleCI != nil {
 		return r.circleCIDefinitions(ctx, s, sr)
@@ -116,7 +117,7 @@ func (r *Runner) circleCIDefinitions(ctx context.Context, s *run, sr *StepResult
 // circleCIFromStatuses is the circleci step read from GitHub: who posted the
 // CircleCI statuses of the default branch's recent commits.
 func (r *Runner) circleCIFromStatuses(ctx context.Context, s *run, sr *StepResult) error {
-	statuses, err := r.recentCircleCIStatuses(ctx, s)
+	statuses, where, src, err := r.recentCircleCIStatuses(ctx, s)
 	if err != nil {
 		return err
 	}
@@ -124,21 +125,26 @@ func (r *Runner) circleCIFromStatuses(ctx context.Context, s *run, sr *StepResul
 	switch {
 	case app && len(others) > 0:
 		s.report(sr, FindingCircleCIOAuthFollow,
-			fmt.Sprintf("the CircleCI statuses of %s's %s come from %s and from %s: it builds on the GitHub App pipeline and on an OAuth follow, so every push builds twice", s.slug(), s.branch(), CircleCIAppLogin, strings.Join(others, ", ")),
+			fmt.Sprintf("the CircleCI statuses of %s on %s come from %s and from %s: it builds on the GitHub App pipeline and on an OAuth follow, so every push builds twice", s.slug(), where, CircleCIAppLogin, strings.Join(others, ", ")),
 			followCircleCIFix(s.slug(), true))
-		sr.Summary = fmt.Sprintf("CircleCI statuses on %s from %s and an OAuth follow", s.branch(), CircleCIAppLogin)
+		sr.Summary = fmt.Sprintf("CircleCI statuses on %s from %s and an OAuth follow", where, CircleCIAppLogin)
 	case app:
-		sr.Summary = fmt.Sprintf("CircleCI statuses on %s from %s: GitHub App pipeline", s.branch(), CircleCIAppLogin)
+		sr.Summary = fmt.Sprintf("CircleCI statuses on %s from %s: GitHub App pipeline", where, CircleCIAppLogin)
 	case len(others) > 0:
 		s.report(sr, FindingCircleCIOAuthFollow,
-			fmt.Sprintf("the CircleCI statuses of %s's %s come from %s: an OAuth follow, which builds through that person's GitHub grant and stops when they leave", s.slug(), s.branch(), strings.Join(others, ", ")),
+			fmt.Sprintf("the CircleCI statuses of %s on %s come from %s: an OAuth follow, which builds through that person's GitHub grant and stops when they leave", s.slug(), where, strings.Join(others, ", ")),
 			followCircleCIFix(s.slug(), true))
 		sr.Summary = "OAuth follow, no GitHub App pipeline"
+	case len(src.refused) > 0:
+		s.report(sr, FindingUnchecked,
+			fmt.Sprintf("no CircleCI status on %s in what this identity could read (%s), and GitHub refused %s: whether a CircleCI pipeline builds it is unknown", s.slug(), strings.Join(src.read, ", "), strings.Join(src.refused, ", ")),
+			"grant the identity the run uses contents: read, pull_requests: read and statuses: read on the repository (for the reconciler, its GitHub App), then run the check again")
+		sr.Summary = "CircleCI pipeline not checked: " + strings.Join(src.refused, ", ") + " not readable"
 	default:
 		s.report(sr, FindingCircleCIPipelineMissing,
-			fmt.Sprintf("none of the last %d commits of %s's %s carries a CircleCI status: no CircleCI pipeline builds it", recentCommits, s.slug(), s.branch()),
+			fmt.Sprintf("no CircleCI status on %s: not on %s; no CircleCI pipeline builds it", s.slug(), strings.Join(src.read, ", ")),
 			followCircleCIFix(s.slug(), false))
-		sr.Summary = "no CircleCI status on " + s.branch()
+		sr.Summary = "no CircleCI status on " + strings.Join(src.read, ", ")
 	}
 	return nil
 }
@@ -148,20 +154,52 @@ func (r *Runner) circleCIFromStatuses(ctx context.Context, s *run, sr *StepResul
 // has none yet, and neither has a [skip ci] commit.
 const recentCommits = 5
 
-// recentCircleCIStatuses returns the CircleCI statuses of the newest of the
-// default branch's last recentCommits commits that carries any: the head
-// first, then the ones before it. None when no such commit carries one.
-func (r *Runner) recentCircleCIStatuses(ctx context.Context, s *run) ([]*github.RepoStatus, error) {
+// recentPullRequests is how many recently merged pull requests' heads the
+// circleci step reads when the default branch carries no CircleCI status: a
+// pipeline whose workflows ignore the default branch (branches: ignore:
+// main) builds the pull requests' branches and the release tags only.
+const recentPullRequests = 3
+
+// statusSources records which sources the circleci step read for CircleCI
+// statuses without a client, and which GitHub refused, so its verdict names
+// exactly what it looked at.
+type statusSources struct {
+	read, refused []string
+}
+
+// recentCircleCIStatuses returns the CircleCI statuses the circleci step
+// decides on without a client, and where they were read: the newest of the
+// default branch's last recentCommits commits that carries any (the head
+// first); else the latest release's tag and the head commits of the last
+// recentPullRequests pull requests merged into the default branch, the
+// newest of them first by publish and merge time. None when none of them carries one; src says what was read
+// and what GitHub refused (404 or 403: an empty repository, an identity
+// without pull-request read), which is passed over, not failed on. There is
+// no age limit: a quiet repository whose pipeline ignores the default branch
+// is built by its old pull requests' pipeline still, and a pipeline that
+// stopped leaves an OAuth follow's statuses, which read as the advisory
+// circleci-oauth-follow.
+func (r *Runner) recentCircleCIStatuses(ctx context.Context, s *run) ([]*github.RepoStatus, string, statusSources, error) {
+	var src statusSources
 	statuses, err := r.circleCIStatuses(ctx, s, s.branch())
 	if err != nil || len(statuses) > 0 {
-		return statuses, err
+		return statuses, s.branch(), src, err
 	}
 	commits, resp, err := r.GitHub.Repositories.ListCommits(ctx, s.owner, s.name, &github.CommitsListOptions{SHA: s.branch(), ListOptions: github.ListOptions{PerPage: recentCommits}})
 	switch {
-	case isNotFound(resp, err) || (resp != nil && resp.StatusCode == http.StatusConflict):
-		return nil, nil
+	case resp != nil && resp.StatusCode == http.StatusConflict:
+		src.read = append(src.read, s.branch()+" (empty)")
+	case isNotFound(resp, err) || isForbidden(err):
+		src.read = append(src.read, "the head of "+s.branch())
+		src.refused = append(src.refused, "the commits of "+s.branch())
 	case err != nil:
-		return nil, err
+		return nil, "", src, err
+	default:
+		if n := min(len(commits), recentCommits); n > 1 {
+			src.read = append(src.read, fmt.Sprintf("the last %d commits of %s", n, s.branch()))
+		} else {
+			src.read = append(src.read, "the head of "+s.branch())
+		}
 	}
 	for i, c := range commits {
 		if i == 0 || i >= recentCommits {
@@ -169,10 +207,97 @@ func (r *Runner) recentCircleCIStatuses(ctx context.Context, s *run) ([]*github.
 		}
 		statuses, err := r.circleCIStatuses(ctx, s, c.GetSHA())
 		if err != nil || len(statuses) > 0 {
-			return statuses, err
+			return statuses, s.branch(), src, err
 		}
 	}
-	return nil, nil
+
+	// The latest release and the recently merged pull requests are read
+	// newest first, by publish and merge time: a repository moved to the App
+	// pipeline after its last release reads by its newer pull requests.
+	type candidate struct {
+		ref, where string
+		at         time.Time
+		pull       bool
+	}
+	var candidates []candidate
+	release, resp, err := r.GitHub.Repositories.GetLatestRelease(ctx, s.owner, s.name)
+	switch {
+	case isNotFound(resp, err):
+	case isForbidden(err):
+		src.refused = append(src.refused, "the latest release")
+	case err != nil:
+		return nil, "", src, err
+	case release.TagName != "":
+		candidates = append(candidates, candidate{release.TagName, "the latest release " + release.TagName, publishedAt(release), false})
+	}
+	merged, refused, err := r.recentlyMerged(ctx, s)
+	switch {
+	case err != nil:
+		return nil, "", src, err
+	case refused:
+		src.refused = append(src.refused, "the pull requests")
+	}
+	for _, pr := range merged {
+		candidates = append(candidates, candidate{pr.GetHead().GetSHA(), fmt.Sprintf("the head of the merged pull request #%d", pr.GetNumber()), pr.MergedAt.Time, true})
+	}
+	slices.SortStableFunc(candidates, func(a, b candidate) int { return b.at.Compare(a.at) })
+	// What was read is recorded once its statuses were: a refused read is
+	// named as refused, not as read.
+	pulls := 0
+	for _, c := range candidates {
+		statuses, err := r.circleCIStatuses(ctx, s, c.ref)
+		switch {
+		case isForbidden(err):
+			src.refused = append(src.refused, "the statuses of "+c.where)
+			continue
+		case err != nil:
+			return nil, "", src, err
+		case len(statuses) > 0:
+			return statuses, c.where, src, nil
+		case c.pull:
+			pulls++
+		default:
+			src.read = append(src.read, c.where)
+		}
+	}
+	switch {
+	case pulls > 1:
+		src.read = append(src.read, fmt.Sprintf("the heads of the last %d pull requests merged into %s", pulls, s.branch()))
+	case pulls == 1:
+		src.read = append(src.read, "the head of a pull request merged into "+s.branch())
+	}
+	return nil, "", src, nil
+}
+
+// recentlyMerged returns the last recentPullRequests pull requests merged
+// into the default branch, newest merge first; refused says GitHub refused
+// the list (404 or 403). GitHub lists closed pull requests by their last
+// update, and a comment or a label moves a long-merged one to the top, so a
+// page of them is read and sorted by the merge time.
+func (r *Runner) recentlyMerged(ctx context.Context, s *run) (merged []*github.PullRequest, refused bool, err error) {
+	pulls, resp, err := r.GitHub.PullRequests.List(ctx, s.owner, s.name, &github.PullRequestListOptions{
+		// One page of closed pull requests, by last update: merged and
+		// unmerged alike, so a repository that closes many pull requests
+		// unmerged (Renovate's superseded ones) may find fewer than
+		// recentPullRequests merged ones in it.
+		State: "closed", Base: s.branch(), Sort: "updated", Direction: "desc", ListOptions: github.ListOptions{PerPage: 50},
+	})
+	switch {
+	case isNotFound(resp, err) || isForbidden(err):
+		return nil, true, nil
+	case err != nil:
+		return nil, false, err
+	}
+	for _, pr := range pulls {
+		if pr.MergedAt != nil && pr.GetHead().GetSHA() != "" {
+			merged = append(merged, pr)
+		}
+	}
+	slices.SortStableFunc(merged, func(a, b *github.PullRequest) int { return b.MergedAt.Compare(a.MergedAt.Time) })
+	if len(merged) > recentPullRequests {
+		merged = merged[:recentPullRequests]
+	}
+	return merged, false, nil
 }
 
 // circleCIStatusPages bounds the statuses read of one commit: three pages
