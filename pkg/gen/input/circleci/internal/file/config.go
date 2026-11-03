@@ -64,6 +64,7 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"Language":            p.Language,
 			"HasDockerfile":       p.HasDockerfile,
 			"HasApp":              p.HasApp,
+			"PinVersion":          pinVersion(p),
 			"SkipAppCatalog":      p.SkipAppCatalog,
 			"SkipATS":             p.SkipATS,
 			"ATSVersion":          p.ATSVersion,
@@ -130,6 +131,17 @@ func NewWorkflowsInput(p params.Params) input.Input {
 	}
 
 	return i
+}
+
+// pinVersion is true when the workflow builds an image or a chart: it then
+// starts with architect's pin-version job, which resolves the version once
+// and persists it to the workspace, and every image and chart job requires it
+// and builds with that version. Resolved per job, a stable tag landing while
+// the workflow runs (a promote) gives the image and the chart that references
+// it different versions. A template repository's chart job is a render check
+// that publishes nothing, so it resolves its own version as before.
+func pinVersion(p params.Params) bool {
+	return p.HasDockerfile || (p.HasApp && !p.TemplateChart)
 }
 
 // newMultiImageSetupConfigInput emits the .circleci/config.yml of a

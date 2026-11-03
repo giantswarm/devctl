@@ -34,7 +34,7 @@ import (
 // custom manager that reads this annotation lives in renovate-custom.json5.
 //
 // renovate: datasource=github-tags depName=giantswarm/architect-orb
-const OrbVersion = "10.15.1"
+const OrbVersion = "10.16.7"
 
 // DefaultATSVersion is the app-test-suite container tag the generated chart-test
 // jobs run when a repo pins none (`gen circleci --ats-version`). app-test-suite
@@ -189,7 +189,7 @@ const (
 // can hold .nvmrc on the docker datasource in its own renovate config.
 //
 // renovate: datasource=docker depName=cimg/node
-const DefaultNodeImageVersion = "24.21.0"
+const DefaultNodeImageVersion = "24.22.2"
 
 // DefaultNodeTestTarget is the package.json script the Node job runs for the
 // verify phase when a repo does not override it. The repo composes
