@@ -10,7 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
-  last 3 merged pull requests when the default branch's last 5 commits carry no CircleCI status. A pipeline whose
+  last 3 pull requests merged into the default branch (newest merge first, each within 90 days) when the default
+  branch's last 5 commits carry no CircleCI status. A pipeline whose
   workflows ignore the default branch (`branches: ignore: main`, as on envoy-gateway-app and ingress-nginx-app) was
   reported `circleci-pipeline-missing`, and so non-converged, although CircleCI builds its pull requests and tags.
 

@@ -216,7 +216,8 @@ The verdicts are the ones the Repositories page shows:
 The `circleci` line is the reconciler's run, which writes nothing on CircleCI: whether a CircleCI GitHub
 App pipeline builds the repository, read from who posted the CircleCI statuses (`circleci-app[bot]`) of the
 newest of the default branch's last 5 commits that carries any, else of the latest release's tag, else of the
-heads of the last 3 merged pull requests (a pipeline that ignores the default branch builds only those), or
+heads of the last 3 pull requests merged into it (a pipeline that ignores the default branch builds only those;
+a release or a merge older than 90 days counts for nothing, so a pipeline that stopped reads as missing), or
 from the project's pipeline
 definitions when the run had a person's
 CircleCI login. A repository nothing builds carries the finding `circleci-pipeline-missing`, fixed by

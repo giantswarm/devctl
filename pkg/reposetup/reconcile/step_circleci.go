@@ -137,7 +137,7 @@ func (r *Runner) circleCIFromStatuses(ctx context.Context, s *run, sr *StepResul
 		sr.Summary = "OAuth follow, no GitHub App pipeline"
 	default:
 		s.report(sr, FindingCircleCIPipelineMissing,
-			fmt.Sprintf("no CircleCI status on %s: not on the last %d commits of %s, the latest release's tag, or the heads of the last %d merged pull requests; no CircleCI pipeline builds it", s.slug(), recentCommits, s.branch(), recentPullRequests),
+			fmt.Sprintf("no CircleCI status on %s: not on the last %d commits of %s, nor on the latest release's tag or the heads of the last %d pull requests merged into it in the last %d days; no CircleCI pipeline builds it", s.slug(), recentCommits, s.branch(), recentPullRequests, int(buildEvidenceAge.Hours()/24)),
 			followCircleCIFix(s.slug(), false))
 		sr.Summary = "no CircleCI status on " + s.branch() + ", the latest release or recent pull requests"
 	}
@@ -155,12 +155,21 @@ const recentCommits = 5
 // main) builds the pull requests' branches and the release tags only.
 const recentPullRequests = 3
 
+// buildEvidenceAge bounds how old a release or a merged pull request may be
+// for its CircleCI statuses to say how the repository builds today: a
+// pipeline that stopped building long ago leaves its old statuses behind,
+// and must read as missing, not as built.
+const buildEvidenceAge = 90 * 24 * time.Hour
+
 // recentCircleCIStatuses returns the CircleCI statuses the circleci step
 // decides on without a client, and where they were read: the newest of the
 // default branch's last recentCommits commits that carries any (the head
-// first); else the latest release's tag; else the head commits of the last
-// recentPullRequests merged pull requests, newest first. None when none of
-// them carries one.
+// first); else the latest release's tag, published within
+// buildEvidenceAge; else the head commits of the last recentPullRequests
+// pull requests merged into the default branch within buildEvidenceAge,
+// newest merge first. None when none of them carries one. A list GitHub
+// answers with 404 or 403 (an empty repository, a branch it does not know,
+// an identity without pull-request read) is passed over, not failed on.
 func (r *Runner) recentCircleCIStatuses(ctx context.Context, s *run) ([]*github.RepoStatus, string, error) {
 	statuses, err := r.circleCIStatuses(ctx, s, s.branch())
 	if err != nil || len(statuses) > 0 {
@@ -168,8 +177,8 @@ func (r *Runner) recentCircleCIStatuses(ctx context.Context, s *run) ([]*github.
 	}
 	commits, resp, err := r.GitHub.Repositories.ListCommits(ctx, s.owner, s.name, &github.CommitsListOptions{SHA: s.branch(), ListOptions: github.ListOptions{PerPage: recentCommits}})
 	switch {
-	case isNotFound(resp, err) || (resp != nil && resp.StatusCode == http.StatusConflict):
-		return nil, "", nil
+	case isNotFound(resp, err) || isForbidden(err) || (resp != nil && resp.StatusCode == http.StatusConflict):
+		commits = nil
 	case err != nil:
 		return nil, "", err
 	}
@@ -183,38 +192,58 @@ func (r *Runner) recentCircleCIStatuses(ctx context.Context, s *run) ([]*github.
 		}
 	}
 
+	since := r.now().Add(-buildEvidenceAge)
 	release, resp, err := r.GitHub.Repositories.GetLatestRelease(ctx, s.owner, s.name)
 	switch {
-	case isNotFound(resp, err):
+	case isNotFound(resp, err) || isForbidden(err):
 	case err != nil:
 		return nil, "", err
-	case release.TagName != "":
+	case release.TagName != "" && publishedAt(release).After(since):
 		statuses, err := r.circleCIStatuses(ctx, s, release.TagName)
 		if err != nil || len(statuses) > 0 {
 			return statuses, "the latest release " + release.TagName, err
 		}
 	}
 
-	pulls, _, err := r.GitHub.PullRequests.List(ctx, s.owner, s.name, &github.PullRequestListOptions{
-		State: "closed", Sort: "updated", Direction: "desc", ListOptions: github.ListOptions{PerPage: 20},
-	})
+	merged, err := r.recentlyMerged(ctx, s, since)
 	if err != nil {
 		return nil, "", err
 	}
-	read := 0
-	for _, pr := range pulls {
-		if pr.MergedAt == nil || pr.GetHead().GetSHA() == "" {
-			continue
-		}
-		if read++; read > recentPullRequests {
-			break
-		}
+	for _, pr := range merged {
 		statuses, err := r.circleCIStatuses(ctx, s, pr.GetHead().GetSHA())
 		if err != nil || len(statuses) > 0 {
 			return statuses, fmt.Sprintf("the head of the merged pull request #%d", pr.GetNumber()), err
 		}
 	}
 	return nil, "", nil
+}
+
+// recentlyMerged returns the last recentPullRequests pull requests merged
+// into the default branch after since, newest merge first. GitHub lists
+// closed pull requests by their last update, and a comment or a label moves a
+// long-merged one to the top, so a page of them is read and sorted by the
+// merge time.
+func (r *Runner) recentlyMerged(ctx context.Context, s *run, since time.Time) ([]*github.PullRequest, error) {
+	pulls, resp, err := r.GitHub.PullRequests.List(ctx, s.owner, s.name, &github.PullRequestListOptions{
+		State: "closed", Base: s.branch(), Sort: "updated", Direction: "desc", ListOptions: github.ListOptions{PerPage: 50},
+	})
+	switch {
+	case isNotFound(resp, err) || isForbidden(err):
+		return nil, nil
+	case err != nil:
+		return nil, err
+	}
+	var merged []*github.PullRequest
+	for _, pr := range pulls {
+		if pr.MergedAt != nil && pr.MergedAt.After(since) && pr.GetHead().GetSHA() != "" {
+			merged = append(merged, pr)
+		}
+	}
+	slices.SortStableFunc(merged, func(a, b *github.PullRequest) int { return b.MergedAt.Compare(a.MergedAt.Time) })
+	if len(merged) > recentPullRequests {
+		merged = merged[:recentPullRequests]
+	}
+	return merged, nil
 }
 
 // circleCIStatusPages bounds the statuses read of one commit: three pages

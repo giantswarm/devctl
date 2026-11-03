@@ -1678,6 +1678,60 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// GitHub lists closed pull requests by their last update: a comment
+			// on a pull request merged long ago, built by a departed OAuth
+			// follower, lists it first. The newest merges are read first, so
+			// the App pipeline's statuses decide.
+			name: "circleci: without a client, merged pull requests are read by merge time, not by update", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				old := github.Timestamp{Time: time.Now().Add(-60 * 24 * time.Hour)}
+				recent := github.Timestamp{Time: time.Now().Add(-2 * time.Hour)}
+				r.merged = append(r.merged,
+					&github.PullRequest{Number: new(3), State: new("closed"), MergedAt: &old, Head: &github.PullRequestBranch{Ref: new("old"), SHA: new("old-head")}},
+					&github.PullRequest{Number: new(40), State: new("closed"), MergedAt: &recent, Head: &github.PullRequestBranch{Ref: new("new"), SHA: new("new-head")}},
+				)
+				r.addStatus("old-head", "go-build", "success", "job-1", "alice", old.Time)
+				r.addStatus("new-head", "go-build", "success", "wf-new", CircleCIAppLogin, recent.Time)
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "CircleCI statuses on the head of the merged pull request #40 from circleci-app[bot]: GitHub App pipeline", res.Step(StepCircleCI).Summary)
+			},
+		},
+		{
+			// A pipeline that stopped building long ago leaves its old
+			// statuses on its last release and pull requests: older than the
+			// window, they say nothing about today, and the pipeline is missing.
+			name: "circleci: without a client, statuses older than the window read as a missing pipeline", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				long := time.Now().Add(-200 * 24 * time.Hour)
+				r.release, r.releaseAt = "v0.3.0", long
+				r.addStatus("v0.3.0", "go-build", "success", "wf-old", CircleCIAppLogin, long)
+				merged := github.Timestamp{Time: long}
+				r.merged = append(r.merged, &github.PullRequest{Number: new(5), State: new("closed"), MergedAt: &merged, Head: &github.PullRequestBranch{Ref: new("x"), SHA: new("x-head")}})
+				r.addStatus("x-head", "go-build", "success", "wf-x", CircleCIAppLogin, long)
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIPipelineMissing, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Contains(t, res.Step(StepCircleCI).Findings[0].Message, "in the last 90 days")
+			},
+		},
+		{
+			// An identity without pull-request read is answered 403 on the
+			// list: passed over, the step reports what it read, not failed.
+			name: "circleci: without a client, an unreadable pull request list is passed over", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.pullsStatus = http.StatusForbidden
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIPipelineMissing, wantAfter: VerdictReported,
+		},
+		{
 			// Neither the App nor a person posted a CircleCI status on the
 			// head; another system's status is no CircleCI status.
 			name: "circleci: without a client, no CircleCI status on the head is a missing pipeline", step: StepCircleCI,

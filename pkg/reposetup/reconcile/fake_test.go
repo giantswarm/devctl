@@ -66,7 +66,10 @@ type fakeRepo struct {
 	// merged are the pull requests merged before the run, closed, as the
 	// discovery of the reported checks lists them; the statuses and check
 	// runs are served for their heads as for any ref.
-	merged       []*github.PullRequest
+	merged []*github.PullRequest
+	// pullsStatus, when set, answers the pull request list with it (403 for
+	// an identity without pull-request read).
+	pullsStatus  int
 	issues       []*github.Issue            // what GET /repos/{owner}/{repo}/issues lists
 	labels       map[string]*github.Label   // by lower-cased name: GitHub compares label names case-insensitively
 	history      []*github.RepositoryCommit // the commits behind the head of the default branch
@@ -652,6 +655,10 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]any{"total_count": len(runs), "check_runs": runs})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/pulls", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if repo.pullsStatus != 0 {
+			writeJSON(w, repo.pullsStatus, map[string]string{"message": "Resource not accessible by integration"})
+			return
+		}
 		var out []*github.PullRequest
 		for _, pr := range append(append([]*github.PullRequest{}, repo.prs...), repo.merged...) {
 			if s := r.URL.Query().Get("state"); s != "" && s != "all" && pr.GetState() != s {
