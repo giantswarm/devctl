@@ -1177,7 +1177,17 @@ const verifyGhStub = `#!/usr/bin/env bash
 set -euo pipefail
 case "$1" in
   release) printf '%s\n' "$STUB_PUBLISHED" ;;
-  api) [ -z "${STUB_API_FAIL:-}" ] || { echo "HTTP 502" >&2; exit 1; }; printf '%s\n' "$STUB_STATUSES" ;;
+  api)
+    [ -z "${STUB_API_FAIL:-}" ] || { echo "HTTP 502" >&2; exit 1; }
+    # STUB_STATUSES_LATER answers every read after the first: statuses that
+    # land while the step waits.
+    if [ -n "${STUB_STATUSES_LATER:-}" ] && [ -e "$STUB_DIR/read" ]; then
+      printf '%s\n' "$STUB_STATUSES_LATER"
+    else
+      touch "$STUB_DIR/read"
+      printf '%s\n' "$STUB_STATUSES"
+    fi
+    ;;
   *) echo "unexpected gh $*" >&2; exit 2 ;;
 esac
 `
@@ -1191,6 +1201,9 @@ func runVerify(t *testing.T, statuses string, env ...string) ([]byte, error) {
 	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(verifyGhStub), 0o700); err != nil { // #nosec G306 -- the stub has to be executable
 		t.Fatalf("write gh stub: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(bin, "sleep"), []byte("#!/usr/bin/env bash\n"), 0o700); err != nil { // #nosec G306 -- the stub has to be executable
+		t.Fatalf("write sleep stub: %v", err)
+	}
 
 	cmd := exec.CommandContext(t.Context(), "bash", "-c", tagJobStepNamed(t, "Verify CircleCI picked up the tag").Run) // #nosec G204 -- the script is the rendered template, test-only
 	cmd.Env = append(os.Environ(),
@@ -1200,6 +1213,7 @@ func runVerify(t *testing.T, statuses string, env ...string) ([]byte, error) {
 		"CIRCLECI_STATUS_WAIT_SECONDS=0",
 		"STUB_PUBLISHED=2026-10-22T11:20:53Z",
 		"STUB_STATUSES="+statuses,
+		"STUB_DIR="+bin,
 		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
 	)
 	cmd.Env = append(cmd.Env, env...)
@@ -1216,7 +1230,10 @@ const (
 		`{"context":"ci/circleci: setup","state":"success","created_at":"2026-10-22T11:20:41Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/359214e5/job/2962c9c4"},` +
 		`{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:20:41Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/60675be8/job/409db27c"},` +
 		`{"context":"ci/circleci: setup","state":"pending","created_at":"2026-10-22T11:20:33Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/359214e5/job/2962c9c4"}`
-	tagStatuses = `{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:21:03Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/04a3e5ed/job/76cd04bd"},` +
+	// oauthTagStatus is an OAuth follow's job on the tag commit, started after
+	// the release.
+	oauthTagStatus = `{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:20:54Z","creator":{"login":"alice"},"target_url":"https://circleci.com/gh/example/widget/12"}`
+	tagStatuses    = `{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:21:03Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/04a3e5ed/job/76cd04bd"},` +
 		`{"context":"ci/circleci: setup","state":"success","created_at":"2026-10-22T11:21:03Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/dc012fa3/job/84113292"},` +
 		`{"context":"ci/circleci: setup","state":"pending","created_at":"2026-10-22T11:20:55Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/dc012fa3/job/84113292"}`
 )
@@ -1281,12 +1298,16 @@ func Test_AutoReleaseVerifyCircleCI(t *testing.T) {
 			rejectOut: []string{"::error::"},
 		},
 		{
-			// Both pipelines build the repository: the OAuth build lands
-			// first, the App's tag build after it; the step waits for the
-			// App's and verifies.
-			name:      "a double-built repository is verified by the App's tag build",
-			statuses:  "[" + `{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:20:54Z","creator":{"login":"alice"},"target_url":"https://circleci.com/gh/example/widget/12"},` + tagStatuses + "," + branchStatuses + "]",
-			expectOut: []string{"CircleCI builds v0.2.4: 1 pipeline(s)"},
+			// Both pipelines build the repository: the first read sees the
+			// OAuth build of the tag and the App's branch build only; the
+			// App's tag build lands while the step waits, and verifies it.
+			name:     "a double-built repository waits for the App's tag build and verifies it",
+			statuses: "[" + oauthTagStatus + "," + branchStatuses + "]",
+			env: []string{
+				"CIRCLECI_STATUS_WAIT_SECONDS=30",
+				"STUB_STATUSES_LATER=[" + oauthTagStatus + "," + tagStatuses + "," + branchStatuses + "]",
+			},
+			expectOut: []string{"retrying in 10 s", "CircleCI builds v0.2.4: 1 pipeline(s)"},
 			rejectOut: []string{"::error::", "::warning::"},
 		},
 		{
