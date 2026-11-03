@@ -215,8 +215,9 @@ The verdicts are the ones the Repositories page shows:
 
 The `circleci` line is the reconciler's run, which writes nothing on CircleCI: whether a CircleCI GitHub
 App pipeline builds the repository, read from who posted the CircleCI statuses (`circleci-app[bot]`) of the
-newest of the default branch's last 5 commits that carries any, else of the latest release's tag, else of the
-heads of the last 3 pull requests merged into it (a pipeline that ignores the default branch builds only those),
+newest of the default branch's last 5 commits that carries any, else of the latest release's tag and the heads
+of the last 3 pull requests merged into it, newest first (a pipeline that ignores the default branch builds only
+those),
 or from the project's pipeline definitions when the run had a person's CircleCI login. When nothing is found and GitHub
 refused one of those reads, the line is `reported` with the finding `unchecked`, naming what could not be read,
 instead of `circleci-pipeline-missing`. A repository nothing builds carries the finding `circleci-pipeline-missing`, fixed by

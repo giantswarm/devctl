@@ -170,9 +170,9 @@ type statusSources struct {
 // recentCircleCIStatuses returns the CircleCI statuses the circleci step
 // decides on without a client, and where they were read: the newest of the
 // default branch's last recentCommits commits that carries any (the head
-// first); else the latest release's tag; else the head commits of the last
-// recentPullRequests pull requests merged into the default branch, newest
-// merge first. None when none of them carries one; src says what was read
+// first); else the latest release's tag and the head commits of the last
+// recentPullRequests pull requests merged into the default branch, the
+// newest of them first by publish and merge time. None when none of them carries one; src says what was read
 // and what GitHub refused (404 or 403: an empty repository, an identity
 // without pull-request read), which is passed over, not failed on. There is
 // no age limit: a quiet repository whose pipeline ignores the default branch
@@ -211,6 +211,14 @@ func (r *Runner) recentCircleCIStatuses(ctx context.Context, s *run) ([]*github.
 		}
 	}
 
+	// The latest release and the recently merged pull requests are read
+	// newest first, by publish and merge time: a repository moved to the App
+	// pipeline after its last release reads by its newer pull requests.
+	type candidate struct {
+		ref, where string
+		at         time.Time
+	}
+	var candidates []candidate
 	release, resp, err := r.GitHub.Repositories.GetLatestRelease(ctx, s.owner, s.name)
 	switch {
 	case isNotFound(resp, err):
@@ -220,29 +228,35 @@ func (r *Runner) recentCircleCIStatuses(ctx context.Context, s *run) ([]*github.
 		return nil, "", src, err
 	case release.TagName != "":
 		src.read = append(src.read, "the latest release "+release.TagName)
-		statuses, err := r.circleCIStatuses(ctx, s, release.TagName)
-		if err != nil || len(statuses) > 0 {
-			return statuses, "the latest release " + release.TagName, src, err
-		}
+		candidates = append(candidates, candidate{release.TagName, "the latest release " + release.TagName, publishedAt(release)})
 	}
-
 	merged, refused, err := r.recentlyMerged(ctx, s)
 	switch {
 	case err != nil:
 		return nil, "", src, err
 	case refused:
 		src.refused = append(src.refused, "the pull requests")
-	case len(merged) > 0:
-		if len(merged) > 1 {
-			src.read = append(src.read, fmt.Sprintf("the heads of the last %d pull requests merged into %s", len(merged), s.branch()))
-		} else {
-			src.read = append(src.read, "the head of the last pull request merged into "+s.branch())
-		}
+	case len(merged) > 1:
+		src.read = append(src.read, fmt.Sprintf("the heads of the last %d pull requests merged into %s", len(merged), s.branch()))
+	case len(merged) == 1:
+		src.read = append(src.read, "the head of the last pull request merged into "+s.branch())
 	}
 	for _, pr := range merged {
-		statuses, err := r.circleCIStatuses(ctx, s, pr.GetHead().GetSHA())
-		if err != nil || len(statuses) > 0 {
-			return statuses, fmt.Sprintf("the head of the merged pull request #%d", pr.GetNumber()), src, err
+		candidates = append(candidates, candidate{pr.GetHead().GetSHA(), fmt.Sprintf("the head of the merged pull request #%d", pr.GetNumber()), pr.MergedAt.Time})
+	}
+	slices.SortStableFunc(candidates, func(a, b candidate) int { return b.at.Compare(a.at) })
+	for _, c := range candidates {
+		statuses, err := r.circleCIStatuses(ctx, s, c.ref)
+		switch {
+		case isForbidden(err):
+			// Statuses this identity may not read are passed over like a
+			// refused list: the verdict names them.
+			src.refused = append(src.refused, "the statuses of "+c.where)
+			continue
+		case err != nil:
+			return nil, "", src, err
+		case len(statuses) > 0:
+			return statuses, c.where, src, nil
 		}
 	}
 	return nil, "", src, nil
@@ -255,6 +269,10 @@ func (r *Runner) recentCircleCIStatuses(ctx context.Context, s *run) ([]*github.
 // page of them is read and sorted by the merge time.
 func (r *Runner) recentlyMerged(ctx context.Context, s *run) (merged []*github.PullRequest, refused bool, err error) {
 	pulls, resp, err := r.GitHub.PullRequests.List(ctx, s.owner, s.name, &github.PullRequestListOptions{
+		// One page of closed pull requests, by last update: merged and
+		// unmerged alike, so a repository that closes many pull requests
+		// unmerged (Renovate's superseded ones) may find fewer than
+		// recentPullRequests merged ones in it.
 		State: "closed", Base: s.branch(), Sort: "updated", Direction: "desc", ListOptions: github.ListOptions{PerPage: 50},
 	})
 	switch {

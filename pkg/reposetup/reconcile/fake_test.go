@@ -69,16 +69,19 @@ type fakeRepo struct {
 	merged []*github.PullRequest
 	// pullsStatus, when set, answers the pull request list with it (403 for
 	// an identity without pull-request read).
-	pullsStatus  int
-	issues       []*github.Issue            // what GET /repos/{owner}/{repo}/issues lists
-	labels       map[string]*github.Label   // by lower-cased name: GitHub compares label names case-insensitively
-	history      []*github.RepositoryCommit // the commits behind the head of the default branch
-	issuesStatus int                        // HTTP status of the issues list when not 200
-	blobs        map[string][]byte
-	trees        map[string][]*github.TreeEntry
-	commits      map[string]fakeCommit // commit sha → tree sha and message
-	heads        map[string]string     // branch → sha of its head commit
-	seq          int
+	pullsStatus int
+	// refStatusesStatus answers the statuses of a ref with the code set for
+	// it (403 for an identity without statuses read on that commit).
+	refStatusesStatus map[string]int
+	issues            []*github.Issue            // what GET /repos/{owner}/{repo}/issues lists
+	labels            map[string]*github.Label   // by lower-cased name: GitHub compares label names case-insensitively
+	history           []*github.RepositoryCommit // the commits behind the head of the default branch
+	issuesStatus      int                        // HTTP status of the issues list when not 200
+	blobs             map[string][]byte
+	trees             map[string][]*github.TreeEntry
+	commits           map[string]fakeCommit // commit sha → tree sha and message
+	heads             map[string]string     // branch → sha of its head commit
+	seq               int
 
 	// releaseSubject is the subject of the commit the release's tag names;
 	// empty leaves the tag's commit unknown (404).
@@ -635,6 +638,10 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		ref, ok := strings.CutSuffix(r.PathValue("ref"), "/statuses")
 		if !ok {
 			notFound(w, "Not Found")
+			return
+		}
+		if code := repo.refStatusesStatus[ref]; code != 0 {
+			writeJSON(w, code, map[string]string{"message": "Resource not accessible by integration"})
 			return
 		}
 		list := repo.refStatuses[ref]

@@ -1723,6 +1723,41 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			// The last release was built by an OAuth follower who has left;
+			// the repository moved to the App pipeline since, and its newer
+			// merged pull request carries the App's statuses: the newest of
+			// release and pull requests is read first, so it reads as built.
+			name: "circleci: without a client, a merged pull request newer than the release is read first", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "v1.0.0", time.Now().Add(-120*24*time.Hour)
+				r.addStatus("v1.0.0", "go-build", "success", "job-9", "alice", r.releaseAt)
+				recent := github.Timestamp{Time: time.Now().Add(-24 * time.Hour)}
+				r.merged = append(r.merged, &github.PullRequest{Number: new(77), State: new("closed"), MergedAt: &recent, Head: &github.PullRequestBranch{Ref: new("z"), SHA: new("z-head")}})
+				r.addStatus("z-head", "go-build", "success", "wf-z", CircleCIAppLogin, recent.Time)
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "CircleCI statuses on the head of the merged pull request #77 from circleci-app[bot]: GitHub App pipeline", res.Step(StepCircleCI).Summary)
+			},
+		},
+		{
+			// The release's statuses are refused (403) and nothing else
+			// carries any: unchecked, naming the refused read, not failed.
+			name: "circleci: without a client, refused statuses of the release are unchecked, not a failed step", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "v2.0.0", time.Now().Add(-time.Hour)
+				r.refStatusesStatus = map[string]int{"v2.0.0": http.StatusForbidden}
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictReported, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Contains(t, res.Step(StepCircleCI).Findings[0].Message, "the statuses of the latest release v2.0.0")
+			},
+		},
+		{
 			// An identity without pull-request read is answered 403 on the
 			// list: the step reports what it read and what it could not, as
 			// unchecked, not as a missing pipeline, and does not fail.
