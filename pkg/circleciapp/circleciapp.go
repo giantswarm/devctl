@@ -121,7 +121,7 @@ func Ensure(ctx context.Context, ci CircleCI, repo Repository, migrate bool) (*R
 		switch {
 		case triggered[d.ID] && app == nil:
 			app = &defs[i]
-		case dormant == nil:
+		case !triggered[d.ID] && dormant == nil:
 			dormant = &defs[i]
 		}
 	}

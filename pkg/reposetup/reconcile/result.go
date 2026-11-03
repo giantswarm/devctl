@@ -149,11 +149,10 @@ const (
 	// next tag.
 	FindingMissedTagBuild FindingKind = "missed-tag-build"
 	// FindingCircleCIPipelineMissing: the repository has a CircleCI
-	// configuration but no CircleCI GitHub App pipeline builds it: no
-	// pipeline at all, or an OAuth follow that builds through one person's
-	// GitHub grant and stops when they leave. CircleCI has no service
-	// accounts, so a person creates the pipeline with their own CircleCI
-	// login: `devctl repo follow-circleci`.
+	// configuration but no CircleCI pipeline builds it (an OAuth follow is
+	// FindingCircleCIOAuthFollow). CircleCI has no service accounts, so a
+	// person creates the GitHub App pipeline with their own CircleCI login:
+	// `devctl repo follow-circleci`.
 	FindingCircleCIPipelineMissing FindingKind = "circleci-pipeline-missing"
 	// FindingCircleCIOAuthFollow: the repository builds through an OAuth
 	// follow, alone or beside a GitHub App pipeline. It builds today, through

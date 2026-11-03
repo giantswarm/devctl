@@ -166,7 +166,10 @@ jobs:
           # release>"; a workflow is the id in a status's target URL
           # (…/workflow/<id>/job/<id>). Only the App pipeline's statuses
           # (circleci-app[bot]) are judged: an OAuth follow's link a job, not
-          # a workflow.
+          # a workflow. The generated pipeline starts each tag's build with
+          # one setup workflow; a commit without any setup status (a
+          # hand-kept, static configuration) counts every App workflow
+          # started since the first release, as the single-image step does.
           counts() {
             gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${sha}/statuses?per_page=100" \
               --jq '[.[] | select(.context | startswith("ci/circleci"))]' |
@@ -177,7 +180,8 @@ jobs:
                 (map(select((.creator.login // "") != "" and .creator.login != "circleci-app[bot]" and (.created_at | fromdateiso8601) >= $since)) | length) as $oauth |
                 map(select(.creator.login == "circleci-app[bot]")) |
                 (length) as $app |
-                (map(select(.context == "ci/circleci: setup")) | group_by(wf) | map(min_by(.created_at)) | map(select((.created_at | fromdateiso8601) >= $since)) | length) as $setups |
+                (if any(.[]; .context == "ci/circleci: setup") then map(select(.context == "ci/circleci: setup")) else . end) as $starts |
+                ($starts | group_by(wf) | map(min_by(.created_at)) | map(select((.created_at | fromdateiso8601) >= $since)) | length) as $setups |
                 "\($all) \($app) \($setups) \($oauth)"'
           }
           deadline=$((SECONDS + CIRCLECI_STATUS_WAIT_SECONDS))
@@ -194,9 +198,11 @@ jobs:
                 echo "CircleCI builds the ${#tags[@]} tag(s): ${setups} setup workflow(s) on ${sha:0:8} started after the first release"
                 exit 0
               fi
-              # An OAuth follow's statuses after the release settle
-              # nothing more by waiting: they are not judged.
-              [ "$oauth" -eq 0 ] || break
+              # An OAuth follow's statuses after the release settle nothing
+              # by waiting when the App pipeline builds nothing here. Where it
+              # builds too (an OAuth trigger left in place), its tag build may
+              # be seconds behind the OAuth one: keep waiting for it.
+              [ "$oauth" -eq 0 ] || [ "$app" -gt 0 ] || break
               echo "${setups} of ${#tags[@]} tag builds reported"
             else
               echo "reading the release or the commit statuses of ${sha:0:8} failed"

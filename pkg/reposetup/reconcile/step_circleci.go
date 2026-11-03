@@ -583,10 +583,10 @@ func publishedAt(release *github.RepositoryRelease) time.Time {
 	return release.GetCreatedAt().Time
 }
 
-// tagBuildGrace is how long after its release a tag may carry no status of
+// TagBuildGrace is how long after its release a tag may carry no status of
 // its own build yet without being a missed build: CircleCI posts the first
 // status within seconds of the tag push.
-const tagBuildGrace = 2 * time.Minute
+const TagBuildGrace = 2 * time.Minute
 
 // verifyRelease verifies one release, tag, of the platform's flow, as
 // stepRelease describes: findings go on sr, the line on the state found is
@@ -611,7 +611,7 @@ func (r *Runner) verifyRelease(ctx context.Context, s *run, sr *StepResult, tag 
 		return fmt.Sprintf("release %s: built on an OAuth follow (%s), not verified from statuses; `devctl repo follow-circleci %s --migrate` moves it to the GitHub App pipeline", tag, strings.Join(others, ", "), s.slug()), true, nil
 	}
 	if len(build) == 0 {
-		if r.now().Sub(published) < tagBuildGrace {
+		if r.now().Sub(published) < TagBuildGrace {
 			return fmt.Sprintf("release %s: published %s ago, no status of its build yet", tag, r.now().Sub(published).Round(time.Second)), false, nil
 		}
 		s.report(sr, FindingMissedTagBuild,

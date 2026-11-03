@@ -123,3 +123,31 @@ func TestRunPipelineNamesTheDefinitionAndRef(t *testing.T) {
 		}
 	}
 }
+
+// TestListTriggersPages: the triggers are read page by page, as the
+// definitions are.
+func TestListTriggersPages(t *testing.T) {
+	var pages []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := r.URL.Query().Get("page-token")
+		pages = append(pages, token)
+		w.Header().Set("Content-Type", "application/json")
+		if token == "" {
+			_, _ = w.Write([]byte(`{"items":[{"id":"t1","event_preset":"all-pushes"}],"next_page_token":"p2"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"items":[{"id":"t2","event_preset":"all-pushes","disabled":true}],"next_page_token":null}`))
+	}))
+	defer srv.Close()
+	c, err := New(Config{Token: "cci_test", BaseURL: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	triggers, err := c.ListTriggers(context.Background(), "p1", "d1")
+	if err != nil || len(triggers) != 2 || triggers[1].ID != "t2" || !triggers[1].Disabled {
+		t.Fatalf("triggers: %+v %v", triggers, err)
+	}
+	if len(pages) != 2 || pages[1] != "p2" {
+		t.Errorf("pages read: %q", pages)
+	}
+}

@@ -118,13 +118,23 @@ func (c *Client) CreatePipelineDefinition(ctx context.Context, projectID string,
 
 // ListTriggers returns the triggers of a definition.
 func (c *Client) ListTriggers(ctx context.Context, projectID, definitionID string) ([]Trigger, error) {
-	var out struct {
-		Items []Trigger `json:"items"`
+	var out []Trigger
+	base := c.definitions(projectID) + "/" + url.PathEscape(definitionID) + "/triggers"
+	path := base
+	for {
+		var page struct {
+			Items         []Trigger `json:"items"`
+			NextPageToken string    `json:"next_page_token"`
+		}
+		if err := c.do(ctx, http.MethodGet, path, nil, &page); err != nil {
+			return nil, microerror.Mask(err)
+		}
+		out = append(out, page.Items...)
+		if page.NextPageToken == "" || len(page.Items) == 0 {
+			return out, nil
+		}
+		path = base + "?page-token=" + url.QueryEscape(page.NextPageToken)
 	}
-	if err := c.do(ctx, http.MethodGet, c.definitions(projectID)+"/"+url.PathEscape(definitionID)+"/triggers", nil, &out); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return out.Items, nil
 }
 
 // CreateTrigger adds trigger to a definition and returns it with its id.

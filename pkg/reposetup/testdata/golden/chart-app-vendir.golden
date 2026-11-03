@@ -1143,9 +1143,11 @@ jobs:
                 echo "CircleCI builds ${TAG}: ${tag} pipeline(s) on ${TARGET:0:8} started after the release"
                 exit 0
               fi
-              # An OAuth follow's statuses after the release settle
-              # nothing more by waiting: they are not judged.
-              [ "$oauth" -eq 0 ] || break
+              # An OAuth follow's statuses after the release settle nothing
+              # by waiting when the App pipeline builds nothing here. Where it
+              # builds too (an OAuth trigger left in place), its tag build may
+              # be seconds behind the OAuth one: keep waiting for it.
+              [ "$oauth" -eq 0 ] || [ "$app" -gt 0 ] || break
               echo "no CircleCI status of ${TAG}'s build yet"
             else
               echo "reading the release or the commit statuses of ${TARGET:0:8} failed"

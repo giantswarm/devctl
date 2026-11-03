@@ -1281,6 +1281,15 @@ func Test_AutoReleaseVerifyCircleCI(t *testing.T) {
 			rejectOut: []string{"::error::"},
 		},
 		{
+			// Both pipelines build the repository: the OAuth build lands
+			// first, the App's tag build after it; the step waits for the
+			// App's and verifies.
+			name:      "a double-built repository is verified by the App's tag build",
+			statuses:  "[" + `{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:20:54Z","creator":{"login":"alice"},"target_url":"https://circleci.com/gh/example/widget/12"},` + tagStatuses + "," + branchStatuses + "]",
+			expectOut: []string{"CircleCI builds v0.2.4: 1 pipeline(s)"},
+			rejectOut: []string{"::error::", "::warning::"},
+		},
+		{
 			name:      "no CircleCI status at all warns and passes",
 			statuses:  "[]",
 			expectOut: []string{"::warning::v0.2.4 is released and no CircleCI pipeline builds this repository yet", "devctl repo follow-circleci example/widget"},

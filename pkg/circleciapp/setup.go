@@ -177,20 +177,16 @@ func releasesToBuild(ctx context.Context, gh GitHub, owner, repo string, progres
 	return out, nil
 }
 
-// tagBuildGrace is how long after its release a tag the App's trigger saw
-// may carry no status of its own build before Setup runs it: CircleCI posts
-// the first status within seconds of the tag push.
-const tagBuildGrace = 2 * time.Minute
-
 // Setup sets owner/repo up on a GitHub App pipeline as the person (Ensure)
-// and runs what the pipeline has not built: the release tags whose commit
-// carries no status of their own build (reconcile.TagBuildStatuses on the App
-// pipeline's statuses; any OAuth status after the release counts as built),
-// then the default branch when Ensure wrote anything or its head carries no
-// App status, unless a tag run builds the branch's head already — a tag cut before the trigger
-// existed reached no pipeline, as the scaffold's v0.1.0 of a new repository
-// does. A repository without .circleci/config.yml on its default branch is
-// IsNoConfig, before any write. With Wait set the runs are followed until they settle.
+// and runs what the pipeline has not built. First the release tags whose
+// commit carries no status of their own build (reconcile.TagBuildStatuses on
+// the App pipeline's statuses; any OAuth status after the release counts as
+// built): a tag cut before the trigger existed reached no pipeline, as the
+// scaffold's v0.1.0 of a new repository does. Then the default branch, when
+// Ensure wrote anything or its head carries no App status, unless a tag run
+// builds the branch's head already. A repository without
+// .circleci/config.yml on its default branch is IsNoConfig, before any
+// write. With Wait set the runs are followed until they settle.
 func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts Options) (*Report, error) {
 	progress := opts.Progress
 	if progress == nil {
@@ -261,7 +257,7 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 		// OAuth follow's name jobs alone, so any of them after the release
 		// counts as built: a tag is never published a second time.
 		built := len(reconcile.TagBuildStatuses(reconcile.AppStatuses(statuses), published)) > 0 || reconcile.OAuthBuiltSince(statuses, published)
-		recent := now().Sub(published) < tagBuildGrace && !result.CreatedTrigger
+		recent := now().Sub(published) < reconcile.TagBuildGrace && !result.CreatedTrigger
 		switch {
 		case built:
 			progress("%s: release %s built", slug, release.TagName)
@@ -344,7 +340,6 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 		default:
 			progress("%s: pipeline %d (%s) red: %s", slug, run.Pipeline.Number, run.Ref, strings.Join(outcome.Failed, ", "))
 		}
-
 	}
 	return report, nil
 }
