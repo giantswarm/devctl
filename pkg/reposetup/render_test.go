@@ -29,8 +29,15 @@ var renderCases = []struct {
 	options  map[string]string
 }{
 	{name: "go-service", team: "team-bumblebee", template: TemplateGo},
+	// go-service-no-ci declares gen.ci.generate: false: the Go template's
+	// .circleci/ stays out of the scaffold.
+	{name: "go-service-no-ci", team: "team-bumblebee", template: TemplateGo},
 	{name: "go-app", team: "team-bumblebee", template: TemplateGo, chart: TemplateChart},
+	// chart-app declares no visibility, so it is created private and its
+	// README drops the CircleCI and Scorecard badges; chart-app-public keeps
+	// them.
 	{name: "chart-app", team: "team-shield", template: TemplateChart},
+	{name: "chart-app-public", team: "team-shield", template: TemplateChart},
 	{name: "chart-app-vendir", team: "team-shield", template: TemplateChart, options: map[string]string{
 		OptionSync:          SyncVendir,
 		OptionPatch:         PatchScript,
@@ -50,6 +57,17 @@ var renderCases = []struct {
 var headerURL = regexp.MustCompile(`https://github\.com/giantswarm/devctl/blob/[0-9a-f]+/`)
 
 const fixedHeaderURL = "https://github.com/giantswarm/devctl/blob/<commit>/"
+
+// anyProvenance matches the provenance link in both forms: the commit and
+// template path of a checkout where `go generate` wrote the gitignored .sha
+// files (what the goldens carry), and the bare module-ref tree link a
+// checkout without them falls back to (input.TemplateSHA). Comparing with
+// both masked keeps the test independent of whether `go generate` ran.
+var anyProvenance = regexp.MustCompile(`https://github\.com/giantswarm/devctl/(?:blob/(?:[0-9a-f]+|<commit>)/\S+|tree/[^/\s]+)`)
+
+func maskProvenance(s string) string {
+	return anyProvenance.ReplaceAllString(s, "<provenance>")
+}
 
 func testRenderer() Renderer {
 	return Renderer{Templates: DirTemplates{Root: filepath.Join("testdata", "templates")}}
@@ -114,9 +132,29 @@ func Test_Render(t *testing.T) {
 			if !strings.Contains(got, "\n--- renovate.json5\n") {
 				t.Errorf("the scaffold has no renovate.json5")
 			}
+			// A scaffold carries a CircleCI pipeline only where `devctl gen
+			// circleci` wrote it, never the template's.
+			hasPipeline := strings.Contains(got, "\n--- .circleci/config.yml\n")
+			if want := GeneratesCircleCI(declarationFields(t, entry)); hasPipeline != want {
+				t.Errorf(".circleci/config.yml in the scaffold = %t, want %t", hasPipeline, want)
+			}
 			assertGolden(t, filepath.Join("testdata", "golden", tc.name+".golden"), got)
 		})
 	}
+}
+
+// declarationFields are the fields of the entry as the dry run rendered it.
+func declarationFields(t *testing.T, entry Entry) Fields {
+	t.Helper()
+	tf, err := ParseTeamFile("team", strings.NewReader(entry.Rendered))
+	if err != nil {
+		t.Fatalf("parse rendered entry: %v", err)
+	}
+	fields, err := tf.Entries[0].Fields()
+	if err != nil {
+		t.Fatalf("fields: %v", err)
+	}
+	return fields
 }
 
 // Test_Render_alignRunIsNoop is the acceptance criterion: the generated
@@ -264,8 +302,8 @@ func assertGolden(t *testing.T, golden, got string) {
 	if err != nil {
 		t.Fatalf("read golden %s: %v (run with -update to create it)", golden, err)
 	}
-	if got != string(want) {
-		t.Errorf("scaffold does not match %s (run with -update to regenerate)\n%s", golden, firstDifference(string(want), got))
+	if maskProvenance(got) != maskProvenance(string(want)) {
+		t.Errorf("scaffold does not match %s (run with -update to regenerate)\n%s", golden, firstDifference(maskProvenance(string(want)), maskProvenance(got)))
 	}
 }
 

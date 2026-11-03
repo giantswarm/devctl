@@ -3,7 +3,7 @@ package checks
 import (
 	"testing"
 
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/require"
 
 	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
@@ -25,9 +25,11 @@ func TestChecksBaseline(t *testing.T) {
 	require.False(t, b.StrictChecks)
 	require.Equal(t, []string{"pre-commit"}, b.RequiredChecks)
 	require.Equal(t, []string{"ci/circleci: build-chart"}, b.RequiredChecksIfReported)
-	// --remove is an anchored pattern on top of the company's ignored ones.
-	require.Contains(t, b.IgnoredChecks, `^create-release / Gather facts$`)
-	require.Subset(t, b.IgnoredChecks, reconcile.DefaultBaseline().IgnoredChecks)
+	// --remove, as anchored patterns, is all that is removed: the company's
+	// ignored contexts and the reported-only rule do not reach a context
+	// already required.
+	require.Equal(t, []string{`^create-release / Gather facts$`}, b.IgnoredChecks)
+	require.True(t, b.KeepRequiredChecks)
 
 	// Without required checks configured the strict default stands.
 	b = checksBaseline(&github.Protection{}, nil, nil, nil)

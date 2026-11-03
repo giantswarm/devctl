@@ -8,7 +8,6 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
-	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
@@ -24,24 +23,30 @@ type Sources struct {
 	Identity Identity
 }
 
-// OpenSources is the production wiring: the GitHub token of
-// [authstore.ResolveGitHub] (the App login, or a token in the environment
-// that overrides it; its warning goes to warn), conditional requests below
-// it, and the team files of the organisation. The requests go through
-// transport.
-func OpenSources(ctx context.Context, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*Sources, error) {
-	token, err := authstore.ResolveGitHub(ctx)
-	if err != nil {
-		return nil, err
-	}
-	warn(token.Warning)
+// Credentials are what a promotion acts with, handed in by its caller: the
+// CLI reads them from the keychain or the environment, a server holds them
+// for the person it serves. Nothing in this package reads a credential
+// store.
+type Credentials struct {
+	// GitHubToken is the GitHub access token; required.
+	GitHubToken string
+	// RenewGitHub is what a GitHub client that got 401 for the rejected
+	// token sends its request with again; nil never renews.
+	RenewGitHub func(ctx context.Context, rejected string) (string, error)
+	// Identity is who the token acts as, for the document.
+	Identity Identity
+	// NotFoundHint is [Config]'s: what GitHub's 404 for a repository the
+	// token cannot read adds.
+	NotFoundHint string
+}
+
+// NewSources builds the sources of a promotion from credentials: the GitHub
+// client with conditional requests below it and the team files of the
+// organisation. The requests go through transport.
+func NewSources(endpoints agentcli.Endpoints, transport http.RoundTripper, credentials Credentials) (*Sources, error) {
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
-	config := githubclient.Config{Logger: logger, AccessToken: token.Value, BaseURL: endpoints.GitHubAPIURL, Transport: transport}
-	if token.Source == authstore.SourceKeychain {
-		config.Renew = authstore.RenewGitHubToken
-	}
-	gh, _, err := githubclient.NewConditional(config)
+	gh, _, err := githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: credentials.GitHubToken, BaseURL: endpoints.GitHubAPIURL, Transport: transport, Renew: credentials.RenewGitHub})
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +55,7 @@ func OpenSources(ctx context.Context, endpoints agentcli.Endpoints, transport ht
 		Team: func(ctx context.Context, team string) ([]string, error) {
 			return TeamRepositories(ctx, gh.GitHub(), team)
 		},
-		NotFoundHint: authstore.GitHubNotFoundHint(token),
-		Identity:     Identity{Source: token.Source, Login: token.Login},
+		NotFoundHint: credentials.NotFoundHint,
+		Identity:     credentials.Identity,
 	}, nil
 }

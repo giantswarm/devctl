@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/auth"
+	"github.com/giantswarm/devctl/v8/cmd/ci"
 	"github.com/giantswarm/devctl/v8/cmd/completion"
 	"github.com/giantswarm/devctl/v8/cmd/deploy"
 	"github.com/giantswarm/devctl/v8/cmd/gen"
@@ -17,7 +18,9 @@ import (
 	"github.com/giantswarm/devctl/v8/cmd/release"
 	"github.com/giantswarm/devctl/v8/cmd/replace"
 	"github.com/giantswarm/devctl/v8/cmd/repo"
+	"github.com/giantswarm/devctl/v8/cmd/reservation"
 	"github.com/giantswarm/devctl/v8/cmd/rollout"
+	"github.com/giantswarm/devctl/v8/cmd/serve"
 	"github.com/giantswarm/devctl/v8/cmd/version"
 	"github.com/giantswarm/devctl/v8/pkg/project"
 )
@@ -51,6 +54,19 @@ func New(config Config) (*cobra.Command, error) {
 		}
 
 		authCmd, err = auth.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
+	var ciCmd *cobra.Command
+	{
+		c := ci.Config{
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		ciCmd, err = ci.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -125,6 +141,14 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var serveCmd *cobra.Command
+	{
+		serveCmd, err = serve.New(serve.Config{Stderr: config.Stderr})
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	var replaceCmd *cobra.Command
 	{
 		c := replace.Config{
@@ -148,6 +172,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 
 		repoCmd, err = repo.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
+	var reservationCmd *cobra.Command
+	{
+		c := reservation.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		reservationCmd, err = reservation.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -203,6 +241,7 @@ func New(config Config) (*cobra.Command, error) {
 	f.Init(c)
 
 	c.AddCommand(authCmd)
+	c.AddCommand(ciCmd)
 	c.AddCommand(completionCmd)
 	c.AddCommand(deployCmd)
 	c.AddCommand(genCmd)
@@ -210,7 +249,9 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(releaseCmd)
 	c.AddCommand(replaceCmd)
 	c.AddCommand(rolloutCmd)
+	c.AddCommand(serveCmd)
 	c.AddCommand(repoCmd)
+	c.AddCommand(reservationCmd)
 	c.AddCommand(versionCmd)
 
 	guardUsage(c)

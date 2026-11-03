@@ -1,0 +1,11 @@
+# The team file as the person edits it: new-cli is the entry being added.
+- name: new-cli
+  componentType: tool
+  gen:
+    flavours: [cli]
+    language: go
+- name: old-tool
+  componentType: tool
+  gen:
+    flavours: [cli]
+    language: go

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -148,11 +149,17 @@ type Fields struct {
 	ComponentType string `yaml:"componentType"`
 	Description   string `yaml:"description"`
 	Visibility    string `yaml:"visibility"`
-	Lifecycle     string `yaml:"lifecycle"`
+	// Topics are the repository's GitHub topics, exactly these. Nil (the
+	// field absent) leaves the topics on GitHub alone; an empty list
+	// removes them all.
+	Topics    []string `yaml:"topics"`
+	Lifecycle string   `yaml:"lifecycle"`
 	// DefaultBranch is the repository's default branch, main unless
 	// declared: the settings step keeps the repository on it and the
 	// protection step protects it. A fork line declares the branch that
-	// carries the upstream release plus the carried patches.
+	// carries the upstream release plus the carried patches. A repository
+	// that keeps its own default branch ([Fields.KeepsDefaultBranch]) is
+	// never renamed to it.
 	DefaultBranch string `yaml:"defaultBranch"`
 	// Align is the repository's opt-in to alignment: with it the reconciler
 	// changes the repository to its declared set-up on every trigger,
@@ -168,6 +175,11 @@ type Fields struct {
 	// the default branch's ruleset has no bypass actor, so nothing merges
 	// past the required review. Nil is the default, true.
 	AgentMerge *bool `yaml:"agentMerge"`
+	// Renovate is the repository's opt-out from Renovate: with false no
+	// renovate.json5 is generated and the renovate step accepts a
+	// repository without a Renovate configuration, or with one that
+	// disables Renovate. Nil is the default, true.
+	Renovate *bool `yaml:"renovate"`
 	// Rulesets names the repository's own rulesets the team keeps beside
 	// the engine's, the decision to keep them: the protection step leaves a
 	// declared one alone in silence, reports every other one and reports a
@@ -177,25 +189,75 @@ type Fields struct {
 	// set: the protection step deletes every active ruleset that is neither
 	// the engine's nor named in Rulesets, instead of reporting it.
 	PruneRulesets bool `yaml:"pruneRulesets"`
-	Replace       *struct {
+	// LineGate is a fork line's land gate: the line's sync App replaces the
+	// line without a pull request, and no actor lands a commit the gate's
+	// checks have not passed on. Nil: no gate.
+	LineGate *LineGateFields `yaml:"lineGate"`
+	Replace  *struct {
 		Precommit bool `yaml:"precommit"`
 	} `yaml:"replace"`
 	Gen *GenFields `yaml:"gen"`
 }
 
+// FlavourCustomer is the gen.flavours value of a customer repository.
+const FlavourCustomer = "customer"
+
+// componentTypeAppCatalog is the componentType of an app catalog: GitHub
+// Pages serves the catalog's index from the repository's default branch.
+const componentTypeAppCatalog = "appcatalog"
+
+// KeepsDefaultBranch says the repository's default branch is its own and the
+// reconciler never renames it: a customer repository's branch is the
+// customer's flow, an app catalog's the branch GitHub Pages serves the
+// catalog from. The protection step protects that branch, whatever its name.
+func (f Fields) KeepsDefaultBranch() bool {
+	if f.ComponentType == componentTypeAppCatalog {
+		return true
+	}
+	return f.Gen != nil && slices.Contains(f.Gen.Flavours, FlavourCustomer)
+}
+
+// RenovateOn says whether the entry keeps Renovate on: true unless it
+// declares renovate: false.
+func (f Fields) RenovateOn() bool {
+	return f.Renovate == nil || *f.Renovate
+}
+
+// LineGateFields is the lineGate block: the land gate of a fork line.
+type LineGateFields struct {
+	// App is the numeric id of the GitHub App the line's sync pushes as: a
+	// bypass actor of the default branch's ruleset in every mode, so that
+	// its land replaces the line without a pull request.
+	App int64 `yaml:"app"`
+	// RequiredChecks are the GitHub Actions checks that must have passed on
+	// a commit before any push lands it on a gated branch.
+	RequiredChecks []string `yaml:"requiredChecks"`
+	// Branches are the maintenance lines gated beside the default branch.
+	Branches []string `yaml:"branches"`
+}
+
 // GenFields is the gen block: the generators' inputs.
 type GenFields struct {
-	Flavours                      []string  `yaml:"flavours"`
-	Language                      string    `yaml:"language"`
-	InstallUpdateChart            bool      `yaml:"installUpdateChart"`
-	HelmDocsRegen                 bool      `yaml:"helmDocsRegen"`
-	RunSecurityScorecard          *bool     `yaml:"runSecurityScorecard"`
-	GenerateLlmRules              *bool     `yaml:"generateLlmRules"`
-	GoGenerate                    bool      `yaml:"goGenerate"`
-	PreCommit                     []string  `yaml:"preCommit"`
-	EnableUpstreamSyncAutomation  bool      `yaml:"enableUpstreamSyncAutomation"`
-	DispatchUpdateChartEventsRepo string    `yaml:"dispatchUpdateChartEventsRepo"`
-	CI                            *CIFields `yaml:"ci"`
+	Flavours                      []string        `yaml:"flavours"`
+	Language                      string          `yaml:"language"`
+	InstallUpdateChart            bool            `yaml:"installUpdateChart"`
+	HelmDocsRegen                 bool            `yaml:"helmDocsRegen"`
+	CheckReadmeLinks              *bool           `yaml:"checkReadmeLinks"`
+	RunSecurityScorecard          *bool           `yaml:"runSecurityScorecard"`
+	GenerateLlmRules              *bool           `yaml:"generateLlmRules"`
+	GoGenerate                    bool            `yaml:"goGenerate"`
+	PreCommit                     []string        `yaml:"preCommit"`
+	EnableUpstreamSyncAutomation  bool            `yaml:"enableUpstreamSyncAutomation"`
+	DispatchUpdateChartEventsRepo string          `yaml:"dispatchUpdateChartEventsRepo"`
+	Renovate                      *RenovateFields `yaml:"renovate"`
+	CI                            *CIFields       `yaml:"ci"`
+}
+
+// RenovateFields is the gen.renovate block: the Renovate generator's knobs.
+type RenovateFields struct {
+	// Extends names extra presets of giantswarm/renovate-presets by file
+	// name, each passed as --extends.
+	Extends []string `yaml:"extends"`
 }
 
 // CIFields is the gen.ci block: the CircleCI generator's knobs.
@@ -206,8 +268,14 @@ type CIFields struct {
 	// pipeline: CircleCI has nothing to build here. The reconciler's circleci
 	// and release steps skip the repository. It sits beside Generate false;
 	// Generate true beside it is refused.
-	TemplateContent         bool   `yaml:"templateContent"`
-	ReleaseWorkflow         string `yaml:"releaseWorkflow"`
+	TemplateContent bool   `yaml:"templateContent"`
+	ReleaseWorkflow string `yaml:"releaseWorkflow"`
+	// MaintenanceBranches says a fork line's maintenance branches
+	// (release-X.Y) cut releases too, each the patches of its X.Y series.
+	MaintenanceBranches bool `yaml:"maintenanceBranches"`
+	// PatchCandidates says a patch of the last stable release is cut as a
+	// release candidate too, never tagged stable on its push.
+	PatchCandidates         bool   `yaml:"patchCandidates"`
 	AppCatalog              string `yaml:"appCatalog"`
 	AppCatalogTest          string `yaml:"appCatalogTest"`
 	ChartName               string `yaml:"chartName"`
@@ -341,4 +409,18 @@ func kindName(k yaml.Kind) string {
 		return "alias"
 	}
 	return fmt.Sprintf("node of kind %d", k)
+}
+
+// LifecycleArchived is the lifecycle value of an archived repository.
+const LifecycleArchived = "archived"
+
+// LifecycleDeleted is the lifecycle value of a deleted repository; the entry
+// stays in the team file as the record of the deletion.
+const LifecycleDeleted = "deleted"
+
+// LifecycleOver says whether the declared lifecycle ends the repository's
+// life: archived or deleted. Such an entry is only the record of the
+// repository; nothing releases or changes it.
+func LifecycleOver(lifecycle string) bool {
+	return lifecycle == LifecycleArchived || lifecycle == LifecycleDeleted
 }

@@ -63,7 +63,7 @@ func getAMIInfoString(config Config) (string, error) {
 		if response.StatusCode == 403 {
 			continue // not found, keep going
 		}
-		mergedAMI[version], err = scrapeVersionAMI(response.Body)
+		versionAMI, err := scrapeVersionAMI(response.Body)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
@@ -73,9 +73,14 @@ func getAMIInfoString(config Config) (string, error) {
 			return "", microerror.Mask(err)
 		}
 
-		for region, image := range chinaVersionAMI {
-			mergedAMI[version][region] = image
+		merged, ok := withChinaAMIs(versionAMI, chinaVersionAMI)
+		if !ok {
+			// Left out so the next run scrapes it again: with --keep.existing a
+			// written release is never scraped again and would stay without China.
+			fmt.Printf("Release %s has no china AMIs yet, leaving it out\n", version)
+			continue
 		}
+		mergedAMI[version] = merged
 	}
 
 	// Releases defined in the existing file but not scraped successfully for some reason.
@@ -89,6 +94,18 @@ func getAMIInfoString(config Config) (string, error) {
 	}
 
 	return string(result), nil
+}
+
+// withChinaAMIs adds a release's China AMIs to its global ones. It reports
+// false when there are none, as long as the release is not imported into China.
+func withChinaAMIs(global, china map[string]string) (map[string]string, bool) {
+	if len(china) == 0 {
+		return nil, false
+	}
+	for region, image := range china {
+		global[region] = image
+	}
+	return global, true
 }
 
 func scrapeVersions(source io.Reader) ([]string, error) {

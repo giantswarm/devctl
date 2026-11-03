@@ -7,12 +7,14 @@
     "finishedAt": "*",
     "warnings": [],
     "repository": "giantswarm/e2e-app",
+    "identity": "app",
     "number": 42,
     "headSha": "abc123",
     "baseRef": "main",
     "checks": [
       {
         "name": "go-test",
+        "id": 101,
         "source": "check_run",
         "status": "completed",
         "conclusion": "success",
@@ -41,12 +43,15 @@
       }
     ],
     "mergeCommitSha": "aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44",
+    "mergedBy": "e2e-engineer",
     "method": "squash",
     "branchDeleted": true,
     "enqueued": false,
+    "dispatch": null,
     "exitCode": 6,
     "verdict": "release_failed",
     "reason": "merged as aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44, and the release failed: the tag pipeline of v1.2.3 failed: build/push-to-registries-release",
+    "unansweredReviews": [],
     "release": {
       "verdict": "ci_failed",
       "reason": "the tag pipeline of v1.2.3 failed: build/push-to-registries-release",
@@ -84,7 +89,8 @@
         ],
         "unfinished": []
       },
-      "actions": []
+      "actions": [],
+      "statuses": []
     }
   }
 }

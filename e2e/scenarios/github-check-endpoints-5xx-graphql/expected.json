@@ -1,0 +1,30 @@
+{
+  "exitCode": 0,
+  "stdoutContains": [
+    "the REST check endpoints went unanswered (Get \\\"http://",
+    "/repos/giantswarm/devctl/commits/abc123/check-runs?filter=latest\\u0026per_page=100\\\": failed 15 times in a row: 500 Internal Server Error): the head's checks are read through GraphQL (statusCheckRollup)"
+  ],
+  "json": {
+    "command": "pr wait",
+    "schemaVersion": 1,
+    "exitCode": 0,
+    "verdict": "green",
+    "reason": "",
+    "warnings": "*",
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/devctl",
+    "identity": "app",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [
+      {"name": "ci/circleci: build", "source": "status", "status": "completed", "conclusion": "success", "url": "https://circleci.com/gh/giantswarm/devctl/9001", "required": false},
+      {"name": "go-test", "id": 101, "workflow": "CI", "source": "check_run", "status": "completed", "conclusion": "success", "url": "https://github.com/giantswarm/devctl/runs/101", "required": false}
+    ],
+    "checksVia": "graphql",
+    "actions": [
+      {"name": "CI", "runId": 7001, "status": "completed", "conclusion": "success", "url": "*"}
+    ]
+  }
+}

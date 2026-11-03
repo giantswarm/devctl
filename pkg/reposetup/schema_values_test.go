@@ -134,3 +134,17 @@ func TestSchemaFieldValuesNonStringEnum(t *testing.T) {
 	require.True(t, IsInvalidSchema(err), "want an invalid schema error, got %v", err)
 	require.Nil(t, values)
 }
+
+// requiredChecks names the check run as GitHub reports it: the job's name,
+// never a '<workflow> / <job>' form.
+func TestSchemaRequiredChecksDescriptionNamesCheckRun(t *testing.T) {
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(embeddedSchema, &doc))
+
+	node := doc["items"].(map[string]any)["properties"].(map[string]any)["requiredChecks"].(map[string]any)
+	description := node["description"].(string)
+
+	require.Contains(t, description, "the job's name")
+	require.Contains(t, description, "<job> / <called job>")
+	require.NotContains(t, description, "<workflow>")
+}

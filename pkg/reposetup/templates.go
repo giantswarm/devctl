@@ -245,6 +245,10 @@ func safeJoin(dir, rel string) (string, error) {
 // a scaffold.
 const gitDir = ".git"
 
+// circleCIDir is a template's CircleCI pipeline; a scaffold keeps it only
+// where `devctl gen circleci` writes it ([GeneratesCircleCI]).
+const circleCIDir = ".circleci"
+
 const (
 	dirMode        fs.FileMode = 0o750
 	fileMode       fs.FileMode = 0o644

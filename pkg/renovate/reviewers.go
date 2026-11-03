@@ -6,6 +6,8 @@ package renovate
 import (
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -72,6 +74,27 @@ func SetReviewers(path string, reviewers []string) error {
 	return nil
 }
 
+// stringArrayElement is one quoted string of an array of plain strings.
+var stringArrayElement = regexp.MustCompile(`'([^'\\]*)'|"([^"\\]*)"`)
+
+// stringArray reads value as an array of plain strings, single- or
+// double-quoted, without escapes or comments; ok is false for anything else.
+func stringArray(value []byte) (elements []string, ok bool) {
+	v := strings.TrimSpace(string(value))
+	if !strings.HasPrefix(v, "[") || !strings.HasSuffix(v, "]") {
+		return nil, false
+	}
+	v = v[1 : len(v)-1]
+	elements = []string{}
+	for _, m := range stringArrayElement.FindAllStringSubmatch(v, -1) {
+		elements = append(elements, m[1]+m[2])
+	}
+	if strings.Trim(stringArrayElement.ReplaceAllString(v, ""), " \t\r\n,") != "" {
+		return nil, false
+	}
+	return elements, true
+}
+
 // writeFileAtomic writes data to path by writing to a temporary file in the
 // same directory and renaming it into place. The rename is atomic, so an
 // interrupted or failed write never leaves the original file truncated.
@@ -124,6 +147,11 @@ func setReviewers(src []byte, reviewers []string, defaultSingle bool) ([]byte, e
 	out := make([]byte, 0, len(src)+len(array)+16)
 
 	if found {
+		// A value that lists the reviewers already stays as it is written:
+		// the generator's multi-line array is no change to make.
+		if listed, ok := stringArray(src[span.valueStart:span.valueEnd]); ok && slices.Equal(listed, reviewers) {
+			return src, nil
+		}
 		// Replace just the value span, leaving the key and everything else
 		// untouched.
 		out = append(out, src[:span.valueStart]...)

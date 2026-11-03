@@ -120,6 +120,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 			Flavours:                r.flag.Flavours,
 			ComponentType:           r.flag.ComponentType,
 			Team:                    r.flag.Team,
+			SkipAppCatalog:          r.flag.SkipAppCatalog,
 			SkipATS:                 r.flag.SkipATS,
 			ATSVersion:              r.flag.ATSVersion,
 			ATSOnRelease:            r.flag.ATSOnRelease,

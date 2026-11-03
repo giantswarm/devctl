@@ -1,0 +1,31 @@
+{
+  "exitCode": 1,
+  "json": {
+    "command": "pr wait",
+    "schemaVersion": 1,
+    "exitCode": 1,
+    "verdict": "red",
+    "reason": "circleci workflow go-build-mcp-template failed",
+    "warnings": [],
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/e2e-template",
+    "identity": "app",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [
+      {"name": "bootstrap", "id": 101, "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
+    ],
+    "circleci": {
+      "pipelineId": "p1",
+      "pipelineNumber": 12,
+      "workflows": [
+        {"name": "go-build-mcp-template", "status": "failed", "url": "*"}
+      ]
+    },
+    "actions": [
+      {"name": "template-bootstrap-gate", "runId": 7001, "status": "completed", "conclusion": "success", "url": "*"}
+    ]
+  }
+}

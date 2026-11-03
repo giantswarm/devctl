@@ -1,0 +1,48 @@
+# The caller's own pull request, green on its head and far behind a base
+# that does not require branches to be up to date (mergeable_state clean,
+# the comparison says behind_by 145). Its checks ran against an older main
+# than the one the merge would land it on, so without --update-branch the
+# merge is refused with exit 3 before the first poll, naming the behind
+# state and --update-branch. No check, update-branch or merge route is
+# scripted.
+description: a head behind a base that is not strict exits 3 without --update-branch and nothing is merged
+args: [pr, merge, giantswarm/devctl, "42", --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/compare/main...abc123":
+      - body: {status: diverged, ahead_by: 1, behind_by: 145}
+    "GET /repos/giantswarm/devctl":
+      - body: {full_name: giantswarm/devctl, allow_merge_commit: false, allow_squash_merge: true, allow_rebase_merge: true}
+    "GET /repos/giantswarm/devctl/pulls/42/reviews":
+      - body: []
+    "GET /repos/giantswarm/devctl/pulls/42/comments":
+      - body: []
+    "GET /repos/giantswarm/devctl/issues/42/comments":
+      - body: []
+    "GET /repos/giantswarm/devctl/git/commits/abc123":
+      - body: {sha: abc123, committer: {date: "2026-09-21T09:59:00Z"}}
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - body:
+          number: 42
+          node_id: PR_e2e_42
+          title: "feat: the change"
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: clean
+          user: {login: e2e-engineer, type: User}
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}
+    "GET /repos/giantswarm/github/contents/repositories":
+      - body:
+          - {type: file, name: team-e2e.yaml, path: repositories/team-e2e.yaml, sha: t1}
+    "GET /repos/giantswarm/github/contents/repositories/team-e2e.yaml":
+      - body: {type: file, name: team-e2e.yaml, path: repositories/team-e2e.yaml, sha: t2, encoding: base64, content: "LSBuYW1lOiBkZXZjdGwKICBjb21wb25lbnRUeXBlOiBjbGkKICBnZW46CiAgICBmbGF2b3VyczoKICAgICAgLSBjbGkKICAgIGxhbmd1YWdlOiBnbwo="}

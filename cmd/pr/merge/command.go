@@ -8,29 +8,40 @@ import (
 
 	"github.com/giantswarm/devctl/v8/internal/versiongate"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/authexec"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
+	"github.com/giantswarm/devctl/v8/pkg/mergejob"
 )
 
 const (
 	name        = "merge <owner/repo> <number>"
-	description = "Wait until the pull request's head is green, squash-merge it, delete the branch and wait until the release it triggers is pullable; one JSON document, an exit code."
+	description = "Wait until the pull request's head is green, squash-merge it (rebase-merge on a fork line), delete the branch and wait until the release it triggers is pullable; one JSON document, an exit code."
 	long        = `Wait until the outcome of a pull request's CI is known (the wait of devctl pr
 wait), merge it and delete its branch, then wait until the release the merge
 triggers is pullable (the wait of devctl release wait --pr), print one JSON
 document on stdout and exit with a code that says what happened.
 
 Refused before any wait: a draft, a closed or merged pull request, one
-conflicting with its base or behind a base that requires branches to be up to
-date (exit 3, unless --update-branch); a pull request opened by another human
+conflicting with its base, or behind its base, strict or not, since its
+checks ran against an older base than the one the merge lands it on (exit 3,
+naming --update-branch); a pull request opened by another human
 (exit 5: bots, GitHub Apps, Giant Swarm's automation accounts -- taylorbot,
-which opens every generated release pull request, and architectbot -- and the
+which opens generated release pull requests not yet moved to the
+giantswarm-release App, and architectbot -- and the
 caller's own pull requests are fine); a repository whose team-file entry in
 giantswarm/github says agentMerge: false (exit 5, naming the field). A
 repository no team file declares is not opted out.
 
 Green lands through the merge API as a squash (--rebase: a rebase merge) with
 the judged head as the expected head, so a head that moved is not merged; the
-squash commit's subject is the pull request's title with its number. The head
+squash commit's subject is the pull request's title with its number. A fork
+line, a repository whose team-file entry lists the fork flavour in
+gen.flavours (one commit per carried patch), lands with a rebase merge by
+default; --squash squashes there. The repository's settings are read before
+the wait: squash off and exactly one other method on lands the default squash
+with that one (a merge commit, the same subject), with a warning; a method
+they do not allow is otherwise exit 3 before the wait, naming the flag for the
+other one, and an explicit --rebase or --squash is never replaced. The head
 branch is deleted through the refs API; a head in a fork is left alone. A base
 with a merge queue is enqueued instead, the pull request waited for until the
 queue merged it, then the branch deleted. Nothing reads a protection setting
@@ -44,9 +55,16 @@ another team owns, unless you are one of its admins, your own green pull
 request is declined until a reviewer with write access approves it: exit 3,
 the reason naming the ruleset, its bypass actors and the owning team.
 
---update-branch: a head behind a strict base is updated from the base
-(GitHub's Update branch) and the new head is what the wait judges and the
-merge lands. A merge GitHub declines as the pull request stands (a rule blocks
+--update-branch: a head behind its base is updated from the base before any
+check is judged (GitHub's Update branch, which merges the base in; with a
+rebase merge, Update with rebase, which rebases the head onto the base, so no
+merge commit lands on the line), and the new head is what the wait
+judges and the merge lands: behind a strict base by the mergeable state,
+behind any other base by the comparison of base and head. The head is compared
+with the base again after the wait: a base that moved during it is exit 3
+without --update-branch, and with it the head is updated and waited for again,
+at most three waits in all. A base with a merge queue is not compared without
+--update-branch: the queue tests the pull request against it. A merge GitHub declines as the pull request stands (a rule blocks
 it, the base or the head moved) is exit 3 with GitHub's sentence.
 
 The release: in a repository whose release model is auto-release, the tag
@@ -60,20 +78,63 @@ bump: that is exit 0, and the document says so. --no-release-wait ends the
 command at the merge; devctl release wait remains the command for
 a release on its own (a version, --catalog).
 
+--accept-red <check> (repeatable): a failed check run, commit status or
+CircleCI workflow of exactly that name does not refuse the merge, which
+lands although that check is red; every other failed check is red, exit 1,
+as without the flag. Judging that the check is red for a reason unrelated to
+the pull request (red on the base's head too) is the caller's. Refused with
+exit 3, naming the check: before any wait when the base requires the check
+(branch protection or a ruleset) or it is a security scan (a name containing
+nancy, gitleaks, govulncheck, trivy, kyverno or codeql); once the head is
+green when no check, status or CircleCI workflow of the head carries the
+name. The
+document's acceptedRed[] lists each accepted failure {name, source,
+conclusion, url}, and a warning names it.
+
+--dispatch <owner>/<repo>/<workflow file>[@<ref>] (or DEVCTL_MERGE_DISPATCH,
+for every merge on a machine; the flag wins): once the pull request is
+merged, after its release wait whatever that ended with, the workflow of
+that file in .github/workflows of the repository is dispatched on the ref
+(the repository's default branch when none is given) through its
+workflow_dispatch trigger, with the inputs repository (<owner/repo> of the
+merge), pull_request (its number) and release (the tag the merge released,
+empty when none follows or none was waited for); the workflow declares those
+three inputs, GitHub refuses inputs a workflow does not declare. A dispatch
+GitHub refuses is a warning and dispatch.reason in the document; the exit
+code is the merge's. Nothing is dispatched when nothing merged. A site that
+refreshes itself from merges and releases on a schedule learns of this one at
+once.
+
 Tokens come from the keychain (` + "`devctl auth login`" + `); the CircleCI token is
 required only when CircleCI is consulted, as in devctl pr wait and devctl
-release wait.
+release wait. The GitHub identity follows the owner: the devctl App login for giantswarm,
+where the App is installed, your own gh login (gh auth token) for every other
+owner; the document's identity says which ("app" or "gh").
 
 The document (schemaVersion 1) is devctl pr wait's (command, exitCode,
 verdict, reason, warnings, startedAt, finishedAt, repository, number, headSha,
 baseRef, checks[], circleci{}, actions[], unfinished[], failedJobs[] on red
-with --failed-log, whose tails also go to stderr) plus mergeCommitSha
-(the merge commit, empty when nothing merged), method (squash|rebase),
-branchDeleted, enqueued and release: null with --no-release-wait or when
+with --failed-log, whose tails also go to stderr, acceptedRed[] with
+--accept-red) plus mergeCommitSha
+(the merge commit, empty when nothing merged), mergedBy (the login the merge
+was made as, empty when nothing merged), method (squash|rebase|merge),
+branchDeleted, enqueued, release: null with --no-release-wait or when
 nothing merged, otherwise the release wait's verdict (available, no_release,
 ci_failed, timeout, ...) and reason with its result (tag, sha, releaseModel,
-ciModel, artifacts[{kind, reference, digest, state}], pipeline, actions). See
-docs/pr-merge.md.
+ciModel, artifacts[{kind, reference, digest, state}], pipeline, actions),
+and dispatch: null without --dispatch or when nothing merged, otherwise
+{workflow, ref, inputs, dispatched, reason}. See docs/pr-merge.md.
+
+--detach: the call is checked as above (arguments, flags, the version check,
+the token), then the same merge runs in a process of its own, in a session of
+its own, and the call returns within seconds: exit 0, verdict detached, with
+the handle, the pid, the log and the status command. devctl pr merge status
+<handle> reads the outcome: the merge's own document and exit code once it
+ended, exit 10 while it runs. A second --detach of a pull request whose
+detached merge runs is exit 3. --on-done <command> (with --detach) runs the
+command in sh -c once the detached merge ended, with DEVCTL_MERGE_HANDLE,
+DEVCTL_MERGE_EXIT_CODE, DEVCTL_MERGE_DOCUMENT, DEVCTL_MERGE_REPOSITORY and
+DEVCTL_MERGE_NUMBER set. The blocking call stays the default.
 
 Exit codes 6 and 9 mean the pull request was merged; never merge it again.
 
@@ -82,22 +143,30 @@ Exit codes:
      release is pullable or no release follows the merge
   1  red: a check, status, run or workflow failed, or the queue dropped it
   2  timeout before an outcome; unfinished names what was still open
-  3  not applicable: draft, closed, merged, conflicting, behind a strict base
-     (without --update-branch), or GitHub declined the merge as it stands
-  4  a required status context never reported within the timeout
+  3  not applicable: draft, closed, merged, conflicting, behind its base
+     (without --update-branch), GitHub declined the merge as it stands, or
+     --accept-red names a required check, a security scan or no check of
+     the head
+  4  a required status context never reported, or Actions runs await a
+     member's approval and nothing else is pending
   5  refused: another human's pull request, or agentMerge: false
   6  merged, and the release failed: the merge commit's auto-release run or
      the tag's pipeline failed (release.pipeline.failedJobs)
   7  usage or a tooling failure
-  8  authentication required; reason names the devctl auth login to run
+  8  authentication required; reason names the devctl auth login (or gh auth
+     login, for an owner outside giantswarm) to run
   9  merged, and the release was not confirmed: --release-timeout passed
      first, or the release wait could not judge it (release.verdict and the
      reason say which; devctl release wait <owner/repo> --pr <n> resumes it)`
 	example = `  devctl pr merge giantswarm/devctl 2278
   devctl pr merge giantswarm/devctl 2278 --timeout 45m --release-timeout 30m --progress
   devctl pr merge giantswarm/devctl 2278 --no-release-wait
-  devctl pr merge giantswarm/kagent-upstream 12 --rebase
-  devctl pr merge giantswarm/devctl 2278 --update-branch`
+  devctl pr merge giantswarm/kagent-upstream 12
+  devctl pr merge giantswarm/kagent-upstream 12 --squash
+  devctl pr merge giantswarm/devctl 2278 --update-branch
+  devctl pr merge giantswarm/devctl 2278 --accept-red "e2e / aws"
+  devctl pr merge giantswarm/devctl 2278 --dispatch giantswarm/team-magazine/refresh.yaml
+  DEVCTL_MERGE_DISPATCH=giantswarm/team-magazine/refresh.yaml devctl pr merge giantswarm/devctl 2278`
 )
 
 type Config struct {
@@ -121,10 +190,14 @@ func New(config Config) (*cobra.Command, error) {
 		stderr:          config.Stderr,
 		stdout:          config.Stdout,
 		requireGitHub:   authstore.RequireGitHub,
+		personGitHub:    authexec.PersonGitHub,
 		requireCircleCI: authstore.RequireCircleCI,
 		renewGitHub:     authstore.RenewGitHubToken,
 		endpoints:       agentcli.EndpointsFromEnv,
 		clock:           agentcli.SystemClock,
+		jobRoot:         mergejob.Root,
+		executable:      os.Executable,
+		github:          newClients,
 	}
 
 	c := &cobra.Command{
@@ -141,6 +214,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.SetFlagErrorFunc(r.FlagError)
 
 	f.Init(c)
+	c.AddCommand(newStatus(config))
 
 	return c, nil
 }

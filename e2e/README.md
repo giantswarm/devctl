@@ -187,8 +187,9 @@ Endpoints the commands use, as route keys: `GET /repos/{o}/{r}/pulls/{n}`, `GET
 /repos/{o}/{r}/actions/runs?head_sha={sha}`, `GET /repos/{o}/{r}/branches/{b}/protection`, `GET
 /repos/{o}/{r}/rules/branches/{b}`, `GET /repos/{o}/{r}/rulesets`, `PUT /repos/{o}/{r}/pulls/{n}/merge`, `PUT
 /repos/{o}/{r}/pulls/{n}/update-branch`, `DELETE /repos/{o}/{r}/git/refs/heads/{b}`, `GET /repos/{o}/{r}`,
-`GET /repos/{o}/{r}/releases/tags/{tag}`, `GET /repos/{o}/{r}/contents/{path}`, `POST /login/device/code`,
-`POST /login/oauth/access_token`, `GET /user`.
+`GET /repos/{o}/{r}/releases/tags/{tag}`, `GET /repos/{o}/{r}/contents/{path}`, `POST
+/repos/{o}/{r}/actions/workflows/{file}/dispatches`, `POST /login/device/code`, `POST /login/oauth/access_token`,
+`GET /user`.
 
 **CircleCI** (`mock/circleci`) serves the API v2 under `/api/v2` and the OAuth issuer's paths at the root, from
 one server. Every route is the scenario's; an unscripted route is `404 {"message":"Not Found"}`. Endpoints, as
@@ -231,16 +232,17 @@ The incidents the commands encode, one scenario each, by these slugs:
 - `pr wait`: `stage-gap`, `fork-awaiting-approval`, `conflicting-pr`, `retitled-stale-run`,
   `red-circleci-workflow`, `pr-wait-timeout`, `required-never-reported`, `github-5xx-retried`,
   `github-5xx-persistent`, `circleci-connection-reset`, `github-rate-limit-reset`,
-  `github-rate-limit-spent-answer`, `github-rate-limit-after-deadline`, `circleci-rate-limit-retry-after`
+  `github-rate-limit-spent-answer`, `github-rate-limit-after-deadline`, `circleci-rate-limit-retry-after`, `no-checks-event-never-fired`,
+  `github-check-endpoints-5xx-graphql`, `github-check-endpoints-and-graphql-5xx`
 - `pr merge`: `own-green-merged`, `other-human-refused`, `opt-out-refused`, `behind-strict-base`,
-  `behind-update-branch`, `merge-queue`, `red-not-merged`, `merge-released`, `merge-no-release`,
+  `behind-base-refused`, `behind-update-branch`, `merge-queue`, `red-not-merged`, `merge-released`, `merge-no-release`,
   `merge-release-failed`, `merge-github-5xx-retried`
 - `release wait`: `renamed-image`, `renamed-chart`, `hand-written-ci`, `release-assets-only`, `failed-tag-pipeline`,
   `rerun-replaces-failed`, `stale-registry-login`, `release-wait-timeout`, `jobs-not-visible-yet`,
   `declaration-behind-repository`, `repo-owned-tag-job`, `release-wait-no-release`,
-  `release-wait-github-5xx-retried`
+  `release-wait-github-5xx-retried`, `commit-status-pending`, `commit-status-failed`
 - `auth`: `auth-missing`, `auth-expired`, `auth-refreshed`, `auth-login-muster`, `auth-login-muster-no-manager`
 - `repo` (the manager's verbs over the mocked muster): `repo-auth-missing`, `repo-status`, `repo-status-json`,
   `repo-status-refreshed`, `repo-list`, `repo-info`, `repo-get`, `repo-refresh`, `repo-sweep`, `repo-watch-ready`,
   `repo-watch-failed`, `repo-adopt-dry-run`, `repo-update-set`, `repo-transfer-dry-run`, `repo-set-lifecycle-commit`,
-  `repo-set-lifecycle-delete-refused`, `repo-approve`, `repo-align-dry-run`
+  `repo-set-lifecycle-delete-refused`, `repo-approve`, `repo-align-dry-run`, `repo-validate-manager`

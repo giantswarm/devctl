@@ -10,15 +10,19 @@
     "startedAt": "*",
     "finishedAt": "*",
     "repository": "giantswarm/devctl",
+    "identity": "app",
     "number": 42,
     "headSha": "abc123",
     "baseRef": "main",
     "checks": [],
     "actions": [],
     "mergeCommitSha": "",
+    "mergedBy": "",
     "method": "squash",
     "branchDeleted": false,
     "enqueued": false,
+    "dispatch": null,
+    "unansweredReviews": null,
     "release": null
   }
 }

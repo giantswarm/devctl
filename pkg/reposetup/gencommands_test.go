@@ -3,6 +3,7 @@ package reposetup
 import (
 	"encoding/json"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -25,14 +26,61 @@ func TestGenCommandsNothingForAForkLine(t *testing.T) {
 		"--release-workflow", "auto-release", "--release-branch", "giantswarm"}}, genCommands(released, genContext{}))
 	require.False(t, hasCIJob(released))
 
+	released.Gen.CI.MaintenanceBranches = true
+	require.Equal(t, [][]string{{"devctl", "gen", "workflows", "--flavour", "fork", "--language", "go", "--repo-name", "upstream-fork",
+		"--release-workflow", "auto-release", "--release-branch", "giantswarm", "--maintenance-branches"}}, genCommands(released, genContext{}))
+	// A pinned devctl that predates the flag renders without it.
+	predates := genContext{Knows: func(_, flag string) bool { return flag != "--maintenance-branches" }}
+	require.NotContains(t, genCommands(released, predates)[0], "--maintenance-branches")
+
+	released.Gen.CI.MaintenanceBranches = false
+	released.Gen.CI.PatchCandidates = true
+	require.Equal(t, [][]string{{"devctl", "gen", "workflows", "--flavour", "fork", "--language", "go", "--repo-name", "upstream-fork",
+		"--release-workflow", "auto-release", "--release-branch", "giantswarm", "--patch-candidates"}}, genCommands(released, genContext{}))
+	predates = genContext{Knows: func(_, flag string) bool { return flag != "--patch-candidates" }}
+	require.NotContains(t, genCommands(released, predates)[0], "--patch-candidates")
+
 	service := Fields{Name: "service", Gen: &GenFields{Flavours: []string{"app"}, Language: "go"}}
 	require.NotEmpty(t, genCommands(service, genContext{}))
 	require.True(t, hasCIJob(service))
 }
 
+// The README link check is generated for every app repository unless the
+// entry switches it off, and the flag is only passed to a devctl that knows
+// it: align-files probes --help before passing a flag its pinned devctl may
+// predate.
+func TestGenCommandsCheckReadmeLinks(t *testing.T) {
+	on, off := true, false
+	cases := []struct {
+		name  string
+		field *bool
+		knows bool
+		want  bool // the workflows line carries --check-readme-links=false
+	}{
+		{name: "unset", knows: true},
+		{name: "on", field: &on, knows: true},
+		{name: "off", field: &off, knows: true, want: true},
+		{name: "off, devctl predates the flag", field: &off},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fields := Fields{Name: "example", Gen: &GenFields{Flavours: []string{"app"}, Language: "generic", CheckReadmeLinks: tc.field}}
+			knows := func(generator, flag string) bool { return tc.knows || flag != "--check-readme-links" }
+			var workflows []string
+			for _, c := range genCommands(fields, genContext{Knows: knows}) {
+				if c[2] == genWorkflows {
+					workflows = c
+				}
+			}
+			require.NotNil(t, workflows)
+			require.Equal(t, tc.want, slices.Contains(workflows, "--check-readme-links=false"), workflows)
+		})
+	}
+}
+
 // Every declaration that generates at all gets the Renovate line, last;
-// --circleci-generated follows gen.ci.generate. A fork line and an entry
-// without gen get none.
+// --circleci-generated follows gen.ci.generate. A fork line, an entry
+// without gen and one that declares renovate: false get none.
 func TestGenCommandsRenovate(t *testing.T) {
 	on, off := true, false
 	cases := []struct {
@@ -60,6 +108,21 @@ func TestGenCommandsRenovate(t *testing.T) {
 			fields: Fields{Name: "configs", Lifecycle: lifecycleDeprecated, ChoreReviewers: []string{"team:team-honeybadger"},
 				Gen: &GenFields{Flavours: []string{"customer"}, Language: "generic", CI: &CIFields{Generate: &off}}},
 			want: []string{"devctl", "gen", "renovate", "--language", "generic", "--repo-name", "configs", "--deprecated", "-r", "team:team-honeybadger"},
+		},
+		{
+			name: "extra presets",
+			fields: Fields{Name: "service", Gen: &GenFields{Flavours: []string{"app"}, Language: "go", CI: &CIFields{Generate: &on},
+				Renovate: &RenovateFields{Extends: []string{"flux.json5", "disable-vendir.json5"}}}},
+			want: []string{"devctl", "gen", "renovate", "--language", "go", "--circleci-generated", "--repo-name", "service", "--extends", "flux.json5", "--extends", "disable-vendir.json5"},
+		},
+		{
+			name:   "renovate: true is the default",
+			fields: Fields{Name: "tool", Renovate: &on, Gen: &GenFields{Flavours: []string{"generic"}, Language: "python"}},
+			want:   []string{"devctl", "gen", "renovate", "--language", "python", "--repo-name", "tool"},
+		},
+		{
+			name:   "renovate: false",
+			fields: Fields{Name: "sandbox", Renovate: &off, Gen: &GenFields{Flavours: []string{"app"}, Language: "go", CI: &CIFields{Generate: &on}}},
 		},
 		{
 			name:   "fork line",
@@ -110,6 +173,8 @@ func TestGenCommandsPassEveryGenCIKey(t *testing.T) {
 	notCircleCIFlags := map[string]bool{
 		"generate":              true, // turns the line on
 		"releaseWorkflow":       true, // a flag of gen workflows
+		"maintenanceBranches":   true, // a flag of gen workflows
+		"patchCandidates":       true, // a flag of gen workflows
 		"requireCircleCIChecks": true, // the protection step's
 		"atsBranchOnly":         true, // deprecated, the generator ignores it
 		"templateContent":       true, // the reconciler's: no pipeline to generate

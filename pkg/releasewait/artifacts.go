@@ -39,11 +39,17 @@ type ChartNames func(dir string) (string, error)
 // unreadable as YAML or without a name is an error naming the file, never
 // the directory in its place.
 func TagChartNames(ctx context.Context, gh GitHub, owner, repo, sha string) ChartNames {
+	return chartNamesIn(ctx, gh, owner, repo, sha, helmDir, chartFile)
+}
+
+// chartNamesIn reads the names from <base>/<dir>/<file> at sha, the way
+// TagChartNames reads them from helm/<dir>/Chart.yaml.
+func chartNamesIn(ctx context.Context, gh GitHub, owner, repo, sha, base, file string) ChartNames {
 	return func(dir string) (string, error) {
-		path := helmDir + "/" + dir + "/" + chartFile
+		path := base + "/" + dir + "/" + file
 		file, err := gh.GetFile(ctx, owner, repo, path, sha)
 		if githubclient.IsNotFound(err) {
-			return "", usageErr("%s does not exist at %s: the pipeline packages %s/%s and publishes the chart under the name that file declares", path, short(sha), helmDir, dir)
+			return "", usageErr("%s does not exist at %s: the pipeline packages %s/%s and publishes the chart under the name that file declares", path, short(sha), base, dir)
 		}
 		if err != nil {
 			return "", fmt.Errorf("reading %s at %s: %w", path, short(sha), err)
@@ -71,15 +77,17 @@ func imageArtifact(image, version string, private bool, endpoints agentcli.Endpo
 	}
 }
 
-// chartArtifactFor is the reference of a chart in its registry.
-func chartArtifactFor(owner, chart, catalog, version string, private bool, endpoints agentcli.Endpoints) Artifact {
+// chartArtifactFor is the reference of a chart in its registry, with the
+// production and the test catalog its pipeline pushes it to.
+func chartArtifactFor(owner, chart, catalog, catalogTest, version string, private bool, endpoints agentcli.Endpoints) Artifact {
 	return Artifact{
-		Kind:      KindChart,
-		Reference: fmt.Sprintf("%s/%s/%s/%s:%s", registryHost(private, endpoints), chartsPrefix, owner, chart, version),
-		State:     StateMissing,
-		private:   private,
-		chart:     chart,
-		catalog:   catalog,
+		Kind:        KindChart,
+		Reference:   fmt.Sprintf("%s/%s/%s/%s:%s", registryHost(private, endpoints), chartsPrefix, owner, chart, version),
+		State:       StateMissing,
+		private:     private,
+		chart:       chart,
+		catalog:     catalog,
+		catalogTest: catalogTest,
 	}
 }
 
@@ -96,10 +104,12 @@ func registryHost(private bool, endpoints agentcli.Endpoints) string {
 // gen.ci.image.name or <owner>/<repo>; a chart for the app flavour of a
 // non-template repository, packaged from helm/<gen.ci.chartName> or
 // helm/<repo> and called what charts names that directory, in
-// gen.ci.appCatalog or the default catalog. The private registry holds a
+// gen.ci.appCatalog or the default catalog (gen.ci.appCatalogTest or the
+// default test catalog for a pre-release). The private registry holds a
 // private-only image and the artifacts of a private repository that does
-// not force them public.
-func GeneratedArtifacts(entry reposetup.Fields, repo, version string, content TagContent, privateRepo bool, endpoints agentcli.Endpoints, charts ChartNames) ([]Artifact, error) {
+// not force them public. A multi-image repository's release, image's tag
+// <image>/vX.Y.Z, publishes the one image <owner>/<repo>/<image>.
+func GeneratedArtifacts(entry reposetup.Fields, repo, image, version string, content TagContent, privateRepo bool, endpoints agentcli.Endpoints, charts ChartNames) ([]Artifact, error) {
 	if entry.Gen == nil {
 		return nil, usageErr("the team-file entry of %s has no gen block to derive the artifacts from", repo)
 	}
@@ -112,6 +122,13 @@ func GeneratedArtifacts(entry reposetup.Fields, repo, version string, content Ta
 	}
 	owner := reposetup.DefaultOwner
 	var artifacts []Artifact
+
+	if slices.Contains(entry.Gen.Flavours, string(gen.FlavourMultiImage)) {
+		if image == "" {
+			return nil, usageErr("%s releases one line per image, <image>/vX.Y.Z; %s names no image", repo, version)
+		}
+		return []Artifact{imageArtifact(owner+"/"+repo+"/"+image, version, privateRepo && !ci.ForcePublic, endpoints)}, nil
+	}
 
 	hasDockerfile := content.HasDockerfile() || (ci.Image != nil && ci.Image.Dockerfile != "")
 	if hasDockerfile {
@@ -140,7 +157,11 @@ func GeneratedArtifacts(entry reposetup.Fields, repo, version string, content Ta
 		if catalog == "" {
 			catalog = circleci.DefaultAppCatalog
 		}
-		artifacts = append(artifacts, chartArtifactFor(owner, chart, catalog, version, privateRepo && !ci.ForcePublic, endpoints))
+		catalogTest := ci.AppCatalogTest
+		if catalogTest == "" {
+			catalogTest = circleci.DefaultAppCatalogTest
+		}
+		artifacts = append(artifacts, chartArtifactFor(owner, chart, catalog, catalogTest, version, privateRepo && !ci.ForcePublic, endpoints))
 	}
 	return artifacts, nil
 }
@@ -157,9 +178,10 @@ type PushJob struct {
 	// Image is the image parameter; empty means the orb's default,
 	// <owner>/<repo>.
 	Image string
-	// Chart and Catalog are the chart and app_catalog parameters; Chart is
-	// the directory under helm/ the job packages.
-	Chart, Catalog string
+	// Chart, Catalog and CatalogTest are the chart, app_catalog and
+	// app_catalog_test parameters; Chart is the directory under helm/ the job
+	// packages.
+	Chart, Catalog, CatalogTest string
 	// Push is false for a build-only job (push: false, or a chart job that
 	// pushes to neither the catalog nor the registry).
 	Push bool
@@ -223,6 +245,7 @@ func ParsePushJobs(config []byte) ([]PushJob, error) {
 				Image             string `yaml:"image"`
 				Chart             string `yaml:"chart"`
 				AppCatalog        string `yaml:"app_catalog"`
+				AppCatalogTest    string `yaml:"app_catalog_test"`
 				Push              *bool  `yaml:"push"`
 				PushToAppCatalog  *bool  `yaml:"push_to_appcatalog"`
 				PushToOCIRegistry *bool  `yaml:"push_to_oci_registry"`
@@ -232,7 +255,7 @@ func ParsePushJobs(config []byte) ([]PushJob, error) {
 			if err := item.Content[1].Decode(&params); err != nil {
 				return nil, fmt.Errorf("parsing the parameters of %s: %w", ref, err)
 			}
-			job := PushJob{Name: params.Name, Kind: kind, Image: params.Image, Chart: params.Chart, Catalog: params.AppCatalog, Push: true, ForcePublic: params.ForcePublic}
+			job := PushJob{Name: params.Name, Kind: kind, Image: params.Image, Chart: params.Chart, Catalog: params.AppCatalog, CatalogTest: params.AppCatalogTest, Push: true, ForcePublic: params.ForcePublic}
 			if job.Name == "" {
 				job.Name = orbJob
 			}
@@ -244,6 +267,9 @@ func ParsePushJobs(config []byte) ([]PushJob, error) {
 				job.Push = params.PushToOCIRegistry == nil || *params.PushToOCIRegistry
 				if job.Catalog == "" {
 					job.Catalog = circleci.DefaultAppCatalog
+				}
+				if job.CatalogTest == "" {
+					job.CatalogTest = circleci.DefaultAppCatalogTest
 				}
 			}
 			if kind == KindImage {
@@ -262,12 +288,134 @@ func ParsePushJobs(config []byte) ([]PushJob, error) {
 // for it), each naming its image or the chart directory whose Chart.yaml
 // names the chart, and the images the caller names (--image) for a job that
 // pushes outside the architect orb, tagged with the git tag as written: such
-// a job pushes $CIRCLE_TAG, where the orb strips the v. A Dockerfile at the tag with no image
-// among them is a usage error naming --image; the repository name is never
-// taken for the image.
-func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version, tag string, content TagContent, pipelineJobs map[string]bool, privateRepo bool, images []string, endpoints agentcli.Endpoints) ([]Artifact, error) {
-	var jobs []PushJob
-	for _, name := range []string{circleCIConfig, circleCIWorkflows, circleCICustom} {
+// a job pushes $CIRCLE_TAG, where the orb strips the v, and the charts the
+// caller names (--chart) for a job that pushes them with helm itself,
+// tagged with the bare version as helm requires. The charts under helm/ and
+// charts/ that the configuration's own jobs push with helm push are expected
+// at the repository that job pushes to; the warnings name every chart at the
+// tag that none of these covers and so goes unchecked. A Dockerfile at the
+// tag with no image among them is a usage error naming --image; the
+// repository name is never taken for the image.
+func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version, tag string, content TagContent, pipelineJobs map[string]bool, privateRepo bool, images, charts []string, endpoints agentcli.Endpoints) ([]Artifact, []string, error) {
+	files := []string{circleCIConfig, circleCIWorkflows, circleCICustom}
+	jobs, artifacts, err := pushJobArtifacts(ctx, gh, owner, repo, sha, version, content, files, pipelineJobs, privateRepo, endpoints)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for _, name := range images {
+		path, private, err := namedImage(name, endpoints)
+		if err != nil {
+			return nil, nil, err
+		}
+		if private == nil {
+			private = &privateRepo
+		}
+		artifacts = append(artifacts, imageArtifact(path, tag, *private, endpoints))
+	}
+	for _, name := range charts {
+		path, private, err := namedChart(name, endpoints)
+		if err != nil {
+			return nil, nil, err
+		}
+		if private == nil {
+			private = &privateRepo
+		}
+		artifacts = append(artifacts, namedChartArtifact(path, version, *private, endpoints))
+	}
+
+	helmJobs, err := readHelmPushJobs(ctx, gh, owner, repo, sha, content, files)
+	if err != nil {
+		return nil, nil, err
+	}
+	tagCharts, err := readTagCharts(ctx, gh, owner, repo, sha, content)
+	if err != nil {
+		return nil, nil, err
+	}
+	pushed, warnings := helmPushArtifacts(tagCharts, helmJobs, pipelineJobs, artifacts, version, endpoints)
+	artifacts = append(artifacts, pushed...)
+
+	hasImage := slices.ContainsFunc(artifacts, func(a Artifact) bool { return a.Kind == KindImage })
+	if content.HasDockerfile() && !hasImage {
+		return nil, nil, usageErr("a Dockerfile exists at %s but no push job of the tag pipeline names an image (pipeline jobs: %s; architect push jobs in the configuration: %s): a job that pushes outside the architect orb (a plain docker push) cannot be read from the configuration, and the repository name is never taken for the image; name it with devctl release wait --image, e.g. --image %s/%s", short(sha), listOrNone(sortedKeys(pipelineJobs)), listOrNone(jobNames(jobs)), owner, repo)
+	}
+	return dedupe(artifacts), warnings, nil
+}
+
+// CustomPushJobs are the architect push jobs the repository's own custom.yml
+// adds to a generated pipeline, read at the tag: what the pipeline publishes
+// beyond the team-file entry's artifacts (a second chart released off the
+// same tag, giantswarm/agent-platform's connectivity chart). None for a
+// custom.yml of test and repository-owned jobs alone, which then names no
+// artifact and needs no look at the pipeline's jobs.
+func CustomPushJobs(ctx context.Context, gh GitHub, owner, repo, sha string, content TagContent) ([]PushJob, error) {
+	jobs, err := readPushJobs(ctx, gh, owner, repo, sha, content, []string{circleCICustom})
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(jobs, func(job PushJob) bool { return !job.Push }), nil
+}
+
+// CustomArtifacts are the artifacts of the custom push jobs (CustomPushJobs)
+// that the tag pipeline runs, pipelineJobs being the job names CircleCI
+// lists for it.
+func CustomArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version string, jobs []PushJob, pipelineJobs map[string]bool, privateRepo bool, endpoints agentcli.Endpoints) ([]Artifact, error) {
+	return pushJobArtifactsOf(ctx, gh, owner, repo, sha, version, jobs, pipelineJobs, privateRepo, endpoints)
+}
+
+// pushJobArtifacts reads the push jobs of the named configuration files at
+// the tag and returns them with the artifacts of those the tag pipeline runs.
+func pushJobArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, version string, content TagContent, files []string, pipelineJobs map[string]bool, privateRepo bool, endpoints agentcli.Endpoints) ([]PushJob, []Artifact, error) {
+	jobs, err := readPushJobs(ctx, gh, owner, repo, sha, content, files)
+	if err != nil {
+		return nil, nil, err
+	}
+	artifacts, err := pushJobArtifactsOf(ctx, gh, owner, repo, sha, version, jobs, pipelineJobs, privateRepo, endpoints)
+	if err != nil {
+		return nil, nil, err
+	}
+	return jobs, artifacts, nil
+}
+
+// readPushJobs reads the push jobs of the named configuration files at the
+// tag; a file the tag does not carry is skipped.
+func readPushJobs(ctx context.Context, gh GitHub, owner, repo, sha string, content TagContent, files []string) ([]PushJob, error) {
+	return readConfigs(ctx, gh, owner, repo, sha, content, files, ParsePushJobs)
+}
+
+// readHelmPushJobs reads the helm push jobs of the named configuration files
+// at the tag, the way readPushJobs reads the orb's.
+// A job that pushes through a make target reads the root Makefile at the
+// tag, once.
+func readHelmPushJobs(ctx context.Context, gh GitHub, owner, repo, sha string, content TagContent, files []string) ([]HelmPushJob, error) {
+	var mk *makefile
+	load := func() (*makefile, error) {
+		if mk != nil {
+			return mk, nil
+		}
+		mk = parseMakefile(nil)
+		if !slices.Contains(content.Root, makefileName) {
+			return mk, nil
+		}
+		file, err := gh.GetFile(ctx, owner, repo, makefileName, sha)
+		if githubclient.IsNotFound(err) {
+			return mk, nil
+		}
+		if err != nil {
+			mk = nil
+			return nil, fmt.Errorf("reading %s at %s: %w", makefileName, short(sha), err)
+		}
+		mk = parseMakefile(file.Data)
+		return mk, nil
+	}
+	return readConfigs(ctx, gh, owner, repo, sha, content, files, func(config []byte) ([]HelmPushJob, error) {
+		return parseHelmPushJobs(config, load)
+	})
+}
+
+func readConfigs[T any](ctx context.Context, gh GitHub, owner, repo, sha string, content TagContent, files []string, parse func([]byte) ([]T, error)) ([]T, error) {
+	var jobs []T
+	for _, name := range files {
 		if !slices.Contains(content.CircleCI, name) {
 			continue
 		}
@@ -275,13 +423,18 @@ func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, vers
 		if err != nil {
 			return nil, fmt.Errorf("reading %s/%s at %s: %w", circleCIDir, name, short(sha), err)
 		}
-		parsed, err := ParsePushJobs(file.Data)
+		parsed, err := parse(file.Data)
 		if err != nil {
 			return nil, usageErr("%s/%s at %s: %v", circleCIDir, name, short(sha), err)
 		}
 		jobs = append(jobs, parsed...)
 	}
+	return jobs, nil
+}
 
+// pushJobArtifactsOf are the artifacts of the push jobs among jobs that the
+// tag pipeline runs.
+func pushJobArtifactsOf(ctx context.Context, gh GitHub, owner, repo, sha, version string, jobs []PushJob, pipelineJobs map[string]bool, privateRepo bool, endpoints agentcli.Endpoints) ([]Artifact, error) {
 	charts := TagChartNames(ctx, gh, owner, repo, sha)
 	var artifacts []Artifact
 	for _, job := range jobs {
@@ -304,26 +457,10 @@ func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, vers
 			if err != nil {
 				return nil, err
 			}
-			artifacts = append(artifacts, chartArtifactFor(owner, chart, job.Catalog, version, private, endpoints))
+			artifacts = append(artifacts, chartArtifactFor(owner, chart, job.Catalog, job.CatalogTest, version, private, endpoints))
 		}
 	}
-
-	for _, name := range images {
-		path, private, err := namedImage(name, endpoints)
-		if err != nil {
-			return nil, err
-		}
-		if private == nil {
-			private = &privateRepo
-		}
-		artifacts = append(artifacts, imageArtifact(path, tag, *private, endpoints))
-	}
-
-	hasImage := slices.ContainsFunc(artifacts, func(a Artifact) bool { return a.Kind == KindImage })
-	if content.HasDockerfile() && !hasImage {
-		return nil, usageErr("a Dockerfile exists at %s but no push job of the tag pipeline names an image (pipeline jobs: %s; architect push jobs in the configuration: %s): a job that pushes outside the architect orb (a plain docker push) cannot be read from the configuration, and the repository name is never taken for the image; name it with devctl release wait --image, e.g. --image %s/%s", short(sha), listOrNone(sortedKeys(pipelineJobs)), listOrNone(jobNames(jobs)), owner, repo)
-	}
-	return dedupe(artifacts), nil
+	return artifacts, nil
 }
 
 // namedImage reads an image the caller names: a repository path such as
@@ -331,6 +468,28 @@ func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, vers
 // which then decides the registry (private nil: the repository's
 // visibility does). A tag, a digest or another registry is a usage error.
 func namedImage(name string, endpoints agentcli.Endpoints) (path string, private *bool, err error) {
+	return namedPath("--image", "image", "giantswarm/dex", name, endpoints)
+}
+
+// namedChart reads a chart the caller names the way namedImage reads an
+// image: giantswarm/kagent/helm/kagent, optionally after a registry host.
+func namedChart(name string, endpoints agentcli.Endpoints) (path string, private *bool, err error) {
+	return namedPath("--chart", "chart", "giantswarm/kagent/helm/kagent", name, endpoints)
+}
+
+// namedChartArtifact is a chart --chart names, at its own repository path:
+// the chart is its last element, and it goes to no catalog.
+func namedChartArtifact(path, version string, private bool, endpoints agentcli.Endpoints) Artifact {
+	return Artifact{
+		Kind:      KindChart,
+		Reference: fmt.Sprintf("%s/%s:%s", registryHost(private, endpoints), path, version),
+		State:     StateMissing,
+		private:   private,
+		chart:     path[strings.LastIndex(path, "/")+1:],
+	}
+}
+
+func namedPath(flag, kind, example, name string, endpoints agentcli.Endpoints) (path string, private *bool, err error) {
 	path = name
 	for host, isPrivate := range map[string]bool{endpoints.RegistryPublic: false, endpoints.RegistryPrivate: true} {
 		if rest, ok := strings.CutPrefix(name, host+"/"); ok {
@@ -340,9 +499,9 @@ func namedImage(name string, endpoints agentcli.Endpoints) (path string, private
 	first, _, _ := strings.Cut(path, "/")
 	switch {
 	case !strings.Contains(path, "/") || strings.ContainsAny(first, ".:"):
-		return "", nil, usageErr("--image %q: name the image as <owner>/<name> (e.g. giantswarm/dex), optionally after %s or %s", name, endpoints.RegistryPublic, endpoints.RegistryPrivate)
+		return "", nil, usageErr("%s %q: name the %s as <owner>/<name> (e.g. %s), optionally after %s or %s", flag, name, kind, example, endpoints.RegistryPublic, endpoints.RegistryPrivate)
 	case strings.ContainsAny(path, ":@"):
-		return "", nil, usageErr("--image %q: name the image without a tag or digest; the release's version is the tag", name)
+		return "", nil, usageErr("%s %q: name the %s without a tag or digest; the release's version is the tag", flag, name, kind)
 	}
 	return path, private, nil
 }

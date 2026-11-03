@@ -3,12 +3,18 @@
 // pkg/releasewait for the release the merge triggered.
 //
 // A merge is refused before the first poll for a pull request no wait can
-// turn green (draft, closed, conflicting, behind a strict base; exit 3), for
+// turn green (draft, closed, conflicting; exit 3), for a head behind its
+// base, whose checks ran against an older base than the one it would land
+// on (exit 3, and again after the wait for a base that moved during it;
+// --update-branch updates the head and waits again instead), for
 // a pull request another human opened (exit 5: bots, GitHub Apps, Giant
 // Swarm's automation accounts and the caller are fine) and in a repository
 // whose team-file entry opts out of agent merges (exit 5, naming the
-// field). Green lands through the merge
-// API as a squash or a rebase with the judged head as the expected head,
+// field). A reviewer's feedback newer than the head that nobody answered
+// refuses it too (exit 5), read before the wait and again right before
+// the merge. Green lands through the merge
+// API as a squash or a rebase with the judged head as the expected head
+// (a merge commit where the repository allows only that),
 // then the branch goes through the refs API. A base with a merge queue is
 // enqueued instead and the pull request waited for. No protection setting,
 // ruleset or enforce_admins is read to be changed, or written.
@@ -39,7 +45,7 @@ import (
 	"time"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
@@ -55,6 +61,9 @@ const (
 	// new head appears; updatedHeadInterval is between them.
 	updatedHeadReads    = 20
 	updatedHeadInterval = 3 * time.Second
+	// mergeAttempts bounds the merge calls of one merge: a call that failed
+	// with a 5xx or in transit, on a pull request still open, is repeated.
+	mergeAttempts = 3
 )
 
 // Config configures a Merger.
@@ -62,10 +71,13 @@ type Config struct {
 	// Wait is the wait engine's configuration; its GitHub client, clock,
 	// progress writer and timeout are the merge's too. Required.
 	Wait prwait.Config
-	// Method is squash or rebase; empty is squash.
+	// Method is squash or rebase, asked explicitly; empty is the default:
+	// rebase on a fork line (a team-file entry with the fork flavour),
+	// squash everywhere else.
 	Method githubclient.MergeMethod
-	// UpdateBranch: a head behind a strict base is updated from the base
-	// and the new head waited for, instead of exit 3.
+	// UpdateBranch: a head behind its base is updated from the base before
+	// its checks are judged and the new head waited for; behind a strict
+	// base, instead of exit 3.
 	UpdateBranch bool
 	// Login is the account the token acts as, for the author check; empty
 	// reads it from GET /user.
@@ -76,6 +88,15 @@ type Config struct {
 	// Release waits for the release the merge triggered; nil ends the
 	// command at the merge (--no-release-wait).
 	Release ReleaseWait
+	// Dispatch is the workflow to dispatch after a merge, with the merged
+	// pull request and its release as inputs; nil dispatches nothing.
+	Dispatch *Dispatch
+	// Idempotent: a pull request merged already is the merge's outcome, not
+	// exit 3: its merge commit, then the wait for its release, with no
+	// refusal, merge call, branch deletion or dispatch. devctl serve's
+	// pr_merge, whose caller calls again after a lost answer; the CLI
+	// leaves it false.
+	Idempotent bool
 }
 
 // Result is the command's part of the document: the wait's fields and the
@@ -85,7 +106,14 @@ type Result struct {
 	// MergeCommitSHA is the commit the merge produced; empty when nothing
 	// merged.
 	MergeCommitSHA string `json:"mergeCommitSha"`
-	// Method is squash or rebase.
+	// MergedBy is the login of the identity the merge was made as: the
+	// caller the token acts as, or for a merge queue the account GitHub
+	// records as the merger. Empty when nothing merged.
+	MergedBy string `json:"mergedBy"`
+	// Method is squash or rebase as asked, rebase by default on a fork
+	// line, or the one method the
+	// repository allows when it does not allow the default squash: merge
+	// for a merge commit.
 	Method string `json:"method"`
 	// BranchDeleted: the head branch was deleted after the merge (or was
 	// gone already). False for a head in a fork, which is left alone.
@@ -93,36 +121,51 @@ type Result struct {
 	// Enqueued: the base has a merge queue and the pull request went
 	// through it.
 	Enqueued bool `json:"enqueued"`
+	// UnansweredReviews is the reviewers' feedback the last review guard
+	// found unanswered; empty when nothing held the merge, null when the
+	// guard did not run.
+	UnansweredReviews []UnansweredReview `json:"unansweredReviews"`
 	// Release is the release the merge triggered; null when no release
 	// wait ran (--no-release-wait, or nothing merged).
 	Release *Release `json:"release"`
+	// Dispatch is the workflow dispatched after the merge; null when none
+	// is configured or nothing merged.
+	Dispatch *DispatchResult `json:"dispatch"`
 }
 
 // Merger runs merges.
 type Merger struct {
-	github       *githubclient.Client
-	waiter       *prwait.Waiter
-	clock        agentcli.Clock
-	progress     *agentcli.Progress
-	timeout      time.Duration
-	method       githubclient.MergeMethod
-	updateBranch bool
-	login        string
-	policy       Policy
-	release      ReleaseWait
+	github   GitHub
+	waiter   *prwait.Waiter
+	clock    agentcli.Clock
+	progress *agentcli.Progress
+	timeout  time.Duration
+	method   githubclient.MergeMethod
+	// methodDefault: no method was asked; a fork line rebases.
+	methodDefault bool
+	updateBranch  bool
+	login         string
+	policy        Policy
+	release       ReleaseWait
+	dispatchTo    *Dispatch
+	// acceptRed is Wait.AcceptRed: the checks the caller accepts red.
+	acceptRed  []string
+	idempotent bool
 }
 
 // New returns a Merger for config.
 func New(config Config) (*Merger, error) {
-	if config.Wait.GitHub == nil {
-		return nil, microerror.Maskf(invalidConfigError, "%T.Wait.GitHub must not be nil", config)
+	// The merge reads and writes beyond the wait's interface.
+	github, ok := config.Wait.GitHub.(GitHub)
+	if !ok || github == nil {
+		return nil, microerror.Maskf(invalidConfigError, "%T.Wait.GitHub must be a non-nil prmerge.GitHub, got %T", config, config.Wait.GitHub)
 	}
 	waiter, err := prwait.New(config.Wait)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 	m := &Merger{
-		github:       config.Wait.GitHub,
+		github:       github,
 		waiter:       waiter,
 		clock:        config.Wait.Clock,
 		progress:     config.Wait.Progress,
@@ -132,6 +175,9 @@ func New(config Config) (*Merger, error) {
 		login:        config.Login,
 		policy:       config.Policy,
 		release:      config.Release,
+		dispatchTo:   config.Dispatch,
+		acceptRed:    config.Wait.AcceptRed,
+		idempotent:   config.Idempotent,
 	}
 	if m.clock.Scale() == 0 {
 		m.clock = agentcli.NewClock(1, nil)
@@ -144,13 +190,17 @@ func New(config Config) (*Merger, error) {
 	}
 	switch m.method {
 	case "":
-		m.method = githubclient.MergeSquash
+		m.method, m.methodDefault = githubclient.MergeSquash, true
 	case githubclient.MergeSquash, githubclient.MergeRebase:
 	default:
 		return nil, microerror.Maskf(invalidConfigError, "%T.Method is squash or rebase, got %q", config, config.Method)
 	}
 	if m.policy == nil {
-		m.policy = TeamFilePolicy(m.github.GitHub())
+		client, ok := m.github.(*githubclient.Client)
+		if !ok {
+			return nil, microerror.Maskf(invalidConfigError, "%T.Policy must be set for a %T, which reads no team file", config, m.github)
+		}
+		m.policy = TeamFilePolicy(client.GitHub())
 	}
 	return m, nil
 }
@@ -176,63 +226,117 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 		return result, err
 	}
 	result.HeadSHA, result.BaseRef = pr.GetHead().GetSHA(), pr.GetBase().GetRef()
+	if m.idempotent && pr.GetMerged() {
+		return result, m.mergedAlready(ctx, owner, repo, number, pr, result)
+	}
 
-	caller, team, err := m.refuse(ctx, owner, repo, pr)
+	caller, verdict, err := m.refuse(ctx, owner, repo, pr)
 	if err != nil {
+		return result, err
+	}
+	if err := m.refuseAcceptRed(ctx, owner, repo, pr.GetBase().GetRef()); err != nil {
+		return result, err
+	}
+	if err := m.guardReviews(ctx, owner, repo, number, pr, caller, result); err != nil {
+		return result, err
+	}
+	if err := m.resolveMethod(ctx, owner, repo, verdict, result); err != nil {
 		return result, err
 	}
 	m.progress.Printf("refusals: none; %s by %s", pr.GetHead().GetSHA(), pr.GetUser().GetLogin())
 
-	if pr.GetMergeableState() == "behind" {
-		// Only reached with --update-branch: refuse() said exit 3 otherwise.
-		if err := m.update(ctx, owner, repo, number, pr.GetHead().GetSHA()); err != nil {
-			return result, err
-		}
-	}
-
-	waited, err := m.waiter.Wait(ctx, owner, repo, number)
-	if waited != nil {
-		result.Result = *waited
-	}
-	if err != nil {
-		return result, err
-	}
-
-	// The pull request as it stands after the wait: the title a retitle
-	// gave it, the body whose closing keywords the merge acts on, the branch
-	// to delete, the node the queue takes.
-	pr, err = m.github.PullRequest(ctx, owner, repo, number)
+	queued, err := m.github.MergeQueueRequired(ctx, owner, repo, pr.GetBase().GetRef())
 	if err != nil {
 		return result, microerror.Mask(err)
 	}
-	if err := prwait.NotApplicable(pr); err != nil {
-		return result, err
+
+	// The warnings given before the wait (the method the settings chose)
+	// stay ahead of the wait's own.
+	before := result.Warnings
+	for round := 1; ; round++ {
+		behind, err := m.behind(ctx, owner, repo, pr, queued)
+		if err != nil {
+			return result, err
+		}
+		if behind == 0 && round > 1 {
+			break
+		}
+		if behind != 0 {
+			if err := m.refuseBehind(pr, behind, round); err != nil {
+				return result, err
+			}
+			if err := m.update(ctx, owner, repo, number, pr, githubclient.MergeMethod(result.Method)); err != nil {
+				return result, err
+			}
+		}
+
+		// The wait's result replaces the one so far.
+		waited, err := m.waiter.Wait(ctx, owner, repo, number)
+		if waited != nil {
+			result.Result = *waited
+			if len(before) > 0 {
+				result.Warnings = append(slices.Clone(before), result.Warnings...)
+			}
+		}
+		if err != nil {
+			return result, err
+		}
+
+		// The pull request as it stands after the wait: the base it is
+		// compared with again, the title a retitle gave it, the body whose
+		// closing keywords the merge acts on, the branch to delete, the node
+		// the queue takes.
+		pr, err = m.github.PullRequest(ctx, owner, repo, number)
+		if err != nil {
+			return result, microerror.Mask(err)
+		}
+		if err := notApplicable(pr); err != nil {
+			return result, err
+		}
 	}
 	for _, w := range m.closingWarnings(ctx, owner, repo, pr.GetBody()) {
 		m.progress.Printf("warning: %s", w)
 		result.Warnings = append(result.Warnings, w)
 	}
 
-	queued, err := m.github.MergeQueueRequired(ctx, owner, repo, pr.GetBase().GetRef())
-	if err != nil {
-		return result, microerror.Mask(err)
+	// The last read before the merge: a review that landed during the wait
+	// holds it.
+	if err := m.guardReviews(ctx, owner, repo, number, pr, caller, result); err != nil {
+		return result, err
 	}
 	if queued {
 		err = m.enqueue(ctx, owner, repo, number, pr, result)
 	} else {
-		err = m.merge(ctx, owner, repo, number, pr, result, caller, team)
+		err = m.merge(ctx, owner, repo, number, pr, result, caller, verdict)
 	}
 	if err != nil {
 		return result, err
 	}
 
-	if err := m.deleteBranch(ctx, owner, repo, pr, result); err != nil {
-		return result, err
+	// Merged: the branch, the release, then the dispatch, which runs
+	// whatever the release's outcome and changes none of them.
+	err = m.deleteBranch(ctx, owner, repo, pr, result)
+	if err == nil && m.release != nil {
+		err = m.awaitRelease(ctx, owner, repo, number, result)
 	}
+	m.dispatch(ctx, result)
+	return result, err
+}
+
+// mergedAlready is the outcome of a pull request merged before the call:
+// the merge commit and its merger as GitHub records them, a warning saying
+// so, and the release wait on that commit, whose exits 6 and 9 stay the
+// merge's. Nothing is written: the branch, the dispatch and the merge were
+// the first merge's.
+func (m *Merger) mergedAlready(ctx context.Context, owner, repo string, number int, pr *github.PullRequest, result *Result) error {
+	result.MergeCommitSHA, result.MergedBy = pr.GetMergeCommitSHA(), pr.GetMergedBy().GetLogin()
+	warning := fmt.Sprintf("%s/%s#%d was merged already, as %s by %s: no merge call was made", owner, repo, number, result.MergeCommitSHA, result.MergedBy)
+	m.progress.Printf("warning: %s", warning)
+	result.Warnings = append(result.Warnings, warning)
 	if m.release == nil {
-		return result, nil
+		return nil
 	}
-	return result, m.awaitRelease(ctx, owner, repo, number, result)
+	return m.awaitRelease(ctx, owner, repo, number, result)
 }
 
 // deleteBranch deletes the merged head branch; a head in a fork is left
@@ -270,12 +374,16 @@ func (m *Merger) readMergeable(ctx context.Context, owner, repo string, number i
 
 // refuse is every refusal that comes before the wait, in order: the pull
 // request's state (3), its author (5), the repository's opt-out (5). It
-// returns the caller the token acts as and the team whose file declares
-// the repository (empty when none does), for the merge's reasons.
-func (m *Merger) refuse(ctx context.Context, owner, repo string, pr *github.PullRequest) (caller, team string, err error) {
-	if !m.updateBranch || pr.GetMergeableState() != "behind" {
-		if err := prwait.NotApplicable(pr); err != nil {
-			return "", "", err
+// returns the caller the token acts as and the repository's verdict, whose
+// team and entry are empty when no team file declares it, for the merge's
+// reasons.
+func (m *Merger) refuse(ctx context.Context, owner, repo string, pr *github.PullRequest) (caller string, verdict Verdict, err error) {
+	if err := notApplicable(pr); err != nil {
+		return "", Verdict{}, err
+	}
+	if pr.GetMergeableState() == mergeableBehind {
+		if err := m.refuseBehind(pr, behindStrict, 1); err != nil {
+			return "", Verdict{}, err
 		}
 	}
 
@@ -283,21 +391,21 @@ func (m *Merger) refuse(ctx context.Context, owner, repo string, pr *github.Pull
 	if caller == "" {
 		caller, err = m.github.CurrentLogin(ctx)
 		if err != nil {
-			return "", "", microerror.Mask(err)
+			return "", Verdict{}, microerror.Mask(err)
 		}
 	}
 	if !authorAllowed(pr, caller) {
-		return "", "", agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused, "%s", authorRefusal(pr, caller))
+		return "", Verdict{}, agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused, "%s", authorRefusal(pr, caller))
 	}
 
-	verdict, err := m.policy(ctx, owner, repo)
+	verdict, err = m.policy(ctx, owner, repo)
 	if err != nil {
-		return "", "", microerror.Mask(err)
+		return "", Verdict{}, microerror.Mask(err)
 	}
 	if verdict.Refusal != "" {
-		return "", "", agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused, "%s", verdict.Refusal)
+		return "", Verdict{}, agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused, "%s", verdict.Refusal)
 	}
-	return caller, verdict.Team, nil
+	return caller, verdict, nil
 }
 
 // automationAccounts are Giant Swarm's automation accounts that GitHub
@@ -316,13 +424,19 @@ var automationAccounts = map[string]int64{
 	"architectbot": 61872893,
 }
 
-// authorAllowed: the author is a bot or a GitHub App (type Bot or a [bot]
-// login), one of Giant Swarm's automation accounts, or the caller. Another
-// human's pull request is refused.
+// authorAllowed: the author is a bot or a GitHub App, one of Giant Swarm's
+// automation accounts, or the caller. Another human's pull request is
+// refused.
 func authorAllowed(pr *github.PullRequest, caller string) bool {
-	user := pr.GetUser()
+	return isAutomation(pr.GetUser()) || strings.EqualFold(pr.GetUser().GetLogin(), caller)
+}
+
+// isAutomation: the user is a bot or a GitHub App (type Bot or a [bot]
+// login) or one of Giant Swarm's automation accounts, matched on login and
+// account id.
+func isAutomation(user *github.User) bool {
 	login := user.GetLogin()
-	if user.GetType() == "Bot" || strings.HasSuffix(login, "[bot]") || strings.EqualFold(login, caller) {
+	if user.GetType() == "Bot" || strings.HasSuffix(login, "[bot]") {
 		return true
 	}
 	id, known := automationAccounts[strings.ToLower(login)]
@@ -346,14 +460,95 @@ func authorRefusal(pr *github.PullRequest, caller string) string {
 	return reason
 }
 
-// update asks GitHub to merge the base into the head and reads the pull
+// notApplicable is prwait.NotApplicable without its behind: a head behind
+// its base is behind()'s and refuseBehind()'s, which name the way out.
+func notApplicable(pr *github.PullRequest) error {
+	if pr.GetMergeableState() != mergeableBehind {
+		return prwait.NotApplicable(pr)
+	}
+	judged := *pr
+	judged.MergeableState = new("")
+	return prwait.NotApplicable(&judged)
+}
+
+// mergeableBehind is GitHub's mergeable state of a head behind a base that
+// requires branches to be up to date.
+const mergeableBehind = "behind"
+
+// behindStrict is behind()'s count for a head behind a strict base, whose
+// mergeable state says behind without saying by how much.
+const behindStrict = -1
+
+// behind is the number of commits of the base the head lacks: a head whose
+// checks ran against an older base than the one it would land on. Behind a
+// strict base it is behindStrict by GitHub's mergeable state, behind any
+// other base the comparison of base and head, which the mergeable state
+// does not report. A base with a merge queue is 0 without --update-branch:
+// the queue tests every entry against the base it lands on.
+func (m *Merger) behind(ctx context.Context, owner, repo string, pr *github.PullRequest, queued bool) (int, error) {
+	if pr.GetMergeableState() == mergeableBehind {
+		return behindStrict, nil
+	}
+	if queued && !m.updateBranch {
+		return 0, nil
+	}
+	by, err := m.github.BehindBy(ctx, owner, repo, pr.GetBase().GetRef(), pr.GetHead().GetSHA())
+	if err != nil {
+		return 0, microerror.Mask(err)
+	}
+	if by > 0 {
+		m.progress.Printf("base: %s is %d commit(s) behind %s", pr.GetHead().GetSHA(), by, pr.GetBase().GetRef())
+	}
+	return by, nil
+}
+
+// updateRounds bounds the waits of one merge with --update-branch: a base
+// that moves again during every wait is exit 3 after this many.
+const updateRounds = 3
+
+// refuseBehind is exit 3 for a head behind its base that is not to be
+// updated: without --update-branch, since its checks ran against an older
+// base than the one the merge lands it on, or after updateRounds waits
+// during each of which the base moved. Nil means update it.
+func (m *Merger) refuseBehind(pr *github.PullRequest, behind, round int) error {
+	base := pr.GetBase().GetRef()
+	state := fmt.Sprintf("the pull request is behind %s, which requires branches to be up to date", base)
+	if behind != behindStrict {
+		state = fmt.Sprintf("the pull request is %d commit(s) behind %s: its checks ran against an older %s than the one the merge lands it on", behind, base, base)
+	}
+	if round > 1 {
+		state += fmt.Sprintf(" (%s moved during the wait)", base)
+	}
+	switch {
+	case !m.updateBranch:
+		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable,
+			"%s; --update-branch updates it from %s and waits for its checks again (or update the branch and run the merge again)", state, base)
+	case round > updateRounds:
+		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable,
+			"%s after %d waits; run the merge again once %s is quiet", state, round-1, base)
+	}
+	return nil
+}
+
+// update asks GitHub to bring the head up to its base and reads the pull
 // request until the new head is on it, so the wait judges that head and not
-// the one behind.
-func (m *Merger) update(ctx context.Context, owner, repo string, number int, headSHA string) error {
-	if err := m.github.UpdatePullRequestBranch(ctx, owner, repo, number, headSHA); err != nil {
+// the one behind. A rebase merge has the head rebased onto the base, since
+// merging the base in would put a merge commit on a head that lands commit
+// by commit; squash and merge have the base merged into the head.
+func (m *Merger) update(ctx context.Context, owner, repo string, number int, pr *github.PullRequest, method githubclient.MergeMethod) error {
+	headSHA := pr.GetHead().GetSHA()
+	how := "merge of the base"
+	var err error
+	if method == githubclient.MergeRebase {
+		how = "rebase onto the base"
+		err = m.github.RebasePullRequestBranch(ctx, pr.GetNodeID(), headSHA)
+	} else {
+		err = m.github.UpdatePullRequestBranch(ctx, owner, repo, number, headSHA)
+	}
+	if err != nil {
 		return microerror.Mask(err)
 	}
-	m.progress.Printf("update-branch: requested for %s", headSHA)
+	m.progress.Printf("update-branch: %s requested for %s", how, headSHA)
 	for read := 1; read <= updatedHeadReads; read++ {
 		if err := m.clock.Sleep(ctx, updatedHeadInterval); err != nil {
 			return microerror.Mask(err)
@@ -372,28 +567,68 @@ func (m *Merger) update(ctx context.Context, owner, repo string, number int, hea
 
 // merge lands the head through the merge API with the judged head as the
 // expected head. A merge GitHub declines as the pull request stands is
-// exit 3 with GitHub's sentence; declined for the review rule, the reason
-// goes on to name the caller, the rulesets' bypass actors and the owning
-// team (explainReviewRule).
-func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *github.PullRequest, result *Result, caller, team string) error {
-	opts := githubclient.MergeOptions{Method: m.method, HeadSHA: result.HeadSHA}
-	if m.method == githubclient.MergeSquash {
+// exit 3 with GitHub's sentence and the identity it declined; declined for
+// the review rule, the reason goes on to name the rulesets' bypass actors
+// and the owning team as well (explainReviewRule).
+func (m *Merger) merge(ctx context.Context, owner, repo string, number int, pr *github.PullRequest, result *Result, caller string, verdict Verdict) error {
+	method := githubclient.MergeMethod(result.Method)
+	opts := githubclient.MergeOptions{Method: method, HeadSHA: result.HeadSHA}
+	if method != githubclient.MergeRebase {
 		opts.CommitTitle = fmt.Sprintf("%s (#%d)", strings.TrimSpace(pr.GetTitle()), number)
 	}
 	sha, err := m.github.MergePullRequest(ctx, owner, repo, number, opts)
+	for attempt := 1; err != nil && attempt < mergeAttempts && githubclient.IsMergeRetryable(err); attempt++ {
+		merged, readErr := m.mergedAnyway(ctx, owner, repo, number, result, err)
+		if readErr != nil || merged {
+			return readErr
+		}
+		m.progress.Printf("retrying the merge call (attempt %d of %d)", attempt+1, mergeAttempts)
+		sha, err = m.github.MergePullRequest(ctx, owner, repo, number, opts)
+	}
 	if githubclient.IsMergeDeclined(err) {
-		reason := oneLine(err.Error())
+		reason := strings.TrimSuffix(oneLine(err.Error()), ".") + ". "
 		if declinedByReviewRule(err) {
-			reason = strings.TrimSuffix(reason, ".") + ". " + m.explainReviewRule(ctx, owner, repo, pr.GetBase().GetRef(), caller, team)
+			reason += m.explainReviewRule(ctx, owner, repo, pr.GetBase().GetRef(), caller, verdict)
+		} else {
+			reason += fmt.Sprintf("devctl acts as %s", caller)
 		}
 		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "%s", reason)
 	}
 	if err != nil {
+		if merged, readErr := m.mergedAnyway(ctx, owner, repo, number, result, err); readErr != nil || merged {
+			return readErr
+		}
 		return microerror.Mask(err)
 	}
-	result.MergeCommitSHA = sha
-	m.progress.Printf("merged: %s of %s is %s", m.method, result.HeadSHA, sha)
+	result.MergeCommitSHA, result.MergedBy = sha, caller
+	m.progress.Printf("merged: %s of %s is %s, as %s", method, result.HeadSHA, sha, caller)
 	return nil
+}
+
+// mergedAnyway settles a merge call that failed without GitHub's verdict (a
+// reset connection, a timeout, a 5xx): GitHub may have merged before the
+// answer was lost, so the pull request is read again after a pause. Merged,
+// the merge goes on with GitHub's merge commit and a warning (true); open,
+// false with no error and the caller decides on the call's error or a
+// retry; unreadable, the error says the merge is unknown, never that
+// nothing merged.
+func (m *Merger) mergedAnyway(ctx context.Context, owner, repo string, number int, result *Result, callErr error) (bool, error) {
+	m.progress.Printf("the merge call failed (%s); reading the pull request in %s", callErr, mergeableInterval)
+	if err := m.clock.Sleep(ctx, mergeableInterval); err != nil {
+		return false, microerror.Maskf(executionError, "the merge call of %s/%s#%d failed and whether it merged is unknown: %v; the merge call failed: %v", owner, repo, number, err, callErr)
+	}
+	pr, err := m.github.PullRequest(ctx, owner, repo, number)
+	if err != nil {
+		return false, microerror.Maskf(executionError, "the merge call of %s/%s#%d failed and whether it merged is unknown, reading the pull request failed too: %v; the merge call failed: %v", owner, repo, number, err, callErr)
+	}
+	if !pr.GetMerged() {
+		return false, nil
+	}
+	result.MergeCommitSHA, result.MergedBy = pr.GetMergeCommitSHA(), pr.GetMergedBy().GetLogin()
+	warning := fmt.Sprintf("the merge call failed (%s), and GitHub reports %s/%s#%d merged as %s by %s", oneLine(callErr.Error()), owner, repo, number, result.MergeCommitSHA, result.MergedBy)
+	m.progress.Printf("warning: %s", warning)
+	result.Warnings = append(result.Warnings, warning)
+	return true, nil
 }
 
 // enqueue puts the pull request on the base's merge queue and waits, within
@@ -418,8 +653,8 @@ func (m *Merger) enqueue(ctx context.Context, owner, repo string, number int, pr
 		}
 		switch {
 		case current.GetMerged():
-			result.MergeCommitSHA = current.GetMergeCommitSHA()
-			m.progress.Printf("merge queue: poll %d: merged as %s", poll, result.MergeCommitSHA)
+			result.MergeCommitSHA, result.MergedBy = current.GetMergeCommitSHA(), current.GetMergedBy().GetLogin()
+			m.progress.Printf("merge queue: poll %d: merged as %s by %s", poll, result.MergeCommitSHA, result.MergedBy)
 			return nil
 		case current.GetState() != "open":
 			return agentcli.NewExitError(agentcli.ExitRed, agentcli.VerdictRed, "the merge queue removed %s/%s#%d without merging it", owner, repo, number)

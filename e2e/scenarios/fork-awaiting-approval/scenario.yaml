@@ -2,11 +2,10 @@
 # requires two contexts. The fork's workflow run awaits a maintainer's
 # approval: GitHub completes the run at once with the conclusion
 # action_required and it produces no check runs, so the check list is empty
-# and the required contexts are absent. The approved run is what will report
-# them, so the outcome is not known yet: the wait treats the run as open,
-# keeps polling, and at the timeout exits 2 (not 4) naming the run and the
-# absent contexts.
-description: a fork's workflow run awaiting approval keeps the wait open; the timeout is 2 although required contexts are absent
+# and the required contexts are absent. No wait starts the run, a member's
+# approval does: the first poll ends the wait with exit 4 approval_required
+# naming the run, its URL and the absent contexts, long before the timeout.
+description: a fork's workflow run awaiting approval ends the wait at once with exit 4 approval_required
 args: [pr, wait, giantswarm/devctl, "42", --timeout, 5m]
 keyring:
   github:

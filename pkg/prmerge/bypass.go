@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 
 	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
 )
@@ -30,15 +30,18 @@ func declinedByReviewRule(err error) bool {
 // apart, the team whose file declares the entry, and what merges the pull
 // request: past a blocker without bypass actors only an approving review
 // or a change to that ruleset, otherwise a member of that team, a
-// repository admin, or an approving review. Rules the token cannot read
-// are said so; nothing is written.
-func (m *Merger) explainReviewRule(ctx context.Context, owner, repo, base, caller, team string) string {
-	rules, _, err := m.github.GitHub().Repositories.ListRulesForBranch(ctx, owner, repo, base, &github.ListOptions{PerPage: 100})
+// repository admin, or an approving review. A review rule no ruleset
+// carries is classic branch protection: the reason names the entry whose
+// alignment replaces it, since devctl never lifts enforce_admins. Rules the
+// token cannot read are said so; nothing is written.
+func (m *Merger) explainReviewRule(ctx context.Context, owner, repo, base, caller string, verdict Verdict) string {
+	team := verdict.Team
+	rules, err := m.github.RulesForBranch(ctx, owner, repo, base)
 	switch {
 	case err != nil:
 		return fmt.Sprintf("devctl acts as %s, who has no bypass on the rules of %s (they could not be read: %v)%s", caller, base, err, mergeAdvice(team))
 	case len(rules.PullRequest) == 0:
-		return fmt.Sprintf("devctl acts as %s, who has no bypass on the review rule of %s, which no ruleset carries: classic branch protection requires the review, and such a repository is aligned first (align: true on its entry), never merged past it%s", caller, base, mergeAdvice(team))
+		return fmt.Sprintf("devctl acts as %s, who has no bypass on the review rule of %s, which no ruleset carries: classic branch protection requires the review, and such a repository is aligned first, never merged past it: %s; devctl never lifts enforce_admins, and its token carries no Administration permission to do so", caller, base, alignAdvice(verdict.Entry, team))
 	}
 	var blocking, bypassed []rulesetView
 	seen := map[string]bool{}
@@ -95,6 +98,16 @@ func (m *Merger) explainReviewRule(ctx context.Context, owner, repo, base, calle
 	return b.String()
 }
 
+// alignAdvice is how a repository on classic branch protection gets the
+// devctl ruleset: align: true on its entry, or a declaration first where no
+// team file declares it.
+func alignAdvice(entry, team string) string {
+	if entry == "" {
+		return "no team file declares the repository, so it is declared first (devctl repo adopt), then aligned with align: true on its entry"
+	}
+	return fmt.Sprintf("align: true on %s gives it the devctl ruleset, whose bypass lets the owning team (%s) and the repository admins merge their own green pull requests", entry, team)
+}
+
 // mergeAdvice is who merges a pull request the review rule declines when
 // the blocking rulesets have bypass actors.
 func mergeAdvice(team string) string {
@@ -131,7 +144,6 @@ func joinViews(views []rulesetView, sep string) string {
 // or the organization that holds it: its name, its bypass actors and
 // whether the caller bypasses it.
 func (m *Merger) describeRuleset(ctx context.Context, owner, repo string, rule github.BranchRuleMetadata) rulesetView {
-	gh := m.github.GitHub()
 	var (
 		rs    *github.RepositoryRuleset
 		err   error
@@ -140,9 +152,9 @@ func (m *Merger) describeRuleset(ctx context.Context, owner, repo string, rule g
 	switch rule.RulesetSourceType {
 	case github.RulesetSourceTypeOrganization:
 		where = "the organization " + owner
-		rs, _, err = gh.Organizations.GetRepositoryRuleset(ctx, owner, rule.RulesetID)
+		rs, err = m.github.OrganizationRuleset(ctx, owner, rule.RulesetID)
 	default:
-		rs, _, err = gh.Repositories.GetRuleset(ctx, owner, repo, rule.RulesetID, false)
+		rs, err = m.github.RepositoryRuleset(ctx, owner, repo, rule.RulesetID)
 	}
 	if err != nil {
 		ref := fmt.Sprintf("the ruleset %d of %s", rule.RulesetID, where)
@@ -151,7 +163,7 @@ func (m *Merger) describeRuleset(ctx context.Context, owner, repo string, rule g
 	v := rulesetView{
 		ref:    fmt.Sprintf("the ruleset %q of %s", rs.Name, where),
 		bypass: callerBypass(rs.CurrentUserCanBypass),
-		engine: rule.RulesetSourceType != github.RulesetSourceTypeOrganization && rs.Name == reconcile.RulesetName,
+		engine: rule.RulesetSourceType != github.RulesetSourceTypeOrganization && reconcile.IsEngineRuleset(rs.Name),
 	}
 	if len(rs.BypassActors) == 0 {
 		v.noActors = true

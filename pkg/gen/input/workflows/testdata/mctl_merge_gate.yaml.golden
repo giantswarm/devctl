@@ -1,0 +1,368 @@
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+
+# Posts the required mctl/ready-to-merge status: green once the latest /create-mc succeeded, the installations and teleport-fleet PRs are open or merged, and (customer installations) the installations PR has its Slack support and AE contacts filled in.
+
+name: Merge gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+  issue_comment:
+    types: [created, edited]
+
+permissions: {}
+
+jobs:
+  gate:
+    name: Check cluster PRs are ready to merge
+    runs-on: ubuntu-latest
+    # The status is posted with github.token: required checks are pinned to the GitHub Actions app.
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
+      statuses: write
+    # Must run on every PR: a skipped job posts no status and blocks the required check.
+    if: >
+      github.repository != 'giantswarm/template-management-clusters' && (
+        github.event_name == 'pull_request' ||
+        github.event.issue.pull_request != null
+      )
+
+    steps:
+      # Non-fatal: only the cross-repo PR reads need the App token.
+      - name: Generate app token
+        id: app-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        with:
+          app-id: ${{ secrets.MCTL_APP_ID }}
+          private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
+          # Owner-scoped so cross-repo calls work.
+          owner: ${{ github.repository_owner }}
+
+      - name: Evaluate and publish status
+        id: gate
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const CONTEXT = 'mctl/ready-to-merge';
+            // Without the App token the cross-repo reads fail and post 'error'.
+            const crossRepo = process.env.APP_TOKEN ? new github.constructor({ auth: process.env.APP_TOKEN }) : github;
+            const targetURL =
+              `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}` +
+              `/actions/runs/${context.runId}`;
+
+            const prNumber = context.eventName === 'pull_request'
+              ? context.payload.pull_request.number
+              : context.issue.number;
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+
+            // GitHub caps status descriptions at 140 characters.
+            async function publish(state, description) {
+              const trimmed = description.length > 137
+                ? description.slice(0, 137) + '...'
+                : description;
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: pr.head.sha,
+                context: CONTEXT,
+                state,
+                description: trimmed,
+                target_url: targetURL,
+              });
+              core.info(`${CONTEXT} = ${state}: ${trimmed}`);
+            }
+
+            // {installation}-init or {installation}-init-{provider}
+            const branch = pr.head.ref;
+            const match = branch.match(/^(.+)-init(?:-(?:capa|capz|capv|capvcd))?$/);
+            if (!match) {
+              await publish('success', 'Not a cluster init PR — nothing to gate.');
+              return;
+            }
+            const installation = match[1];
+
+            // Contact fields a person fills in on the installations PR (giantswarm/giantswarm#38847).
+            // Mirrors mctl's validate-config check; FILL_IN_ is mctl's placeholder prefix.
+            const TEST_CUSTOMERS = ['giantswarm', 'antonia'];
+            const isTestCustomer = TEST_CUSTOMERS.includes(
+              context.repo.repo.replace(/-management-clusters$/, ''));
+
+            // No YAML parser here: reads top-level `key: value` lines and the
+            // `support` list under the top-level `slack:` block (block or flow style).
+            function missingContacts(clusterYAML) {
+              const lines = clusterYAML.split('\n').filter(l => !/^\s*(#.*)?$/.test(l));
+              const unquote = v => v.replace(/\s+#.*$/, '').trim().replace(/^(['"])(.*)\1$/, '$2').trim();
+              const isSet = v => v !== '' && !v.startsWith('FILL_IN_') &&
+                v !== 'person in charge' && v !== 'ae-*';
+              const top = key => {
+                const line = lines.find(l => l.startsWith(`${key}:`));
+                return line ? unquote(line.slice(key.length + 1)) : '';
+              };
+
+              const channels = [];
+              let inSlack = false;
+              let inSupport = false;
+              for (const l of lines) {
+                if (/^\S/.test(l)) {
+                  inSlack = /^slack:\s*$/.test(l);
+                  inSupport = false;
+                  continue;
+                }
+                if (!inSlack) continue;
+                const key = l.match(/^\s+([\w.-]+):(.*)$/);
+                if (key) {
+                  inSupport = key[1] === 'support';
+                  const flow = key[2].trim().match(/^\[(.*)\]$/);
+                  if (inSupport && flow) channels.push(...flow[1].split(',').map(unquote).filter(Boolean));
+                  continue;
+                }
+                const item = l.match(/^\s*-\s*(.*)$/);
+                if (inSupport && item) channels.push(unquote(item[1]));
+              }
+
+              const missing = [];
+              if (!channels.length || !channels.every(isSet)) missing.push('slack.support');
+              if (!isSet(top('accountEngineer'))) missing.push('accountEngineer');
+              if (!isSet(top('accountEngineersHandle'))) missing.push('accountEngineersHandle');
+              return missing;
+            }
+
+            // Returns null when the installations PR's cluster.yaml has its contacts
+            // filled in (or there is nothing to check yet), else { state, reason }.
+            async function contactsProblem(client, reported) {
+              const m = (reported || '').match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+              if (isTestCustomer || !m) return null;
+              const [, owner, repo, number] = m;
+              const path = `${installation}/cluster.yaml`;
+              let content;
+              try {
+                const { data: instPR } = await client.rest.pulls.get({
+                  owner, repo, pull_number: parseInt(number, 10),
+                });
+                if (instPR.merged) return null;
+                const { data: file } = await client.rest.repos.getContent({
+                  owner, repo, path, ref: instPR.head.sha,
+                });
+                content = Buffer.from(file.content, 'base64').toString('utf8');
+              } catch (err) {
+                return { state: 'error', reason: `Could not read ${path} from the installations PR (${err.status || err.message}).` };
+              }
+              const missing = missingContacts(content);
+              return missing.length
+                ? { state: 'failure', reason: `${path} in the installations PR lacks ${missing.join(', ')}.` }
+                : null;
+            }
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+
+            // Newest match first, so a link from an earlier run is kept.
+            function findMarker(label) {
+              const re = new RegExp(`\\*\\*${label}:\\*\\*\\s*(.+)`);
+              for (const comment of [...comments].reverse()) {
+                const m = (comment.body || '').match(re);
+                if (m) return m[1].trim();
+              }
+              return '';
+            }
+
+            // Checked before /create-mc: the person can fix it at any time.
+            const contacts = await contactsProblem(crossRepo, findMarker('Installations PR'));
+            if (contacts) {
+              await publish(contacts.state, contacts.state === 'failure'
+                ? `${contacts.reason} Edit it, then comment here.`
+                : contacts.reason);
+              return;
+            }
+
+            // The newest result comment governs, even if an earlier run succeeded.
+            const resultToken = `<!-- mctl-create-mc-result-${installation} -->`;
+            const results = comments.filter(c => (c.body || '').includes(resultToken));
+            const latestResult = results.length ? results[results.length - 1].body : '';
+
+            if (!latestResult) {
+              await publish('failure', `No /create-mc run for ${installation} yet — comment /create-mc to bootstrap it.`);
+              return;
+            }
+            if (!latestResult.includes('created successfully')) {
+              await publish('failure', `The latest /create-mc run for ${installation} did not succeed — rerun /create-mc.`);
+              return;
+            }
+
+            // A reported value is a URL or a failure note.
+            function asURL(reported) {
+              const m = reported.match(/^(https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+)/);
+              return m ? m[1] : '';
+            }
+
+            async function stateOf(url) {
+              const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+              const [, owner, repo, number] = m;
+              const { data } = await crossRepo.rest.pulls.get({
+                owner, repo, pull_number: parseInt(number, 10),
+              });
+              return data.merged ? 'merged' : data.state;
+            }
+
+            const targets = [
+              { label: 'Installations PR', name: 'installations' },
+              { label: 'Teleport fleet PR', name: 'teleport-fleet' },
+            ];
+
+            const summary = [];
+            for (const target of targets) {
+              const reported = findMarker(target.label);
+              if (!reported) {
+                await publish('failure', `No ${target.name} PR reported for ${installation} — run /config, then /create-mc.`);
+                return;
+              }
+
+              const url = asURL(reported);
+              if (!url) {
+                // The run reported the step but it did not produce a PR.
+                await publish('failure', `${target.name} PR missing: ${reported}`);
+                return;
+              }
+
+              let state;
+              try {
+                state = await stateOf(url);
+              } catch (err) {
+                await publish('error', `Could not read the ${target.name} PR (${err.status || err.message}).`);
+                return;
+              }
+
+              if (state !== 'open' && state !== 'merged') {
+                await publish('failure', `The ${target.name} PR is ${state} without being merged: ${url}`);
+                return;
+              }
+              summary.push(`- **${target.label}** (${state}): ${url}`);
+            }
+
+            // Reminder only, not a gate condition.
+            let overrideLines = [];
+            try {
+              const { data: file } = await github.rest.repos.getContent({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                path: `management-clusters/${installation}/kustomization.yaml`,
+                ref: pr.head.sha,
+              });
+              const kustomization = Buffer.from(file.content, 'base64').toString('utf8');
+              // Matches all three overrides, including the conditional releases one.
+              overrideLines = kustomization
+                .split('\n')
+                .filter(line => /patch-gitrepo-\S*branch\.yaml/.test(line));
+            } catch (err) {
+              // Never let a reminder become a new way to get stuck.
+              core.warning(`Could not read kustomization.yaml (${err.status || err.message}) — skipping the branch override check.`);
+            }
+
+            core.setOutput('installation', installation);
+            core.setOutput('pr_number', String(prNumber));
+            core.setOutput('override_lines', overrideLines.join('\n'));
+
+            await core.summary
+              .addHeading(`✅ ${installation} is ready to merge`, 3)
+              .addRaw([
+                'Merging this PR will merge the installations PR and arm auto-merge on the',
+                'teleport-fleet PR.\n\n',
+                summary.join('\n'),
+              ].join(' '))
+              .write();
+
+            if (overrideLines.length) {
+              await publish('success', 'Ready to merge — remove the branch override patches first (see the PR comment).');
+              return;
+            }
+            await publish('success', 'installations + teleport-fleet PRs will be merged when this PR merges.');
+
+      # Default GITHUB_TOKEN so the comment cannot re-trigger the gate.
+      - name: Comment on leftover branch overrides
+        # Set only on the green path.
+        if: steps.gate.outputs.installation != ''
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          INSTALLATION:   ${{ steps.gate.outputs.installation }}
+          PR_NUMBER:      ${{ steps.gate.outputs.pr_number }}
+          OVERRIDE_LINES: ${{ steps.gate.outputs.override_lines }}
+        with:
+          script: |
+            const installation = process.env.INSTALLATION;
+            const prNumber = parseInt(process.env.PR_NUMBER, 10);
+            const lines = (process.env.OVERRIDE_LINES || '').split('\n').filter(Boolean);
+            const path = `management-clusters/${installation}/kustomization.yaml`;
+            // Embedded so the comment can be updated in place on reruns.
+            const token = `<!-- mctl-branch-overrides-${installation} -->`;
+
+            const body = lines.length
+              ? [
+                  token,
+                  '### ⚠️ Remove the branch override patches before merging',
+                  '',
+                  `**${installation}** is ready to merge, but \`${path}\` still pins Flux to`,
+                  "this PR's branches. Merging deletes the branch, those `GitRepository`",
+                  'resources stop reconciling, and the MC freezes on its last-applied state.',
+                  '',
+                  'Delete these lines from the `patches:` list, then merge:',
+                  '',
+                  '```yaml',
+                  ...lines,
+                  '```',
+                  '',
+                  'Leave the files under `patches/` — kustomize ignores them once they are',
+                  'unreferenced, and they are what you re-add to re-pin.',
+                ].join('\n')
+              : [
+                  token,
+                  '### ✅ Branch overrides removed',
+                  '',
+                  `\`${path}\` no longer pins Flux to this PR's branches.`,
+                ].join('\n');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+            const existing = comments.find(c => (c.body || '').includes(token));
+
+            if (!existing) {
+              // Nothing to say on a PR that was already clean.
+              if (!lines.length) return;
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body,
+              });
+              return;
+            }
+
+            if ((existing.body || '').trim() === body.trim()) return;
+
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existing.id,
+              body,
+            });

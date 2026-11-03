@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/authexec"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
@@ -21,7 +21,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 )
 
-const command = "pr merge"
+const command = prmerge.Command
 
 type runner struct {
 	flag   *flag
@@ -30,19 +30,52 @@ type runner struct {
 	// gate is versiongate.Check: an outdated devctl ends the run in the
 	// document.
 	gate func(noCache bool) error
-	// The seams tests replace: the token gates, the renewal of a GitHub token
-	// refused mid-run, the endpoints and the clock.
+	// The seams tests replace: the token gates (the App login for the App's
+	// owners, the person's own gh login for every other owner), the renewal
+	// of an App token refused mid-run, the endpoints and the clock.
 	requireGitHub   func(ctx context.Context) (authstore.Token, error)
+	personGitHub    func(ctx context.Context) (authstore.Token, error)
 	requireCircleCI func(ctx context.Context) (authstore.Token, error)
 	renewGitHub     func(ctx context.Context, rejected string) (string, error)
 	endpoints       func() agentcli.Endpoints
 	clock           func() (agentcli.Clock, error)
+	// jobRoot is where detached merges live, executable the devctl
+	// --detach starts; tests replace both.
+	jobRoot    func() (string, error)
+	executable func() (string, error)
+	// github is newClients: what a merge reads and writes GitHub through.
+	github func(config githubclient.Config) (clients, error)
 }
 
 // document is the command's JSON: the envelope and the merge's result.
-type document struct {
-	agentcli.Envelope
-	*prmerge.Result
+type document = prmerge.Document
+
+// clients are what a merge reads and writes GitHub through.
+type clients struct {
+	github  prmerge.GitHub
+	rate    prwait.RateSource
+	entries prwait.EntryFinder
+	// policy is the repository's opt-out; nil reads the team files.
+	policy prmerge.Policy
+	// release is what the release wait reads; rateLimit its pace.
+	release   releasewait.GitHub
+	rateLimit func() githubclient.RateLimit
+}
+
+// newClients is the GitHub client of config with conditional requests
+// below it, its rate and the organisation's team files.
+func newClients(config githubclient.Config) (clients, error) {
+	github, conditional, err := githubclient.NewConditional(config)
+	if err != nil {
+		return clients{}, err
+	}
+	return clients{
+		github:    github,
+		rate:      conditional,
+		entries:   releasewait.TeamFileEntries{GitHub: github.GitHub()},
+		release:   github,
+		rateLimit: conditional.Rate,
+	}, nil
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -61,56 +94,108 @@ func (r *runner) FlagError(_ *cobra.Command, err error) error {
 }
 
 func (r *runner) run(ctx context.Context, args []string) error {
+	if r.flag.Detach {
+		doc := r.newStartDocument()
+		err := r.detach(ctx, args, &doc)
+		return agentcli.Report(r.stdout, &doc, agentcli.VerdictDetached, err)
+	}
 	doc := r.newDocument()
 	err := r.merge(ctx, args, &doc)
-	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, err)
+	if r.flag.DetachedHandle == "" {
+		return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, err)
+	}
+	return r.finishDetached(ctx, &doc, err)
 }
 
 func (r *runner) newDocument() document {
-	return document{
-		Envelope: agentcli.NewEnvelope(command, time.Now()),
-		Result: &prmerge.Result{
-			Result: prwait.Result{Checks: []prwait.Check{}, Actions: []prwait.ActionRun{}},
-			Method: string(r.method()),
-		},
-	}
+	return prmerge.NewDocument(time.Now(), r.documentMethod())
 }
 
+// method is the method asked: --rebase or --squash, empty without either,
+// which leaves the default to the merge (rebase on a fork line, squash
+// elsewhere).
 func (r *runner) method() githubclient.MergeMethod {
-	if r.flag.Rebase {
+	switch {
+	case r.flag.Rebase:
 		return githubclient.MergeRebase
+	case r.flag.Squash:
+		return githubclient.MergeSquash
 	}
-	return githubclient.MergeSquash
+	return ""
+}
+
+// documentMethod is the document's method until the merge settles it: the
+// one asked, or squash.
+func (r *runner) documentMethod() string {
+	if m := r.method(); m != "" {
+		return string(m)
+	}
+	return string(githubclient.MergeSquash)
+}
+
+// call is a merge's arguments and flags, checked, and the token it acts with.
+type call struct {
+	owner, repo    string
+	number         int
+	failedLogLines int
+	dispatch       *prmerge.Dispatch
+	token          authstore.Token
+}
+
+// check reads and checks the arguments and flags, then the version gate and
+// the token: everything that can refuse a merge before its first request, so
+// --detach refuses the same calls at once.
+func (r *runner) check(ctx context.Context, args []string, repository *string, number *int, identity *string) (call, error) {
+	var c call
+	var err error
+	c.owner, c.repo, c.number, err = agentcli.ParsePullRequest(command, args)
+	if err != nil {
+		return c, err
+	}
+	*repository, *number = c.owner+"/"+c.repo, c.number
+	if r.flag.Timeout <= 0 {
+		return c, fmt.Errorf("--%s must be positive, got %s", flagTimeout, r.flag.Timeout)
+	}
+	if !r.flag.NoReleaseWait && r.flag.ReleaseTimeout <= 0 {
+		return c, fmt.Errorf("--%s must be positive, got %s", flagReleaseTimeout, r.flag.ReleaseTimeout)
+	}
+	if r.flag.Rebase && r.flag.Squash {
+		return c, fmt.Errorf("--%s and --%s exclude each other", flagRebase, flagSquash)
+	}
+	if r.flag.OnDone != "" && !r.flag.Detach && r.flag.DetachedHandle == "" {
+		return c, fmt.Errorf("--%s needs --%s: a blocking merge reports its outcome itself", flagOnDone, flagDetach)
+	}
+	if c.failedLogLines, err = r.flag.FailedLog.TailLines(); err != nil {
+		return c, err
+	}
+	if c.dispatch, err = r.flag.dispatch(); err != nil {
+		return c, err
+	}
+	if err := r.gate(false); err != nil {
+		return c, err
+	}
+	// The gate comes before the first request.
+	if c.token, err = authexec.RepositoryToken(ctx, c.owner, r.requireGitHub, r.personGitHub); err != nil {
+		return c, err
+	}
+	*identity = authexec.Identity(c.token)
+	return c, nil
 }
 
 func (r *runner) merge(ctx context.Context, args []string, doc *document) error {
-	owner, repo, number, err := parseArgs(args)
+	c, err := r.check(ctx, args, &doc.Repository, &doc.Number, &doc.Identity)
 	if err != nil {
 		return err
 	}
-	doc.Repository, doc.Number = owner+"/"+repo, number
-	if r.flag.Timeout <= 0 {
-		return fmt.Errorf("--%s must be positive, got %s", flagTimeout, r.flag.Timeout)
-	}
-	if !r.flag.NoReleaseWait && r.flag.ReleaseTimeout <= 0 {
-		return fmt.Errorf("--%s must be positive, got %s", flagReleaseTimeout, r.flag.ReleaseTimeout)
-	}
-	failedLogLines, err := r.flag.FailedLog.TailLines()
-	if err != nil {
-		return err
-	}
-	if err := r.gate(false); err != nil {
-		return err
-	}
+	owner, repo, number, failedLogLines, dispatch, token := c.owner, c.repo, c.number, c.failedLogLines, c.dispatch, c.token
 	clock, err := r.clock()
 	if err != nil {
 		return err
 	}
-
-	// The gate comes before the first request.
-	token, err := r.requireGitHub(ctx)
-	if err != nil {
-		return err
+	// Only the App login renews itself; a refused gh login is the outcome.
+	renew := r.renewGitHub
+	if doc.Identity != authexec.IdentityApp {
+		renew = nil
 	}
 	endpoints := r.endpoints()
 	logger := logrus.New()
@@ -119,12 +204,12 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 	// A read that fails in transit or with a 5xx is sent again, not taken
 	// as the outcome of either wait; the merge itself is never repeated.
 	retrying := &agentcli.Retrying{Clock: clock, Progress: progress, Warn: doc.Warn}
-	github, conditional, err := githubclient.NewConditional(githubclient.Config{
+	gh, err := r.github(githubclient.Config{
 		Logger:      logger,
 		AccessToken: token.Value,
 		BaseURL:     endpoints.GitHubAPIURL,
 		Transport:   retrying,
-		Renew:       r.renewGitHub,
+		Renew:       renew,
 	})
 	if err != nil {
 		return err
@@ -143,13 +228,18 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 		}
 		doc.Warn(token.Warning)
 		circleci, err = circleciclient.New(circleciclient.Config{
-			Token:      token.Value,
-			BaseURL:    circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
-			HTTPClient: &http.Client{Transport: retrying},
-			Logger:     logger,
+			Token:       token.Value,
+			TokenSource: token.SourceName(),
+			BaseURL:     circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
+			HTTPClient:  &http.Client{Transport: retrying},
+			Logger:      logger,
 		})
 		return circleci, err
 	}
+
+	// The team files decide both whether a template repository's head is
+	// judged from GitHub alone and what its release publishes.
+	entries := gh.entries
 
 	var release prmerge.ReleaseWait
 	if !r.flag.NoReleaseWait {
@@ -160,8 +250,8 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 				PR:             number,
 				MergeCommitSHA: mergeCommitSHA,
 				Timeout:        r.flag.ReleaseTimeout,
-				GitHub:         github,
-				Entries:        releasewait.TeamFileEntries{GitHub: github.GitHub()},
+				GitHub:         gh.release,
+				Entries:        entries,
 				CircleCI: func(ctx context.Context) (releasewait.CircleCI, error) {
 					client, err := openCircleCI(ctx)
 					if err != nil {
@@ -169,10 +259,10 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 					}
 					return client, nil
 				},
-				Registry:  releasewait.RegistryProber{Endpoints: endpoints},
+				Registry:  releasewait.RegistryProber{Endpoints: endpoints, Keychain: authn.DefaultKeychain},
 				Endpoints: endpoints,
 				Clock:     clock,
-				Rate:      conditional.Rate,
+				Rate:      gh.rateLimit,
 				Progress:  progress,
 				Warn:      doc.Warn,
 			})
@@ -185,44 +275,29 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 
 	merger, err := prmerge.New(prmerge.Config{
 		Wait: prwait.Config{
-			GitHub:         github,
-			Rate:           conditional,
+			GitHub:         gh.github,
+			Rate:           gh.rate,
 			CircleCI:       openCircleCI,
+			Entries:        entries,
 			Clock:          clock,
 			Progress:       progress,
 			Timeout:        r.flag.Timeout,
 			FailedLogLines: failedLogLines,
+			AcceptRed:      r.flag.AcceptRed,
 		},
 		Method:       r.method(),
 		UpdateBranch: r.flag.UpdateBranch,
 		Login:        token.Login,
+		Policy:       gh.policy,
 		Release:      release,
+		Dispatch:     dispatch,
 	})
 	if err != nil {
 		return err
 	}
 
 	result, err := merger.Merge(ctx, owner, repo, number)
-	doc.Result = result
-	for _, w := range result.Warnings {
-		doc.Warn(w)
-	}
+	doc.Take(result)
 	prwait.PrintFailedJobs(r.stderr, result.FailedJobs)
-	return githubclient.ExplainNotFound(err, authstore.GitHubAppOnlyNotFoundHint(token))
-}
-
-// parseArgs reads "<owner/repo> <number>".
-func parseArgs(args []string) (owner, repo string, number int, err error) {
-	if len(args) != 2 {
-		return "", "", 0, fmt.Errorf("usage: devctl %s <owner/repo> <number>, got %d argument(s)", command, len(args))
-	}
-	owner, repo, ok := strings.Cut(args[0], "/")
-	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
-		return "", "", 0, fmt.Errorf("the repository is <owner/repo>, got %q", args[0])
-	}
-	number, err = strconv.Atoi(args[1])
-	if err != nil || number <= 0 {
-		return "", "", 0, fmt.Errorf("the pull request number is a positive integer, got %q", args[1])
-	}
-	return owner, repo, number, nil
+	return githubclient.ExplainNotFound(err, authexec.NotFoundHint(token, owner))
 }

@@ -64,6 +64,12 @@ func Test_Merge_release(t *testing.T) {
 			wantReason: "merged as m1, and the release is not confirmed: listing tags: connection reset",
 		},
 		{
+			name: "a commit status failed", tag: "v1.2.3-rc.1",
+			err:      agentcli.NewExitError(agentcli.ExitStatusFailed, agentcli.VerdictStatusFailed, "the commit m1 of v1.2.3-rc.1 carries a failed commit status, so devctl release promote refuses it: ci/circleci: go-test (failure, https://circleci.com/gh/o/r/1)"),
+			wantCode: agentcli.ExitReleaseUnconfirmed, wantVerdict: agentcli.VerdictReleaseUnconfirmed, wantRelease: agentcli.VerdictStatusFailed,
+			wantReason: "merged as m1, and the release is not confirmed: the commit m1 of v1.2.3-rc.1 carries a failed commit status",
+		},
+		{
 			name:     "superseded by a newer push",
 			err:      agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "the Auto-release run was cancelled before it tagged"),
 			wantCode: agentcli.ExitReleaseUnconfirmed, wantVerdict: agentcli.VerdictReleaseUnconfirmed, wantRelease: agentcli.VerdictNotApplicable,

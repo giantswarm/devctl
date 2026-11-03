@@ -95,8 +95,9 @@ type Token struct {
 	// a GitHub token from an environment variable outside CI ([ResolveGitHub]);
 	// empty otherwise. It never carries token material.
 	Warning string
-	// Source is where a GitHub token came from: [SourceKeychain] or "$NAME",
-	// the environment variable; empty for the other identities.
+	// Source is where a GitHub or CircleCI token came from: [SourceKeychain]
+	// or "$NAME", the environment variable ([ResolveGitHub],
+	// [ResolveCircleCI]); empty for muster.
 	Source string
 	// Endpoint is the muster MCP endpoint a muster token is for; empty for
 	// the other identities.
@@ -182,6 +183,16 @@ func RequireGitHub(ctx context.Context) (Token, error) {
 		return Token{}, err
 	}
 	return a.RequireGitHub(ctx)
+}
+
+// RequireGitHubFor is [Auth.RequireGitHubFor] against the environment's
+// store: the GitHub token, valid for at least valid.
+func RequireGitHubFor(ctx context.Context, valid time.Duration) (Token, error) {
+	a, err := Open(nil)
+	if err != nil {
+		return Token{}, err
+	}
+	return a.RequireGitHubFor(ctx, valid)
 }
 
 // RenewGitHubToken is the value of [Auth.RenewGitHub] against the

@@ -50,6 +50,7 @@ func Refused(req Request, now time.Time) *Result {
 		Team:       req.Team,
 		Mode:       mode,
 		Added:      req.Added,
+		Unarchived: req.Unarchived,
 		StartedAt:  now,
 		FinishedAt: now,
 		Steps:      []StepResult{sr},

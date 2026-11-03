@@ -6,15 +6,18 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/prwait"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 )
 
 type flag struct {
-	PR       int
-	Timeout  time.Duration
-	Catalog  bool
-	Images   []string
-	Progress bool
+	PR        int
+	Timeout   time.Duration
+	Catalog   bool
+	Images    []string
+	Charts    []string
+	FailedLog prwait.FailedLog
+	Progress  bool
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
@@ -22,5 +25,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().DurationVar(&f.Timeout, "timeout", releasewait.DefaultTimeout, "Give up after this long (exit 2)")
 	cmd.Flags().BoolVar(&f.Catalog, "catalog", false, "Also wait for the catalog index to list every chart")
 	cmd.Flags().StringSliceVar(&f.Images, "image", nil, releasewait.ImageFlagUsage)
+	cmd.Flags().StringSliceVar(&f.Charts, "chart", nil, releasewait.ChartFlagUsage)
+	f.FailedLog.Init(cmd)
 	agentcli.ProgressFlag(cmd, &f.Progress)
 }

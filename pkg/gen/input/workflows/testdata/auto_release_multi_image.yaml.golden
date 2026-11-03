@@ -1,0 +1,236 @@
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+# yamllint disable rule:truthy
+# Push-based release tagger of a multi-image repository: one image per
+# toolchains/<name>/ directory holding a Dockerfile, each released as its own
+# <name>/vX.Y.Z line.
+#
+# On every push to main, each image whose directory, or a file under
+# toolchains/ outside every image directory (the build files the images share),
+# was added, changed or removed since the image's latest <name>/vX.Y.Z tag
+# gets its next tag and a GitHub Release. An image directory is one holding a
+# Dockerfile at the pushed commit or at that tag, so removing an image
+# releases none of the others. The pushed commit's subject -- the merged pull
+# request's squash subject -- sets the bump: a breaking change (`type!:` or a
+# `BREAKING CHANGE` footer) the major, a `feat` the minor, anything else the
+# patch; an image's first tag is v0.1.0. Diffing against the image's own last
+# tag, not just the pushed commit, lets a failed or skipped run catch up on the
+# next one. There are no release candidates: each tag is stable.
+#
+# A repository's own rule for a release goes in .github/release-gate.custom.sh:
+# when the pushed commit carries it, it runs with each tag about to be cut as
+# its argument, and a non-zero exit skips that tag and fails the run.
+#
+# Each tag push starts the CircleCI tag pipeline (.circleci/config.yml), which
+# runs the repository's check-image job and publishes that image; the last
+# step makes sure CircleCI picked every tag up.
+name: Auto-release
+
+on:
+  push:
+    branches:
+      - main
+  # Re-runs the same detection, e.g. after a failed run.
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: auto-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write       # push the tags and create the GitHub Releases
+      statuses: read        # watch for the tags' CircleCI builds
+    env:
+      IMAGES_DIR: toolchains
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0        # full history: every image's last tag
+          fetch-tags: true
+
+      - name: Tag and release the changed images
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          message=$(git log -1 --format=%B HEAD)
+          subject=$(head -1 <<<"$message")
+          if grep -qE '^[a-z]+(\([^)]*\))?!:' <<<"$subject" || grep -qE '^BREAKING[ -]CHANGE' <<<"$message"; then
+            bump="major"
+          elif grep -qE '^feat(\([^)]*\))?:' <<<"$subject"; then
+            bump="minor"
+          else
+            bump="patch"
+          fi
+          echo "bump from the commit subject \"${subject}\": ${bump}"
+
+          images=()
+          for path in "${IMAGES_DIR}"/*; do
+            [ -f "${path}/Dockerfile" ] || continue
+            images+=("$(basename "$path")")
+          done
+          if [ "${#images[@]}" -eq 0 ]; then
+            echo "::warning title=No image::no ${IMAGES_DIR}/<name>/Dockerfile: nothing to release."
+            exit 0
+          fi
+
+          gate=.github/release-gate.custom.sh
+          refused=()
+          : > tags.txt
+          for name in "${images[@]}"; do
+            latest=$(git tag --list "${name}/v*" --sort=-v:refname \
+              | { grep -E "^${name}/v[0-9]+\.[0-9]+\.[0-9]+$" || true; } | head -1)
+            if [ -z "$latest" ]; then
+              next="${name}/v0.1.0"
+            else
+              # All of IMAGES_DIR but the other images' directories, so that a
+              # shared file added, changed or removed since the tag counts.
+              others=()
+              for other in "${images[@]}"; do
+                [ "$other" = "$name" ] || others+=(":(exclude)${IMAGES_DIR}/${other}")
+              done
+              while IFS= read -r path; do
+                if [ "$path" != "${IMAGES_DIR}/${name}" ] && git cat-file -e "${latest}:${path}/Dockerfile" 2>/dev/null; then
+                  others+=(":(exclude)${path}")
+                fi
+              done < <(git ls-tree -d --name-only "$latest" "${IMAGES_DIR}/")
+              if git diff --quiet "$latest" HEAD -- "${IMAGES_DIR}" ${others[@]+"${others[@]}"}; then
+                echo "${name}: unchanged since ${latest}"
+                continue
+              fi
+              IFS=. read -r major minor patch <<<"${latest#"${name}"/v}"
+              case "$bump" in
+                major) next="${name}/v$((major + 1)).0.0" ;;
+                minor) next="${name}/v${major}.$((minor + 1)).0" ;;
+                *)     next="${name}/v${major}.${minor}.$((patch + 1))" ;;
+              esac
+            fi
+
+            if [ -f "$gate" ] && ! bash "$gate" "$next"; then
+              echo "::error title=Release gate refused::${gate} refused ${next}: no tag and no release are cut for it."
+              refused+=("$next")
+              continue
+            fi
+
+            echo "${name}: releasing ${next}"
+            # One tag per push: CircleCI starts one pipeline per tag event.
+            git tag "$next"
+            git push origin "refs/tags/${next}"
+            notes=(--generate-notes)
+            [ -z "$latest" ] || notes+=(--notes-start-tag "$latest")
+            gh release create "$next" --title "$next" --verify-tag "${notes[@]}"
+            echo "$next" >> tags.txt
+            sleep 2
+          done
+          if [ "${#refused[@]}" -gt 0 ]; then
+            echo "::error title=Release gate refused::${refused[*]}"
+            exit 1
+          fi
+
+      # GitHub delivers a tag's webhook to CircleCI once and never retries,
+      # so watch for the tags' builds on GitHub: every tag of this run points
+      # at the pushed commit, and each tag pipeline starts one setup workflow
+      # whose CircleCI status that commit carries. The branch build's setup
+      # started before the first release and does not count. The step holds
+      # no CircleCI credential and never triggers: CircleCI has no service
+      # accounts. A missed tag is run from the CircleCI UI (Trigger Pipeline,
+      # the GitHub App pipeline, the tag), or as a person with
+      # `devctl repo follow-circleci` for the latest release. A commit
+      # without any CircleCI status has no pipeline building the repository
+      # yet, and is a warning.
+      - name: Verify CircleCI picked up the tags
+        if: always() && hashFiles('.circleci/config.yml') != '' && hashFiles('tags.txt') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CIRCLECI_STATUS_WAIT_SECONDS: "120"
+        run: |
+          set -euo pipefail
+          tags=()
+          while read -r t; do
+            [ -z "$t" ] || tags+=("$t")
+          done < tags.txt
+          if [ "${#tags[@]}" -eq 0 ]; then
+            echo "no tag cut on this push, nothing for CircleCI to build"
+            exit 0
+          fi
+          sha=${GITHUB_SHA} # the pushed commit, which every tag of the run names
+          # counts: "<CircleCI statuses on the commit> <of them the GitHub App
+          # pipeline's> <its setup workflows started since the first
+          # release>"; a workflow is the id in a status's target URL
+          # (…/workflow/<id>/job/<id>). Only the App pipeline's statuses
+          # (circleci-app[bot]) are judged: an OAuth follow's link a job, not
+          # a workflow. A multi-image repository's pipeline is always the
+          # generated, dynamic one (devctl gen circleci, flavour multi-image),
+          # which starts each tag's build with exactly one setup workflow: the
+          # setup workflows are what is counted against the tags. Counting
+          # every workflow instead would let one tag's several workflows hide
+          # another tag's lost webhook.
+          counts() {
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${sha}/statuses?per_page=100" \
+              --jq '[.[] | select(.context | startswith("ci/circleci"))]' |
+              jq -rs --argjson since "$since" '
+                add // [] |
+                def wf: (.target_url // "") as $u | (($u | capture("/workflows?/(?<id>[^/]+)")? | .id) // $u);
+                (length) as $all |
+                (map(select((.creator.login // "") != "" and .creator.login != "circleci-app[bot]" and (.created_at | fromdateiso8601) >= $since)) | length) as $oauth |
+                map(select(.creator.login == "circleci-app[bot]")) |
+                (length) as $app |
+                (map(select(.context == "ci/circleci: setup")) | group_by(wf) | map(min_by(.created_at)) | map(select((.created_at | fromdateiso8601) >= $since)) | length) as $setups |
+                "\($all) \($app) \($setups) \($oauth)"'
+          }
+          deadline=$((SECONDS + CIRCLECI_STATUS_WAIT_SECONDS))
+          since="" all="" app="" setups="" oauth=""
+          while :; do
+            # A failed read (rate limit, a 502) is retried within the wait;
+            # only a wait without one good read fails the step.
+            if [ -z "$since" ] && first=$(gh release view "${tags[0]}" --json publishedAt --jq .publishedAt); then
+              since=$(jq -rn --arg at "$first" '($at | fromdateiso8601) - 10')
+            fi
+            if [ -n "$since" ] && out=$(counts); then
+              read -r all app setups oauth <<<"$out"
+              if [ "$setups" -ge "${#tags[@]}" ]; then
+                echo "CircleCI builds the ${#tags[@]} tag(s): ${setups} setup workflow(s) on ${sha:0:8} started after the first release"
+                exit 0
+              fi
+              # An OAuth follow's statuses after the release settle nothing
+              # by waiting when the App pipeline builds nothing here. Where it
+              # builds too (an OAuth trigger left in place), its tag build may
+              # be seconds behind the OAuth one: keep waiting for it.
+              [ "$oauth" -eq 0 ] || [ "$app" -gt 0 ] || break
+              echo "${setups} of ${#tags[@]} tag builds reported"
+            else
+              echo "reading the release or the commit statuses of ${sha:0:8} failed"
+            fi
+            [ "$SECONDS" -lt "$deadline" ] || break
+            echo "retrying in 10 s"
+            sleep 10
+          done
+          if [ -z "$all" ]; then
+            echo "::error::could not read the release or the commit statuses of ${sha:0:8} within ${CIRCLECI_STATUS_WAIT_SECONDS} s; cannot tell whether CircleCI built ${tags[*]}." \
+              "Check https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY}"
+            exit 1
+          fi
+          if [ "$all" -eq 0 ]; then
+            echo "::warning::${tags[*]} released and no CircleCI pipeline builds this repository yet: ${sha:0:8} carries no CircleCI status at all." \
+              "Set the GitHub App pipeline up as you: devctl repo follow-circleci ${GITHUB_REPOSITORY}"
+            exit 0
+          fi
+          if [ "$app" -eq 0 ] || [ "$oauth" -gt 0 ]; then
+            echo "::warning::${tags[*]}: an OAuth follow builds ${sha:0:8} without the GitHub App pipeline's builds of every tag, and its statuses cannot tell a tag's build from a branch build; not verified." \
+              "Move the repository to the GitHub App pipeline as you: devctl repo follow-circleci ${GITHUB_REPOSITORY} --migrate"
+            exit 0
+          fi
+          echo "::error::CircleCI started ${setups} build(s) for the ${#tags[@]} tag(s) ${tags[*]} within ${CIRCLECI_STATUS_WAIT_SECONDS} s" \
+            "(GitHub delivers the webhook once and never retries). Run a missing tag from https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY}" \
+            "(Trigger Pipeline, the GitHub App pipeline, the tag); devctl repo follow-circleci ${GITHUB_REPOSITORY} runs every line's newest unbuilt release."
+          exit 1

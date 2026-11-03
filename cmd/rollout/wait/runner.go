@@ -10,7 +10,9 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/dynamic"
 
+	"github.com/giantswarm/devctl/v8/internal/laptop"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/prwait"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 	"github.com/giantswarm/devctl/v8/pkg/rolloutwait"
 )
@@ -22,10 +24,12 @@ type runner struct {
 	// gate is versiongate.Check: an outdated devctl ends the run in the
 	// document.
 	gate func(noCache bool) error
-	// openRelease is releasewait.OpenSources and openCluster
-	// rolloutwait.OpenCluster; tests inject fakes.
+	// openRelease is laptop.ReleaseWaitSources and openCluster
+	// laptop.OpenCluster; tests inject fakes.
 	openRelease func(ctx context.Context, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*releasewait.Sources, error)
-	openCluster func(installation, kubeContext string, wrap func(http.RoundTripper) http.RoundTripper) (dynamic.Interface, error)
+	openCluster func(ctx context.Context, c laptop.ClusterConfig) (dynamic.Interface, error)
+	// teleport logs in to an installation the kubeconfig lacks.
+	teleport laptop.Teleport
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -73,7 +77,7 @@ func (r *runner) kubeContext(installation string) string {
 
 func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Document) error {
 	if len(args) < 2 || len(args) > 3 {
-		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "usage: devctl %s <installation> <owner/repo> [<vX.Y.Z|X.Y.Z>] [--pr <number>], got %d argument(s)", rolloutwait.Command, len(args))
+		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "usage: devctl %s <installation> <owner/repo> [<vX.Y.Z|X.Y.Z>] [--version <vX.Y.Z>] [--pr <number>], got %d argument(s)", rolloutwait.Command, len(args))
 	}
 	installation := args[0]
 	if installation == "" || strings.ContainsAny(installation, "/ ") {
@@ -83,8 +87,11 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
 		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "%q is not a repository: expected owner/repo", args[1])
 	}
-	version := ""
+	version := r.flag.Version
 	if len(args) > 2 {
+		if version != "" && version != args[2] {
+			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "the version argument %q and --version %q differ: name the version once", args[2], version)
+		}
 		version = args[2]
 	}
 	if (version == "") == (r.flag.PR == 0) {
@@ -94,6 +101,10 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		if _, err := releasewait.ParseVersion(version); err != nil {
 			return err
 		}
+	}
+	failedLogLines, err := r.flag.FailedLog.TailLines()
+	if err != nil {
+		return err
 	}
 	if err := r.gate(false); err != nil {
 		return err
@@ -111,69 +122,47 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		return &agentcli.Retrying{Base: base, Clock: clock, Progress: progress, Warn: doc.Warn}
 	}
 
-	// The release first: it names the charts and proves them pullable.
+	// The kube context is read before the release wait, so a context that
+	// does not exist ends the wait at once rather than after the release.
+	kubeContext := r.kubeContext(installation)
+	client, err := r.openCluster(ctx, laptop.ClusterConfig{
+		Installation: installation,
+		Context:      kubeContext,
+		Kubeconfig:   r.flag.Kubeconfig,
+		Wrap:         retrying,
+		Teleport:     r.teleport,
+		Progress:     progress,
+	})
+	if err != nil {
+		return err
+	}
+
 	progress.Printf("reading the GitHub token from the keychain")
 	sources, err := r.openRelease(ctx, endpoints, retrying(nil), doc.Warn)
 	if err != nil {
 		return err
 	}
-	releaseWaiter, err := releasewait.New(releasewait.Config{
-		Owner:        owner,
-		Repo:         repo,
-		Version:      version,
-		PR:           r.flag.PR,
-		Timeout:      r.flag.ReleaseTimeout,
-		Images:       r.flag.Images,
-		GitHub:       sources.GitHub,
-		Entries:      sources.Entries,
-		CircleCI:     sources.CircleCI,
-		Registry:     sources.Registry,
-		CatalogIndex: sources.CatalogIndex,
-		Endpoints:    endpoints,
-		Clock:        clock,
-		Rate:         sources.Rate,
-		Progress:     progress,
-		Warn:         doc.Warn,
-	})
-	if err != nil {
-		return err
-	}
-	if err := releaseWaiter.Wait(ctx, &doc.Release.Result); err != nil {
-		code, verdict := agentcli.Outcome(err)
-		doc.Release.Verdict, doc.Release.Reason = verdict, err.Error()
-		return agentcli.NewExitError(code, verdict, "release: %s", err)
-	}
-	doc.Release.Verdict = agentcli.VerdictAvailable
-
-	var charts []string
-	for _, a := range doc.Release.Artifacts {
-		if a.Kind == releasewait.KindChart {
-			charts = append(charts, rolloutwait.ChartName(a.Reference))
-		}
-	}
-	if len(charts) == 0 {
-		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "%s %s ships no chart, nothing rolls out", args[1], doc.Release.Tag)
-	}
-
-	kubeContext := r.kubeContext(installation)
-	client, err := r.openCluster(installation, kubeContext, retrying)
-	if err != nil {
-		return err
-	}
-	waiter, err := rolloutwait.New(rolloutwait.Config{
-		Installation: installation,
-		KubeContext:  kubeContext,
-		Version:      doc.Release.Tag,
-		Charts:       charts,
-		Client:       client,
-		Timeout:      r.flag.Timeout,
-		Reconcile:    r.flag.Reconcile,
-		Clock:        clock,
-		Progress:     progress,
-		Warn:         doc.Warn,
-	})
-	if err != nil {
-		return err
-	}
-	return waiter.Wait(ctx, &doc.Result)
+	err = rolloutwait.Release{
+		Installation:   installation,
+		KubeContext:    kubeContext,
+		Owner:          owner,
+		Repo:           repo,
+		Version:        version,
+		PR:             r.flag.PR,
+		Timeout:        r.flag.Timeout,
+		ReleaseTimeout: r.flag.ReleaseTimeout,
+		Images:         r.flag.Images,
+		Charts:         r.flag.Charts,
+		HelmReleases:   r.flag.HelmReleases,
+		Reconcile:      r.flag.Reconcile,
+		FailedLogLines: failedLogLines,
+		Sources:        sources,
+		Client:         client,
+		Endpoints:      endpoints,
+		Clock:          clock,
+		Progress:       progress,
+		Warn:           doc.Warn,
+	}.Wait(ctx, doc)
+	prwait.PrintFailedJobs(r.stderr, doc.Release.FailedJobs)
+	return err
 }

@@ -140,13 +140,20 @@ func Test_AutoReleaseForkLineBaseline(t *testing.T) {
 		if _, err := gitIn(t, dir, "merge-base", "--is-ancestor", "v2.1.1", "HEAD"); err != nil {
 			t.Errorf("v2.1.1 is not moved onto the branch: %v", err)
 		}
+		if env["LINE_REPINNED"] != "true" {
+			t.Errorf("LINE_REPINNED: got %q, want true", env["LINE_REPINNED"])
+		}
 	})
 
 	t.Run("two stable tags on one commit", func(t *testing.T) {
 		dir := repo(t, "feat: a", "v1.1.3", "fix: b", "v1.2.0", "v1.1.4")
 
-		if got := runLineStep(t, dir)["LINE_TAG"]; got != "v1.2.0" {
+		env := runLineStep(t, dir)
+		if got := env["LINE_TAG"]; got != "v1.2.0" {
 			t.Errorf("LINE_TAG: got %q, want v1.2.0", got)
+		}
+		if _, set := env["LINE_REPINNED"]; set {
+			t.Errorf("LINE_REPINNED is set on a branch that still holds its stable tag")
 		}
 	})
 

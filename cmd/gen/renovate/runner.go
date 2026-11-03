@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -14,6 +13,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/renovate"
+	pkgrenovate "github.com/giantswarm/devctl/v8/pkg/renovate"
 )
 
 type runner struct {
@@ -60,6 +60,27 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 	}
 
+	// A GitHub fork is scanned only when renovate.json admits it, so the fork
+	// flavour writes that file and the other flavours renovate.json5; the
+	// one not written is removed.
+	fork := r.flag.Flavours.Contains(gen.FlavourFork)
+	configFile, staleFile := "renovate.json5", "renovate.json"
+	if fork {
+		configFile, staleFile = staleFile, configFile
+
+		// A fork line that keeps Renovate off on purpose keeps its opt-out:
+		// the generated config would admit the fork and turn Renovate on.
+		for _, f := range []string{configFile, staleFile} {
+			content, err := os.ReadFile(f) // #nosec G304 -- one of the two fixed Renovate config names
+			if err != nil && !os.IsNotExist(err) {
+				return microerror.Mask(err)
+			}
+			if pkgrenovate.Disables(content) {
+				return microerror.Maskf(invalidFlagError, "%s turns Renovate off for this fork line (`enabled: false`) and stays as it is: Renovate skips a fork without a renovate.json that sets forkProcessing to \"enabled\" anyway; remove the opt-out first to have the fork line scanned", f)
+			}
+		}
+	}
+
 	var renovateInput *renovate.Renovate
 	{
 		c := renovate.Config{
@@ -70,6 +91,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			RepoName:          repoName,
 			HasCustomConfig:   hasCustomConfig,
 			Deprecated:        r.flag.Deprecated,
+			Extends:           r.flag.Extends,
+			Fork:              fork,
 		}
 
 		renovateInput, err = renovate.New(c)
@@ -88,29 +111,17 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	f, err := filepath.Abs("./.github/dependabot.yml")
-	if err != nil {
-		return microerror.Mask(err)
+	// Renovate replaces Dependabot's version updates, except on a fork line:
+	// its .github/dependabot.yml is upstream's, part of the tree it carries.
+	stale := []string{staleFile}
+	if !fork {
+		stale = append(stale, ".github/dependabot.yml")
 	}
-
-	err = os.Remove(f)
-	if os.IsNotExist(err) {
-		// no-op
-	} else if err != nil {
-		return microerror.Mask(err)
-	}
-
-	// Clean up old `renovate.json` in favour of new `renovate.json5`
-	f, err = filepath.Abs("./renovate.json")
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	err = os.Remove(f)
-	if os.IsNotExist(err) {
-		// no-op
-	} else if err != nil {
-		return microerror.Mask(err)
+	for _, f := range stale {
+		err = os.Remove(f)
+		if err != nil && !os.IsNotExist(err) {
+			return microerror.Mask(err)
+		}
 	}
 
 	return nil

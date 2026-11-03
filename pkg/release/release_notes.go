@@ -86,6 +86,7 @@ type releaseNotesTemplateData struct {
 
 var providerTitleMap = map[string]string{
 	providerAWS:           "CAPA",
+	providerAKS:           "AKS",
 	providerAzure:         "Azure",
 	providerEKS:           "EKS",
 	"kvm":                 "KVM",
@@ -145,6 +146,7 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, 
 	// Include cluster chart changelog when a provider chart bumps its cluster dependency
 	providerCharts := map[string]bool{
 		"cluster-aws":            true,
+		"cluster-aks":            true,
 		"cluster-azure":          true,
 		"cluster-vsphere":        true,
 		"cluster-cloud-director": true,

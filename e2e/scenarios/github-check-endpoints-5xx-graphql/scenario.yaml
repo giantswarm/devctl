@@ -1,0 +1,58 @@
+# GitHub's REST check-runs and combined-status endpoints answer 500 for hours
+# while GraphQL answers. The check-run read fails all fifteen tries; the wait
+# then reads the head's checks from the head commit's statusCheckRollup,
+# names that path in a warning and in checksVia, and runs on to green
+# instead of an unanswered poll.
+description: REST check endpoints answering 500 are read through GraphQL's statusCheckRollup; the wait ends green
+args: [pr, wait, giantswarm/devctl, "42", --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - body:
+          number: 42
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: clean
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}
+    "GET /repos/giantswarm/devctl/contents/.circleci/config.yml":
+      - status: 404
+        body: {message: Not Found}
+    "GET /repos/giantswarm/devctl/commits/abc123/check-runs":
+      - status: 500
+    "GET /repos/giantswarm/devctl/commits/abc123/status":
+      - status: 500
+    "POST /graphql":
+      - body:
+          data:
+            repository:
+              object:
+                statusCheckRollup:
+                  contexts:
+                    pageInfo: {hasNextPage: false, endCursor: ""}
+                    nodes:
+                      - {__typename: CheckRun, databaseId: 101, name: go-test, status: IN_PROGRESS, conclusion: null, url: "https://github.com/giantswarm/devctl/runs/101", startedAt: "2026-10-07T17:00:00Z", checkSuite: {databaseId: 9001, app: {slug: github-actions}}}
+      - body:
+          data:
+            repository:
+              object:
+                statusCheckRollup:
+                  contexts:
+                    pageInfo: {hasNextPage: false, endCursor: ""}
+                    nodes:
+                      - {__typename: CheckRun, databaseId: 101, name: go-test, status: COMPLETED, conclusion: SUCCESS, url: "https://github.com/giantswarm/devctl/runs/101", startedAt: "2026-10-07T17:00:00Z", checkSuite: {databaseId: 9001, app: {slug: github-actions}}}
+                      - {__typename: StatusContext, context: "ci/circleci: build", state: SUCCESS, targetUrl: "https://circleci.com/gh/giantswarm/devctl/9001", createdAt: "2026-10-07T17:01:00Z"}
+    "GET /repos/giantswarm/devctl/actions/runs?head_sha=abc123":
+      - body:
+          total_count: 1
+          workflow_runs:
+            - {id: 7001, name: CI, status: completed, conclusion: success, check_suite_id: 9001, html_url: "https://github.com/giantswarm/devctl/actions/runs/7001"}

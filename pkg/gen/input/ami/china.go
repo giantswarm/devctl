@@ -1,45 +1,59 @@
 package ami
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
-	// aws-sdk-go v1 is out of support. Migration to v2 is giantswarm/devctl#2209.
-	"github.com/aws/aws-sdk-go/aws"             //nolint:staticcheck // SA1019
-	"github.com/aws/aws-sdk-go/aws/awserr"      //nolint:staticcheck // SA1019
-	"github.com/aws/aws-sdk-go/aws/credentials" //nolint:staticcheck // SA1019
-	"github.com/aws/aws-sdk-go/aws/session"     //nolint:staticcheck // SA1019
-	"github.com/aws/aws-sdk-go/service/s3"      //nolint:staticcheck // SA1019
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 	"github.com/giantswarm/microerror"
 )
 
 func getChinaFlatcarRelease(config Config, version string) (map[string]string, error) {
-	sess, err := session.NewSession(&aws.Config{
-		Credentials: credentials.NewStaticCredentials(config.ChinaAWSAccessKeyID, config.ChinaAWSSecretAccessKey, ""),
-		Region:      aws.String(config.ChinaBucketRegion),
-	})
+	ctx := context.Background()
+
+	cfg, err := awsconfig.LoadDefaultConfig(ctx,
+		awsconfig.WithRegion(config.ChinaBucketRegion),
+		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(config.ChinaAWSAccessKeyID, config.ChinaAWSSecretAccessKey, "")),
+	)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
-	svc := s3.New(sess)
-	input := &s3.GetObjectInput{
-		Bucket: aws.String(config.ChinaBucketName),
-		Key:    aws.String(fmt.Sprintf("%s/%s/%s.json", config.Channel, config.Arch, version)),
-	}
 
-	result, err := svc.GetObject(input)
+	return getFlatcarRelease(ctx, s3.NewFromConfig(cfg), config, version)
+}
+
+type objectGetter interface {
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+}
+
+func getFlatcarRelease(ctx context.Context, client objectGetter, config Config, version string) (map[string]string, error) {
+	key := fmt.Sprintf("%s/%s/%s.json", config.Channel, config.Arch, version)
+	result, err := client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(config.ChinaBucketName),
+		Key:    aws.String(key),
+	})
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			case s3.ErrCodeNoSuchKey:
-				// Not found, but that's fine
-				fmt.Printf("Release %s not found in china\n", version)
-				return nil, nil
-			default:
-				return nil, microerror.Mask(aerr)
-			}
+		var noSuchKey *types.NoSuchKey
+		if errors.As(err, &noSuchKey) {
+			// Not found, but that's fine
+			fmt.Printf("Release %s not found in china\n", version)
+			return nil, nil
+		}
+		// Without s3:ListBucket, S3 answers a missing key with AccessDenied
+		// instead of NoSuchKey, so a release not yet imported looks the same.
+		if isAccessDenied(err) {
+			fmt.Printf("Warning: skipping china AMIs for release %s: key %q is not imported yet or not readable\n", version, key)
+			return nil, nil
 		}
 		return nil, microerror.Mask(err)
 	}
+	defer func() { _ = result.Body.Close() }()
 
 	chinaVersionAMI, err := scrapeVersionAMI(result.Body)
 	if err != nil {
@@ -47,4 +61,9 @@ func getChinaFlatcarRelease(config Config, version string) (map[string]string, e
 	}
 
 	return chinaVersionAMI, nil
+}
+
+func isAccessDenied(err error) bool {
+	var apiErr smithy.APIError
+	return errors.As(err, &apiErr) && apiErr.ErrorCode() == "AccessDenied"
 }

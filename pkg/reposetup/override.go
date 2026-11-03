@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 )
 
 // OverridesDir is the directory of giantswarm/github, beside the team files,

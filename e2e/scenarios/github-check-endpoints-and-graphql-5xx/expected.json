@@ -1,0 +1,25 @@
+{
+  "exitCode": 2,
+  "stdoutContains": [
+    "failed 15 times in a row: 500 Internal Server Error; reading them through GraphQL (statusCheckRollup) failed too: execution error: statusCheckRollup: GraphQL answered 502",
+    "timeout after 30m0s before the first poll completed; the head is unknown, not failed: the last poll went unanswered"
+  ],
+  "json": {
+    "command": "pr wait",
+    "schemaVersion": 1,
+    "exitCode": 2,
+    "verdict": "timeout",
+    "reason": "*",
+    "warnings": "*",
+    "startedAt": "*",
+    "finishedAt": "*",
+    "repository": "giantswarm/devctl",
+    "identity": "app",
+    "number": 42,
+    "headSha": "abc123",
+    "baseRef": "main",
+    "checks": [],
+    "actions": [],
+    "unfinished": ["no complete poll before the deadline"]
+  }
+}

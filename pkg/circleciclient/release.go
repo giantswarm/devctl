@@ -3,7 +3,9 @@ package circleciclient
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -75,6 +77,52 @@ func (c *Client) FindPipelineByTag(ctx context.Context, org, repo, tag string) (
 		token = pipelines.NextPageToken
 	}
 	return nil, nil
+}
+
+// StatusContextPrefix starts the context of every commit status CircleCI
+// sets, "ci/circleci: <job>".
+const StatusContextPrefix = "ci/circleci"
+
+// StatusTarget is what the target URL of a CircleCI commit status names: a
+// job (https://circleci.com/gh/<org>/<repo>/<job>) or a pipeline
+// (https://app.circleci.com/pipelines/<vcs>/<org>/<repo>/<pipeline>, with
+// /workflows/<id> and /jobs/<job> after it). Job and Pipeline are zero
+// where the URL names none.
+type StatusTarget struct {
+	Org, Repo     string
+	Job, Pipeline int64
+}
+
+// ParseStatusTarget reads the target URL of a CircleCI commit status; false
+// for a URL that is neither form.
+func ParseStatusTarget(raw string) (StatusTarget, bool) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return StatusTarget{}, false
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	number := func(s string) int64 {
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil || n <= 0 {
+			return 0
+		}
+		return n
+	}
+	switch {
+	case u.Host == "circleci.com" && len(parts) == 4 && (parts[0] == "gh" || parts[0] == "github"):
+		if t := (StatusTarget{Org: parts[1], Repo: parts[2], Job: number(parts[3])}); t.Job > 0 {
+			return t, true
+		}
+	case u.Host == "app.circleci.com" && len(parts) >= 5 && parts[0] == "pipelines" && (parts[1] == "gh" || parts[1] == "github"):
+		t := StatusTarget{Org: parts[2], Repo: parts[3], Pipeline: number(parts[4])}
+		if len(parts) >= 9 && parts[5] == "workflows" && parts[7] == "jobs" {
+			t.Job = number(parts[8])
+		}
+		if t.Pipeline > 0 {
+			return t, true
+		}
+	}
+	return StatusTarget{}, false
 }
 
 // PipelineURL is the pipeline's page in the CircleCI UI.

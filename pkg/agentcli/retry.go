@@ -16,9 +16,10 @@ import (
 
 // The retry budget of one read at scale 1: RetryAttempts tries, the pause
 // before the first retry RetryBackoff, doubling up to RetryBackoffCeiling,
-// about three minutes of pauses in all.
+// about ten minutes of pauses in all, so an API outage of that length ends
+// no wait.
 const (
-	RetryAttempts       = 8
+	RetryAttempts       = 15
 	RetryBackoff        = 2 * time.Second
 	RetryBackoffCeiling = 60 * time.Second
 	// RetryAttemptTimeout bounds one try, the answer's body included; it is

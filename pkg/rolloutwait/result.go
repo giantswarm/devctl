@@ -9,6 +9,9 @@ import (
 const (
 	VerdictRolledOut     agentcli.Verdict = "rolled_out"
 	VerdictRolloutFailed agentcli.Verdict = "rollout_failed"
+	// VerdictRolloutUnknown: what applies the change is done, and whether
+	// a changed app runs it cannot be told (exit 3).
+	VerdictRolloutUnknown agentcli.Verdict = "rollout_unknown"
 )
 
 // The kinds of object that deploy a chart on an installation.
@@ -31,6 +34,9 @@ const (
 	StateNotFollowing = "not_following"
 	// StateSuspended: Flux does not reconcile the object.
 	StateSuspended = "suspended"
+	// StateUnknown: whether the change runs cannot be told; nothing
+	// deploys what it changed. It never counts as rolled out.
+	StateUnknown = "unknown"
 )
 
 // Result is what the rollout wait found on the installation.
@@ -39,8 +45,11 @@ type Result struct {
 	Installation string `json:"installation"`
 	// Context is the kube context the installation was read through.
 	Context string `json:"context"`
-	// Version is the bare version waited for.
+	// Version is the bare version waited for; empty for a revision.
 	Version string `json:"version"`
+	// Revision is the merge commit of a configuration change waited for;
+	// empty for a version.
+	Revision string `json:"revision,omitempty"`
 	// Charts are the charts of the release, the names deployments are
 	// matched by.
 	Charts []string `json:"charts"`
@@ -57,7 +66,8 @@ func NewResult(installation, context string) Result {
 // Deployment is one HelmRelease or App CR that deploys a chart of the
 // release, and where it stands.
 type Deployment struct {
-	// Kind is HelmRelease or App.
+	// Kind is HelmRelease or App; for a revision also GitRepository,
+	// Kustomization or Konfiguration.
 	Kind      string `json:"kind"`
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
@@ -71,20 +81,25 @@ type Deployment struct {
 	// RunningVersion is the deployed chart version without build
 	// metadata; empty before the first deployment.
 	RunningVersion string `json:"runningVersion"`
-	// State is rolled_out, progressing, failed, not_following or suspended.
+	// State is rolled_out, progressing, failed, not_following, suspended or
+	// unknown.
 	State string `json:"state"`
 	// Message says why the deployment is not rolled out; empty when it is.
 	Message string `json:"message"`
-	// Workloads are the Deployments, StatefulSets and DaemonSets of the
-	// Helm release, read once the version is deployed.
+	// Workloads are the Deployments, StatefulSets, DaemonSets and
+	// HelmReleases of the Helm release, read once the version is deployed.
 	Workloads []Workload `json:"workloads"`
 
 	// source is the Flux source object a reconcile request goes to; nil for
 	// an App and for a HelmChart that does not exist yet.
 	source *object
+	// self is, for a revision, the object itself a reconcile request goes
+	// to; nil for what Flux does not reconcile on request (a Konfiguration).
+	self *object
 }
 
-// Workload is one Deployment, StatefulSet or DaemonSet of a release.
+// Workload is one Deployment, StatefulSet, DaemonSet or HelmRelease of a
+// release.
 type Workload struct {
 	Kind      string `json:"kind"`
 	Namespace string `json:"namespace"`

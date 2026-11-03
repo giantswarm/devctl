@@ -1,0 +1,89 @@
+# giantswarm/giantswarm-repo-manager v0.33.5-rc.1: every artifact resolves and
+# the tag pipeline is green while a late ci/circleci job of the commit is still
+# pending; devctl release promote gates on the commit's combined status and
+# refused the candidate as not_built right after the wait reported it. The
+# wait goes on until every commit status succeeded.
+description: a commit status still pending after the artifacts resolve and the tag pipeline is green keeps the wait going until it succeeds
+args: [release, wait, giantswarm/e2e-app, v1.2.3, --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/e2e-app/git/ref/tags/v1.2.3":
+      - body: {ref: refs/tags/v1.2.3, object: {type: commit, sha: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}}
+    "GET /repos/giantswarm/e2e-app":
+      - body: {name: e2e-app, full_name: giantswarm/e2e-app, private: false}
+    "GET /repos/giantswarm/e2e-app/contents/?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: Dockerfile, path: Dockerfile, type: file}
+          - {name: helm, path: helm, type: dir}
+          - {name: main.go, path: main.go, type: file}
+    "GET /repos/giantswarm/e2e-app/contents/.github/workflows?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, type: file}
+    "GET /repos/giantswarm/e2e-app/contents/.circleci?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          - {name: config.yml, path: .circleci/config.yml, type: file}
+          - {name: workflows.yml, path: .circleci/workflows.yml, type: file}
+    "GET /repos/giantswarm/e2e-app/contents/helm/e2e-app/Chart.yaml?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          name: Chart.yaml
+          path: helm/e2e-app/Chart.yaml
+          type: file
+          content: |
+            apiVersion: v2
+            name: e2e-app
+            version: 1.2.3
+    "GET /repos/giantswarm/e2e-app/commits/aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44/statuses":
+      - body:
+          - {context: "ci/circleci: integration-test", state: pending, target_url: "https://circleci.com/gh/giantswarm/e2e-app/301"}
+          - {context: "ci/circleci: push-to-registries-release", state: success, target_url: "https://circleci.com/gh/giantswarm/e2e-app/101"}
+      - body:
+          - {context: "ci/circleci: integration-test", state: pending, target_url: "https://circleci.com/gh/giantswarm/e2e-app/301"}
+          - {context: "ci/circleci: push-to-registries-release", state: success, target_url: "https://circleci.com/gh/giantswarm/e2e-app/101"}
+      - body:
+          - {context: "ci/circleci: integration-test", state: success, target_url: "https://circleci.com/gh/giantswarm/e2e-app/301"}
+          - {context: "ci/circleci: integration-test", state: pending, target_url: "https://circleci.com/gh/giantswarm/e2e-app/301"}
+          - {context: "ci/circleci: push-to-registries-release", state: success, target_url: "https://circleci.com/gh/giantswarm/e2e-app/101"}
+    "GET /repos/giantswarm/github/contents/repositories":
+      - body:
+          - {name: team-e2e.yaml, path: repositories/team-e2e.yaml, type: file}
+    "GET /repos/giantswarm/github/contents/repositories/team-e2e.yaml":
+      - body:
+          name: team-e2e.yaml
+          path: repositories/team-e2e.yaml
+          type: file
+          content: |
+            - name: e2e-app
+              componentType: service
+              gen:
+                flavours:
+                  - app
+                language: go
+                ci:
+                  generate: true
+circleci:
+  routes:
+    "GET /api/v2/project/gh/giantswarm/e2e-app/pipeline":
+      - body: {items: [{id: p1, number: 93, state: created, vcs: {tag: v1.2.3, revision: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}}], next_page_token: null}
+    "GET /api/v2/pipeline/p1/workflow":
+      - body: {items: [{id: w0, name: setup, status: success}, {id: w1, name: build, status: success}], next_page_token: null}
+    "GET /api/v2/workflow/w0/job":
+      - body: {items: [{id: j0, name: setup, status: success}], next_page_token: null}
+    "GET /api/v2/workflow/w1/job":
+      - body: {items: [{id: j1, name: go-build, status: success}, {id: j2, name: push-to-registries-release, status: success}, {id: j3, name: push-chart-release, status: success}], next_page_token: null}
+registry:
+  routes:
+    "HEAD /v2/giantswarm/e2e-app/manifests/1.2.3":
+      - status: 200
+        headers: {Docker-Content-Digest: "sha256:e2ea000000000000000000000000000000000000000000000000000000000e2a"}
+    "HEAD /v2/charts/giantswarm/e2e-app/manifests/1.2.3":
+      - status: 200
+        headers: {Docker-Content-Digest: "sha256:c4a7000000000000000000000000000000000000000000000000000000000c4a"}

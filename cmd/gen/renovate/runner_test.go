@@ -8,6 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+
+	"github.com/giantswarm/devctl/v8/pkg/gen"
 )
 
 // Test_Run_RepoName runs the command in a checkout named like a worktree
@@ -85,6 +87,84 @@ func Test_Run_RepoName(t *testing.T) {
 				require.Contains(t, string(got), tc.wantExtends)
 			} else {
 				require.NotContains(t, string(got), "renovate-custom.json5'")
+			}
+		})
+	}
+}
+
+// Test_Run_Fork asserts which file each flavour writes and removes, and that a
+// fork line's opt-out stays as it is.
+func Test_Run_Fork(t *testing.T) {
+	testCases := []struct {
+		name      string
+		flavours  gen.FlavourSlice
+		existing  map[string]string
+		wantFile  string
+		wantGone  string
+		wantErr   string
+		wantForks bool
+	}{
+		{
+			name:      "a fork gets renovate.json, the hand-written renovate.json5 goes",
+			flavours:  gen.FlavourSlice{gen.FlavourFork},
+			existing:  map[string]string{"renovate.json5": "{\n  dependencyDashboard: true,\n}\n"},
+			wantFile:  "renovate.json",
+			wantGone:  "renovate.json5",
+			wantForks: true,
+		},
+		{
+			name:     "another flavour keeps renovate.json5, renovate.json goes",
+			flavours: gen.FlavourSlice{gen.FlavourApp},
+			existing: map[string]string{"renovate.json": "{}\n"},
+			wantFile: "renovate.json5",
+			wantGone: "renovate.json",
+		},
+		{
+			name:     "a fork line's opt-out in renovate.json5 stays",
+			flavours: gen.FlavourSlice{gen.FlavourFork},
+			existing: map[string]string{"renovate.json5": "{\n  reviewers: ['teemow'],\n  enabled: false,\n}\n"},
+			wantErr:  "renovate.json5 turns Renovate off for this fork line",
+		},
+		{
+			name:     "a fork line's opt-out in renovate.json stays",
+			flavours: gen.FlavourSlice{gen.FlavourFork},
+			existing: map[string]string{"renovate.json": "{\n  \"enabled\": false\n}\n"},
+			wantErr:  "renovate.json turns Renovate off for this fork line",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			require.NoError(t, os.Mkdir(".github", 0o750))
+			require.NoError(t, os.WriteFile(".github/dependabot.yml", []byte("version: 2\n"), 0o600))
+			for name, content := range tc.existing {
+				require.NoError(t, os.WriteFile(name, []byte(content), 0o600))
+			}
+
+			r := &runner{flag: &flag{Language: "go", Flavours: tc.flavours}}
+			err := r.Run(&cobra.Command{}, nil)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				for name, content := range tc.existing {
+					got, err := os.ReadFile(name) // #nosec G304 -- the test's own file
+					require.NoError(t, err)
+					require.Equal(t, content, string(got))
+				}
+				return
+			}
+			require.NoError(t, err)
+
+			got, err := os.ReadFile(tc.wantFile)
+			require.NoError(t, err)
+			require.NoFileExists(t, tc.wantGone)
+			if tc.wantForks {
+				require.Contains(t, string(got), `"forkProcessing": "enabled",`)
+				// A fork line's dependabot.yml is upstream's.
+				require.FileExists(t, ".github/dependabot.yml")
+			} else {
+				require.NotContains(t, string(got), "forkProcessing")
+				require.NoFileExists(t, ".github/dependabot.yml")
 			}
 		})
 	}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"text/template"
@@ -204,8 +205,8 @@ func Test_HelmDocsRegenIsValidYAML(t *testing.T) {
 	for _, step := range regen.Steps {
 		if strings.HasPrefix(step.Uses, "actions/checkout@") {
 			checkout = true
-			if step.With["token"] != "${{ secrets.TAYLORBOT_GITHUB_ACTION }}" {
-				t.Errorf("regen checkout token = %q, want the taylorbot PAT (a GITHUB_TOKEN push does not re-trigger the required checks)", step.With["token"])
+			if step.With["token"] != "${{ steps.release-token.outputs.token }}" {
+				t.Errorf("regen checkout token = %q, want the giantswarm-release App token (a GITHUB_TOKEN push does not re-trigger the required checks)", step.With["token"])
 			}
 			if step.With["ref"] != "${{ github.head_ref }}" {
 				t.Errorf("regen checkout ref = %q, want the head branch so the commit lands on it", step.With["ref"])
@@ -294,5 +295,213 @@ func Test_HelmDocsRegenAuthorIsIgnoredByRenovate(t *testing.T) {
 
 	if !strings.Contains(renovateConfig, "gitIgnoredAuthors: [\n    '"+email[1]+"',") {
 		t.Errorf("generated renovate.json5 does not ignore the regen author %q:\n%s", email[1], renovateConfig)
+	}
+}
+
+// Test_ChartTestsPath pins the generated file name: it is what the
+// giantswarm/github align-files run writes into every app repository.
+func Test_ChartTestsPath(t *testing.T) {
+	in := newWorkflows(t, gen.FlavourApp).ChartTests()
+
+	want := filepath.Join(".github", "workflows", "zz_generated.chart_tests.yaml")
+	if in.Path != want {
+		t.Errorf("path = %q, want %q", in.Path, want)
+	}
+}
+
+// Test_ChartTestsIsValidYAML checks the properties the design rests on: the
+// workflow fires on pull requests, it delegates to the shared reusable
+// workflow, and it grants the job read-only contents access.
+func Test_ChartTestsIsValidYAML(t *testing.T) {
+	got := renderInput(t, newWorkflows(t, gen.FlavourApp).ChartTests())
+
+	var wf struct {
+		Name string `yaml:"name"`
+		On   struct {
+			PullRequest struct {
+				Branches []string `yaml:"branches"`
+			} `yaml:"pull_request"`
+		} `yaml:"on"`
+		Permissions map[string]string `yaml:"permissions"`
+		Jobs        map[string]struct {
+			Uses        string            `yaml:"uses"`
+			Permissions map[string]string `yaml:"permissions"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(got), &wf); err != nil {
+		t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, got)
+	}
+
+	if wf.Name != "chart-tests" {
+		t.Errorf("name = %q, want chart-tests", wf.Name)
+	}
+	if len(wf.On.PullRequest.Branches) == 0 {
+		t.Errorf("pull_request branches = %v, want main and master", wf.On.PullRequest.Branches)
+	}
+	if len(wf.Permissions) != 0 {
+		t.Errorf("top-level permissions = %v, want none (each job sets its own)", wf.Permissions)
+	}
+
+	job, ok := wf.Jobs["chart-tests"]
+	if !ok {
+		t.Fatalf("no chart-tests job in %v", wf.Jobs)
+	}
+	want := "giantswarm/github-workflows/.github/workflows/chart-tests.yaml@main"
+	if job.Uses != want {
+		t.Errorf("uses = %q, want %q", job.Uses, want)
+	}
+	if job.Permissions["contents"] != "read" {
+		t.Errorf("job permissions = %v, want contents: read", job.Permissions)
+	}
+}
+
+// Test_ReservationCommandIsValidYAML checks the properties the design rests
+// on: the workflow fires on new comments and on closed pull requests, a job
+// filter skips other comments, the job has no GITHUB_TOKEN permissions, and
+// the app token it mints is scoped to dispatching to mc-reservations.
+func Test_ReservationCommandIsValidYAML(t *testing.T) {
+	in := newWorkflows(t, gen.FlavourApp).ReservationCommand()
+	if want := filepath.Join(".github", "workflows", "zz_generated.reservation_command.yaml"); in.Path != want {
+		t.Errorf("path = %q, want %q", in.Path, want)
+	}
+	got := renderInput(t, in)
+
+	var wf struct {
+		On struct {
+			IssueComment struct {
+				Types []string `yaml:"types"`
+			} `yaml:"issue_comment"`
+			PullRequest struct {
+				Types []string `yaml:"types"`
+			} `yaml:"pull_request"`
+		} `yaml:"on"`
+		Permissions map[string]string `yaml:"permissions"`
+		Jobs        map[string]struct {
+			If          string            `yaml:"if"`
+			Permissions map[string]string `yaml:"permissions"`
+			Steps       []struct {
+				Uses string            `yaml:"uses"`
+				With map[string]string `yaml:"with"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(got), &wf); err != nil {
+		t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, got)
+	}
+
+	if !slices.Equal(wf.On.IssueComment.Types, []string{"created"}) {
+		t.Errorf("issue_comment types = %v, want [created]", wf.On.IssueComment.Types)
+	}
+	if !slices.Equal(wf.On.PullRequest.Types, []string{"closed"}) {
+		t.Errorf("pull_request types = %v, want [closed]", wf.On.PullRequest.Types)
+	}
+	if len(wf.Permissions) != 0 {
+		t.Errorf("top-level permissions = %v, want none", wf.Permissions)
+	}
+
+	job, ok := wf.Jobs["dispatch"]
+	if !ok {
+		t.Fatalf("no dispatch job in %v", wf.Jobs)
+	}
+	if len(job.Permissions) != 0 {
+		t.Errorf("job permissions = %v, want none", job.Permissions)
+	}
+	if !strings.Contains(job.If, "'/deploy'") || !strings.Contains(job.If, "head.repo.full_name == github.repository") {
+		t.Errorf("job if does not filter commands and forks:\n%s", job.If)
+	}
+	if len(job.Steps) == 0 || !strings.HasPrefix(job.Steps[0].Uses, "actions/create-github-app-token@") {
+		t.Fatalf("first step does not mint an app token: %+v", job.Steps)
+	}
+	with := job.Steps[0].With
+	for k, want := range map[string]string{
+		"client-id":           "${{ secrets.MC_RESERVATIONS_DISPATCH_CLIENT_ID }}",
+		"private-key":         "${{ secrets.MC_RESERVATIONS_DISPATCH_APP_KEY }}",
+		"repositories":        "mc-reservations",
+		"permission-contents": "write",
+	} {
+		if with[k] != want {
+			t.Errorf("app token %s = %q, want %q", k, with[k], want)
+		}
+	}
+}
+
+func Test_ReservationCommandGolden(t *testing.T) {
+	got := renderInput(t, withFixedHeader(t, newWorkflows(t, gen.FlavourApp).ReservationCommand()))
+	assertGolden(t, "testdata/reservation_command.yaml.golden", got)
+}
+
+// Test_PullRequestWorkflowsConcurrency verifies that generated pull request
+// workflows group runs by workflow and pull request number (falling back to
+// ref) and cancel in-progress runs only for pull_request events, while release
+// workflows retain their non-cancelling per-ref serialization.
+func Test_PullRequestWorkflowsConcurrency(t *testing.T) {
+	w := newWorkflows(t, gen.FlavourApp)
+
+	prWorkflows := []struct {
+		name  string
+		input input.Input
+	}{
+		{name: "chart-tests", input: w.ChartTests()},
+		{name: "check-values-schema", input: w.CheckValuesSchema()},
+		{name: "check-readme-links", input: w.CheckReadmeLinks()},
+		{name: "gitleaks", input: w.Gitleaks()},
+		{name: "semantic-pull-request", input: w.SemanticPullRequest()},
+	}
+
+	wantGroup := "${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
+	wantCancel := "${{ github.event_name == 'pull_request' }}"
+
+	for _, tc := range prWorkflows {
+		t.Run(tc.name, func(t *testing.T) {
+			got := renderInput(t, tc.input)
+
+			var wf struct {
+				Concurrency struct {
+					Group            string `yaml:"group"`
+					CancelInProgress string `yaml:"cancel-in-progress"`
+				} `yaml:"concurrency"`
+			}
+			if err := yaml.Unmarshal([]byte(got), &wf); err != nil {
+				t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, got)
+			}
+
+			if wf.Concurrency.Group != wantGroup {
+				t.Errorf("concurrency.group = %q, want %q", wf.Concurrency.Group, wantGroup)
+			}
+			if wf.Concurrency.CancelInProgress != wantCancel {
+				t.Errorf("concurrency.cancel-in-progress = %q, want %q", wf.Concurrency.CancelInProgress, wantCancel)
+			}
+		})
+	}
+
+	releaseWorkflows := []struct {
+		name  string
+		input input.Input
+	}{
+		{name: "auto-release", input: w.AutoRelease()},
+		{name: "auto-release-multi-image", input: newWorkflows(t, gen.FlavourMultiImage).AutoReleaseMultiImage()},
+	}
+
+	for _, tc := range releaseWorkflows {
+		t.Run(tc.name, func(t *testing.T) {
+			got := renderInput(t, tc.input)
+
+			var wf struct {
+				Concurrency struct {
+					Group            string `yaml:"group"`
+					CancelInProgress string `yaml:"cancel-in-progress"`
+				} `yaml:"concurrency"`
+			}
+			if err := yaml.Unmarshal([]byte(got), &wf); err != nil {
+				t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, got)
+			}
+
+			if wf.Concurrency.Group != "auto-release-${{ github.ref_name }}" {
+				t.Errorf("concurrency.group = %q, want %q", wf.Concurrency.Group, "auto-release-${{ github.ref_name }}")
+			}
+			if wf.Concurrency.CancelInProgress != "false" {
+				t.Errorf("concurrency.cancel-in-progress = %q, want false", wf.Concurrency.CancelInProgress)
+			}
+		})
 	}
 }

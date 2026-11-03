@@ -5,21 +5,19 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/authexec"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/prwait"
+	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 )
-
-const command = "pr wait"
 
 type runner struct {
 	flag   *flag
@@ -28,19 +26,27 @@ type runner struct {
 	// gate is versiongate.Check: an outdated devctl ends the run in the
 	// document.
 	gate func(noCache bool) error
-	// The seams tests replace: the token gates, the renewal of a GitHub token
-	// refused mid-run, the endpoints and the clock.
+	// The seams tests replace: the token gates (the App login for the App's
+	// owners, the person's own gh login for every other owner), the renewal
+	// of an App token refused mid-run, the endpoints and the clock.
 	requireGitHub   func(ctx context.Context) (authstore.Token, error)
+	personGitHub    func(ctx context.Context) (authstore.Token, error)
 	requireCircleCI func(ctx context.Context) (authstore.Token, error)
 	renewGitHub     func(ctx context.Context, rejected string) (string, error)
 	endpoints       func() agentcli.Endpoints
 	clock           func() (agentcli.Clock, error)
+	// github is newGitHub: the clients a wait reads GitHub through.
+	github func(config githubclient.Config) (prwait.GitHub, prwait.RateSource, prwait.EntryFinder, error)
 }
 
-// document is the command's JSON: the envelope and the wait's result.
-type document struct {
-	agentcli.Envelope
-	*prwait.Result
+// newGitHub is the GitHub client of config with conditional requests below
+// it, its rate and the organisation's team files.
+func newGitHub(config githubclient.Config) (prwait.GitHub, prwait.RateSource, prwait.EntryFinder, error) {
+	github, conditional, err := githubclient.NewConditional(config)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return github, conditional, releasewait.TeamFileEntries{GitHub: github.GitHub()}, nil
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -48,6 +54,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	agentcli.IgnoreHangup()
 	return r.run(ctx, args)
 }
 
@@ -55,7 +62,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 // the document, exit 7.
 func (r *runner) FlagError(_ *cobra.Command, err error) error {
 	doc := newDocument()
-	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, agentcli.FlagError(command, err))
+	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, agentcli.FlagError(prwait.Command, err))
 }
 
 func (r *runner) run(ctx context.Context, args []string) error {
@@ -64,15 +71,12 @@ func (r *runner) run(ctx context.Context, args []string) error {
 	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, err)
 }
 
-func newDocument() document {
-	return document{
-		Envelope: agentcli.NewEnvelope(command, time.Now()),
-		Result:   &prwait.Result{Checks: []prwait.Check{}, Actions: []prwait.ActionRun{}},
-	}
+func newDocument() prwait.Document {
+	return prwait.NewDocument(time.Now())
 }
 
-func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
-	owner, repo, number, err := parseArgs(args)
+func (r *runner) wait(ctx context.Context, args []string, doc *prwait.Document) error {
+	owner, repo, number, err := agentcli.ParsePullRequest(prwait.Command, args)
 	if err != nil {
 		return err
 	}
@@ -93,9 +97,15 @@ func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
 	}
 
 	// The gate comes before the first request.
-	token, err := r.requireGitHub(ctx)
+	token, err := authexec.RepositoryToken(ctx, owner, r.requireGitHub, r.personGitHub)
 	if err != nil {
 		return err
+	}
+	doc.Identity = authexec.Identity(token)
+	// Only the App login renews itself; a refused gh login is the outcome.
+	renew := r.renewGitHub
+	if doc.Identity != authexec.IdentityApp {
+		renew = nil
 	}
 	endpoints := r.endpoints()
 	logger := logrus.New()
@@ -104,12 +114,12 @@ func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
 	// A read that fails in transit or with a 5xx is sent again, not taken
 	// as the wait's outcome.
 	retrying := &agentcli.Retrying{Clock: clock, Progress: progress, Warn: doc.Warn}
-	github, conditional, err := githubclient.NewConditional(githubclient.Config{
+	github, rate, entries, err := r.github(githubclient.Config{
 		Logger:      logger,
 		AccessToken: token.Value,
 		BaseURL:     endpoints.GitHubAPIURL,
 		Transport:   retrying,
-		Renew:       r.renewGitHub,
+		Renew:       renew,
 	})
 	if err != nil {
 		return err
@@ -117,7 +127,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
 
 	waiter, err := prwait.New(prwait.Config{
 		GitHub: github,
-		Rate:   conditional,
+		Rate:   rate,
 		CircleCI: func(ctx context.Context) (*circleciclient.Client, error) {
 			token, err := r.requireCircleCI(ctx)
 			if err != nil {
@@ -125,12 +135,14 @@ func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
 			}
 			doc.Warn(token.Warning)
 			return circleciclient.New(circleciclient.Config{
-				Token:      token.Value,
-				BaseURL:    circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
-				HTTPClient: &http.Client{Transport: retrying},
-				Logger:     logger,
+				Token:       token.Value,
+				TokenSource: token.SourceName(),
+				BaseURL:     circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
+				HTTPClient:  &http.Client{Transport: retrying},
+				Logger:      logger,
 			})
 		},
+		Entries:        entries,
 		Clock:          clock,
 		Progress:       progress,
 		Timeout:        r.flag.Timeout,
@@ -141,26 +153,7 @@ func (r *runner) wait(ctx context.Context, args []string, doc *document) error {
 	}
 
 	result, err := waiter.Wait(ctx, owner, repo, number)
-	doc.Result = result
-	for _, w := range result.Warnings {
-		doc.Warn(w)
-	}
+	doc.Take(result)
 	prwait.PrintFailedJobs(r.stderr, result.FailedJobs)
-	return githubclient.ExplainNotFound(err, authstore.GitHubAppOnlyNotFoundHint(token))
-}
-
-// parseArgs reads "<owner/repo> <number>".
-func parseArgs(args []string) (owner, repo string, number int, err error) {
-	if len(args) != 2 {
-		return "", "", 0, fmt.Errorf("usage: devctl %s <owner/repo> <number>, got %d argument(s)", command, len(args))
-	}
-	owner, repo, ok := strings.Cut(args[0], "/")
-	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
-		return "", "", 0, fmt.Errorf("the repository is <owner/repo>, got %q", args[0])
-	}
-	number, err = strconv.Atoi(args[1])
-	if err != nil || number <= 0 {
-		return "", "", 0, fmt.Errorf("the pull request number is a positive integer, got %q", args[1])
-	}
-	return owner, repo, number, nil
+	return githubclient.ExplainNotFound(err, authexec.NotFoundHint(token, owner))
 }

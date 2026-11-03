@@ -20,8 +20,13 @@ var createPreCommitConfigTemplateSha = input.TemplateSHA(createPreCommitConfigTe
 // refFixPython is the middle step of the generated helm-schema pipeline hook: for every
 // object that has both `$ref` and `additionalProperties: false` it drops
 // `additionalProperties` and sets `unevaluatedProperties: false` instead. Only the latter
-// keyword considers properties pulled in through `$ref` in JSON Schema 2020-12
-// (losisin/helm-values-schema-json#317); see the template for the full rationale.
+// keyword considers properties pulled in through `$ref` in JSON Schema 2020-12.
+//
+// The generator stopped emitting that combination in v2.6.0, which shipped
+// losisin/helm-values-schema-json#378 (fixing #317). This step is kept for schemas the
+// generator BUNDLES rather than generates: `bundle: true` inlines a `# @schema $ref:
+// <file>` target verbatim, defect included. See the template for the full rationale and
+// for the repo that still depends on it.
 //
 // It lives here rather than inline in the template so Test_RefFixPython can execute the
 // exact program that gets generated. Two constraints:
@@ -34,6 +39,21 @@ var createPreCommitConfigTemplateSha = input.TemplateSHA(createPreCommitConfigTe
 // No indentation or trailing newline is written: `schemalint normalize` runs right after
 // and is the last writer, so any formatting done here would be discarded.
 const refFixPython = `import json,sys; h=lambda o: {**{k:v for k,v in o.items() if k!="additionalProperties"},"unevaluatedProperties":False} if ("$ref" in o and o.get("additionalProperties") is False) else o; p=sys.argv[1]; f=open(p,encoding="utf-8"); d=json.load(f,object_hook=h); f.close(); f=open(p,"w",encoding="utf-8"); json.dump(d,f); f.close()`
+
+// goModRequireCommentRegex is the pattern of the generated go-mod-require-comment hook
+// (language pygrep, searched line by line): a require line -- `require <module> <version>`
+// or a `<module> <version>` line of a require block -- whose trailing comment has two or
+// more words. Renovate's gomod manager matches a single-word comment only and skips any
+// other line without telling anyone, so `// indirect` passes and `// indirect; pinned
+// until …` fails.
+//
+// The module path must contain a dot or a slash, which keeps the go.mod directives
+// (`retract`, `exclude`, `replace`, `module`, `go`, `toolchain`, `tool`) and a retract
+// block's `[v1, v2]` ranges out; a replace line fails at its `=>`. It lives here rather
+// than inline in the template so Test_GoModRequireCommentRegex can run the exact pattern
+// that gets generated, under Go's regexp and Python's re alike: the syntax is the subset
+// both read the same, and it holds no single quote (a YAML single-quoted scalar).
+const goModRequireCommentRegex = `^\s*(require\s+)?[A-Za-z0-9][^\s,]*[./][^\s,]*\s+v[0-9]\S*\s*//\s*\S+\s+\S`
 
 func NewCreatePreCommitConfigInput(p params.Params) input.Input {
 	i := input.Input{
@@ -48,6 +68,7 @@ func NewCreatePreCommitConfigInput(p params.Params) input.Input {
 			"RepoName":                    p.RepoName,
 			"HelmCharts":                  p.HelmCharts,
 			"RefFixPython":                refFixPython,
+			"GoModRequireCommentRegex":    goModRequireCommentRegex,
 			"NodeRunPrefix":               p.NodeRunPrefix,
 			"NodeDevLintHook":             p.NodeDevLintHook,
 			"HelmValuesSchemaJSONVersion": p.HelmValuesSchemaJSONVersion,

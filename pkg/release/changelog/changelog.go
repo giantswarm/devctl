@@ -155,7 +155,7 @@ var KnownComponents = map[string]ParseParams{
 	// AKS Provider Specific
 	"cluster-aks": {
 		Tag:            "https://github.com/giantswarm/cluster-aks/releases/tag/v{{.Version}}",
-		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-azure/v{{.Version}}/CHANGELOG.md",
+		Changelog:      "https://raw.githubusercontent.com/giantswarm/cluster-aks/v{{.Version}}/CHANGELOG.md",
 		Start:          commonStartPattern,
 		End:            commonEndPattern,
 		FilterPatterns: []string{clusterChartUpdateFilter},
