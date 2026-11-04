@@ -53,7 +53,7 @@ func TestRunUsageErrorsAreDocuments(t *testing.T) {
 		{name: "neither version nor pr", args: []string{"giantswarm/devctl"}, reason: "exactly one of a version"},
 		{name: "both version and pr", args: []string{"giantswarm/devctl", "v1.2.3"}, flag: flag{PR: 7}, reason: "exactly one of a version"},
 		{name: "not a version", args: []string{"giantswarm/devctl", "latest"}, reason: "not a version"},
-		{name: "failed-log-lines not positive", args: []string{"giantswarm/devctl", "v1.2.3"}, flag: flag{FailedLog: prwait.FailedLog{Enabled: true, Lines: 0}}, reason: "--failed-log-lines must be positive"},
+		{name: "negative failed-log-lines", args: []string{"giantswarm/devctl", "v1.2.3"}, flag: flag{FailedLog: prwait.FailedLog{Enabled: true, Lines: -1}}, reason: "--failed-log-lines must be non-negative"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -71,7 +71,9 @@ logError}]. See docs/pr-wait.md.
 
 --failed-log: on a red verdict, read the log of each failed GitHub Actions
 and CircleCI job once and print its last --failed-log-lines lines (default
-50) to stderr; a green or pending wait reads no log.
+50) to stderr; --failed-log-lines 0 keeps the full Actions log, including
+cleanup, or all failed-step output on CircleCI, with terminal controls
+removed. A green or pending wait reads no log.
 
 Exit codes:
   0  green

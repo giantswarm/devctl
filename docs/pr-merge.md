@@ -106,8 +106,10 @@ runs the merge again.
 ## The wait
 
 The wait is `pr wait`'s, with its verdicts and exit codes: 1 red, 2 timeout, 3 not applicable, 4 a
-required context never reported. Nothing is merged on any of them. `--failed-log` is `pr wait`'s too: a red
-wait prints the tail of each failed job's log to stderr and carries it in `failedJobs[]`. A head that changes under the
+required context never reported. Nothing is merged on any of them. `--failed-log` is `pr wait`'s too:
+`--failed-log-lines 0` keeps the full Actions log (all failed-step output on CircleCI), including for
+a detached merge. A red
+wait prints the requested log of each failed job to stderr and carries it in `failedJobs[]`. A head that changes under the
 wait resets it to the new head with a warning. Its reads, and the release wait's, are retried the way
 `pr wait`'s are ([Polling](pr-wait.md#polling)): a reset connection or a 5xx is a warning and another
 try, a read that fails every try leaves the poll unanswered, and the head's checks are then read through

@@ -53,6 +53,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
+	"github.com/giantswarm/devctl/v8/pkg/prwait"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
 
@@ -158,6 +159,7 @@ type Config struct {
 	// log of each failed job once and keep that many of its last lines in
 	// Result.FailedJobs, read and trimmed as pr wait's --failed-log does. A
 	// green or pending tag reads no log.
+	// prwait.FullFailedLogLines keeps the full log; zero reads no log.
 	FailedLogLines int
 
 	// GitHub is required. Entries and Registry are required; CircleCI is
@@ -622,7 +624,7 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 			if err != nil {
 				w.warn(fmt.Sprintf("reading artifact availability for %s: %v", result.Tag, err))
 			}
-			if w.config.FailedLogLines > 0 {
+			if w.config.FailedLogLines > 0 || w.config.FailedLogLines == prwait.FullFailedLogLines {
 				result.FailedJobs = w.failedJobs(ctx, state)
 			}
 			return ciFailedErr("the tag pipeline of %s failed: %s", result.Tag, strings.Join(state.failedJobs, ", "))
