@@ -26,7 +26,7 @@ func Test_Run_interrupted(t *testing.T) {
 				r := &runner{
 					flag: &flag{Timeout: time.Hour}, stdout: os.Stdout, stderr: os.Stderr,
 					gate: func(bool) error { return nil },
-					open: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+					open: func(context.Context, string, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
 						return sources, nil
 					},
 				}

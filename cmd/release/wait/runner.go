@@ -22,10 +22,11 @@ type runner struct {
 	// document.
 	gate func(noCache bool) error
 	// open is laptop.ReleaseWaitSources; tests inject clients over mocks.
-	open func(ctx context.Context, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*releasewait.Sources, error)
+	open func(ctx context.Context, owner string, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*releasewait.Sources, error)
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
+	agentcli.IgnoreHangup()
 	ctx, stop := agentcli.InterruptContext(cmd.Context())
 	defer stop()
 	return r.run(ctx, args)
@@ -93,8 +94,8 @@ func (r *runner) wait(ctx context.Context, args []string, doc *releasewait.Docum
 	// A read that fails in transit or with a 5xx is sent again, not taken
 	// as the wait's outcome.
 	retrying := &agentcli.Retrying{Clock: clock, Progress: progress, Warn: doc.Warn}
-	progress.Printf("reading the GitHub token from the keychain")
-	c, err := r.open(ctx, endpoints, retrying, doc.Warn)
+	progress.Printf("reading the GitHub login for %s", owner)
+	c, err := r.open(ctx, owner, endpoints, retrying, doc.Warn)
 	if err != nil {
 		return err
 	}

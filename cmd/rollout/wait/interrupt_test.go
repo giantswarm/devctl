@@ -47,7 +47,7 @@ func Test_Run_interrupted(t *testing.T) {
 						r := &runner{
 							flag: &flag{Timeout: time.Hour, ReleaseTimeout: time.Hour}, stdout: os.Stdout, stderr: os.Stderr,
 							gate: func(bool) error { return nil },
-							openRelease: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+							openRelease: func(context.Context, string, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
 								return sources, nil
 							},
 							openCluster: func(ctx context.Context, _ laptop.ClusterConfig) (dynamic.Interface, error) {
