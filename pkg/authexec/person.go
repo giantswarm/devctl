@@ -62,14 +62,15 @@ func personGitHub(ctx context.Context, path, self string, environ []string, outp
 	return authstore.Token{Value: token, Source: SourceGHLogin}, nil
 }
 
-// realGH is the first gh on path that is no devctl: neither self nor a gh
-// link to another devctl, which would answer with the App login.
+// realGH uses the full PATH to skip shims ahead of devctl links, including
+// links to another devctl, which would answer with the App login.
 func realGH(path, self string) (string, error) {
-	for _, dir := range filepath.SplitList(path) {
-		gh, err := LookPath("gh", dir, self)
-		if err != nil || strings.TrimSuffix(filepath.Base(resolve(gh)), ".exe") == "devctl" {
-			continue
-		}
+	selfResolved := resolve(self)
+	gh, err := lookPath("gh", path, func(candidate string) bool {
+		resolved := resolve(candidate)
+		return resolved == selfResolved || strings.TrimSuffix(filepath.Base(resolved), ".exe") == "devctl"
+	})
+	if err == nil {
 		return gh, nil
 	}
 	return "", errors.New("gh: not found on PATH (gh links to devctl skipped)")
