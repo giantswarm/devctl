@@ -255,14 +255,14 @@ func TestPRWaitVerdicts(t *testing.T) {
 			exit:    agentcli.ExitTimeout,
 		},
 		{
-			name: "not applicable: a draft",
+			name: "a draft waits for its checks",
 			github: func() *prwaittest.GitHub {
 				pr := prwaittest.OpenPullRequest(7, "abc123", updated)
 				pr.Draft = new(true)
 				return &prwaittest.GitHub{PR: pr}
 			}(),
-			verdict: agentcli.VerdictNotApplicable,
-			exit:    agentcli.ExitNotApplicable,
+			verdict: agentcli.VerdictGreen,
+			exit:    agentcli.ExitOK,
 		},
 		{
 			name: "required missing",

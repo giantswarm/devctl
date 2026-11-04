@@ -1,7 +1,7 @@
 # Waiting for a pull request's CI: `devctl pr wait`
 
 ```nohighlight
-devctl pr wait <owner/repo> <number> [--timeout 60m] [--progress] [--failed-log [--failed-log-lines 50]]
+devctl pr wait <owner/repo> <number> [--timeout 60m] [--progress] [--circleci-from-statuses] [--failed-log [--failed-log-lines 50]]
 ```
 
 One blocking call that returns when the outcome of a pull request's CI is known: green, red, or a
@@ -12,6 +12,15 @@ writes one line per poll to stderr for a person watching.
 Draft pull requests wait for their checks like other open pull requests and return the same
 green (exit 0) or red (exit 1) verdict. The document's `draft` field reports the latest draft
 state read during the wait. Green describes CI; `pr merge` still refuses a draft with exit 3.
+`--circleci-from-statuses` waits without a CircleCI token, using the same logic as `devctl serve`:
+it reads the head's CircleCI configuration from GitHub, lists the jobs that run on the head's branch,
+and waits for every one to post a commit status and finish successfully. A downstream job behind
+`requires:` that has posted nothing keeps the head pending, even when all posted statuses are green.
+The verdict comes from GitHub statuses; CircleCI pipeline and workflow details are absent from the
+document. Without the flag, the CircleCI API is used as described below.
+`--failed-log` takes precedence over `--circleci-from-statuses`: it uses the CircleCI API and requires
+`devctl auth login --circleci-only` when the head carries a CircleCI configuration, so CircleCI log
+tails can be read. GitHub Actions logs alone require no CircleCI token on a head without CircleCI.
 
 `--failed-log` answers why a red wait is red without a second tool: on a red verdict it reads the
 log of each failed job once, a GitHub Actions job (`GET /repos/{owner}/{repo}/actions/jobs/{id}/logs`)
@@ -30,7 +39,9 @@ yet uploaded) is named in its job's `logError`; the verdict stays red.
 
 The tokens come from the OS keychain (`devctl auth login`, see [auth.md](auth.md)). The GitHub
 token is required before the first request; the CircleCI token only once the head turns out to
-carry a CircleCI configuration for a repository CircleCI builds. The GitHub identity follows the repository's owner: the
+carry a CircleCI configuration for a repository CircleCI builds and the wait uses the CircleCI API.
+`--circleci-from-statuses` without `--failed-log` never reads the CircleCI keychain entry or API.
+The GitHub identity follows the repository's owner: the
 App login for giantswarm, where the devctl App is installed, and your own `gh` login (`gh auth token` of the
 real `gh`, never a `gh` link to devctl, and no environment variable) for every other owner, with the same
 semantics; `identity` in the document says which, `app` or `gh`. Without a `gh` login such a pull request is
@@ -50,7 +61,10 @@ system that will produce it:
    GitHub keeps every run of a check; a workflow that ran twice for the same head has a stale
    first run next to the current one. A pull request retitled after a failed title check has a
    failed run and a passed run of the same workflow, and only the newest workflow run counts, as
-   in the merge box. A failed check of an earlier run of a workflow (a reopened pull request, a rerun) does
+   in the merge box. A cancelled check is ignored when a check of the same name in another run of
+   that workflow started later, even if the later job belongs to a lower-ID workflow run. A
+   cancelled matrix job or a check in another workflow is not superseded this way; a lone
+   cancellation stays red. A failed check of an earlier run of a workflow (a reopened pull request, a rerun) does
    not count while the workflow's newest run is still open: the wait goes on and exits on that run's outcome.
    A completed run whose conclusion is `action_required` (a deployment waiting for a
    reviewer) is unfinished, not red. `neutral` and `skipped` pass.
@@ -67,7 +81,7 @@ system that will produce it:
    failed workflow is a new workflow of the same name in the same pipeline, and the newest run is
    the one that counts. `not_run` is a skipped workflow. An `errored` pipeline (a configuration
    error, which produces no workflows) is red. A setup pipeline (`setup: true` with
-   `continuation/continue`) is unfinished while its state is `setup-pending`, `setup` or `pending`:
+   `continuation/continue`) normally stays unfinished while its state is `setup-pending`, `setup` or `pending`:
    its `setup` workflow may have finished, but the continued workflows that post the build's
    contexts do not exist yet. It settles at `created`, and reads `created` with the setup workflow
    alone for a minute or two after the setup job continued it, longer when CircleCI's listing lags
@@ -77,6 +91,18 @@ system that will produce it:
    workflow alone (`setup finished, the continuation's workflows not created yet`) or with none
    (`no workflows yet`) is unfinished while the head carries one CircleCI context at most, and is
    judged by the contexts once more have posted, whatever the listing reads.
+
+   A setup job can also finish successfully with `circleci-agent step halt`, skipping
+   `continuation/continue` and leaving the pipeline in `setup`. Five minutes after every newest
+   setup-tagged workflow succeeded, the wait reads their jobs. If each job succeeded and posted
+   its own successful `ci/circleci: <job>` context, and the head has no other CircleCI context,
+   the pipeline is judged by those workflows and the head's checks. The document marks
+   `circleci.setupHalted: true`; progress says `setup halted, no continuation`. The grace starts
+   at the last setup workflow's completion, including for a wait started later. This is a bounded
+   inference from the API evidence: an empty workflow or job listing, a missing completion time,
+   or an additional CircleCI context cannot establish a halted setup. A pipeline in `pending`
+   or `created` still waits for its submitted continuation under the rules above. Required
+   contexts must still report and every other check must still finish under its usual rule.
 3. **No GitHub Actions run of the head is open**: `queued`, `in_progress`, `waiting`, `pending`,
    `requested`, or completed with the conclusion `action_required`. The last one is a workflow
    run awaiting a repository member's approval (a fork's or a bot's pull request in a repository
