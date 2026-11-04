@@ -79,6 +79,16 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 				return microerror.Maskf(invalidFlagError, "%s turns Renovate off for this fork line (`enabled: false`) and stays as it is: Renovate skips a fork without a renovate.json that sets forkProcessing to \"enabled\" anyway; remove the opt-out first to have the fork line scanned", f)
 			}
 		}
+	} else {
+		// Renovate prefers JSONC to JSON5. Do not report a successful
+		// generation whose configuration Renovate would never read.
+		_, err := os.Stat("renovate.jsonc")
+		if err == nil {
+			return microerror.Maskf(invalidFlagError, "renovate.jsonc takes precedence over generated renovate.json5; move its repo-owned rules to renovate-custom.json5 and remove renovate.jsonc before generating")
+		}
+		if !os.IsNotExist(err) {
+			return microerror.Mask(err)
+		}
 	}
 
 	var renovateInput *renovate.Renovate

@@ -131,6 +131,14 @@ func Test_Run_Fork(t *testing.T) {
 			existing: map[string]string{"renovate.json": "{\n  \"enabled\": false\n}\n"},
 			wantErr:  "renovate.json turns Renovate off for this fork line",
 		},
+		{
+			name:      "JSONC does not shadow the fork's root JSON output",
+			flavours:  gen.FlavourSlice{gen.FlavourFork},
+			existing:  map[string]string{"renovate.jsonc": "{\"dependencyDashboard\":true}\n"},
+			wantFile:  "renovate.json",
+			wantGone:  "renovate.json5",
+			wantForks: true,
+		},
 	}
 
 	for _, tc := range testCases {
