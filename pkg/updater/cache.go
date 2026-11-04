@@ -41,8 +41,22 @@ func (c *cache) Persist(cacheDir string) error {
 
 	out := filepath.Join(cacheDir, cacheFileName)
 
-	err = os.WriteFile(out, serialized, os.FileMode(cacheFileMode))
+	// Readers and other devctl processes must see a complete document. Write
+	// to a separate file in the same directory and publish it with one rename.
+	tmp, err := os.CreateTemp(cacheDir, ".selfupdate-*.yaml")
 	if err != nil {
+		return microerror.Mask(err)
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+
+	if _, err := tmp.Write(serialized); err != nil {
+		_ = tmp.Close()
+		return microerror.Mask(err)
+	}
+	if err := tmp.Close(); err != nil {
+		return microerror.Mask(err)
+	}
+	if err := os.Rename(tmp.Name(), out); err != nil {
 		return microerror.Mask(err)
 	}
 
