@@ -6,7 +6,8 @@
 // commit status of the head (every run of a check name, the latest status per
 // context), every CircleCI workflow of
 // the head revision (the newest run per name, read from CircleCI because a job
-// behind `requires:` has posted nothing yet), no GitHub Actions run of the
+// behind `requires:` has posted nothing yet; a stale running workflow is
+// completed when its jobs and GitHub statuses all succeeded), no GitHub Actions run of the
 // head still queued, running or awaiting approval, and every required status
 // context reported. A pending check of another app, or a pending status of
 // another CI than CircleCI, the base does not require is not waited for, as
@@ -438,7 +439,7 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 		return nil, err
 	}
 	if h.circleci != nil {
-		if s.circleci, err = w.readCircleCI(ctx, owner, repo, h); err != nil {
+		if s.circleci, err = w.readCircleCI(ctx, owner, repo, h, s.statuses); err != nil {
 			return nil, err
 		}
 	}
@@ -583,8 +584,10 @@ func (w *Waiter) templateContent(ctx context.Context, owner, repo string) (bool,
 }
 
 // readCircleCI finds the newest pipeline of the head revision on the head's
-// branch and reads its workflows.
-func (w *Waiter) readCircleCI(ctx context.Context, owner, repo string, h *head) (*circleSnapshot, error) {
+// branch and reads its workflows on every poll. When GitHub's CircleCI statuses
+// are green but a workflow still reads running, its jobs break the tie: every
+// job must have succeeded before a stale workflow can stop holding the wait.
+func (w *Waiter) readCircleCI(ctx context.Context, owner, repo string, h *head, statuses []*github.RepoStatus) (*circleSnapshot, error) {
 	s := &circleSnapshot{project: h.project}
 	pipeline, err := h.circleci.FindPipelineByRevision(ctx, owner, repo, h.branch, h.sha)
 	if err != nil {
@@ -599,7 +602,38 @@ func (w *Waiter) readCircleCI(ctx context.Context, owner, repo string, h *head) 
 		return nil, err
 	}
 	s.workflows = workflows
+	if !circleStatusesSucceeded(statuses) {
+		return s, nil
+	}
+	s.completedWorkflows = map[string]bool{}
+	for _, workflow := range latestWorkflows(workflows) {
+		if workflow.Status != "running" {
+			continue
+		}
+		jobs, err := h.circleci.ListWorkflowJobs(ctx, workflow.ID)
+		if circleciclient.IsNotFound(err) {
+			// An invisible job list cannot prove completion. Keep waiting for
+			// the workflow, and read both it and its jobs again next poll.
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		s.completedWorkflows[workflow.ID] = circleJobsSucceeded(jobs)
+	}
 	return s, nil
+}
+
+func circleJobsSucceeded(jobs []circleciclient.Job) bool {
+	if len(jobs) == 0 {
+		return false
+	}
+	for _, job := range jobs {
+		if job.Status != "success" {
+			return false
+		}
+	}
+	return true
 }
 
 // interval is the time to the next poll, from the rate limit of the newest

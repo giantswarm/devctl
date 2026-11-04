@@ -78,6 +78,10 @@ type Workflow struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
 	URL    string `json:"url"`
+	// JobsCompleted: the workflow still reads running, but GitHub's CircleCI
+	// statuses and every job of this workflow succeeded. Its stale status no
+	// longer keeps the head waiting.
+	JobsCompleted bool `json:"jobsCompleted,omitempty"`
 }
 
 // ActionRun is the latest GitHub Actions run of one workflow for the head.
@@ -127,6 +131,9 @@ type circleSnapshot struct {
 	// pipeline is nil while CircleCI has no pipeline for the head revision.
 	pipeline  *circleciclient.Pipeline
 	workflows []circleciclient.Workflow
+	// completedWorkflows records running workflows whose jobs all succeeded,
+	// read only when the head's CircleCI statuses are all success.
+	completedWorkflows map[string]bool
 }
 
 // evaluation is the verdict of one snapshot with the document fields it
@@ -232,7 +239,9 @@ func (e *evaluation) approvalReason() string {
 //  2. when CircleCI is consulted, the newest pipeline of the head revision
 //     exists and is past its setup (a setup pipeline's continuation created,
 //     its workflows listed or their jobs' statuses on GitHub), and the newest
-//     run of each of its workflows is success (not_run counts as skipped);
+//     run of each of its workflows is success (not_run counts as skipped).
+//     A running workflow whose jobs and GitHub statuses all succeeded counts
+//     as completed;
 //  3. no GitHub Actions run of the head is queued, in progress, waiting or
 //     awaiting approval; a run in progress whose listed jobs have all
 //     completed RunSettleGrace ago is judged by them (rule 1), as GitHub may
@@ -407,6 +416,22 @@ func circleStatuses(statuses []*github.RepoStatus) int {
 	return n
 }
 
+// circleStatusesSucceeded requires at least one CircleCI context and the latest
+// status of every such context to be success. Green statuses alone cannot
+// prove completion: a job behind requires: may not have posted anything yet.
+func circleStatusesSucceeded(statuses []*github.RepoStatus) bool {
+	found := false
+	for _, status := range latestStatuses(statuses) {
+		if strings.HasPrefix(status.GetContext(), circleStatusPrefix) {
+			if status.GetState() != "success" {
+				return false
+			}
+			found = true
+		}
+	}
+	return found
+}
+
 // evaluateCircleCI applies rule 2 to the head's pipeline. circleStatuses is
 // how many CircleCI jobs have posted to GitHub: an empty listing or a setup
 // workflow listed on its own is not the pipeline's last word, and GitHub
@@ -454,10 +479,11 @@ func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot, circleS
 	}
 	for _, w := range workflows {
 		url := fmt.Sprintf("https://app.circleci.com/pipelines/%s/%d/workflows/%s", c.project, c.pipeline.Number, w.ID)
-		e.circleci.Workflows = append(e.circleci.Workflows, Workflow{Name: w.Name, Status: w.Status, URL: url})
+		jobsCompleted := w.Status == "running" && c.completedWorkflows[w.ID]
+		e.circleci.Workflows = append(e.circleci.Workflows, Workflow{Name: w.Name, Status: w.Status, URL: url, JobsCompleted: jobsCompleted})
 		e.seen[w.Name] = true
 		switch {
-		case circleciclient.WorkflowSucceeded(w.Status), w.Status == "not_run":
+		case circleciclient.WorkflowSucceeded(w.Status), w.Status == "not_run", jobsCompleted:
 		case circleciclient.WorkflowFailed(w.Status) && accepts(w.Name):
 			e.accept(w.Name, SourceCircleCIWorkflow, w.Status, url)
 		case circleciclient.WorkflowFailed(w.Status):

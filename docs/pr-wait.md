@@ -59,7 +59,13 @@ system that will produce it:
 2. **Every CircleCI workflow of the head revision is `success`**, read from CircleCI's API: the
    newest pipeline for the revision, the newest run of each workflow name in it. A CircleCI job
    behind `requires:` posts no status to GitHub until it starts, so a multi-stage pipeline reads
-   green on GitHub between its stages; CircleCI knows the workflow is `running`. A rerun of a
+   green on GitHub between its stages; CircleCI knows the workflow is `running`. When at least one
+   CircleCI status has posted and every CircleCI status of the head is `success`, a workflow that
+   still reads `running` is checked against its jobs, across every page. If the nonempty job list
+   is all `success`, the workflow no longer holds the wait: `circleci.workflows[]` preserves its
+   `running` status and marks it `jobsCompleted`. A blocked, pending, failed or unknown job, an
+   empty list or an unavailable list cannot prove completion. Every poll re-reads the pipeline,
+   workflows and, while the two sources disagree, jobs. A rerun of a
    failed workflow is a new workflow of the same name in the same pipeline, and the newest run is
    the one that counts. `not_run` is a skipped workflow. An `errored` pipeline (a configuration
    error, which produces no workflows) is red. A setup pipeline (`setup: true` with

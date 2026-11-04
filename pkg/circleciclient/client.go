@@ -368,15 +368,33 @@ func (c *Client) ListPipelineWorkflows(ctx context.Context, pipelineID string) (
 	return out.Items, nil
 }
 
-// ListWorkflowJobs returns the jobs of a workflow.
+// ListWorkflowJobs returns every page of the jobs of a workflow.
 func (c *Client) ListWorkflowJobs(ctx context.Context, workflowID string) ([]Job, error) {
-	var out struct {
-		Items []Job `json:"items"`
+	path := "/api/v2/workflow/" + url.PathEscape(workflowID) + "/job"
+	var jobs []Job
+	seen := map[string]bool{}
+	for pageToken := ""; ; {
+		pagePath := path
+		if pageToken != "" {
+			pagePath += "?" + url.Values{"page-token": {pageToken}}.Encode()
+		}
+		var out struct {
+			Items         []Job  `json:"items"`
+			NextPageToken string `json:"next_page_token"`
+		}
+		if err := c.do(ctx, http.MethodGet, pagePath, nil, &out); err != nil {
+			return nil, microerror.Mask(err)
+		}
+		jobs = append(jobs, out.Items...)
+		if out.NextPageToken == "" {
+			return jobs, nil
+		}
+		if seen[out.NextPageToken] {
+			return nil, microerror.Maskf(apiError, "listing workflow jobs: repeated page token")
+		}
+		seen[out.NextPageToken] = true
+		pageToken = out.NextPageToken
 	}
-	if err := c.do(ctx, http.MethodGet, "/api/v2/workflow/"+url.PathEscape(workflowID)+"/job", nil, &out); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return out.Items, nil
 }
 
 // RerunWorkflowFromFailed reruns the failed jobs of a finished workflow and
