@@ -41,7 +41,7 @@ func Test_Run_InvalidPackageManagerLeavesFilesUntouched(t *testing.T) {
 		t.Errorf("unsupported package manager: got %v, want invalid flag naming the value", err)
 	}
 	for path, want := range files {
-		got, err := os.ReadFile(path)
+		got, err := os.ReadFile(path) // #nosec G304 -- fixed fixture paths under t.TempDir, test-only
 		if err != nil || string(got) != want {
 			t.Errorf("%s changed after invalid package manager: err=%v", path, err)
 		}
