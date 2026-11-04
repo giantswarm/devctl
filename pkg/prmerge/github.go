@@ -22,7 +22,7 @@ type GitHub interface {
 	Repository(ctx context.Context, owner, repo string) (*github.Repository, error)
 	MergeQueueRequired(ctx context.Context, owner, repo, branch string) (bool, error)
 	BehindBy(ctx context.Context, owner, repo, base, headSHA string) (int, error)
-	// CommitsBetween reads every commit between immutable base and head SHAs.
+	// CommitsBetween reads the history a rebase merge would preserve.
 	CommitsBetween(ctx context.Context, owner, repo, baseSHA, headSHA string) ([]*github.RepositoryCommit, error)
 
 	// The review guard's reads.

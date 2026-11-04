@@ -21,6 +21,12 @@ wait), merge it and delete its branch, then wait until the release the merge
 triggers is pullable (the wait of devctl release wait --pr), print one JSON
 document on stdout and exit with a code that says what happened.
 
+If its verified CircleCI tag pipeline fails, the CLI release wait marks the
+GitHub release's notes "Not published" with a pipeline link. A later
+successful wait removes the notice. Editing notes requires Contents: write;
+an edit failure warns without replacing the release-failure outcome.
+devctl release failed <owner/repo> lists recorded failures.
+
 --circleci-from-statuses reads CircleCI jobs from the configuration and GitHub
 commit statuses for both waits, without a CircleCI token, as in devctl serve.
 Jobs that have not posted yet keep the wait pending. --failed-log takes
@@ -46,7 +52,11 @@ default; --squash squashes there. The repository's settings are read before
 the wait: squash off and exactly one other method on lands the default squash
 with that one (a merge commit, the same subject), with a warning; a method
 they do not allow is otherwise exit 3 before the wait, naming the flag for the
-other one, and an explicit --rebase or --squash is never replaced. The head
+other one, and an explicit --rebase or --squash is never replaced. A rebase
+merge refuses commits whose subjects start with amend!, fixup! or squash!
+(exit 3), listing their SHAs and subjects: autosquash them before merging.
+This is checked before the wait and again on the judged head before the
+merge; --accept-red does not override it. Squash merges are unaffected. The head
 branch is deleted through the refs API; a head in a fork is left alone. A base
 with a merge queue is enqueued instead, the pull request waited for until the
 queue merged it, then the branch deleted. Nothing reads a protection setting
@@ -162,7 +172,8 @@ Exit codes:
   2  timeout or SIGINT/SIGTERM before the merge; unfinished names what
      was still open, reason identifies an interrupted wait
   3  not applicable: draft, closed, merged, conflicting, behind its base
-     (without --update-branch), GitHub declined the merge as it stands, or
+     (without --update-branch), a rebase carries autosquash commits,
+     GitHub declined the merge as it stands, or
      --accept-red names a required check, a security scan or no check of
      the head
   4  a required status context never reported, or Actions runs await a

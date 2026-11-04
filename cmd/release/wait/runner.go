@@ -125,6 +125,9 @@ func (r *runner) wait(ctx context.Context, args []string, doc *releasewait.Docum
 		return err
 	}
 	err = waiter.Wait(ctx, &doc.Result)
+	if recordErr := releasewait.RecordPublishStatus(ctx, c.Client, doc.Result, err); recordErr != nil {
+		doc.Warn(recordErr.Error())
+	}
 	prwait.PrintFailedJobs(r.stderr, doc.FailedJobs)
 	return err
 }

@@ -52,7 +52,7 @@ func Test_Merge_forkClassification(t *testing.T) {
 			slug := owner + "/line"
 			pr := pull(map[string]any{
 				"head": map[string]any{"sha": "abc123", "ref": "feature", "repo": map[string]any{"full_name": slug}},
-				"base": map[string]any{"ref": "giantswarm", "repo": map[string]any{"full_name": slug}},
+				"base": map[string]any{"sha": "base123", "ref": "giantswarm", "repo": map[string]any{"full_name": slug}},
 			})
 			repository := settings(true, true, true)
 			repository["full_name"], repository["fork"] = slug, tc.fork

@@ -72,6 +72,8 @@ devctl pr wait giantswarm/devctl 2277 --timeout 45m --progress
 
 `devctl pr rerun <owner/repo> <number>` reruns every failed CircleCI workflow of the pull request head's pipeline from failed, `devctl release rerun <owner/repo> <tag>` those of a tag's pipeline: the fix for a job that failed on a transient cause, without an empty commit or a new tag. A workflow still running is not rerun (exit 5), a pipeline without a failed job is exit 3. The rerun is started, not waited for (`pr wait`, `release wait` wait for it), and takes the `devctl auth login` CircleCI login granted Write access. See [docs/pr-rerun.md](docs/pr-rerun.md).
 
+For a head pipeline stalled without a workflow, `pr rerun` redelivers its push once and checks for a newer pipeline for at most one minute. If none appears, it exits 5 with `redelivery deduplicated; push a new head`: push an empty commit to the PR branch or merge its base, then `pr wait` follows the new head. GitHub accepting a redelivery alone does not confirm recovery.
+
 ```nohighlight
 devctl pr rerun giantswarm/devctl 2277
 devctl release rerun giantswarm/devctl v8.123.0
@@ -98,6 +100,11 @@ Repository-owned publishing jobs in a generated pipeline's `custom.yml` warn abo
 devctl release wait giantswarm/devctl v8.9.0
 devctl release wait giantswarm/devctl --pr 2289 --progress
 ```
+
+When the CLI observes a failed, verified CircleCI tag pipeline, it marks the GitHub release's notes
+**Not published** with a pipeline link. A later successful wait removes the notice. The release
+wait after `pr merge` does the same. `devctl release failed <owner/repo>` lists these recorded
+failures in one JSON document; see [docs/release-wait.md](docs/release-wait.md) for permissions and bounds.
 
 ### Promoting release candidates (`devctl release promote`)
 
@@ -127,6 +134,8 @@ Without an explicit method, an unreadable `gen.flavours` or a GitHub fork whose 
 `fork` is refused before waiting or writing (exit 3). Repair the declaration or choose `--rebase` or `--squash`.
 
 `devctl pr merge <owner/repo> <number>` is the one call an agent makes to land its own pull request: it runs the wait of `pr wait`, squash-merges the pull request (`--rebase` for a rebase merge, the default on a fork line, whose team-file entry lists the `fork` flavour, where `--squash` squashes; a merge commit where the repository allows only that) through the merge API with the judged head as the expected head, deletes the branch through the refs API, and then runs the wait of `release wait --pr` on the merge commit until the release is pullable (`--release-timeout`, 60 minutes by default; `--no-release-wait` ends at the merge). A base with a merge queue is enqueued and waited for instead of merged. A merge that no release follows (a repository that does not tag merge commits, an auto-release run that tagged nothing) is exit 0. Refused before any wait: a draft, closed or conflicting pull request and one behind its base, strict or not, whose checks ran against an older base (exit 3; `--update-branch` updates it and waits for the new head); a base that moved during the wait is compared again before the merge, with the same rule, another human's pull request and a repository whose team-file entry says `agentMerge: false` (exit 5). A reviewer's `COMMENTED` or `CHANGES_REQUESTED` review or comment newer than the head that the author has not answered refuses it too (exit 5), read before the wait and again right before the merge. No protection setting is read to be changed or written: the merge is made as you, through the bypass the repository's ruleset grants its owning team and its admins. One JSON document (`pr wait`'s fields plus `mergeCommitSha`, `mergedBy`, `method`, `branchDeleted`, `enqueued`, `unansweredReviews` and `release`), exit 0, 1, 2, 3, 4, 5, 7 or 8, and after a merge 6 (the release failed), 9 (the release not confirmed) or 14 (`tag_pipeline_empty`: re-trigger the tag pipeline). `--detach` starts the same merge in a process of its own and returns within seconds with a handle; `devctl pr merge status <handle>` reads its outcome later, with the merge's exit code, and `--on-done <command>` runs a command when it ended. See [docs/pr-merge.md](docs/pr-merge.md).
+
+Rebase merges refuse commits whose subjects start with `amend!`, `fixup!` or `squash!` (exit 3), listing their SHAs and subjects. Autosquash them before merging; `--accept-red` cannot override this history guard. Squash merges are unaffected.
 
 ```bash
 devctl pr merge giantswarm/devctl 2278 --timeout 45m --progress
