@@ -109,6 +109,12 @@ func (w *Workflows) ChangelogDeletion() input.Input {
 	return file.NewChangelogDeletionInput(w.params)
 }
 
+// ChangelogPointer freezes a repository's CHANGELOG.md as a pointer at its
+// GitHub Releases.
+func (w *Workflows) ChangelogPointer() input.Input {
+	return file.NewChangelogPointerInput(w.params)
+}
+
 func (w *Workflows) CliffToml() input.Input {
 	return file.NewCliffTomlInput(w.params)
 }
@@ -185,6 +191,12 @@ func (w *Workflows) TestKyvernoPoliciesWithChainsaw() input.Input {
 
 func (w *Workflows) UpdateChart() input.Input {
 	return file.NewUpdateChartInput(w.params)
+}
+
+// PullRequestTemplate drops the checklist item asking for a CHANGELOG.md edit
+// from a repository's existing pull request template.
+func (w *Workflows) PullRequestTemplate() input.Input {
+	return file.NewPullRequestTemplateInput()
 }
 
 func (w *Workflows) ValidateChangelog() input.Input {

@@ -17,6 +17,7 @@ import (
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/ats"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/circleci"
 )
 
@@ -62,6 +63,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 	// gates, runtime config) is test content, so it lives next to .ats/main.yaml
 	// and the tests rather than in a gen.ci key.
 	hasATSKindConfig := detectATSKindConfig()
+	chartTestRequires, err := readChartTestRequires()
+	if err != nil {
+		return microerror.Mask(err)
+	}
 
 	// The images the repo's own jobs push are derived from its custom.yml: an
 	// architect/push-to-registries job there builds a second image the chart
@@ -126,6 +131,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 			ATSVersion:              r.flag.ATSVersion,
 			ATSOnRelease:            r.flag.ATSOnRelease,
 			ATSResourceClass:        r.flag.ATSResourceClass,
+			ChartTestRequires:       chartTestRequires,
 			HasATSKindConfig:        hasATSKindConfig,
 			HasDockerfile:           hasDockerfile,
 			CustomImages:            customImages,
@@ -168,7 +174,17 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 	// that emits the run-tests-with-ats jobs, so it is folded into this
 	// generator rather than invoked separately (which would risk leaking it
 	// into non-generated-CI repos). ATSInputs returns nil for non-app repos.
-	inputs = append(inputs, circleciInput.ATSInputs()...)
+	atsInputs := circleciInput.ATSInputs()
+	if len(atsInputs) > 0 {
+		hasConfig, err := ats.HasConfig(".")
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		if !hasConfig {
+			atsInputs = append(atsInputs, circleciInput.ATSConfig())
+		}
+	}
+	inputs = append(inputs, atsInputs...)
 
 	err = gen.Execute(ctx, inputs...)
 	if err != nil {

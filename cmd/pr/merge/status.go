@@ -17,7 +17,7 @@ JSON document, an exit code.
 
 The merge ended: the document carries the merge's own document in merge and
 its exit code, verdict and reason, so the exit code reads as the blocking
-devctl pr merge's would (0 merged and released, 6 and 9 merged, ...). The
+devctl pr merge's would (0 merged and released, 6, 9 and 14 merged, ...). The
 merge runs: exit 10, verdict running, with its pid and log. The merge's
 process is gone without a document (killed, the machine restarted): exit 7,
 state lost; whether it merged is GitHub's to say, and devctl release wait
@@ -41,7 +41,7 @@ type statusRunner struct {
 
 func newStatus(config Config) *cobra.Command {
 	r := &statusRunner{stdout: config.Stdout, jobRoot: mergejob.Root}
-	return &cobra.Command{
+	c := &cobra.Command{
 		Use:         "status [handle]",
 		Short:       "Read the outcome of a merge devctl pr merge --detach started; one JSON document, an exit code.",
 		Long:        statusLong,
@@ -52,6 +52,14 @@ func newStatus(config Config) *cobra.Command {
 			return r.run(args)
 		},
 	}
+	c.SetFlagErrorFunc(r.FlagError)
+	return c
+}
+
+// FlagError keeps parser failures in the status command's document schema.
+func (r *statusRunner) FlagError(_ *cobra.Command, err error) error {
+	doc := mergejob.NewStatusDocument(time.Now())
+	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, agentcli.FlagError(mergejob.StatusCommand, err))
 }
 
 func (r *statusRunner) run(args []string) error {

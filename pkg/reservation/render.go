@@ -102,9 +102,10 @@ func assertReserved(objects []object, resolved resolution, sourceName, semverFil
 		return microerror.Maskf(renderAssertionError,
 			"the rendered collections carry no %s named %q", ociRepositoryKind, sourceName)
 	}
-	if got, _ := source.nested("spec", "ref", "semverFilter").(string); got != semverFilter {
+	wantRef := map[string]any{"semver": devSemverRange, "semverFilter": semverFilter}
+	if got := source.nested("spec", "ref"); !reflect.DeepEqual(got, wantRef) {
 		return microerror.Maskf(renderAssertionError,
-			"the rendered %s %q selects %q, want %q", ociRepositoryKind, sourceName, got, semverFilter)
+			"the rendered %s %q selects %v, want %v", ociRepositoryKind, sourceName, got, wantRef)
 	}
 
 	// Every instance has to follow the reservation. One instance left behind is

@@ -89,6 +89,12 @@ type musterDiscovery struct {
 // metadata, and refuses a server without S256 PKCE or without client ID
 // metadata documents.
 func (a *Auth) discoverMuster(ctx context.Context, endpoint string) (musterDiscovery, error) {
+	return a.discoverMusterIssuer(ctx, endpoint, "")
+}
+
+// discoverMusterIssuer selects the issuer that owns an existing refresh
+// token. An empty issuer selects a server for a new, interactive login.
+func (a *Auth) discoverMusterIssuer(ctx context.Context, endpoint, expectedIssuer string) (musterDiscovery, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return musterDiscovery{}, fmt.Errorf("the muster endpoint %q is not a URL", endpoint)
@@ -116,13 +122,34 @@ func (a *Auth) discoverMuster(ctx context.Context, endpoint string) (musterDisco
 	if !found {
 		return musterDiscovery{}, fmt.Errorf("discovering the authorization server of %s: %w", endpoint, lastErr)
 	}
-	issuer := strings.TrimRight(resource.AuthorizationServers[0], "/")
+	issuer := resource.AuthorizationServers[0]
+	if expectedIssuer != "" {
+		if !slices.Contains(resource.AuthorizationServers, expectedIssuer) {
+			return musterDiscovery{}, &AuthRequiredError{Identity: identityMuster, Cause: "the authorization server changed since login", Hint: hintLoginMuster}
+		}
+		issuer = expectedIssuer
+	}
+	base := strings.TrimRight(issuer, "/")
+	metadataURL, err := url.Parse(base)
+	if err != nil || metadataURL.Scheme == "" || metadataURL.Host == "" {
+		return musterDiscovery{}, fmt.Errorf("the authorization server %q is not a URL", issuer)
+	}
+	// RFC 8414 inserts the well-known path before the issuer path. The
+	// appended OpenID discovery location remains a legacy fallback below.
+	metadataURL.Path = authorizationServerPath + metadataURL.Path
+	if metadataURL.RawPath != "" {
+		metadataURL.RawPath = authorizationServerPath + metadataURL.RawPath
+	}
 
 	var server authorizationServer
-	if err := a.getJSON(ctx, issuer+authorizationServerPath, nil, &server); err != nil {
-		if err2 := a.getJSON(ctx, issuer+openIDConfigurationPath, nil, &server); err2 != nil {
+	if err := a.getJSON(ctx, metadataURL.String(), nil, &server); err != nil {
+		server = authorizationServer{}
+		if err2 := a.getJSON(ctx, base+openIDConfigurationPath, nil, &server); err2 != nil {
 			return musterDiscovery{}, fmt.Errorf("reading the metadata of the authorization server %s: %w", issuer, err)
 		}
+	}
+	if server.Issuer != issuer {
+		return musterDiscovery{}, fmt.Errorf("the authorization server %s returned metadata for a different issuer", issuer)
 	}
 	if server.AuthorizationEndpoint == "" || server.TokenEndpoint == "" {
 		return musterDiscovery{}, fmt.Errorf("the authorization server %s names no authorization or token endpoint", issuer)
@@ -133,10 +160,6 @@ func (a *Auth) discoverMuster(ctx context.Context, endpoint string) (musterDisco
 	if !server.ClientIDMetadataDocumentSupported {
 		return musterDiscovery{}, fmt.Errorf("the authorization server %s does not support client ID metadata documents, which is how devctl identifies itself (%s)", issuer, MusterClientID)
 	}
-	if server.Issuer == "" {
-		server.Issuer = issuer
-	}
-
 	d := musterDiscovery{Resource: resource.Resource, Scopes: resource.ScopesSupported, Server: server}
 	if d.Resource == "" {
 		d.Resource = endpoint
@@ -274,7 +297,10 @@ func (a *Auth) musterLogin(ctx context.Context, userinfo, token string) (string,
 // token endpoint and stores it; a refresh token the answer does not rotate
 // stays.
 func (a *Auth) refreshMuster(ctx context.Context, record Record) (Record, error) {
-	discovered, err := a.discoverMuster(ctx, record.Endpoint)
+	if record.Issuer == "" {
+		return Record{}, &AuthRequiredError{Identity: identityMuster, Cause: "the stored refresh token has no issuer", Hint: hintLoginMuster}
+	}
+	discovered, err := a.discoverMusterIssuer(ctx, record.Endpoint, record.Issuer)
 	if err != nil {
 		return Record{}, fmt.Errorf("refreshing the muster token: %w", err)
 	}
@@ -334,6 +360,24 @@ func (a *Auth) RequireMuster(ctx context.Context) (Token, error) {
 	}
 	now := a.clock.Now()
 	if expired(record.ExpiresAt, now) {
+		unlock, err := a.store.Lock(UserMuster)
+		if err != nil {
+			return Token{}, err
+		}
+		defer unlock()
+		// A refresh token may rotate only once. Read again after waiting:
+		// another command may already have persisted the replacement pair.
+		record, err = a.store.Get(UserMuster)
+		if errors.Is(err, ErrNotFound) {
+			return Token{}, &AuthRequiredError{Identity: identityMuster, Cause: causeNoToken, Hint: hintLoginMuster}
+		}
+		if err != nil {
+			return Token{}, err
+		}
+		now = a.clock.Now()
+		if !expired(record.ExpiresAt, now) {
+			return musterToken(record), nil
+		}
 		if record.RefreshToken == "" || expired(record.RefreshExpiresAt, now) {
 			return Token{}, &AuthRequiredError{Identity: identityMuster, Cause: "the token expired and cannot be refreshed", Hint: hintLoginMuster}
 		}
@@ -342,7 +386,11 @@ func (a *Auth) RequireMuster(ctx context.Context) (Token, error) {
 			return Token{}, err
 		}
 	}
-	return Token{Value: record.Token, Login: record.Login, ExpiresAt: record.ExpiresAt, Endpoint: record.Endpoint}, nil
+	return musterToken(record), nil
+}
+
+func musterToken(record Record) Token {
+	return Token{Value: record.Token, Login: record.Login, ExpiresAt: record.ExpiresAt, Endpoint: record.Endpoint}
 }
 
 // withQuery adds values to a URL that may carry a query already.

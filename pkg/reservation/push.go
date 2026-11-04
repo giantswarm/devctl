@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -30,7 +33,7 @@ func Push(ctx context.Context, dir string) error {
 
 // PushWithRetry calls render, which must render, assert and commit exactly as
 // Reserve and Release do, and pushes the commit it made. When the push is
-// rejected, it fetches and hard-resets dir to origin/main's new tip --
+// rejected, it fetches and resets dir to origin/main's new tip --
 // discarding the commit render just made, not replaying it -- and calls
 // render again. A rebase that only replayed the old commit would carry
 // whatever it rendered against the old tip; this reruns render against
@@ -89,7 +92,7 @@ func isRejection(err error) bool {
 // to match origin/main's new tip, so the next render call starts from
 // whatever a rejected push means someone else already landed.
 //
-// `git reset --hard` cannot be scoped to a set of paths: it always rewrites
+// `git reset --keep` cannot be scoped to a set of paths: it always rewrites
 // the whole working tree. render's own commit is meant to hold exactly its
 // own files (commitAll stages nothing else), so the working tree should be
 // clean the instant render returns. If it is not, the extra dirt did not come
@@ -97,7 +100,7 @@ func isRejection(err error) bool {
 // also holds in-progress edits. Resetting
 // anyway would take that unrelated work down with the stale commit, silently
 // and unrecoverably. Refusing is the only safe move: there is no path to
-// spare it from a hard reset, so this is the smallest change that actually
+// spare it from a reset, so this is the smallest change that actually
 // closes the hole.
 func rebaseOntoRemote(ctx context.Context, dir string) error {
 	if err := runGit(ctx, dir, "fetch", "origin", "+refs/heads/main:refs/remotes/origin/main"); err != nil {
@@ -114,7 +117,59 @@ func rebaseOntoRemote(ctx context.Context, dir string) error {
 			dir, status)
 	}
 
-	return runGit(ctx, dir, "reset", "--hard", "origin/main")
+	if err := checkUntrackedObstructions(ctx, dir); err != nil {
+		return err
+	}
+
+	// Unlike --hard, --keep refuses untracked file and directory obstructions
+	// introduced by the fetched tree, retaining both the user's bytes and the
+	// local reservation commit when the transition cannot be made safely.
+	return runGit(ctx, dir, "reset", "--keep", "origin/main")
+}
+
+// checkUntrackedObstructions includes ignored files: checkout-style transitions
+// may overwrite those even when they protect ordinary untracked files.
+func checkUntrackedObstructions(ctx context.Context, dir string) error {
+	untracked, err := gitPaths(ctx, dir, "ls-files", "--others", "-z")
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	if len(untracked) == 0 {
+		return nil
+	}
+	remote, err := gitPaths(ctx, dir, "ls-tree", "--name-only", "-r", "-z", "origin/main")
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	files, directories := map[string]bool{}, map[string]bool{}
+	for _, name := range remote {
+		files[name] = true
+		for parent := path.Dir(name); parent != "."; parent = path.Dir(parent) {
+			directories[parent] = true
+		}
+	}
+	for _, name := range untracked {
+		collision := files[name] || directories[name]
+		for parent := path.Dir(name); parent != "."; parent = path.Dir(parent) {
+			collision = collision || files[parent]
+		}
+		if collision {
+			return microerror.Maskf(pushFailedError, "refusing to reset %s: upstream would overwrite untracked path %q; the reservation commit remains on local main", dir, name)
+		}
+	}
+	return nil
+}
+
+func gitPaths(ctx context.Context, dir string, args ...string) ([]string, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...) //nolint:gosec // fixed Git operations and a trusted checkout
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00"), nil
 }
 
 func runGit(ctx context.Context, dir string, args ...string) error {
@@ -131,8 +186,8 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 }
 
 // gitStatusPorcelain returns dir's `git status --porcelain` output for tracked
-// files, trimmed: empty means a clean working tree. Untracked files are the
-// user's and a hard reset leaves them alone, so they do not count.
+// files, trimmed: empty means a clean tracked working tree. Untracked files
+// are checked by reset --keep when the fetched tree would overwrite them.
 func gitStatusPorcelain(ctx context.Context, dir string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "status", "--porcelain", "--untracked-files=no") //nolint:gosec // dir is trusted, not user data
 	var stdout, stderr strings.Builder
@@ -146,11 +201,18 @@ func gitStatusPorcelain(ctx context.Context, dir string) (string, error) {
 	return strings.TrimSpace(stdout.String()), nil
 }
 
-// discardWrites puts the cluster's ConfigMap and collections back to HEAD and
-// removes a component directory Reserve created, after a failure past the
-// first write. Best effort: the original error is the one worth reporting.
-func discardWrites(dir, cluster, chart string) {
+// discardWrites restores tracked reservation files after a failed operation.
+// Only paths established as absent before Reserve's first write may be removed;
+// an unrelated untracked file in the component directory belongs to the user.
+// Cleanup is best effort so the original error remains the one reported.
+func discardWrites(dir, cluster, chart string, created ...string) {
 	ctx := context.Background()
 	_ = runGit(ctx, dir, "checkout", "HEAD", "--", clusterPath(cluster, ConfigMapFile), clusterPath(cluster, collectionsDir))
-	_ = runGit(ctx, dir, "clean", "-fdq", "--", clusterPath(cluster, collectionsDir, reservationsDir, chart))
+	for _, name := range created {
+		_ = os.Remove(filepath.Join(dir, name))
+	}
+	if len(created) > 0 {
+		// Remove an empty generated directory, never its pre-existing contents.
+		_ = os.Remove(filepath.Join(dir, clusterPath(cluster, collectionsDir, reservationsDir, chart)))
+	}
 }
