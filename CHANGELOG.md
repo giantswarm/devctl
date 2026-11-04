@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release wait` warns about unchecked images when a generated pipeline runs a repository-owned
+  `custom.yml` job with visible image publishing commands, including models' `publish --registry`
+  tool. The warning names the job and `--image`, including when no artifacts can be derived.
+  `--image` now adds explicit image probes to generated CI at the git tag as written.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
