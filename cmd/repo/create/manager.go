@@ -64,17 +64,26 @@ func (r *runner) manager(ctx context.Context) error {
 		return microerror.Maskf(client.UnexpectedAnswerError, "%s: expected the dry run of %s", manager.ToolValidateRepository, r.flag.Name)
 	}
 	if r.flag.Output == outputText {
-		fmt.Fprintln(r.stdout, "validation: giantswarm-repo-manager")
-		r.printDryRun(&result.Result)
-		if result.Creation.Refusal != "" {
-			fmt.Fprintf(r.stdout, "creation refused: %s\n", result.Creation.Refusal)
+		if _, err := fmt.Fprintln(r.stdout, "validation: giantswarm-repo-manager"); err != nil {
+			return microerror.Mask(err)
 		}
-		fmt.Fprintln(r.stdout, "dry run: no pull request opened")
+		if err := r.printDryRun(&result.Result); err != nil {
+			return microerror.Mask(err)
+		}
+		if result.Creation.Refusal != "" {
+			if _, err := fmt.Fprintf(r.stdout, "creation refused: %s\n", result.Creation.Refusal); err != nil {
+				return microerror.Mask(err)
+			}
+		}
+		if _, err := fmt.Fprintln(r.stdout, "dry run: no pull request opened"); err != nil {
+			return microerror.Mask(err)
+		}
 	}
 	// Keep the manager's fields, including ones this devctl does not know.
-	r.print(output{DryRun: payload})
+	out := output{DryRun: payload}
 	if !result.Accepted || result.Creation.Refusal != "" {
+		r.printFailure(out)
 		return microerror.Maskf(refusedError, "%s is refused by giantswarm-repo-manager; no pull request was opened", r.flag.Name)
 	}
-	return nil
+	return microerror.Mask(r.print(out))
 }
