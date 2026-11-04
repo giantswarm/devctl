@@ -19,10 +19,17 @@ Workarounds:
 
 ## `make` stops with `VERSION is empty`
 
-The generated `Makefile.gen.go.mk` takes the version from `gitsemver get`. gitsemver cannot read a repository whose git configuration sets `extensions.worktreeConfig` while `core.repositoryformatversion` is 0:
+The generated `Makefile.gen.go.mk` first takes the version from `gitsemver get`. Older gitsemver releases cannot read a linked worktree's `.git` file, or a repository with `extensions.worktreeConfig` set:
 
 ```nohighlight
 error: resolving version for "HEAD": core.repositoryformatversion does not support extension: worktreeconfig
 ```
 
-This fails in the main checkout and in every worktree of such a repository. Pass the version yourself: `make build VERSION=1.2.3`.
+Regenerate the Makefile with `devctl gen makefile --language go` (keeping the repository's usual flavour flags).
+If gitsemver fails or returns no version, the generated lookup now uses local tags with
+`git describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*'`, stripping the leading `v`. At `v1.2.3` it stamps `1.2.3`;
+after that tag it stamps `1.2.3-<distance>-g<commit>`. No fetch or tool installation runs during lookup.
+
+A recent gitsemver supports worktrees directly and preserves its usual development-version format.
+If neither lookup finds a version (for example, an older gitsemver in a worktree with no reachable version tag),
+builds and installs still stop. Supply the version explicitly: `make build VERSION=1.2.3`.
