@@ -14,8 +14,10 @@ var AppOwners = map[string]bool{"giantswarm": true}
 
 // repoCommands are gh's commands whose first argument may be a repository
 // or a URL of one (`gh pr view <url>`, `gh repo view <owner/repo>`).
+const ghIssue = "issue"
+
 var repoCommands = map[string]bool{
-	"issue": true, "pr": true, "release": true, "repo": true, "run": true, "workflow": true,
+	ghIssue: true, "pr": true, "release": true, "repo": true, "run": true, "workflow": true,
 }
 
 // GHOwner is the owner of the repository a gh invocation acts on, "" when it
@@ -73,7 +75,7 @@ flags:
 // refuses an App user token with a 404, which gh reports as missing write
 // access, so such an invocation keeps the person's own gh login.
 func GHAttaches(args []string) bool {
-	if len(args) == 0 || (args[0] != "issue" && args[0] != "pr") {
+	if len(args) == 0 || (args[0] != ghIssue && args[0] != "pr") {
 		return false
 	}
 	for i := 1; i < len(args); i++ {
@@ -95,7 +97,7 @@ func GHAttaches(args []string) bool {
 // ghTextValueFlag identifies free-form issue/PR text options. Their next
 // argument is data even when it looks like --repo, --attach or --.
 func ghTextValueFlag(args []string, flag string) bool {
-	if len(args) < 2 || (args[0] != "issue" && args[0] != "pr") {
+	if len(args) < 2 || (args[0] != ghIssue && args[0] != "pr") {
 		return false
 	}
 	switch flag {
