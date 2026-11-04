@@ -198,6 +198,10 @@ func (j *Jobs) add(names map[string]bool, config map[string]any, run Run) {
 			if n, ok := params["name"].(string); ok && n != "" {
 				name = n
 			}
+			if strings.Contains(name, "<<") {
+				j.Warnings = append(j.Warnings, fmt.Sprintf("workflow %s gives %s a name using a template devctl cannot evaluate: its jobs count once they post a status", key, ref))
+				continue
+			}
 			if _, matrix := params["matrix"]; matrix {
 				j.Warnings = append(j.Warnings, fmt.Sprintf("workflow %s runs %s as a matrix: its jobs count once they post a status", key, name))
 				continue
