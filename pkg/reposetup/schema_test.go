@@ -51,3 +51,43 @@ func TestEmbeddedSchemaLanguagesAreTheGenerators(t *testing.T) {
 	sort.Strings(want)
 	require.Equal(t, want, got, "gen.language in schema/repositories.schema.json and gen.AllLanguages() drifted apart")
 }
+
+func TestEmbeddedSchemaProtection(t *testing.T) {
+	schema, err := EmbeddedSchema()
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name     string
+		value    any
+		declared bool
+		wantOK   bool
+	}{
+		{name: "case 0: omitted keeps the flavour's default", wantOK: true},
+		{name: "case 1: baseline opts in", value: "baseline", declared: true, wantOK: true},
+		{name: "case 2: an unknown policy is refused", value: "basline", declared: true},
+		{name: "case 3: an empty policy is refused", value: "", declared: true},
+		{name: "case 4: a boolean is refused", value: true, declared: true},
+		{name: "case 5: null is refused", declared: true},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			entry := map[string]any{
+				"name":          "customer-gitops",
+				"componentType": "customer",
+				"gen":           map[string]any{"flavours": []any{"customer"}, "language": "generic"},
+			}
+			if tc.declared {
+				entry["protection"] = tc.value
+			}
+			problems := schema.Problems(entry)
+			if tc.wantOK {
+				require.Empty(t, problems)
+				return
+			}
+			require.NotEmpty(t, problems)
+			for _, problem := range problems {
+				require.Equal(t, "protection", problem.Field)
+			}
+		})
+	}
+}
