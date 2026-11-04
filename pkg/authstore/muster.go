@@ -295,9 +295,14 @@ func (a *Auth) refreshMuster(ctx context.Context, record Record) (Record, error)
 		}
 		return Record{}, &AuthRequiredError{Identity: identityMuster, Cause: cause, Hint: hintLoginMuster}
 	}
-	fresh := musterRecord(&token, a.clock.Now())
+	now := a.clock.Now()
+	fresh := musterRecord(&token, now)
 	if fresh.RefreshToken == "" {
 		fresh.RefreshToken = record.RefreshToken
+		fresh.RefreshExpiresAt = record.RefreshExpiresAt
+		if token.RefreshTokenExpiresIn > 0 {
+			fresh.RefreshExpiresAt = now.Add(time.Duration(token.RefreshTokenExpiresIn) * time.Second).UTC()
+		}
 	}
 	fresh.Login = record.Login
 	fresh.ClientID = record.ClientID
