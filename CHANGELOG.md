@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen renovate` initializes an empty, repo-owned `renovate-custom.json5` and extends it immediately,
+  preserving existing custom rules. Commit both files together; later custom rules apply from their merge,
+  without waiting for align-files. The repository name is now required even without existing custom rules,
+  read from the origin remote or supplied with `--repo-name`.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
