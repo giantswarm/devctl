@@ -239,7 +239,9 @@ func TestGenerateSearchQuery(t *testing.T) {
 			prs: []*PRInfo{
 				{Title: "Update dependency storybook to v7.6.21 [SECURITY]"},
 			},
-			want: `"storybook"`,
+			// A release note or comment on an unrelated dependency PR may
+			// mention storybook. Only title matches belong to this group.
+			want: `"storybook" in:title`,
 		},
 		{
 			name:    "scoped npm package",
@@ -247,7 +249,7 @@ func TestGenerateSearchQuery(t *testing.T) {
 			prs: []*PRInfo{
 				{Title: "Update dependency @types/cors to v2.8.19"},
 			},
-			want: `"@types/cors"`,
+			want: `"@types/cors" in:title`,
 		},
 		{
 			name:    "go module path",
@@ -255,7 +257,7 @@ func TestGenerateSearchQuery(t *testing.T) {
 			prs: []*PRInfo{
 				{Title: "Update module github.com/google/go-github/v80 to v81"},
 			},
-			want: `"github.com/google/go-github"`,
+			want: `"github.com/google/go-github" in:title`,
 		},
 	}
 
