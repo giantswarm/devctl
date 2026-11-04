@@ -91,3 +91,27 @@ func TestPersonGitHub_authRequired(t *testing.T) {
 		}
 	}
 }
+
+func TestRealGHPastOtherDevctl(t *testing.T) {
+	dir := t.TempDir()
+	shimBin, linkBin, realBin := filepath.Join(dir, "shim"), filepath.Join(dir, "link"), filepath.Join(dir, "real")
+	for _, bin := range []string{shimBin, linkBin, realBin} {
+		if err := os.Mkdir(bin, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	other := filepath.Join(dir, "devctl")
+	for _, path := range []string{other, filepath.Join(shimBin, "gh"), filepath.Join(realBin, "gh")} {
+		if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o700); err != nil { // nolint:gosec // an executable fixture
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(other, filepath.Join(linkBin, "gh")); err != nil {
+		t.Fatal(err)
+	}
+	path := strings.Join([]string{shimBin, linkBin, realBin}, string(os.PathListSeparator))
+	got, err := realGH(path, filepath.Join(dir, "current-devctl"))
+	if err != nil || got != filepath.Join(realBin, "gh") {
+		t.Fatalf("realGH = %q, %v; want the gh past the other devctl link", got, err)
+	}
+}
