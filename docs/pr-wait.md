@@ -10,8 +10,8 @@ exit code says what happened, so a script or an agent branches on it without par
 writes one line per poll to stderr for a person watching.
 
 Draft pull requests wait for their checks like other open pull requests and return the same
-green (exit 0) or red (exit 1) verdict. The document's `draft` field reports the latest draft
-state read during the wait. Green describes CI; `pr merge` still refuses a draft with exit 3.
+green (exit 0) or red (exit 1) verdict. The document's `draft` field is true while it is a draft
+and absent otherwise. Green describes CI; `pr merge` still refuses a draft with exit 3.
 `--circleci-from-statuses` waits without a CircleCI token, using the same logic as `devctl serve`:
 it reads the head's CircleCI configuration from GitHub, lists the jobs that run on the head's branch,
 and waits for every one to post a commit status and finish successfully. A downstream job behind

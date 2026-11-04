@@ -171,9 +171,9 @@ type Result struct {
 	Number     int    `json:"number"`
 	HeadSHA    string `json:"headSha"`
 	BaseRef    string `json:"baseRef"`
-	// Draft is the pull request's draft state at the latest poll. A green
+	// Draft is true when the pull request was a draft at the latest poll. A green
 	// draft has passed CI but still cannot be merged by pr merge.
-	Draft bool `json:"draft"`
+	Draft bool `json:"draft,omitempty"`
 	// Checks are the head's check runs, every run of a name that counts, and
 	// its statuses, the latest per context.
 	Checks []Check `json:"checks"`

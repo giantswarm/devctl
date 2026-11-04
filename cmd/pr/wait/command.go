@@ -26,7 +26,7 @@ no GitHub Actions run of the head queued, in progress, waiting or awaiting a
 maintainer's approval, and every status context the base requires reported.
 
 Drafts wait for their checks like other open pull requests; the document's
-draft field reports the latest state. A green draft still cannot be merged
+draft field is true for one. A green draft still cannot be merged
 by pr merge.
 
 Before judging a head, the wait reads the pull request again after a short delay
