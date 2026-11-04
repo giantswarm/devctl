@@ -166,8 +166,13 @@ func TestSourceThatExcludesTheVersionIsNotApplicable(t *testing.T) {
 		"digest":       {"digest": "sha256:abc"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			r := wait(t, newClient(ociRepository(ref), helmRelease("0.47.0", nil)), false)
+			clock := agentcli.NewVirtualClock(time.Now())
+			start := clock.Now()
+			r := wait(t, newClient(ociRepository(ref), helmRelease("0.47.0", nil)), false, func(c *Config) { c.Clock = clock })
 			wantExit(t, r, agentcli.ExitNotApplicable, "excludes 0.48.1")
+			if elapsed := clock.Now().Sub(start); elapsed != time.Minute {
+				t.Errorf("want the full timeout before not_following is terminal, got %s", elapsed)
+			}
 			if r.result.Deployments[0].State != StateNotFollowing {
 				t.Errorf("state: %+v", r.result.Deployments[0])
 			}
@@ -190,8 +195,13 @@ func TestNotFollowingDeploymentDoesNotBlockTheOthers(t *testing.T) {
 func TestSuspendedHelmReleaseIsNotApplicable(t *testing.T) {
 	hr := helmRelease("0.47.0", nil)
 	_ = unstructured.SetNestedField(hr.Object, true, "spec", "suspend")
-	r := wait(t, newClient(ociRepository(map[string]any{"semver": ">=0.17.0"}), hr), false)
+	clock := agentcli.NewVirtualClock(time.Now())
+	start := clock.Now()
+	r := wait(t, newClient(ociRepository(map[string]any{"semver": ">=0.17.0"}), hr), false, func(c *Config) { c.Clock = clock })
 	wantExit(t, r, agentcli.ExitNotApplicable, "suspended")
+	if !clock.Now().Equal(start) {
+		t.Error("an all-suspended installation should be refused at once")
+	}
 }
 
 func TestFailedUpgradeOfTheVersionIsExit1(t *testing.T) {
