@@ -32,6 +32,8 @@ type Config struct {
 	// API request carried (an expired or superseded App user token): the
 	// request is sent once more with the token it returns, and an error it
 	// returns is the request's. Nil sends every request with AccessToken.
+	// A 403/404 with accepted permissions held by giantswarm-devctl also
+	// renews once, to pick up permissions granted since the token was issued.
 	Renew func(ctx context.Context, rejected string) (string, error)
 }
 
@@ -62,8 +64,10 @@ func New(config Config) (*Client, error) {
 		Source: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: config.AccessToken}),
 		Base:   base,
 	}
+	var renewing *reauthorizing
 	if config.Renew != nil {
-		transport = &reauthorizing{base: base, renew: config.Renew, token: config.AccessToken}
+		renewing = &reauthorizing{base: base, renew: config.Renew, token: config.AccessToken}
+		transport = renewing
 	}
 	if config.DryRun {
 		transport = &dryRunTransport{inner: transport, logger: config.Logger}
@@ -85,6 +89,12 @@ func New(config Config) (*Client, error) {
 		accessToken: config.AccessToken,
 		ghClient:    ghClient,
 		download:    &http.Client{Transport: base, Timeout: 2 * time.Minute},
+	}
+	if renewing != nil {
+		renewing.permission = c.acceptedPermission
+		renewing.refreshed = func(permission string) {
+			c.logger.Debugf("refreshed GitHub token for accepted permissions %q", permission)
+		}
 	}
 
 	return c, nil

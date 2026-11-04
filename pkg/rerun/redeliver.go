@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -311,13 +310,16 @@ func NewGitHub(ctx context.Context, owner string, app, person func(context.Conte
 	if err != nil {
 		return nil, authstore.Token{}, err
 	}
-	logger := logrus.New()
-	logger.SetOutput(io.Discard)
+	var renew func(context.Context, string) (string, error)
+	if token.Source == authstore.SourceKeychain {
+		renew = authstore.RenewGitHubToken
+	}
 	client, _, err := githubclient.NewConditional(githubclient.Config{
-		Logger:      logger,
+		Logger:      logrus.StandardLogger(),
 		AccessToken: token.Value,
 		BaseURL:     endpoints.GitHubAPIURL,
 		Transport:   transport,
+		Renew:       renew,
 	})
 	if err != nil {
 		return nil, authstore.Token{}, err

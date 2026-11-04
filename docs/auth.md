@@ -62,6 +62,15 @@ more act with another token:
   login dispatches wherever you may run the workflow yourself. The document's `identity` names the token's source
   and, for the login, its account.
 
+When a renewable App login receives a 403 or 404 with `X-Accepted-GitHub-Permissions`, devctl checks
+the `giantswarm-devctl` App's public record. If the App holds a complete accepted permission set at
+the required access level, devctl refreshes the cached token and retries the request once. This
+picks up permissions granted since the token was issued; debug logging names the accepted set.
+An unavailable public record or a permission the App lacks leaves the original refusal intact.
+Rate-limit refusals and bodies that cannot be replayed do not trigger a permission refresh.
+Personal `gh` logins and explicit environment tokens are never refreshed this way. The public
+record does not prove an installation's approval or the person's access: a refused retry is final.
+
 ## The agent permission set
 
 The `giantswarm-devctl` App's permissions are the complete set of what an agent does on GitHub. A user
