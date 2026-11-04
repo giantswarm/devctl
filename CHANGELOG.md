@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- CircleCI waits read every workflow page, so a failed or running workflow on a later page is no longer missed.
+
 - `gen dependabot` detects root Python requirements, Pipfile, setup.cfg and pyproject manifests.
 
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
