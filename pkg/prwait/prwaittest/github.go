@@ -25,7 +25,7 @@ type Head struct {
 }
 
 // GitHub is a [prwait.GitHub] over the state of one pull request. Each read
-// of the pull request starts a poll; the poll reads Heads at its index, the
+// of the check runs starts a poll; the poll reads Heads at its index, the
 // last one once the polls run past them.
 type GitHub struct {
 	// PR is the pull request; nil is an open one, its head "abc123"
@@ -50,7 +50,7 @@ type GitHub struct {
 
 var _ prwait.GitHub = &GitHub{}
 
-// Polls is how many polls read the pull request.
+// Polls is how many polls read the checks.
 func (g *GitHub) Polls() int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -80,9 +80,6 @@ func OpenPullRequest(number int, sha string, updated time.Time) *github.PullRequ
 }
 
 func (g *GitHub) PullRequest(_ context.Context, _, _ string, number int) (*github.PullRequest, error) {
-	g.mu.Lock()
-	g.polls++
-	g.mu.Unlock()
 	if g.PR == nil {
 		return OpenPullRequest(number, "abc123", time.Now().Add(-time.Hour)), nil
 	}
@@ -107,6 +104,9 @@ func (g *GitHub) CheckRollup(context.Context, string, string, string) ([]*github
 }
 
 func (g *GitHub) CheckRunsForRef(context.Context, string, string, string) ([]*github.CheckRun, error) {
+	g.mu.Lock()
+	g.polls++
+	g.mu.Unlock()
 	return g.head().CheckRuns, nil
 }
 

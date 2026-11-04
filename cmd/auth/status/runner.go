@@ -1,6 +1,7 @@
 package status
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"time"
@@ -34,7 +35,7 @@ type document struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	return r.run(args)
+	return r.runWithContext(cmd.Context(), args)
 }
 
 // FlagError reports a flag cobra could not parse like any other wrong call:
@@ -45,8 +46,12 @@ func (r *runner) FlagError(_ *cobra.Command, err error) error {
 }
 
 func (r *runner) run(args []string) error {
+	return r.runWithContext(context.Background(), args)
+}
+
+func (r *runner) runWithContext(ctx context.Context, args []string) error {
 	doc := newDocument()
-	err := r.status(args, &doc)
+	err := r.status(ctx, args, &doc)
 	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, err)
 }
 
@@ -54,7 +59,7 @@ func newDocument() document {
 	return document{Envelope: agentcli.NewEnvelope(command, time.Now()), Status: authstore.NewStatus()}
 }
 
-func (r *runner) status(args []string, doc *document) error {
+func (r *runner) status(ctx context.Context, args []string, doc *document) error {
 	if len(args) > 0 {
 		return fmt.Errorf("usage: devctl %s [flags], got %d argument(s)", command, len(args))
 	}
@@ -74,11 +79,18 @@ func (r *runner) status(args []string, doc *document) error {
 	if w := r.githubOverride(); w != "" {
 		status.GitHub.Warnings = append(status.GitHub.Warnings, w)
 	}
+	if status.CircleCI.Usable() {
+		progress.Printf("CircleCI: validating the token")
+		status.CircleCI, err = auth.CircleCIStatus(ctx)
+	}
 	doc.Status = status
 	for _, warnings := range [][]string{status.GitHub.Warnings, status.CircleCI.Warnings} {
 		for _, w := range warnings {
 			doc.Warn(w)
 		}
+	}
+	if err != nil {
+		return err
 	}
 	return status.Check()
 }
