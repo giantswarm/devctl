@@ -385,9 +385,6 @@ Manual changes will be overwritten.
 
 ### Do the docs need to be updated?
 
-### Should this change be mentioned in the release notes?
-
-
 --- .github/workflows/zz_generated.add-team-labels.yaml
 name: Add appropriate labels to issue
 
