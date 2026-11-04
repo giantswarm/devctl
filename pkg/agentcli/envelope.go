@@ -60,7 +60,7 @@ const (
 	VerdictTagPipelineEmpty Verdict = "tag_pipeline_empty"
 )
 
-// The exit codes of every agent-facing command. 6, 9 and 13 say that devctl pr
+// The exit codes of every agent-facing command. 6, 9 and 14 say that devctl pr
 // merge merged: they are never a reason to merge again.
 const (
 	// ExitOK: the wait ended green, the merge happened, the release is
@@ -105,7 +105,7 @@ const (
 	// ExitTagPipelineEmpty: the tag pipeline settled without workflows
 	// although its configuration admits the tag. After pr merge, the merge
 	// already happened: re-trigger the tag pipeline, never merge again.
-	ExitTagPipelineEmpty = 13
+	ExitTagPipelineEmpty = 14
 )
 
 // Envelope is the head of every command's JSON document. A command's document

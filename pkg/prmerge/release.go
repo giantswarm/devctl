@@ -27,7 +27,7 @@ type Release struct {
 
 // awaitRelease runs the release wait after the merge and returns the
 // merge's outcome: nil when the release is available or none follows the
-// merge, exit 6 when the release failed, exit 13 when its tag pipeline is
+// merge, exit 6 when the release failed, exit 14 when its tag pipeline is
 // empty, exit 9 when it was not confirmed.
 func (m *Merger) awaitRelease(ctx context.Context, owner, repo string, number int, result *Result) error {
 	release := &Release{Result: releasewait.NewResult(result.Repository)}

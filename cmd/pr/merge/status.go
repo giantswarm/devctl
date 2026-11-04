@@ -17,7 +17,7 @@ JSON document, an exit code.
 
 The merge ended: the document carries the merge's own document in merge and
 its exit code, verdict and reason, so the exit code reads as the blocking
-devctl pr merge's would (0 merged and released, 6, 9 and 13 merged, ...). The
+devctl pr merge's would (0 merged and released, 6, 9 and 14 merged, ...). The
 merge runs: exit 10, verdict running, with its pid and log. The merge's
 process is gone without a document (killed, the machine restarted): exit 7,
 state lost; whether it merged is GitHub's to say, and devctl release wait
