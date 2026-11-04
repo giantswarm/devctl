@@ -19,7 +19,7 @@ func (f redactionTransport) RoundTrip(req *http.Request) (*http.Response, error)
 // A failed log download can recover, but its signed URL must not be copied
 // into the command's warnings or progress. The actual requests still need it.
 func TestRetryingWarningOmitsURLCredentials(t *testing.T) {
-	const target = "https://synthetic-user:synthetic-password@logs.example.invalid/job.txt?sig=synthetic-signature&token=synthetic-token#synthetic-fragment"
+	const target = "https://synthetic-user:synthetic-password@logs.example.invalid/job.txt?sig=synthetic-signature&token=synthetic-token#synthetic-fragment" // #nosec G101 -- test fixture
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, target, nil)
 	if err != nil {
 		t.Fatal(err)
