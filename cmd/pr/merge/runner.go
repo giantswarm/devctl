@@ -59,6 +59,7 @@ type clients struct {
 	policy prmerge.Policy
 	// release is what the release wait reads; rateLimit its pace.
 	release   releasewait.GitHub
+	publish   *githubclient.Client
 	rateLimit func() githubclient.RateLimit
 }
 
@@ -74,15 +75,15 @@ func newClients(config githubclient.Config) (clients, error) {
 		rate:      conditional,
 		entries:   releasewait.TeamFileEntries{GitHub: github.GitHub()},
 		release:   github,
+		publish:   github,
 		rateLimit: conditional.Rate,
 	}, nil
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	agentcli.IgnoreHangup()
+	ctx, stop := agentcli.InterruptContext(cmd.Context())
+	defer stop()
 	return r.run(ctx, args)
 }
 
@@ -100,7 +101,13 @@ func (r *runner) run(ctx context.Context, args []string) error {
 		return agentcli.Report(r.stdout, &doc, agentcli.VerdictDetached, err)
 	}
 	doc := r.newDocument()
-	err := r.merge(ctx, args, &doc)
+	err := agentcli.Interrupted(ctx, r.merge(ctx, args, &doc))
+	// Cancellation after an acknowledged merge (including branch cleanup)
+	// must never report the pre-merge timeout code: the PR already landed.
+	if agentcli.Exit(err) == agentcli.ExitTimeout && doc.MergeCommitSHA != "" {
+		err = agentcli.NewExitError(agentcli.ExitReleaseUnconfirmed, agentcli.VerdictReleaseUnconfirmed,
+			"merged as %s, and the release is not confirmed: %s; devctl release wait %s --pr %d resumes the wait", doc.MergeCommitSHA, err, doc.Repository, doc.Number)
+	}
 	if r.flag.DetachedHandle == "" {
 		return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, err)
 	}
@@ -218,23 +225,43 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 	// One CircleCI client for the CI wait and the release wait, opened
 	// through the gate when either first needs it.
 	var circleci *circleciclient.Client
-	openCircleCI := func(ctx context.Context) (*circleciclient.Client, error) {
-		if circleci != nil {
-			return circleci, nil
+	var openCircleCI func(context.Context) (*circleciclient.Client, error)
+	var releaseCircleCI func(context.Context) (releasewait.CircleCI, error)
+	fromStatuses := r.flag.CircleCIFromStatuses && failedLogLines == 0
+	if !fromStatuses {
+		openCircleCI = func(ctx context.Context) (*circleciclient.Client, error) {
+			if circleci != nil {
+				return circleci, nil
+			}
+			token, err := r.requireCircleCI(ctx)
+			if err != nil {
+				return nil, err
+			}
+			doc.Warn(token.Warning)
+			circleci, err = circleciclient.New(circleciclient.Config{
+				Token:       token.Value,
+				TokenSource: token.SourceName(),
+				Renew: func(ctx context.Context, _ string) (string, error) {
+					token, err := r.requireCircleCI(ctx)
+					if err != nil {
+						return "", err
+					}
+					doc.Warn(token.Warning)
+					return token.Value, nil
+				},
+				BaseURL:    circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
+				HTTPClient: &http.Client{Transport: retrying},
+				Logger:     logger,
+			})
+			return circleci, err
 		}
-		token, err := r.requireCircleCI(ctx)
-		if err != nil {
-			return nil, err
+		releaseCircleCI = func(ctx context.Context) (releasewait.CircleCI, error) {
+			client, err := openCircleCI(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return client, nil
 		}
-		doc.Warn(token.Warning)
-		circleci, err = circleciclient.New(circleciclient.Config{
-			Token:       token.Value,
-			TokenSource: token.SourceName(),
-			BaseURL:     circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
-			HTTPClient:  &http.Client{Transport: retrying},
-			Logger:      logger,
-		})
-		return circleci, err
 	}
 
 	// The team files decide both whether a template repository's head is
@@ -245,45 +272,45 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 	if !r.flag.NoReleaseWait {
 		release = func(ctx context.Context, owner, repo string, number int, mergeCommitSHA string, result *releasewait.Result) error {
 			waiter, err := releasewait.New(releasewait.Config{
-				Owner:          owner,
-				Repo:           repo,
-				PR:             number,
-				MergeCommitSHA: mergeCommitSHA,
-				Timeout:        r.flag.ReleaseTimeout,
-				GitHub:         gh.release,
-				Entries:        entries,
-				CircleCI: func(ctx context.Context) (releasewait.CircleCI, error) {
-					client, err := openCircleCI(ctx)
-					if err != nil {
-						return nil, err
-					}
-					return client, nil
-				},
-				Registry:  releasewait.RegistryProber{Endpoints: endpoints, Keychain: authn.DefaultKeychain},
-				Endpoints: endpoints,
-				Clock:     clock,
-				Rate:      gh.rateLimit,
-				Progress:  progress,
-				Warn:      doc.Warn,
+				Owner:                owner,
+				Repo:                 repo,
+				PR:                   number,
+				MergeCommitSHA:       mergeCommitSHA,
+				Timeout:              r.flag.ReleaseTimeout,
+				GitHub:               gh.release,
+				Entries:              entries,
+				CircleCI:             releaseCircleCI,
+				CircleCIFromStatuses: fromStatuses,
+				Registry:             releasewait.RegistryProber{Endpoints: endpoints, Keychain: authn.DefaultKeychain},
+				Endpoints:            endpoints,
+				Clock:                clock,
+				Rate:                 gh.rateLimit,
+				Progress:             progress,
+				Warn:                 doc.Warn,
 			})
 			if err != nil {
 				return err
 			}
-			return waiter.Wait(ctx, result)
+			err = agentcli.Interrupted(ctx, waiter.Wait(ctx, result))
+			if recordErr := releasewait.RecordPublishStatus(ctx, gh.publish, *result, err); recordErr != nil {
+				doc.Warn(recordErr.Error())
+			}
+			return err
 		}
 	}
 
 	merger, err := prmerge.New(prmerge.Config{
 		Wait: prwait.Config{
-			GitHub:         gh.github,
-			Rate:           gh.rate,
-			CircleCI:       openCircleCI,
-			Entries:        entries,
-			Clock:          clock,
-			Progress:       progress,
-			Timeout:        r.flag.Timeout,
-			FailedLogLines: failedLogLines,
-			AcceptRed:      r.flag.AcceptRed,
+			GitHub:               gh.github,
+			Rate:                 gh.rate,
+			CircleCI:             openCircleCI,
+			CircleCIFromStatuses: fromStatuses,
+			Entries:              entries,
+			Clock:                clock,
+			Progress:             progress,
+			Timeout:              r.flag.Timeout,
+			FailedLogLines:       failedLogLines,
+			AcceptRed:            r.flag.AcceptRed,
 		},
 		Method:       r.method(),
 		UpdateBranch: r.flag.UpdateBranch,

@@ -48,6 +48,12 @@ github:
 # rollout_wait reaches no installation.
 installations: {}  # @schema additionalProperties: true
 
+networkPolicy:
+  # -- Render a CiliumNetworkPolicy allowing DNS, GitHub, the registries and
+  # catalogs, and each installation's Dex token endpoint and API server from
+  # the server's installations file. Requires Cilium; egress only.
+  enabled: false
+
 metrics:
   # -- Serve the call metrics (devctl_mcp_tool_calls_total and
   # devctl_mcp_tool_call_duration_seconds, by tool, the caller's GitHub login

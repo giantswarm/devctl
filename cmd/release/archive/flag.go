@@ -29,12 +29,16 @@ func (f *flag) Validate() error {
 	if f.Name == "" {
 		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagName)
 	}
-	if _, err := semver.NewVersion(f.Name); err != nil {
+	version, err := semver.NewVersion(f.Name)
+	if err != nil {
 		return microerror.Maskf(invalidFlagError, "--%s must be a valid semver", flagName)
 	}
 	if f.Provider == "" {
 		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagProvider)
 	}
+	// ArchiveRelease requires a strict version. Preserve the spellings this
+	// validator accepts by passing their canonical form to the engine.
+	f.Name = version.String()
 
 	return nil
 }
