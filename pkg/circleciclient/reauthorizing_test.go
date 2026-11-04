@@ -129,7 +129,11 @@ func TestCircleCIRenewalBoundaries(t *testing.T) {
 					method = http.MethodPost
 				}
 				err = client.do(ctx, method, "/api/v2/me", nil, nil)
-				if agentcli.Exit(err) != agentcli.ExitRemoteError {
+				wantExit := agentcli.ExitRemoteError
+				if tc == "5xx" {
+					wantExit = agentcli.ExitTimeout // an exhausted read is transient
+				}
+				if agentcli.Exit(err) != wantExit {
 					t.Fatalf("want a remote error, got %v", err)
 				}
 				wantCalls, wantRenewals := 1, 0
