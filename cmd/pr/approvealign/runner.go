@@ -443,10 +443,19 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 	failed := 0
 	waiting := 0
 	blocked := 0
+	wouldApprove := 0
+	wouldMerge := 0
+	wouldUpdate := 0
 
 	for _, ps := range prStatuses {
 		status := ps.GetStatus()
-		if strings.Contains(status, "Merged") {
+		if strings.HasPrefix(status, "Would approve") {
+			wouldApprove++
+		} else if status == "Would merge" {
+			wouldMerge++
+		} else if status == "Would update branch" {
+			wouldUpdate++
+		} else if strings.Contains(status, "Merged") {
 			merged++
 		} else if strings.Contains(status, "Updated, queued") {
 			updated++
@@ -454,7 +463,7 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 		} else if strings.Contains(status, "Branch updated") {
 			updated++
 			approved++
-		} else if strings.Contains(status, "queued to merge") {
+		} else if strings.Contains(status, "queued to merge") || status == "Already approved, queued" {
 			queued++
 		} else if strings.Contains(status, "Approved") && !strings.Contains(status, "Would") && !strings.Contains(status, "Already") {
 			approved++
@@ -472,7 +481,13 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 	fmt.Fprintln(r.stdout, "─────────────────────────────")
 	fmt.Fprintln(r.stdout, "Summary:")
 	if r.flag.DryRun {
-		fmt.Fprintf(r.stdout, "  PRs that would be approved: %d\n", len(prStatuses)-skipped-failed-waiting)
+		fmt.Fprintf(r.stdout, "  PRs that would be approved: %d\n", wouldApprove)
+		if wouldMerge > 0 {
+			fmt.Fprintf(r.stdout, "  PRs that would be merged: %d\n", wouldMerge)
+		}
+		if wouldUpdate > 0 {
+			fmt.Fprintf(r.stdout, "  PR branches that would be updated: %d\n", wouldUpdate)
+		}
 	} else {
 		if merged > 0 {
 			fmt.Fprintf(r.stdout, "  PRs merged: %d\n", merged)
