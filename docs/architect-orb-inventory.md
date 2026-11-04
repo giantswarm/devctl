@@ -10,8 +10,14 @@ archives, through paginated GitHub GraphQL reads. Of these, 705 were unarchived 
 There were 906 default-branch `.circleci/config.yml` files: 152 had a sibling `.circleci/workflows.yml`
 and were excluded as generated CI, following [devctl's CI model](release-wait.md#the-ci-model-and-the-artifact-names).
 Of the remaining 754, 364 pinned `giantswarm/architect` below 10: **12 unarchived and 352 archived**.
-Archived repositories are excluded from the bump queue. Another 267 pinned newer architect orbs, and
-123 had no architect orb pin (an architect Docker executor image alone is not an orb).
+Archived repositories are excluded from the bump queue. Another 265 pinned newer architect orbs, and
+123 had no architect orb pin (an architect Docker executor image alone is not an orb). The remaining
+two used development refs with no numeric release version:
+[pawel-test](https://github.com/giantswarm/pawel-test/blob/726ac8a3c2178ab90bb4f51824580c42d9dfde45/.circleci/config.yml)
+(`dev:helm-chart-template-validation`) and
+[laszlo-test](https://github.com/giantswarm/laszlo-test/blob/a0bf484f069dbcfb53ecc0eac78ab2e82c35ec98/.circleci/config.yml)
+(`dev:4f15ccee96350a576f574f0c46049ba7ec047fe2`). Their orb major is unclassified; both repositories
+were archived, so neither enters the bump queue.
 
 The table below covers every unarchived match. Each config link contains the full inspected commit.
 Read each candidate's workflow directory and release workflows at that commit, and all its open PRs
@@ -134,6 +140,7 @@ Use a read-only organization query with `repositories(first:25, after:$endCursor
 `nameWithOwner`, `isArchived`, `isFork`, `defaultBranchRef { name target { oid } }` and the Blob at
 `HEAD:.circleci/config.yml`; check for `HEAD:.circleci/workflows.yml` to distinguish generated CI.
 Select actual orb declarations with numeric major < 10, not references to architect container images.
+Count development refs separately as unclassified; do not treat a nonnumeric ref as major >= 10.
 Read the selected repositories' workflow files at their captured full commits, follow any reusable
 release workflow, and list every open PR with full head and base before creating a bump. Read the
 team-file fork entries and each consumed line's `FORK.md`, then inspect its maintenance branches.
