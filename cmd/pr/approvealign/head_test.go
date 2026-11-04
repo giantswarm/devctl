@@ -47,7 +47,7 @@ func TestProcessPRBindsWritesToCheckedHead(t *testing.T) {
 						if tc.behind {
 							state = "behind"
 						}
-						body = map[string]any{"head": map[string]any{"sha": sha}, "mergeable_state": state}
+						body = map[string]any{"title": alignTitle, "head": map[string]any{"sha": sha}, "mergeable_state": state}
 					case "GET /repos/o/r/commits/tested/status":
 						body = map[string]any{"state": "success", "total_count": 0}
 					case "GET /repos/o/r/commits/tested/check-runs":

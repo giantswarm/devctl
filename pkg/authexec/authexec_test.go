@@ -133,6 +133,7 @@ func TestRun(t *testing.T) {
 		wantExec bool
 		wantErr  string
 		args     []string
+		env      []string
 		remotes  string
 		// wantPerson: gh runs without the token, on the person's login.
 		wantPerson bool
@@ -143,6 +144,10 @@ func TestRun(t *testing.T) {
 		{name: "another owner's repository keeps the person's login", program: "gh", args: []string{"pr", "list", "--repo", "teemow/klaus-lab"}, wantExec: true, wantPerson: true},
 		{name: "an upload keeps the person's login", program: "gh", args: []string{"issue", "comment", "12", "--repo", "giantswarm/devctl", "--attach", "proof.png"}, wantExec: true, wantPerson: true},
 		{name: "a comment without an upload acts as the App", program: "gh", args: []string{"pr", "comment", "5", "--repo", "giantswarm/devctl", "--body", "done"}, wantExec: true},
+		{name: "explicit API target beats environment", program: "gh", args: []string{"api", "repos/teemow/klaus-lab/pulls"}, env: []string{"GH_REPO=giantswarm/devctl"}, wantExec: true, wantPerson: true},
+		{name: "explicit App API target beats environment", program: "gh", args: []string{"api", "repos/giantswarm/devctl/pulls"}, env: []string{"GH_REPO=teemow/klaus-lab"}, wantExec: true},
+		{name: "API user remains on the App", program: "gh", args: []string{"api", "user"}, env: []string{"GH_REPO=teemow/klaus-lab"}, wantExec: true},
+		{name: "explicit PR URL beats repo flag", program: "gh", args: []string{"pr", "view", "https://github.com/teemow/klaus-lab/pull/5", "--repo", "giantswarm/devctl"}, wantExec: true, wantPerson: true},
 		{name: "body text does not switch the login", program: "gh", args: []string{"pr", "comment", "5", "--body", "--repo=teemow/x", "--repo", "giantswarm/devctl"}, wantExec: true},
 		{name: "body text does not enable attachments", program: "gh", args: []string{"pr", "comment", "5", "--repo", "giantswarm/devctl", "--body", "--attach"}, wantExec: true},
 		{name: "search in a personal checkout stays on the App", program: "gh", args: []string{"search", "prs", "query"}, remotes: "remote.origin.url https://github.com/teemow/devctl.git\n", wantExec: true},
@@ -162,7 +167,7 @@ func TestRun(t *testing.T) {
 				},
 				Self:    self,
 				Path:    path,
-				Environ: []string{"PATH=" + path, "GH_TOKEN=person-token", "GITHUB_TOKEN=other-token"},
+				Environ: append([]string{"PATH=" + path, "GH_TOKEN=person-token", "GITHUB_TOKEN=other-token"}, tc.env...),
 				Stderr:  &stderr,
 				Remotes: func() string { return tc.remotes },
 				Exec: func(p string, argv, env []string) (int, error) {

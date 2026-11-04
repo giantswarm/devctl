@@ -77,6 +77,9 @@ type Config struct {
 }
 
 // Waiter runs one rollout wait.
+// finalPollGrace bounds the poll at the deadline, which decides the outcome.
+const finalPollGrace = 30 * time.Second
+
 type Waiter struct {
 	installation, kubeContext, version string
 	charts                             map[string]bool
@@ -120,11 +123,8 @@ func New(config Config) (*Waiter, error) {
 	if config.Revision != "" && (config.GitHub == nil || config.Repository == "") {
 		return nil, errors.New("rolloutwait: a Revision needs GitHub and Repository")
 	}
-	for _, name := range config.HelmReleases {
-		namespace, n, namespaced := strings.Cut(name, "/")
-		if name == "" || strings.Contains(n, "/") || (namespaced && (namespace == "" || n == "")) {
-			return nil, agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--helmrelease %q: name a HelmRelease as <name> or <namespace>/<name>", name)
-		}
+	if err := ValidateHelmReleases(config.HelmReleases); err != nil {
+		return nil, err
 	}
 	if config.Revision == "" && bare(config.Version) == "" {
 		return nil, errors.New("rolloutwait: Version must not be empty without a Revision")
@@ -172,6 +172,18 @@ func New(config Config) (*Waiter, error) {
 	return w, nil
 }
 
+// ValidateHelmReleases checks the names before a caller opens clients or
+// waits for a release; New checks them for other callers too.
+func ValidateHelmReleases(names []string) error {
+	for _, name := range names {
+		namespace, n, namespaced := strings.Cut(name, "/")
+		if name == "" || strings.Contains(n, "/") || (namespaced && (namespace == "" || n == "")) {
+			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--helmrelease %q: name a HelmRelease as <name> or <namespace>/<name>", name)
+		}
+	}
+	return nil
+}
+
 // Wait polls the installation until the release runs there, fails, turns out
 // never to get there, or the timeout passes, and fills result with the last
 // poll. The error places the outcome in the exit-code table: nil when every
@@ -182,6 +194,22 @@ func New(config Config) (*Waiter, error) {
 // of the last poll reach the result: a state seen mid-roll and gone by the
 // end is not reported.
 func (w *Waiter) Wait(ctx context.Context, result *Result) error {
+	// The last poll runs at the deadline itself; only a read hanging past it ends here.
+	parent := ctx
+	ctx, cancel := w.clock.Timeout(ctx, w.timeout+finalPollGrace)
+	defer cancel()
+
+	err := w.wait(ctx, result)
+	if ctx.Err() != nil && parent.Err() == nil {
+		var outcome agentcli.ExitCoder
+		if err == nil || !errors.As(err, &outcome) {
+			return w.timeoutErr(result.Deployments)
+		}
+	}
+	return err
+}
+
+func (w *Waiter) wait(ctx context.Context, result *Result) error {
 	result.Version = w.version
 	result.Revision = w.revision
 	result.Charts = w.chartNames()
