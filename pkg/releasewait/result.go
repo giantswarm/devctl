@@ -58,6 +58,9 @@ type Artifact struct {
 	Digest string `json:"digest"`
 	// State is available or missing.
 	State string `json:"state"`
+	// LastProbeError is the latest failed probe, cleared once the registry
+	// answers whether the artifact exists.
+	LastProbeError string `json:"lastProbeError,omitempty"`
 
 	// private selects the private registry and its keychain.
 	private bool
@@ -197,7 +200,8 @@ func notApplicableErr(format string, args ...any) error {
 
 // NoReleaseError says that no release follows a pull request's merge: the
 // repository does not tag merge commits (the legacy release workflow, or no
-// release workflow at all), or its auto-release run finished without a tag
+// release workflow at all, or its auto-release push filters exclude the base),
+// or its auto-release run finished without a tag
 // because the commits since the last release warrant none and no later tag
 // on the pull request's base branch carries the merge. Exit 3 with the
 // no_release verdict; devctl pr merge reports the merge as done with no
