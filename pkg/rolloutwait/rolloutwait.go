@@ -181,6 +181,20 @@ func New(config Config) (*Waiter, error) {
 // cannot be told. Only the warnings of the last poll reach the result: a
 // state seen mid-roll and gone by the end is not reported.
 func (w *Waiter) Wait(ctx context.Context, result *Result) error {
+	ctx, cancel := w.clock.Timeout(ctx, w.timeout)
+	defer cancel()
+
+	err := w.wait(ctx, result)
+	if ctx.Err() != nil {
+		var outcome agentcli.ExitCoder
+		if err == nil || !errors.As(err, &outcome) {
+			return w.timeoutErr(result.Deployments)
+		}
+	}
+	return err
+}
+
+func (w *Waiter) wait(ctx context.Context, result *Result) error {
 	result.Version = w.version
 	result.Revision = w.revision
 	result.Charts = w.chartNames()
