@@ -28,7 +28,7 @@ func TestRunTransientReadWindow(t *testing.T) {
 	}{
 		{name: "case 0: eight commit-status timeouts then merge", path: "/repos/o/r/commits/abc123/status", failures: 8, wantVerdict: "green"},
 		{name: "case 1: initial PR read exhausts its window", path: "/repos/o/r/pulls/42", failures: 15, wantCode: 2, wantVerdict: "transient"},
-		{name: "case 2: final PR read exhausts its window", path: "/repos/o/r/pulls/42", before: 2, failures: 15, wantCode: 2, wantVerdict: "transient"},
+		{name: "case 2: final PR read exhausts its window", path: "/repos/o/r/pulls/42", before: 4, failures: 15, wantCode: 2, wantVerdict: "transient"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r, stdout, _, server := newRunner(t, green(), loggedIn, &flag{Timeout: 20 * time.Minute, NoReleaseWait: true})
