@@ -3,6 +3,7 @@ package reservation
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
@@ -97,6 +98,12 @@ func Release(req ReleaseRequest) (res ReleaseResult, err error) {
 	component := path.Join(reservationsDir, chart)
 	sourceName := chart + SourceNameSuffix
 
+	// Sync permits untracked files. Refuse before installing rollback, since
+	// both recursive removal and discardWrites would delete those user files.
+	if err := checkReleaseComponent(req.RepoDir, req.Cluster, chart); err != nil {
+		return ReleaseResult{}, microerror.Mask(err)
+	}
+
 	// A failure after the first removal must not leave the checkout half edited.
 	defer func() {
 		if err != nil {
@@ -147,6 +154,42 @@ func Release(req ReleaseRequest) (res ReleaseResult, err error) {
 	}
 
 	return ReleaseResult{App: chart, Commit: commit, Files: files}, nil
+}
+
+// checkReleaseComponent protects files the reservation does not own, including
+// ignored files. Directory symlinks must not redirect removal outside the
+// component that git inspected. This check precedes all writes and rollback.
+func checkReleaseComponent(dir, cluster, chart string) error {
+	component := clusterPath(cluster, collectionsDir, reservationsDir, chart)
+	for _, rel := range []string{
+		clustersDir,
+		clusterPath(cluster),
+		clusterPath(cluster, collectionsDir),
+		clusterPath(cluster, collectionsDir, reservationsDir),
+		component,
+	} {
+		info, err := os.Lstat(filepath.Join(dir, rel))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		if !info.IsDir() {
+			return microerror.Maskf(invalidConfigError, "refusing to release through non-directory %q", rel)
+		}
+	}
+	// No --exclude-standard: ignored files are also untracked user data.
+	cmd := exec.Command("git", "-C", dir, "ls-files", "--others", "-z", "--", component) //nolint:gosec // fixed git arguments and repository-local path
+	files, err := cmd.Output()
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	if len(files) != 0 {
+		return microerror.Maskf(invalidConfigError,
+			"refusing to release %q: its component contains untracked files; move them out before releasing", chart)
+	}
+	return nil
 }
 
 // assertReleased refuses a render that still carries the reservation after
