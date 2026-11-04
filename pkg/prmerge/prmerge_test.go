@@ -35,7 +35,7 @@ func pull(over map[string]any) map[string]any {
 		"title": "feat: thing", "node_id": "PR_1",
 		"user": map[string]any{"login": "someone", "type": "User"},
 		"head": map[string]any{"sha": "abc123", "ref": "feature", "repo": map[string]any{"full_name": "o/r"}},
-		"base": map[string]any{"ref": "main", "repo": map[string]any{"full_name": "o/r"}},
+		"base": map[string]any{"ref": "main", "sha": "base123", "repo": map[string]any{"full_name": "o/r"}},
 	}
 	maps.Copy(pr, over)
 	return pr
@@ -100,6 +100,9 @@ func routes(pr map[string]any, more ...sequence.Routes) sequence.Routes {
 	maps.Copy(r, greenHead("abc123"))
 	maps.Copy(r, noFeedback("abc123", "def456"))
 	maps.Copy(r, upToDate("abc123", "def456"))
+	for _, sha := range []string{"abc123", "def456"} {
+		r["GET /repos/o/r/compare/base123..."+sha] = []sequence.Response{{Body: comparison(commit(sha, "feat: thing"))}}
+	}
 	for _, m := range more {
 		maps.Copy(r, m)
 	}

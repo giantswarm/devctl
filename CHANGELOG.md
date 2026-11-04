@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr merge` refuses a rebase merge carrying commit subjects starting with `amend!`, `fixup!` or `squash!`,
+  listing their SHAs and subjects before the wait and rechecking the judged head before merging. Autosquash
+  those commits first; `--accept-red` cannot override this history guard. Squash merges are unaffected.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
