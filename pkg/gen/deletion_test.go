@@ -25,11 +25,11 @@ func Test_Execute_DeleteFailureStopsInputs(t *testing.T) {
 	if err := os.WriteFile(legacy, []byte("legacy workflow"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(workflows, 0500); err != nil {
+	if err := os.Chmod(workflows, 0500); err != nil { // #nosec G302 -- test fixture
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := os.Chmod(workflows, 0700); err != nil {
+		if err := os.Chmod(workflows, 0700); err != nil { // #nosec G302 -- test fixture
 			t.Error(err)
 		}
 	})
@@ -50,7 +50,7 @@ func Test_Execute_DeleteFailureStopsInputs(t *testing.T) {
 	if calledNext {
 		t.Error("started another input after the deletion failed")
 	}
-	if data, err := os.ReadFile(legacy); err != nil || string(data) != "legacy workflow" {
+	if data, err := os.ReadFile(legacy); err != nil || string(data) != "legacy workflow" { // #nosec G304 -- test fixture
 		t.Errorf("failed deletion changed legacy workflow: %q, %v", data, err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "zz_generated.next")); !os.IsNotExist(err) {
@@ -81,7 +81,7 @@ func Test_Execute_DeleteCleanup(t *testing.T) {
 				t.Fatal(err)
 			}
 			if kind == "nonempty directory" {
-				if data, err := os.ReadFile(filepath.Join(path, "own-tool")); err != nil || string(data) != "keep" {
+				if data, err := os.ReadFile(filepath.Join(path, "own-tool")); err != nil || string(data) != "keep" { // #nosec G304 -- test fixture
 					t.Errorf("directory cleanup must keep other tools: %q, %v", data, err)
 				}
 			} else if _, err := os.Stat(path); !os.IsNotExist(err) {
