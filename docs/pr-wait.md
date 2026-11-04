@@ -1,13 +1,23 @@
 # Waiting for a pull request's CI: `devctl pr wait`
 
 ```nohighlight
-devctl pr wait <owner/repo> <number> [--timeout 60m] [--progress] [--failed-log [--failed-log-lines 50]]
+devctl pr wait <owner/repo> <number> [--timeout 60m] [--progress] [--circleci-from-statuses] [--failed-log [--failed-log-lines 50]]
 ```
 
 One blocking call that returns when the outcome of a pull request's CI is known: green, red, or a
 state no CI can turn green. It prints one JSON document on stdout at the end and nothing else; the
 exit code says what happened, so a script or an agent branches on it without parsing. `--progress`
 writes one line per poll to stderr for a person watching.
+
+`--circleci-from-statuses` waits without a CircleCI token, using the same logic as `devctl serve`:
+it reads the head's CircleCI configuration from GitHub, lists the jobs that run on the head's branch,
+and waits for every one to post a commit status and finish successfully. A downstream job behind
+`requires:` that has posted nothing keeps the head pending, even when all posted statuses are green.
+The verdict comes from GitHub statuses; CircleCI pipeline and workflow details are absent from the
+document. Without the flag, the CircleCI API is used as described below.
+`--failed-log` takes precedence over `--circleci-from-statuses`: it uses the CircleCI API and requires
+`devctl auth login --circleci-only` when the head carries a CircleCI configuration, so CircleCI log
+tails can be read. GitHub Actions logs alone require no CircleCI token on a head without CircleCI.
 
 `--failed-log` answers why a red wait is red without a second tool: on a red verdict it reads the
 log of each failed job once, a GitHub Actions job (`GET /repos/{owner}/{repo}/actions/jobs/{id}/logs`)
@@ -24,9 +34,16 @@ already within the tail, a single failing last step, prints the tail alone. The 
 timed-out wait reads no log and costs no extra request. A log that cannot be read (expired, not
 yet uploaded) is named in its job's `logError`; the verdict stays red.
 
+When an authenticated CircleCI workflow-jobs or failed-step job read returns 404, the client
+retries that read once without the token: a public continuation can be readable anonymously
+while hidden from the authenticated caller. Explicit 401/403 refusals are returned without this
+fallback. Signed step-output URLs continue to be read without a token.
+
 The tokens come from the OS keychain (`devctl auth login`, see [auth.md](auth.md)). The GitHub
 token is required before the first request; the CircleCI token only once the head turns out to
-carry a CircleCI configuration for a repository CircleCI builds. The GitHub identity follows the repository's owner: the
+carry a CircleCI configuration for a repository CircleCI builds and the wait uses the CircleCI API.
+`--circleci-from-statuses` without `--failed-log` never reads the CircleCI keychain entry or API.
+The GitHub identity follows the repository's owner: the
 App login for giantswarm, where the devctl App is installed, and your own `gh` login (`gh auth token` of the
 real `gh`, never a `gh` link to devctl, and no environment variable) for every other owner, with the same
 semantics; `identity` in the document says which, `app` or `gh`. Without a `gh` login such a pull request is
@@ -46,7 +63,10 @@ system that will produce it:
    GitHub keeps every run of a check; a workflow that ran twice for the same head has a stale
    first run next to the current one. A pull request retitled after a failed title check has a
    failed run and a passed run of the same workflow, and only the newest workflow run counts, as
-   in the merge box. A failed check of an earlier run of a workflow (a reopened pull request, a rerun) does
+   in the merge box. A cancelled check is ignored when a check of the same name in another run of
+   that workflow started later, even if the later job belongs to a lower-ID workflow run. A
+   cancelled matrix job or a check in another workflow is not superseded this way; a lone
+   cancellation stays red. A failed check of an earlier run of a workflow (a reopened pull request, a rerun) does
    not count while the workflow's newest run is still open: the wait goes on and exits on that run's outcome.
    A completed run whose conclusion is `action_required` (a deployment waiting for a
    reviewer) is unfinished, not red. `neutral` and `skipped` pass.
@@ -63,7 +83,7 @@ system that will produce it:
    failed workflow is a new workflow of the same name in the same pipeline, and the newest run is
    the one that counts. `not_run` is a skipped workflow. An `errored` pipeline (a configuration
    error, which produces no workflows) is red. A setup pipeline (`setup: true` with
-   `continuation/continue`) is unfinished while its state is `setup-pending`, `setup` or `pending`:
+   `continuation/continue`) normally stays unfinished while its state is `setup-pending`, `setup` or `pending`:
    its `setup` workflow may have finished, but the continued workflows that post the build's
    contexts do not exist yet. It settles at `created`, and reads `created` with the setup workflow
    alone for a minute or two after the setup job continued it, longer when CircleCI's listing lags
@@ -73,6 +93,18 @@ system that will produce it:
    workflow alone (`setup finished, the continuation's workflows not created yet`) or with none
    (`no workflows yet`) is unfinished while the head carries one CircleCI context at most, and is
    judged by the contexts once more have posted, whatever the listing reads.
+
+   A setup job can also finish successfully with `circleci-agent step halt`, skipping
+   `continuation/continue` and leaving the pipeline in `setup`. Five minutes after every newest
+   setup-tagged workflow succeeded, the wait reads their jobs. If each job succeeded and posted
+   its own successful `ci/circleci: <job>` context, and the head has no other CircleCI context,
+   the pipeline is judged by those workflows and the head's checks. The document marks
+   `circleci.setupHalted: true`; progress says `setup halted, no continuation`. The grace starts
+   at the last setup workflow's completion, including for a wait started later. This is a bounded
+   inference from the API evidence: an empty workflow or job listing, a missing completion time,
+   or an additional CircleCI context cannot establish a halted setup. A pipeline in `pending`
+   or `created` still waits for its submitted continuation under the rules above. Required
+   contexts must still report and every other check must still finish under its usual rule.
 3. **No GitHub Actions run of the head is open**: `queued`, `in_progress`, `waiting`, `pending`,
    `requested`, or completed with the conclusion `action_required`. The last one is a workflow
    run awaiting a repository member's approval (a fork's or a bot's pull request in a repository
@@ -150,13 +182,31 @@ a template repository (`is_template` on GitHub) whose team-file entry in giantsw
 `gen.ci.templateContent: true`, which carries the configuration for the repositories created from it
 and is never built itself, and a repository CircleCI knows no project for. A template without that
 declaration carries its own pipeline and is judged like any repository, as the reconciler judges it;
-the entry is read only for a template whose head carries `.circleci/config.yml`. Whether the project has run a pipeline before does not decide it: the head's own pipeline may
-be the project's first (a new repository's first pull request), and until it appears the head is
-unfinished (`circleci pipeline for <sha> (absent)`), not green from GitHub alone. A pull request
+the entry is read only for a template whose head carries `.circleci/config.yml`.
+
+The project lookup can also succeed for a repository never set up on CircleCI. When the head has
+neither a pipeline nor a CircleCI commit status, the wait reads the project-wide pipeline listing.
+An empty listing with no next page judges that poll from GitHub alone, with a warning naming the
+absent head pipeline and the configuration file. GitHub checks, Actions runs and required contexts
+still decide the verdict. Any listed pipeline, including one on the base or another branch when
+the configuration excludes the base, keeps the head unfinished (`circleci pipeline for <sha>
+(absent)`) until its own pipeline appears. An unreadable listing does not skip CircleCI.
+The listing is checked again while GitHub is unfinished, so a pipeline that appears during the
+wait is judged. A project's first-ever pipeline that has not registered in either source yet is
+indistinguishable from an unused configuration and is skipped with the same warning; required
+CircleCI contexts still have to report. A pull request
 from a fork of a CircleCI-built repository is looked up under the branch CircleCI gives it,
 `pull/<number>`.
 
 ## Polling
+
+At the configured timeout, a pipeline whose latest workflows are all successful setup workflows,
+with no additional CircleCI job contexts indicating a continuation, reports `CircleCI continuation
+missing` in the reason: the pipeline exists and setup succeeded, but no continuation workflow
+appeared before the deadline. It remains exit 2 (`timeout`) and includes the pipeline and unfinished
+checks. This reports the observed cause of the wait; the API evidence cannot distinguish a dropped
+continuation from an intentionally halted setup or a listing that still lags. A running or failed
+setup, an empty workflow listing, or an unanswered last poll does not establish this cause.
 
 Every GitHub request is conditional: the ETag of the last answer goes out as `If-None-Match`, and
 a `304 Not Modified` costs nothing against the rate limit. The interval between polls comes from

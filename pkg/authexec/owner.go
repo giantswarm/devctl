@@ -12,10 +12,13 @@ import (
 // keeps the person's own login for it.
 var AppOwners = map[string]bool{"giantswarm": true}
 
+// ghIssue is gh's issue command.
+const ghIssue = "issue"
+
 // repoCommands are gh's commands whose first argument may be a repository
 // or a URL of one (`gh pr view <url>`, `gh repo view <owner/repo>`).
 var repoCommands = map[string]bool{
-	"issue": true, "pr": true, "release": true, "repo": true, "run": true, "workflow": true,
+	ghIssue: true, "pr": true, "release": true, "repo": true, "run": true, "workflow": true,
 }
 
 // GHOwner is the owner of the repository a gh invocation acts on, "" when it
@@ -25,8 +28,18 @@ var repoCommands = map[string]bool{
 // upstream, github and origin). remotes reads the working directory's
 // remote configuration; nil reads none.
 func GHOwner(args []string, environ []string, remotes func() string) string {
+	// Search is global; --repo is a repeatable search filter, not a base
+	// repository override. Neither GH_REPO nor the checkout selects its repo.
+	if len(args) > 0 && args[0] == "search" {
+		return ""
+	}
 flags:
-	for i, a := range args {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if ghTextValueFlag(args, a) {
+			i++
+			continue
+		}
 		switch {
 		case a == "--":
 			break flags
@@ -68,16 +81,36 @@ flags:
 // refuses an App user token with a 404, which gh reports as missing write
 // access, so such an invocation keeps the person's own gh login.
 func GHAttaches(args []string) bool {
-	if len(args) == 0 || (args[0] != "issue" && args[0] != "pr") {
+	if len(args) == 0 || (args[0] != ghIssue && args[0] != "pr") {
 		return false
 	}
-	for _, a := range args[1:] {
+	for i := 1; i < len(args); i++ {
+		a := args[i]
+		if ghTextValueFlag(args, a) {
+			i++
+			continue
+		}
 		if a == "--" {
 			return false
 		}
 		if a == "--attach" || strings.HasPrefix(a, "--attach=") {
 			return true
 		}
+	}
+	return false
+}
+
+// ghTextValueFlag identifies free-form issue/PR text options. Their next
+// argument is data even when it looks like --repo, --attach or --.
+func ghTextValueFlag(args []string, flag string) bool {
+	if len(args) < 2 || (args[0] != ghIssue && args[0] != "pr") {
+		return false
+	}
+	switch flag {
+	case "--body", "-b", "--body-file", "-F", "--title", "-t", "--subject", "--comment":
+		return true
+	case "-c":
+		return args[1] == "close" || args[1] == "reopen"
 	}
 	return false
 }
@@ -148,6 +181,7 @@ func remoteOwner(remotes func() string) string {
 	urls := map[string]string{}
 	var order []string
 	resolved := ""
+	resolvedRepo := ""
 	for _, line := range strings.Split(remotes(), "\n") {
 		key, value, ok := strings.Cut(strings.TrimSpace(line), " ")
 		if !ok {
@@ -165,7 +199,11 @@ func remoteOwner(remotes func() string) string {
 			urls[name] = value
 		case "gh-resolved":
 			resolved = name
+			resolvedRepo = value
 		}
+	}
+	if _, ok := urls[resolved]; ok && resolvedRepo != "base" {
+		return repoOwner(resolvedRepo)
 	}
 	for _, name := range append([]string{resolved, "upstream", "github", "origin"}, order...) {
 		if u, ok := urls[name]; ok {
