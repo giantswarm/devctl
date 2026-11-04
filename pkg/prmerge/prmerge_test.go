@@ -238,6 +238,9 @@ func Test_Merge_refusalsBeforeTheWait(t *testing.T) {
 			if result.Repository != "o/r" || result.Number != 42 || result.HeadSHA != "abc123" || result.BaseRef != "main" {
 				t.Errorf("the result names the pull request as read: %+v", result)
 			}
+			if result.Draft != tc.pr["draft"].(bool) {
+				t.Errorf("the result must report the draft state, got %+v", result)
+			}
 			if tc.wantCode == 0 {
 				if result.MergeCommitSHA != "m1" || !result.BranchDeleted {
 					t.Errorf("want a merge, got %+v", result)
