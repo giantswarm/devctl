@@ -283,8 +283,8 @@ func (r *Runner) Run(ctx context.Context, req Request) (*Result, error) {
 			continue
 		}
 		sr := r.execute(ctx, s, step)
-		if !selected {
-			continue // the lookup ran for the other steps; not part of the result
+		if !selected && sr.Converges() {
+			continue // a successful prerequisite lookup need not be listed
 		}
 		res.Steps = append(res.Steps, *sr)
 		if !sr.Converges() {

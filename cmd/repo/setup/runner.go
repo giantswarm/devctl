@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/engine"
+	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
 )
@@ -54,6 +55,11 @@ func (r *runner) run(ctx context.Context, arg string) error {
 		return microerror.Mask(err)
 	}
 
+	return r.runWithClient(ctx, owner, repo, client)
+}
+
+// runWithClient applies setup with an already constructed client.
+func (r *runner) runWithClient(ctx context.Context, owner, repo string, client *githubclient.Client) error {
 	repository, err := client.GetRepository(ctx, owner, repo)
 	if err != nil {
 		return microerror.Mask(err)
