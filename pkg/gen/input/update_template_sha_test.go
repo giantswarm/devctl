@@ -15,7 +15,7 @@ func TestUpdateTemplateSHA(t *testing.T) {
 	}
 	run := func(t *testing.T, dir, name string, args ...string) string {
 		t.Helper()
-		cmd := exec.CommandContext(t.Context(), name, args...)
+		cmd := exec.CommandContext(t.Context(), name, args...) // #nosec G204 -- test fixture
 		cmd.Dir = dir
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -68,7 +68,7 @@ func TestUpdateTemplateSHA(t *testing.T) {
 	check := func(t *testing.T, workdir string) {
 		t.Helper()
 		run(t, workdir, binary, "x.template")
-		got, err := os.ReadFile(filepath.Join(dir, "x.template.sha"))
+		got, err := os.ReadFile(filepath.Join(dir, "x.template.sha")) // #nosec G304 -- test fixture
 		if err != nil {
 			t.Fatal(err)
 		}
