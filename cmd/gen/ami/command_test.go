@@ -167,7 +167,7 @@ func isolateAWS(t *testing.T, endpoint string) {
 	require.NoError(t, os.WriteFile(configFile, []byte("[profile ami-fixture]\n"), 0o600))
 	credentialsFile := filepath.Join(configDir, "credentials")
 	require.NoError(t, os.WriteFile(credentialsFile, nil, 0o600))
-	for key, value := range map[string]string{
+	for key, value := range map[string]string{ // #nosec G101 -- synthetic credentials used only with the loopback S3 fixture
 		"AWS_CONFIG_FILE": configFile, "AWS_SHARED_CREDENTIALS_FILE": credentialsFile,
 		"AWS_PROFILE": "ami-fixture", "AWS_DEFAULT_PROFILE": "ami-fixture", "AWS_CA_BUNDLE": "",
 		"AWS_ACCESS_KEY_ID": "synthetic-env-access-key", "AWS_SECRET_ACCESS_KEY": "synthetic-env-secret-key", "AWS_SESSION_TOKEN": "",
