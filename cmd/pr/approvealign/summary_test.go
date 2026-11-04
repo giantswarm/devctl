@@ -64,9 +64,10 @@ func TestCommandDryRunActionSummary(t *testing.T) {
 				}
 			} else {
 				state := "clean"
-				if n == 3 {
+				switch n {
+				case 3:
 					state = "behind"
-				} else if n == 4 {
+				case 4:
 					state = "blocked"
 				}
 				body = `{"title":"` + alignTitle + `","head":{"sha":"checked-head-` + strconv.Itoa(n) + `"},"base":{"ref":"main"},"mergeable_state":"` + state + `"`
