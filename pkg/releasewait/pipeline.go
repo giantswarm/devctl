@@ -95,6 +95,12 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result, needJobs boo
 	newest := circleciclient.NewestWorkflows(runs)
 
 	doc := &Pipeline{ID: pipeline.ID, Number: pipeline.Number, URL: circleciclient.PipelineURL(owner, repo, pipeline.Number), Workflows: []PipelineWorkflow{}, FailedJobs: []string{}, Unfinished: []string{}}
+	if len(newest) == 0 && (pipeline.State == "created" || pipeline.State == "errored") {
+		result.Pipeline = doc
+		if err := w.emptyPipelineError(ctx, result, pipeline.State); err != nil {
+			return nil, err
+		}
+	}
 	state := &pipelineState{green: len(newest) > 0, jobs: map[string]bool{}}
 	successes := 0
 	jobsHidden := false
