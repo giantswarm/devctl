@@ -1,12 +1,31 @@
 package file
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 
+	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/ami/internal/params"
 )
+
+func TestNewAMIInputCreatesDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "nested", "templates")
+	const want = `{"1.2.3":{"test-region":"ami-synthetic"}}`
+	in := NewAMIInput(params.Params{Dir: dir, AMIInfoString: want})
+	if err := gen.Execute(t.Context(), in); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "aws-ami.yaml.template")) // #nosec G304 -- isolated t.TempDir destination
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != want {
+		t.Fatalf("generated content = %q, want %q", got, want)
+	}
+}
 
 func TestNewAMIInputDestination(t *testing.T) {
 	absoluteDir := t.TempDir()
