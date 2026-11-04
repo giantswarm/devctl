@@ -182,10 +182,16 @@ and a workflow runs when its `when`/`unless` holds for a push (pipeline paramete
 condition on another pipeline value, a setup workflow devctl does not generate) is a warning, and those jobs count once
 they post.
 
-`release_wait` judges the tag's CI by those statuses on the tag's commit: green once every tag job posted, no job is
-pending and the newest status of no context failed; the document's `pipeline` lists the jobs, with no CircleCI id,
+For images and charts, `release_wait` judges the tag's CI by those statuses on the tag's commit: green
+once every tag job posted, no job is pending and the newest status of no context failed; the document's
+`pipeline` lists the jobs, with no CircleCI id,
 number or url. A job the branch's pipeline runs too may have posted from that pipeline; the tag-only jobs require it,
 so they post only once it ran in the tag pipeline.
+
+For a CircleCI repository that ships release assets without images or charts, commit statuses cannot
+distinguish a stable tag's pipeline from its candidate's on the same commit. `release_wait` times
+out naming the missing tag-pipeline verification. Use `devctl release wait` with the laptop's
+CircleCI login to verify that pipeline and its release assets.
 
 There is no `pr_rerun`, `ci_jobs`, `ci_rerun` or `release_rerun`, and no failed-log tail: they read or write CircleCI.
 A coding agent that meets a flaky job reports it, or pushes a commit that rebuilds.
