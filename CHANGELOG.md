@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `rollout wait` gives Flux until `--timeout` to apply a GitOps version selector when no deployment
+  follows the requested version yet, then waits for its rollout within that same budget. Sources
+  that still exclude the version are reported as `not_following` with exit 3 only at the deadline.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
