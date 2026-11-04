@@ -120,7 +120,7 @@ func TestRedeliveryMustCreatePipeline(t *testing.T) {
 				pipelineListing(headPipeline("p1", 12, "abc")),
 				{Status: http.StatusForbidden, Body: map[string]any{"message": "observation refused"}},
 			},
-			wantCode: agentcli.ExitUsage, wantReason: "observation refused",
+			wantCode: agentcli.ExitRemoteError, wantReason: "observation refused",
 		},
 	}
 	for _, tc := range testCases {
