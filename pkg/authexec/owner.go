@@ -34,12 +34,13 @@ func GHOwner(args []string, environ []string, remotes func() string) string {
 		}
 		return ""
 	}
-	if len(args) >= 3 && repoCommands[args[0]] && !strings.HasPrefix(args[2], "-") {
-		if owner := urlOwner(args[2]); owner != "" {
+	if len(args) >= 3 && repoCommands[args[0]] {
+		repo := repositoryArgument(args)
+		if owner := urlOwner(repo); owner != "" {
 			return owner
 		}
-		if args[0] == "repo" && strings.Count(args[2], "/") == 1 {
-			return repoOwner(args[2])
+		if args[0] == "repo" && strings.Count(repo, "/") == 1 {
+			return repoOwner(repo)
 		}
 	}
 flags:
@@ -56,6 +57,40 @@ flags:
 		}
 	}
 	return defaultOwner(environ, remotes)
+}
+
+// repositoryValueFlags consume a value before the positional selector of a
+// repository command. Attached values already occupy just one argument.
+var repositoryValueFlags = map[string]bool{
+	"--repo": true, "-R": true, "--json": true, "--jq": true, "-q": true, "--template": true, "-t": true,
+	"--body": true, "-b": true, "--body-file": true, "-F": true, "--title": true, "--comment": true,
+	"--branch": true, "--base": true, "-B": true, "--head": true, "-H": true, "--color": true,
+	"--interval": true, "-i": true, "--subject": true, "--author-email": true, "-A": true, "--match-head-commit": true,
+	"--reason": true, "--ref": true, "--job": true, "-j": true, "--attempt": true,
+	"--add-assignee": true, "--remove-assignee": true, "--add-label": true, "--remove-label": true,
+	"--add-project": true, "--remove-project": true, "--add-reviewer": true, "--remove-reviewer": true,
+	"--milestone": true, "--type": true, "--name": true, "--pattern": true, "--dir": true, "--output": true,
+	"--exclude": true, "--notes-file": true, "--discussion-category": true, "--notes-start-tag": true, "--target": true,
+	"--notes": true, "--tag": true,
+}
+
+func repositoryArgument(args []string) string {
+	for i := 2; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			if i+1 < len(args) {
+				return args[i+1]
+			}
+			return ""
+		}
+		if !strings.HasPrefix(a, "-") {
+			return a
+		}
+		if repositoryValueFlags[a] || a == "-c" && (args[1] == "close" || args[1] == "reopen") || a == "-r" && args[0] == "workflow" {
+			i++
+		}
+	}
+	return ""
 }
 
 func defaultOwner(environ []string, remotes func() string) string {
