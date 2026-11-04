@@ -729,7 +729,10 @@ func (w *Waiter) probe(ctx context.Context, result *Result, p *plan) error {
 		}
 		digest, found, err := w.config.Registry.Probe(ctx, *a)
 		if err != nil {
-			a.LastProbeError = err.Error()
+			// The wait's own deadline is no registry failure; a real error stays.
+			if ctx.Err() == nil || !errors.Is(err, ctx.Err()) {
+				a.LastProbeError = err.Error()
+			}
 			if ctx.Err() != nil {
 				return err
 			}
