@@ -153,6 +153,9 @@ func (r Renderer) Render(ctx context.Context, req RenderRequest) (*Scaffold, err
 	if err := writeChartOptions(dir, fields.Name, options); err != nil {
 		return nil, microerror.Mask(err)
 	}
+	if err := openChartValueMaps(dir); err != nil {
+		return nil, microerror.Mask(err)
+	}
 
 	knows, err := knownGenFlags()
 	if err != nil {
