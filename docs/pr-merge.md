@@ -20,6 +20,10 @@ green, the pull request is merged, and the release is pullable or none follows t
 before a consumer bump or a rollout needs a second wait. A caller that cannot be held that long starts
 the same merge with `--detach` and reads its outcome later ([below](#detached-merge---detach)).
 
+When the merge commit has no release tag and its auto-release workflow's push filters exclude the
+base branch, the release wait ends immediately with `release.verdict: no_release` and the filters in
+`release.reason`. The merge exits 0; listed branches, including matching Actions globs, still wait.
+
 The tokens come from the OS keychain (`devctl auth login`, see [auth.md](auth.md)): the GitHub token
 before the first request, the CircleCI token only once the head or the tag turns out to carry a
 CircleCI configuration for a repository CircleCI builds, as in `pr wait` and `release wait`. The GitHub identity follows the repository's owner: the

@@ -35,8 +35,11 @@ the login command in `reason`, before anything is waited for.
   share releases every image) ends with exit 11, naming each tag to wait for.
 - `--pr <number>`: the pull request must be merged (otherwise exit 3). In a repository on the
   **auto-release** model the tag is the one on the merge commit, on whatever branch the pull request
-  was merged into (a release branch's tag of an older line included); the command waits for it to
-  appear, and the merge commit's auto-release run (the push run of the `auto_release` workflow) says
+  was merged into (a release branch's tag of an older line included). Before waiting for a missing tag,
+  the command reads the auto-release workflow's push branch filters at the merge commit. If no
+  auto-release workflow includes the base branch, it returns `no_release` at once, naming the filters
+  and the base. Listed branches, including Actions glob matches, still wait; an existing tag is followed
+  even when the workflow excludes the base. The merge commit's auto-release run (the push run of the `auto_release` workflow) says
   when it will not. A run that finished without a tag decided that the commits since the last release
   warranted no bump: the release that carries the merge is then the first tag on the pull request's
   base branch after the merge commit, and without one it is exit 3 with the verdict `no_release` at

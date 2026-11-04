@@ -29,7 +29,8 @@
 // without a tag decided that the commits warranted no release, so the first
 // tag on the base branch after the merge commit carries it, and without one
 // the wait ends at once as no release following the merge ([NoReleaseError]),
-// as does a repository that does not tag merge commits. A commit carrying the
+// as does a repository that does not tag merge commits or whose auto-release
+// push filters exclude the base branch. A commit carrying the
 // release tags of two versions ends it at once too ([AmbiguousReleaseError]):
 // the wait does not choose, the caller names the version. A repository that releases in two steps tags the merge commit with
 // a release candidate and a promote later cuts the stable release; with
@@ -204,6 +205,8 @@ type Waiter struct {
 	clock    agentcli.Clock
 	progress *agentcli.Progress
 	circleci CircleCI
+	// baseRef is the pull request's base, read only when branch filters need it.
+	baseRef string
 	// statusesOnly: the tag's CI is on CircleCI and read through its commit
 	// statuses (Config.CircleCIFromStatuses); circleJobs are the jobs the
 	// tag's configuration runs, each expected to post a status.
@@ -428,6 +431,7 @@ func (w *Waiter) mergeCommit(ctx context.Context) (string, error) {
 	if !merge.Merged {
 		return "", notApplicableErr("pull request %s/%s#%d is %s and not merged: there is no release to wait for", owner, repo, w.config.PR, merge.State)
 	}
+	w.baseRef = merge.BaseRef
 	return merge.MergeCommitSHA, nil
 }
 
@@ -873,10 +877,17 @@ func (w *Waiter) awaitTagForCommit(ctx context.Context, sha string, content *Tag
 		// workflow at the merge commit tags it.
 		return "", "", noReleaseErr("the team-file entry of %s/%s declares auto-release, but %s at %s holds no auto-release workflow: nothing tags the merge commit of #%d", owner, repo, workflowsDir, short(sha), number)
 	}
+	branchChecked := false
 	for {
 		tag, err := w.commitTag(ctx, sha)
 		if tag != "" || err != nil {
 			return tag, sha, err
+		}
+		if !branchChecked {
+			if err := w.checkAutoReleaseBranch(ctx, sha, auto); err != nil {
+				return "", "", err
+			}
+			branchChecked = true
 		}
 		run, err := w.autoReleaseRun(ctx, sha, auto)
 		if err != nil {
