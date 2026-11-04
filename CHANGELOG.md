@@ -9,6 +9,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Concurrent updates to `DEVCTL_KEYRING_FILE` preserve changes to every identity and readers see complete records.
+- CircleCI waits read every workflow page, so a failed or running workflow on a later page is no longer missed.
+
+- Bulk PR approval targets the checked commit, and direct merges and Align branch updates
+  require that head so a concurrent push cannot substitute unchecked code.
+- The bulk PR approval commands require readable commit statuses and every page of check runs;
+  a green status no longer hides a failed or pending Actions check.
+- `gen dependabot` detects root Python requirements, Pipfile, setup.cfg and pyproject manifests.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
@@ -57,6 +66,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `.github/workflows/zz_generated.*`, which align-files regenerates.
 
 ### Added
+
+- `ci job --step-output` includes the first and last lines of every step's output, including
+  successful steps, so a soft-passed nancy scanner outage is visible without the CircleCI UI.
+  `--lines` bounds each excerpt (200 by default); unreadable output is reported per step.
 
 - `ci job` takes the URL a CircleCI commit status links, alone, including a GitHub App pipeline's
   `app.circleci.com/workflow/<id>/job/<id>`, which it resolves to the project and job number through the workflow.
@@ -520,13 +533,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [8.140.0] - 2026-10-17
 
 ### Changed
-
-- `reposetup.Remote.Person(ctx, owner, teams...)` checks membership only in the supplied team slugs, replacing
-  the previous listing of all the caller's teams in `owner`. Calls without teams still compile but now return
-  only the login, with empty `Teams` and `Unread`. Guard callers must pass the owning and fallback teams;
-  callers needing all memberships must list them through the GitHub client's `Teams.ListUserTeams`, following
-  pagination and filtering by organisation. Unreadable requested memberships are returned in `Person.Unread`,
-  separately from known non-membership. See the [migration and caller audit](docs/repo.md#reposetup-library-person-memberships).
 
 - `gen circleci`: the generated pipelines pin architect orb 10.14.0, whose `go-test` / `go-build` run `govulncheck`
   next to nancy. It checks the code against the Go vulnerability database, which needs no account or credits, and
