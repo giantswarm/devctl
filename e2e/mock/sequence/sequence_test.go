@@ -1,14 +1,26 @@
 package sequence
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDelayedResponseHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/slow", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+	err := Write(w, req, Response{Delay: time.Hour, Body: "unreached"})
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, w.Body.String())
+}
 
 func TestNextAdvancesAndRepeatsTheLast(t *testing.T) {
 	s, err := New(Routes{
@@ -88,6 +100,34 @@ func TestNewRefusesMalformedRoutes(t *testing.T) {
 	}
 	_, err := New(Routes{"GET /a": nil})
 	assert.Error(t, err, "no responses")
+}
+
+func TestNewRefusesMalformedQueries(t *testing.T) {
+	for _, query := range []string{
+		"branch=%",
+		"branch=%zz",
+		"branch=feature;other",
+		"branch=feature&page-token=%zz",
+		"br%zzanch=feature",
+	} {
+		t.Run(query, func(t *testing.T) {
+			key := "GET /pipelines?" + query
+			s, err := New(Routes{key: {{}}})
+			assert.Nil(t, s)
+			assert.ErrorContains(t, err, key)
+		})
+	}
+}
+
+func TestNextMatchesEscapedQueryValues(t *testing.T) {
+	s, err := New(Routes{"GET /pipelines?branch=feature%3B100%25": {{Body: "matched"}}})
+	require.NoError(t, err)
+
+	resp, ok := s.Next(httptest.NewRequest(http.MethodGet, "/pipelines?branch=feature%3B100%25&page-token=next", nil))
+	require.True(t, ok)
+	assert.Equal(t, "matched", resp.Body)
+	_, ok = s.Next(httptest.NewRequest(http.MethodGet, "/pipelines?branch=other", nil))
+	assert.False(t, ok, "the escaped branch remains a filter")
 }
 
 func TestResponseBytes(t *testing.T) {

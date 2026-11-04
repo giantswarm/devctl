@@ -113,11 +113,7 @@ type failure struct {
 // deadline is the caller's deadline on the unscaled clock, where the
 // answers' reset times are.
 func (r *Retrying) deadline(ctx context.Context) (time.Time, bool) {
-	d, ok := ctx.Deadline()
-	if !ok {
-		return time.Time{}, false
-	}
-	return r.Clock.Now().Add(time.Duration(float64(time.Until(d)) / r.Clock.Scale())), true
+	return r.Clock.deadline(ctx)
 }
 
 // try sends req once. A failure worth another try is returned with no

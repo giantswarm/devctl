@@ -17,10 +17,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Response is one scripted answer of a route.
 type Response struct {
+	// Delay is real request latency, independent of the command's clock.
+	Delay time.Duration `yaml:"delay"`
 	// Status is the HTTP status; 0 reads as 200.
 	Status int `yaml:"status"`
 	// Headers are set on the response. A mock adds its own defaults for the
@@ -135,6 +138,10 @@ func New(routes Routes) (*Script, error) {
 		if err != nil {
 			return nil, fmt.Errorf("route %q: %w", key, err)
 		}
+		query, err := url.ParseQuery(u.RawQuery)
+		if err != nil {
+			return nil, fmt.Errorf("route %q: %w", key, err)
+		}
 		if len(responses) == 0 {
 			return nil, fmt.Errorf("route %q has no responses", key)
 		}
@@ -142,7 +149,7 @@ func New(routes Routes) (*Script, error) {
 			key:       key,
 			method:    strings.ToUpper(method),
 			path:      u.Path,
-			query:     u.Query(),
+			query:     query,
 			responses: responses,
 		})
 	}
@@ -203,6 +210,15 @@ func (s *Script) Requests() []Request {
 // response resets the connection instead. Content-Length defaults to the body's
 // length unless a header already sets it.
 func Write(w http.ResponseWriter, r *http.Request, resp Response) error {
+	if resp.Delay > 0 {
+		timer := time.NewTimer(resp.Delay)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-r.Context().Done():
+			return r.Context().Err()
+		}
+	}
 	if resp.Reset {
 		return reset(w)
 	}
