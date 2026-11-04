@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
@@ -49,6 +50,10 @@ type failedWorkflow struct {
 // statusCompleted is the status of a finished Actions run or check run.
 const statusCompleted = "completed"
 
+// uploadReleaseAssetsJob is the architect job that attaches CLI binaries
+// to the GitHub release, with or without an explicit workflow job name.
+const uploadReleaseAssetsJob = "upload-release-assets"
+
 // The Actions conclusions that are failures.
 var failedConclusions = []string{"failure", "cancelled", "timed_out", "startup_failure"}
 
@@ -56,11 +61,11 @@ var failedConclusions = []string{"failure", "cancelled", "timed_out", "startup_f
 // the tag when the repository has no CircleCI, into result. The verdict is
 // the workflows': their statuses say whether the tag's CI is green, failed
 // or still running. The jobs of a workflow are read only where they are
-// needed, with needJobs for the artifact derivation and for a failed
-// workflow to name the jobs that failed, and never for the setup workflow:
+// needed, with needJobs for artifact derivation and asset-upload detection,
+// and for a failed workflow to name the jobs that failed, never for setup:
 // CircleCI answers 404 on the jobs of a workflow it lists, a finished one
 // included, for a while after the workflow exists and for as long as its
-// job data lags, and a green pipeline is green without them.
+// job data lags. A wait that needs those jobs keeps polling until they appear.
 func (w *Waiter) pipelineState(ctx context.Context, result *Result, needJobs bool) (*pipelineState, error) {
 	if w.statusesOnly {
 		return w.circleStatusesState(ctx, result)
@@ -116,6 +121,9 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result, needJobs boo
 			case err == nil:
 				for _, job := range jobs {
 					state.jobs[job.Name] = true
+					if job.Name == uploadReleaseAssetsJob || strings.HasSuffix(job.Name, "/"+uploadReleaseAssetsJob) {
+						doc.AssetUploadJobs = append(doc.AssetUploadJobs, run.Name+"/"+job.Name)
+					}
 				}
 				if failed {
 					var verdict string
@@ -169,6 +177,7 @@ func (w *Waiter) pipelineState(ctx context.Context, result *Result, needJobs boo
 		state.jobs = nil
 	}
 	sort.Strings(doc.FailedJobs)
+	sort.Strings(doc.AssetUploadJobs)
 	state.failedJobs = doc.FailedJobs
 	result.Pipeline = doc
 	return state, nil

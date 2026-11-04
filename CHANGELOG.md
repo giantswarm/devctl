@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release wait` for release assets requires the requested tag's own CircleCI pipeline and waits
+  for at least one asset when that pipeline runs `upload-release-assets`, including when a stable
+  tag shares its candidate's commit. The document names the upload jobs and asset count. Commit
+  statuses alone cannot prove this pipeline; those waits time out naming the missing verification.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
