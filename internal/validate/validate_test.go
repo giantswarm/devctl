@@ -54,7 +54,11 @@ func Test_Version(t *testing.T) {
 		{name: "semver", value: "1.2.3", valid: true},
 		{name: "leading v", value: "v1.2.3", valid: true},
 		{name: "prerelease", value: "v1.2.3-rc1", valid: true},
+		{name: "hyphenated prerelease", value: "1.2.3-alpha-beta", valid: true},
+		{name: "branch and date prerelease", value: "0.15.1-dev.gh-readonl--ab3270cae7f.2026-08-20.21-58-02.h4162ff7", valid: true},
 		{name: "build metadata", value: "1.2.3+build.5", valid: true},
+		{name: "hyphenated build metadata", value: "1.2.3+build-linux", valid: true},
+		{name: "hyphenated prerelease and build", value: "v1.2.3-alpha-beta+build-linux.5", valid: true},
 		{name: "major only", value: "v2", valid: true},
 		{name: "empty", value: "", valid: false},
 		{name: "path traversal", value: "../../etc/passwd", valid: false},
@@ -62,6 +66,10 @@ func Test_Version(t *testing.T) {
 		{name: "leading dash reads as a flag", value: "-1.2.3", valid: false},
 		{name: "query string", value: "1.2.3?x=1", valid: false},
 		{name: "space", value: "1.2.3 4", valid: false},
+		{name: "hyphenated prerelease path separator", value: "1.2.3-alpha-beta/other", valid: false},
+		{name: "hyphenated build Windows path separator", value: `1.2.3+build-linux\other`, valid: false},
+		{name: "hyphenated build fragment", value: "1.2.3+build-linux#other", valid: false},
+		{name: "hyphenated prerelease argument separator", value: "1.2.3-alpha-beta --force", valid: false},
 	}
 
 	for _, tc := range testCases {
