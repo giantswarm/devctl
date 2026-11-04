@@ -44,6 +44,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
+	if err := requireCommittedConfigMap(ctx, checkout.Dir, r.flag.Cluster); err != nil {
+		return microerror.Mask(err)
+	}
+
 	all, err := reservation.List(reservation.ListRequest{
 		RepoDir: checkout.Dir,
 		Cluster: r.flag.Cluster,
