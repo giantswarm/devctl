@@ -59,6 +59,14 @@ func (f *flag) Validate() error {
 		return microerror.Maskf(invalidFlagError, "--%s must be one of <%s>", flagEcosystems, strings.Join(gen.AllowedEcosystems(), "|"))
 	}
 
+	seen := make(map[string]bool, len(f.Ecosystems))
+	for _, ecosystem := range f.Ecosystems {
+		if seen[ecosystem] {
+			return microerror.Maskf(invalidFlagError, "--%s contains duplicate ecosystem %q", flagEcosystems, ecosystem)
+		}
+		seen[ecosystem] = true
+	}
+
 	return nil
 }
 
