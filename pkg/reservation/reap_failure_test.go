@@ -34,12 +34,12 @@ func TestReapStopsAfterARefusedDirtyReset(t *testing.T) {
 	gittest.RunGit(t, other, "push", "origin", "main")
 	remoteTip := gittest.GitOutput(t, origin, "rev-parse", "main")
 	basePath := filepath.Join(dir, fixtureAppFile)
-	base, err := os.ReadFile(basePath)
+	base, err := os.ReadFile(basePath) // #nosec G304 -- fixture path under t.TempDir()
 	if err != nil {
 		t.Fatal(err)
 	}
 	wip := append([]byte("# local work in progress\n"), base...)
-	if err := os.WriteFile(basePath, wip, 0o600); err != nil {
+	if err := os.WriteFile(basePath, wip, 0o600); err != nil { // #nosec G703 -- fixture path under t.TempDir()
 		t.Fatal(err)
 	}
 

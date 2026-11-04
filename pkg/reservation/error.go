@@ -198,7 +198,9 @@ var pushFailedError = &microerror.Error{
 
 // IsPushFailed asserts pushFailedError.
 func IsPushFailed(err error) bool {
-	return microerror.Cause(err) == pushFailedError
+	// Sweeps join earlier refusals with a later push failure. Every branch of
+	// the error tree matters: continuing would push the failed commit too.
+	return errors.Is(err, pushFailedError)
 }
 
 // dirtyWorktreeError indicates that a rejected push left the working tree
