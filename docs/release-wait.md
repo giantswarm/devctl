@@ -183,7 +183,10 @@ An artifact is available when its manifest resolves to a digest:
   yet) means not yet; **any other answer** is the probe's failure, not a slow pipeline, and ends the
   wait as exit 7 at once: a 401 from the private registry names `docker login`, a 401 from the
   public registry says the artifact is not public. A connection failure is retried twice before it
-  counts as such.
+  counts as such. If the wait times out before those retries finish, the timeout reason names the
+  artifact's last probe error and `artifacts[].lastProbeError` carries it, with or without `--progress`.
+  A later answered probe (missing or available) clears the error; an artifact without an unresolved
+  error keeps its usual `missing` or `available` state and omits `lastProbeError`.
 
 `--catalog` additionally waits until `https://giantswarm.github.io/<catalog>/index.yaml` lists every
 chart at the version; the index is fetched anew every time, so no cached copy answers. A pre-release
@@ -312,7 +315,7 @@ stderr.
 | `repository`, `tag`, `sha` | What was waited for. `tag` is empty when it never appeared; `sha` is the tag's commit (with `--pr` the merge commit). |
 | `releaseModel` | `auto-release` or `legacy`. |
 | `ciModel` | `generated`, `hand-written`, `actions` or `none`. |
-| `artifacts[]` | `kind` (`image`, `chart`, `release-asset`), `reference` (the pullable reference, or the asset's download URL), `digest` (empty while missing), `state` (`available`, `missing`). Empty until the artifacts are known (hand-written CI before its pipeline exists). |
+| `artifacts[]` | `kind` (`image`, `chart`, `release-asset`), `reference` (the pullable reference, or the asset's download URL), `digest` (empty while missing), `state` (`available`, `missing`), optional `lastProbeError` (the last unresolved probe error). Empty until the artifacts are known (hand-written CI before its pipeline exists). |
 | `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status, conclusion}]` (newest run per name; for `ciModel` `actions` one entry per check run of the tag's commit, with its `conclusion`, `id`, `number` empty and `url` the commit's checks page), `failedJobs[]`, `unfinished[]` (the workflows not finished, `name (status)`, with `jobs not visible yet` when CircleCI does not list them yet; what a timeout was waiting for, empty at exit 0). When CircleCI names no pipeline for the tag and its commit's CircleCI statuses are the verdict, `workflows` are those statuses' jobs and `unfinished` the pending ones, with `id`, `number` and `url` empty. `null` for a repository without CircleCI and without check runs on the tag, or while the CircleCI pipeline does not exist. |
 | `actions[]` | The Actions runs the tag triggered, for a repository without CircleCI: `name`, `runId`, `status`, `conclusion`, `url`. |
 | `statuses[]` | The newest commit status of every context of the tag's commit, `context`, `state` (`pending`, `success`, `failure`, `error`) and `url`, read once the artifacts are available and the tag's CI is green; empty before. |
