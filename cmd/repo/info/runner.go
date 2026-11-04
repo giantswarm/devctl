@@ -30,7 +30,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
 	}
-	return microerror.Mask(r.run(context.Background()))
+	return microerror.Mask(r.run(cmd.Context()))
 }
 
 func (r *runner) run(ctx context.Context) error {
