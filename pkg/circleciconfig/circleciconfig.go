@@ -409,18 +409,20 @@ func evaluate(statement any, config map[string]any, run Run) (bool, bool) {
 			return !v, known
 		case opAnd, opOr:
 			result := op == opAnd
+			allKnown := true
 			for _, a := range args {
 				v, known := evaluate(a, config, run)
 				if !known {
-					return false, false
+					allKnown = false
+					continue
 				}
-				if op == opAnd {
-					result = result && v
-				} else {
-					result = result || v
+				if op == opAnd && !v || op == opOr && v {
+					// One known operand decides the result even when
+					// another operand is unavailable before the run.
+					return v, true
 				}
 			}
-			return result, true
+			return result, allKnown
 		case "equal":
 			var first any
 			for i, a := range args {
