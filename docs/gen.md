@@ -111,10 +111,15 @@ devctl gen workflows --flavour app --language generic --check-readme-links=false
 
 Creates common `Makefile` and includes in the root directory.
 
+For Go repositories, `make install` sets `CGO_ENABLED=0`, like the release build targets,
+and writes the binary to `$(go env GOPATH)/bin`. On Linux this keeps the statically linked
+binary from calling glibc's hostname resolver through cgo. Regenerate existing repositories'
+Makefiles to pick up this fix.
+
 Example:
 
 ```nohighlight
-devctl gen workflows --flavour cli --language go
+devctl gen makefile --flavour cli --language go
 ```
 
 ## Generating pre-commit configuration
