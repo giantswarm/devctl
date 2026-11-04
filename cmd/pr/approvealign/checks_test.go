@@ -47,7 +47,7 @@ func TestProcessPRChecks(t *testing.T) {
 					var body any
 					switch req.URL.Path {
 					case "/repos/o/r/pulls/7":
-						body = map[string]any{"head": map[string]any{"sha": "abc"}, "mergeable_state": "clean"}
+						body = map[string]any{"title": alignTitle, "head": map[string]any{"sha": "abc"}, "mergeable_state": "clean"}
 					case "/repos/o/r/commits/abc/status":
 						if tc.statusCode != 0 {
 							code = tc.statusCode
