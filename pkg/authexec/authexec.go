@@ -172,8 +172,12 @@ func without(environ []string, name string) []string {
 // executable of that name on path that is not self.
 func LookPath(name, path, self string) (string, error) {
 	selfResolved := resolve(self)
+	return lookPath(name, path, func(candidate string) bool { return resolve(candidate) == selfResolved })
+}
+
+func lookPath(name, path string, isDevctl func(string) bool) (string, error) {
 	if strings.ContainsRune(name, filepath.Separator) || strings.ContainsRune(name, '/') {
-		if resolve(name) == selfResolved {
+		if isDevctl(name) {
 			return "", fmt.Errorf("%s is devctl itself", name)
 		}
 		if !executable(name) {
@@ -191,7 +195,7 @@ func LookPath(name, path, self string) (string, error) {
 			if !executable(candidate) {
 				continue
 			}
-			if resolve(candidate) == selfResolved {
+			if isDevctl(candidate) {
 				past = len(found)
 				continue
 			}

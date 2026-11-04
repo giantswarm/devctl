@@ -1,6 +1,7 @@
 package info
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -50,11 +51,11 @@ func (r *runner) run(ctx context.Context) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	print(r.stdout, session.Endpoint, info)
-	return nil
+	return microerror.Mask(print(r.stdout, session.Endpoint, info))
 }
 
-func print(w io.Writer, endpoint string, info *manager.Info) {
+func print(output io.Writer, endpoint string, info *manager.Info) error {
+	w := bufio.NewWriter(output)
 	fmt.Fprintf(w, "%s %s at %s (tools x_%s_*)\n", manager.Server, info.Version, endpoint, info.ToolPrefix)
 	if c := info.Caller; c != nil {
 		fmt.Fprintf(w, "caller: %s (id %d), %s", c.Login, c.ID, info.Auth.Mode)
@@ -101,4 +102,5 @@ func print(w io.Writer, endpoint string, info *manager.Info) {
 		modes += "; apply refused"
 	}
 	fmt.Fprintf(w, "writes: modes %s; tools %s\n", modes, strings.Join(caps.WriteTools, ", "))
+	return w.Flush()
 }
