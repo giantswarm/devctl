@@ -80,7 +80,8 @@ func (r *Result) Changed() bool {
 }
 
 // Ensure makes repo build on a GitHub App pipeline, idempotently: it finds
-// the project's GitHub App definition or creates DefinitionName(repo), and
+// the project's GitHub App definition that checks out repo through the App,
+// or creates DefinitionName(repo), and
 // gives it an all-pushes trigger unless it has an enabled trigger already.
 // With migrate the OAuth pipeline's triggers are deleted after, so a push
 // builds once, on the App; the OAuth definition itself is CircleCI's and
@@ -107,10 +108,17 @@ func Ensure(ctx context.Context, ci CircleCI, repo Repository, migrate bool) (*R
 	// when none is, so a dormant definition never gets a second trigger.
 	var app, dormant *circleciclient.PipelineDefinition
 	var oauth []circleciclient.PipelineDefinition
+	repoID := strconv.FormatInt(repo.ID, 10)
 	triggered := map[string]bool{}
 	for i, d := range defs {
 		if !d.GitHubApp() {
 			oauth = append(oauth, d)
+			continue
+		}
+		// A project may also have App pipelines for another checkout.
+		// They cannot replace this repository's OAuth pipeline. Shared
+		// configuration is fine: only the checkout must name repo.
+		if d.CheckoutSource.Provider != circleciclient.ProviderGitHubApp || d.CheckoutSource.Repo.ExternalID != repoID {
 			continue
 		}
 		triggers, err := ci.ListTriggers(ctx, project.ID, d.ID)
@@ -129,8 +137,7 @@ func Ensure(ctx context.Context, ci CircleCI, repo Repository, migrate bool) (*R
 		app = dormant
 	}
 	if app == nil {
-		id := strconv.FormatInt(repo.ID, 10)
-		def := circleciclient.AppDefinition(DefinitionName(repo.Name), "GitHub App pipeline, created by devctl repo follow-circleci", id)
+		def := circleciclient.AppDefinition(DefinitionName(repo.Name), "GitHub App pipeline, created by devctl repo follow-circleci", repoID)
 		app, err = ci.CreatePipelineDefinition(ctx, project.ID, def)
 		if err != nil {
 			return nil, microerror.Mask(err)
