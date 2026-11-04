@@ -22,8 +22,8 @@ type flag struct {
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().IntVar(&f.PR, "pr", 0, "Wait for the release auto-release tagged from this merged pull request instead of a version")
-	cmd.Flags().DurationVar(&f.Timeout, "timeout", releasewait.DefaultTimeout, "Give up after this long (exit 2)")
-	cmd.Flags().BoolVar(&f.Catalog, "catalog", false, "Also wait for the catalog index to list every chart")
+	cmd.Flags().DurationVar(&f.Timeout, "timeout", releasewait.DefaultTimeout, "Give up after this long (exit 2); --catalog permits one additional 10m for confirmed repository entries to reach Pages")
+	cmd.Flags().BoolVar(&f.Catalog, "catalog", false, "Also wait for Pages to list every chart; repository publication permits one 10m extension")
 	cmd.Flags().StringSliceVar(&f.Images, "image", nil, releasewait.ImageFlagUsage)
 	cmd.Flags().StringSliceVar(&f.Charts, "chart", nil, releasewait.ChartFlagUsage)
 	f.FailedLog.Init(cmd)
