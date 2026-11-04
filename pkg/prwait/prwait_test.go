@@ -541,7 +541,8 @@ func Test_Wait_notApplicable(t *testing.T) {
 	}{
 		{name: "conflicting", pull: pull("dirty", nil), want: "conflicts with main"},
 		{name: "behind a strict base", pull: pull("behind", nil), want: "behind main"},
-		{name: "draft", pull: pull("clean", map[string]any{"draft": true}), want: "a draft"},
+		{name: "conflicting draft", pull: pull("dirty", map[string]any{"draft": true}), want: "conflicts with main"},
+		{name: "closed draft", pull: pull("clean", map[string]any{"draft": true, "state": "closed"}), want: "is closed"},
 		{name: "closed", pull: pull("clean", map[string]any{"state": "closed"}), want: "is closed"},
 		{name: "merged", pull: pull("clean", map[string]any{"state": "closed", "merged": true}), want: "is merged"},
 	}
@@ -554,6 +555,9 @@ func Test_Wait_notApplicable(t *testing.T) {
 			}
 			if result.HeadSHA != sha {
 				t.Errorf("the document still names the head: want %s, got %q", sha, result.HeadSHA)
+			}
+			if want := tc.pull.Body.(map[string]any)["draft"].(bool); result.Draft != want {
+				t.Errorf("want draft %v even on a refusal, got %v", want, result.Draft)
 			}
 			if n := len(h.github.Requests()); n != 1 {
 				t.Errorf("want the pull request read and nothing else, got %d requests", n)

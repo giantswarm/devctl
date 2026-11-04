@@ -25,7 +25,11 @@ CircleCI: a job behind requires: has posted nothing to GitHub until it starts),
 no GitHub Actions run of the head queued, in progress, waiting or awaiting a
 maintainer's approval, and every status context the base requires reported.
 
-The wait ends before it starts for a pull request no CI can turn green: a draft,
+Drafts wait for their checks like other open pull requests; the document's
+draft field reports the latest state. A green draft still cannot be merged
+by pr merge.
+
+The wait ends before it starts for a pull request no CI can turn green:
 a closed or merged one, one conflicting with its base, one behind a base that
 requires branches to be up to date. A failure anywhere ends the wait at once, and
 so do Actions runs awaiting a member's approval when nothing else is pending.
@@ -49,7 +53,7 @@ retry is a warning and the wait polls again; the wait ignores SIGHUP and reads
 no stdin, so it outlives its terminal.
 
 The document (schemaVersion 1): command, exitCode, verdict, reason, warnings,
-startedAt, finishedAt, repository, number, headSha, baseRef,
+startedAt, finishedAt, repository, number, headSha, baseRef, draft,
 checks[{name, source (check_run|status), status, conclusion, url, required}],
 circleci{pipelineId, pipelineNumber, workflows[{name, status, url}]} when
 consulted, actions[{name, runId, status, conclusion, url}], at a timeout
@@ -66,7 +70,7 @@ Exit codes:
   1  red: a check, status, run or workflow failed; reason names it
   2  timeout before an outcome; unfinished names what was still open, the
      reason an outage that left the last poll unanswered
-  3  not applicable: draft, closed, merged, conflicting, behind a strict base
+  3  not applicable: closed, merged, conflicting, behind a strict base
   4  a required status context never reported, or Actions runs await a
      member's approval and nothing else is pending
   7  usage or a tooling failure
