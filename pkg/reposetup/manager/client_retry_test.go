@@ -29,6 +29,7 @@ func (f musterRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 type retryMuster struct {
 	t               *testing.T
 	sse             bool
+	tool            string
 	answers         []string
 	initializations int
 	callTimes       []time.Time
@@ -62,7 +63,7 @@ func (m *retryMuster) RoundTrip(r *http.Request) (*http.Response, error) {
 		wantParams := map[string]any{
 			"name": "call_tool",
 			"arguments": map[string]any{
-				"name":      ToolGetInfo,
+				"name":      m.tool,
 				"arguments": map[string]any{"repository": "giantswarm/my-service"},
 			},
 		}
@@ -156,7 +157,7 @@ func TestClientCallInterrupted(t *testing.T) {
 		for _, tc := range cases {
 			t.Run(fmt.Sprintf("SSE=%t/%s", sse, tc.name), func(t *testing.T) {
 				synctest.Test(t, func(t *testing.T) {
-					m := &retryMuster{t: t, sse: sse, answers: tc.answers}
+					m := &retryMuster{t: t, sse: sse, tool: ToolGetInfo, answers: tc.answers}
 					c := &Client{Endpoint: "https://muster.example/mcp", Token: "test-token", HTTPClient: &http.Client{Transport: m}}
 					started := time.Now()
 					got, err := c.Call(t.Context(), ToolGetInfo, map[string]any{"repository": "giantswarm/my-service"})
@@ -196,7 +197,7 @@ func TestClientCallInterruptedContext(t *testing.T) {
 					wantErr = context.DeadlineExceeded
 				}
 				defer cancel()
-				m := &retryMuster{t: t, answers: []string{interruptedAnswer}}
+				m := &retryMuster{t: t, tool: ToolGetInfo, answers: []string{interruptedAnswer}}
 				transport := musterRoundTripper(func(r *http.Request) (*http.Response, error) {
 					response, err := m.RoundTrip(r)
 					if !deadline && len(m.callTimes) == 1 {
@@ -212,6 +213,34 @@ func TestClientCallInterruptedContext(t *testing.T) {
 				}
 				if elapsed := time.Since(started); elapsed >= time.Second {
 					t.Errorf("context did not stop the backoff: %v", elapsed)
+				}
+			})
+		})
+	}
+}
+
+// An interrupted write may already have taken effect. Preserve its error so
+// the caller checks the effect before deciding whether to repeat the write.
+func TestClientCallInterruptedWrites(t *testing.T) {
+	tools := []string{
+		ToolCreateRepository, ToolAdoptRepository, ToolUpdateRepository,
+		ToolTransferRepository, ToolSetLifecycle, ToolApproveChange,
+		ToolAlignRepository, ToolRefreshRepository, ToolSweepInventory,
+		ToolAuthLogin, ToolPrefix + "future_tool",
+	}
+	for i, tool := range tools {
+		t.Run(fmt.Sprintf("case %d: %s", i, tool), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				m := &retryMuster{t: t, tool: tool, answers: []string{interruptedAnswer}}
+				c := &Client{Endpoint: "https://muster.example/mcp", Token: "test-token", HTTPClient: &http.Client{Transport: m}}
+				started := time.Now()
+				got, err := c.Call(t.Context(), tool, map[string]any{"repository": "giantswarm/my-service"})
+				want := microerror.Maskf(toolError, "%s: interrupted: muster replica is shutting down", tool)
+				if got != nil || !IsTool(err) || err.Error() != want.Error() {
+					t.Fatalf("got (%s, %v), want (nil, %v)", got, err, want)
+				}
+				if len(m.callTimes) != 1 || time.Since(started) != 0 {
+					t.Fatal("interrupted write must return immediately without retrying")
 				}
 			})
 		})

@@ -9,8 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- Repository manager calls through muster retry a retryable `interrupted` answer once after a one-second backoff,
+- Read-only repository manager calls through muster retry a retryable `interrupted` answer once after a one-second backoff,
   bounded by the caller's context. Other errors and a failed retry keep their original failure.
+  Interrupted writes and unknown tools are surfaced without retry because their effect may already have occurred.
 
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default

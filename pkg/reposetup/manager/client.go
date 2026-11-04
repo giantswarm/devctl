@@ -120,7 +120,8 @@ func (c *Client) GetRepository(ctx context.Context, repository string) (*Record,
 // call (a tool it does not know, a toolset that excludes it), is [IsTool]
 // with the text; an endpoint that refuses the bearer is [IsAuthRequired];
 // one that does not answer is [IsUnreachable]. A retryable interruption from
-// muster is retried once after a backoff, bounded by ctx.
+// muster is retried once for known read-only tools after a backoff, bounded
+// by ctx. Writes retain the interruption because their outcome is unknown.
 func (c *Client) Call(ctx context.Context, tool string, args map[string]any) (json.RawMessage, error) {
 	if c.Endpoint == "" {
 		return nil, microerror.Maskf(invalidConfigError, "%T.Endpoint must not be empty", c)
@@ -148,7 +149,7 @@ func (c *Client) Call(ctx context.Context, tool string, args map[string]any) (js
 		if err != nil {
 			return nil, microerror.Maskf(unreachableError, "%s: %s's result is not an MCP result: %v", tool, MetaToolCall, err)
 		}
-		if attempt > 0 || !outer.retryableInterrupted() {
+		if attempt > 0 || !readOnlyTool(tool) || !outer.retryableInterrupted() {
 			break
 		}
 
@@ -184,6 +185,17 @@ func (c *Client) Call(ctx context.Context, tool string, args map[string]any) (js
 		return nil, microerror.Maskf(toolError, "%s: empty result", tool)
 	}
 	return payload, nil
+}
+
+// readOnlyTool limits retries to calls that cannot duplicate a write whose
+// outcome was lost during interruption. Unknown tools fail closed.
+func readOnlyTool(tool string) bool {
+	switch tool {
+	case ToolGetInfo, ToolListRepositories, ToolGetRepository, ToolValidateRepository, ToolWatchRepository:
+		return true
+	default:
+		return false
+	}
 }
 
 // toolResult is an MCP tool result, the outer one of call_tool or the
