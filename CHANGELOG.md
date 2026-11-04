@@ -58,6 +58,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `gen makefile --flavour app` emits `ats-test` to run the pinned ATS 1.x image
+  against a built chart in a temporary kind cluster, honoring `.ats/kind-config.yaml`
+  and skipping repositories without an ATS suite.
+
 - `ci job` takes the URL a CircleCI commit status links, alone, including a GitHub App pipeline's
   `app.circleci.com/workflow/<id>/job/<id>`, which it resolves to the project and job number through the workflow.
 
