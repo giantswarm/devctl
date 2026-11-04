@@ -74,7 +74,7 @@ func Test_Wait_draftChecks(t *testing.T) {
 			if err := json.Unmarshal(data, &fields); err != nil {
 				t.Fatal(err)
 			}
-			if fields["draft"] != tc.finalDraft {
+			if draft, _ := fields["draft"].(bool); draft != tc.finalDraft {
 				t.Errorf("JSON must report draft: %v, got %s", tc.finalDraft, data)
 			}
 		})
