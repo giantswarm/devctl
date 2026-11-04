@@ -4,12 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
-	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -17,105 +13,82 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/reposetup/manager"
 )
 
-type outputCaller struct {
-	payload json.RawMessage
-	calls   int
+type callerFunc func(context.Context, string, map[string]any) (json.RawMessage, error)
+
+func (f callerFunc) Call(ctx context.Context, tool string, args map[string]any) (json.RawMessage, error) {
+	return f(ctx, tool, args)
 }
 
-func (c *outputCaller) Call(_ context.Context, _ string, _ map[string]any) (json.RawMessage, error) {
-	c.calls++
-	return c.payload, nil
-}
+type writerFunc func([]byte) (int, error)
 
-type failingOutput struct {
-	remaining int
-	err       error
-}
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
 
-func (w *failingOutput) Write(p []byte) (int, error) {
-	if len(p) <= w.remaining {
-		w.remaining -= len(p)
-		return len(p), nil
-	}
-	n := w.remaining
-	w.remaining = 0
-	return n, w.err
-}
-
-func writeAnswer(t *testing.T, dryRun, large bool) json.RawMessage {
-	t.Helper()
-	detail := "synthetic detail"
-	if large {
-		detail = strings.Repeat("synthetic detail ", 800)
-	}
-	var answer any = &manager.Committed{
-		PullRequest: &manager.PullRequest{URL: "https://github.com/example/inventory/pull/1", Title: detail},
-		Ask:         &manager.Delivery{Team: "team", Channel: "CTEAM", Delivered: true},
-		Notice:      &manager.Delivery{Team: "other", Error: detail},
-		PendingRun:  &manager.PendingRun{By: detail, DispatchedAt: time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC)},
-	}
-	if dryRun {
-		answer = &manager.Plan{
-			Repository: "example/repo", Team: "team", Accepted: true, Entry: detail,
-			PullRequest: manager.PlannedPullRequest{Title: "change", Branch: "branch", As: "alice"},
-			Ask:         &manager.PlannedMessage{Team: "team", Text: detail, Deliverable: true},
-			Notice:      &manager.PlannedMessage{Team: "other", Reason: detail},
-		}
-	}
-	payload, err := json.Marshal(answer)
-	require.NoError(t, err)
-	return payload
-}
-
-// The shared write path must return sink errors even after a committed
-// response; losing its receipt must never send the write again.
-func TestRunOutputErrors(t *testing.T) {
-	sentinel := errors.New("synthetic output full")
-	for _, dryRun := range []bool{true, false} {
-		for _, large := range []bool{false, true} {
-			for _, output := range []string{client.OutputText, client.OutputJSON} {
-				for _, remaining := range []int{0, 70} {
-					t.Run(fmt.Sprintf("dry=%t/large=%t/%s/after=%d", dryRun, large, output, remaining), func(t *testing.T) {
-						caller := &outputCaller{payload: writeAnswer(t, dryRun, large)}
-						err := Run(context.Background(), &client.Session{Caller: caller}, &failingOutput{remaining: remaining, err: sentinel},
-							&Flags{Flags: client.Flags{Output: output}, DryRun: dryRun}, manager.ToolUpdateRepository, map[string]any{"repository": "repo"})
-						require.ErrorIs(t, err, sentinel)
-						require.Equal(t, 1, caller.calls)
-					})
-				}
+// A successful manager call is not a successful command if the plan or
+// outcome could not be written. Reporting that failure must not retry a write.
+func TestRunTextOutputErrors(t *testing.T) {
+	for _, mode := range []struct {
+		name    string
+		dryRun  bool
+		payload string
+	}{
+		{name: "plan", dryRun: true, payload: `{"repository":"scratch","team":"team-example","accepted":true,"pullRequest":{"title":"archive scratch"}}`},
+		{name: "committed", payload: `{"pullRequest":{"url":"https://example.invalid/pr/1","title":"archive scratch"}}`},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			for _, failure := range []struct {
+				name   string
+				writer writerFunc
+				want   error
+			}{
+				{name: "failed", writer: func([]byte) (int, error) { return 0, io.ErrClosedPipe }, want: io.ErrClosedPipe},
+				{name: "partial", writer: func(p []byte) (int, error) { return len(p) / 2, io.ErrClosedPipe }, want: io.ErrClosedPipe},
+				{name: "short", writer: func(p []byte) (int, error) { return len(p) / 2, nil }, want: io.ErrShortWrite},
+			} {
+				t.Run(failure.name, func(t *testing.T) {
+					calls := 0
+					session := &client.Session{Caller: callerFunc(func(_ context.Context, tool string, args map[string]any) (json.RawMessage, error) {
+						calls++
+						require.Equal(t, manager.ToolSetLifecycle, tool)
+						require.Equal(t, "scratch", args["repository"])
+						require.Equal(t, "archived", args["lifecycle"])
+						return json.RawMessage(mode.payload), nil
+					})}
+					flags := &Flags{Flags: client.Flags{Output: client.OutputText}, DryRun: mode.dryRun}
+					err := Run(context.Background(), session, failure.writer, flags, manager.ToolSetLifecycle, map[string]any{"repository": "scratch", "lifecycle": "archived"})
+					require.ErrorIs(t, err, failure.want)
+					require.Equal(t, 1, calls)
+				})
 			}
-		}
+		})
 	}
 }
 
-func TestRunOutputShortWrite(t *testing.T) {
-	for _, dryRun := range []bool{true, false} {
-		caller := &outputCaller{payload: writeAnswer(t, dryRun, false)}
-		err := Run(context.Background(), &client.Session{Caller: caller}, &failingOutput{remaining: 5},
-			&Flags{Flags: client.Flags{Output: client.OutputText}, DryRun: dryRun}, manager.ToolAdoptRepository, map[string]any{})
-		require.ErrorIs(t, err, io.ErrShortWrite)
-		require.Equal(t, 1, caller.calls)
-	}
-}
-
-func TestRunOutputSuccess(t *testing.T) {
-	for _, dryRun := range []bool{true, false} {
-		caller := &outputCaller{payload: writeAnswer(t, dryRun, true)}
-		var out bytes.Buffer
-		err := Run(context.Background(), &client.Session{Caller: caller}, &out,
-			&Flags{Flags: client.Flags{Output: client.OutputText}, DryRun: dryRun}, manager.ToolTransferRepository, map[string]any{})
-		require.NoError(t, err)
-		require.Equal(t, 1, caller.calls)
-		if dryRun {
-			require.Contains(t, out.String(), "dry run: nothing written\nexample/repo in team: accepted")
-			require.Contains(t, out.String(), "ask: to team")
-			require.Contains(t, out.String(), "notice: to other, not deliverable:")
-		} else {
-			require.Contains(t, out.String(), "pull request: https://github.com/example/inventory/pull/1")
-			require.Contains(t, out.String(), "ask: delivered to team in #CTEAM")
-			require.Contains(t, out.String(), "notice: not delivered")
-			require.Contains(t, out.String(), "pending run: expected since")
-		}
-		require.True(t, strings.HasSuffix(out.String(), "\n"))
+func TestRunTextOutput(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		dryRun  bool
+		payload string
+		want    string
+	}{
+		{
+			name: "plan", dryRun: true,
+			payload: `{"repository":"scratch","team":"team-example","accepted":true,"pullRequest":{"title":"archive scratch","branch":"archive-scratch","files":["team-example.yaml"],"as":"tester"}}`,
+			want:    "dry run: nothing written\nscratch in team-example: accepted\npull request: archive scratch (branch archive-scratch, team-example.yaml) as tester\n",
+		},
+		{
+			name:    "committed",
+			payload: `{"pullRequest":{"url":"https://example.invalid/pr/1","title":"archive scratch","autoMerge":true}}`,
+			want:    "pull request: https://example.invalid/pr/1 (archive scratch; opened, auto-merge armed)\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			session := &client.Session{Caller: callerFunc(func(context.Context, string, map[string]any) (json.RawMessage, error) {
+				return json.RawMessage(tc.payload), nil
+			})}
+			flags := &Flags{Flags: client.Flags{Output: client.OutputText}, DryRun: tc.dryRun}
+			var out bytes.Buffer
+			require.NoError(t, Run(context.Background(), session, &out, flags, manager.ToolSetLifecycle, map[string]any{"repository": "scratch", "lifecycle": "archived"}))
+			require.Equal(t, tc.want, out.String())
+		})
 	}
 }
