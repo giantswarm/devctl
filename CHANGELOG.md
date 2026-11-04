@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Template provenance links use the commit from Go pseudo-versions and fall back to `main` for unversioned
+  module replacements, instead of linking to nonexistent version tags or `(devel)`.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
