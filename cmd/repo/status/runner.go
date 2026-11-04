@@ -53,7 +53,7 @@ type output struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
