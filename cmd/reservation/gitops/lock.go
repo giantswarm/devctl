@@ -16,7 +16,7 @@ func lockCheckout(ctx context.Context, dir string) (*os.File, error) {
 	if err != nil {
 		return nil, microerror.Maskf(syncError, "cannot locate the git directory in %s: %s", dir, err)
 	}
-	file, err := os.OpenFile(filepath.Join(gitDir, "devctl-reservation.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	file, err := os.OpenFile(filepath.Join(gitDir, "devctl-reservation.lock"), os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- the checkout's own git directory
 	if err != nil {
 		return nil, microerror.Maskf(syncError, "cannot open the reservation lock in %s: %s", dir, err)
 	}

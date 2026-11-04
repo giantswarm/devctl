@@ -28,6 +28,11 @@ block. Jobs are selected by:
                           config, patches, extra nodes; repo-owned like
                           .ats/main.yaml), and --ats-resource-class sizes them.
 
+The optional repo-owned .circleci/config.custom.yml adds workflow job names
+from chart_tests.requires to the branch execute-chart-tests dependencies.
+Define and invoke those jobs in .circleci/custom.yml's build workflow on the
+same branches. Release chart-test dependencies are unchanged.
+
 The giantswarm/architect orb is pinned to a version baked into devctl (not a
 flag): a major orb bump changes the template's required job/param shape, so it
 must ship as a new devctl release rather than being passed in at generation

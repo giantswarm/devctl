@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/giantswarm/microerror"
@@ -182,6 +183,16 @@ func (c *Client) JobSteps(ctx context.Context, org, repo string, number int64) (
 		}
 	}
 	return steps, nil
+}
+
+// StepOutput reads the messages of any step, including a successful one,
+// from its signed output URL without sending the API token.
+func (c *Client) StepOutput(ctx context.Context, outputURL string) (string, error) {
+	var out strings.Builder
+	if err := c.stepOutput(ctx, outputURL, &out); err != nil {
+		return "", microerror.Mask(err)
+	}
+	return out.String(), nil
 }
 
 // LastOutputAt reads a step's output at outputURL and returns the time of
