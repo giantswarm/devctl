@@ -350,6 +350,10 @@ The blocking call stays the default. A wrapper that already runs the merge outsi
 reads the blocking call's document keeps calling it without `--detach`: a detached start's document
 carries no `mergeCommitSha`, and its outcome is only in the handle.
 
+A detached merge saves its complete outcome even when writing to its log fails. A failure to
+save the outcome is reported as a tooling error when the merge otherwise succeeded; an existing
+nonzero merge exit code is preserved. The completion hook runs only after the outcome is saved.
+
 ## The document
 
 The document of the merge of [#2368](https://github.com/giantswarm/devctl/pull/2368), shortened where `…` stands:
