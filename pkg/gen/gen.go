@@ -33,7 +33,12 @@ func execute(ctx context.Context, file input.Input) error {
 	}
 
 	if file.Delete {
-		_ = os.Remove(file.Path) // Ignore error, file may already be deleted
+		err := os.Remove(file.Path)
+		// Kubernetes API cleanup also removes empty legacy tool directories.
+		// A nonempty directory can contain tools the repository still owns.
+		if err != nil && !os.IsNotExist(err) && !os.IsExist(err) {
+			return microerror.Mask(err)
+		}
 		return nil
 	}
 
