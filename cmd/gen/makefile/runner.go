@@ -3,6 +3,7 @@ package makefile
 import (
 	"context"
 	"io"
+	"os"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -52,6 +53,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	var inputs []input.Input
+	var obsolete []string
 
 	// Makefile
 	// Makefile.app.mk
@@ -70,29 +72,47 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 		if r.flag.Flavours.Contains(gen.FlavourApp) {
 			inputs = append(inputs, in.MakefileGenApp())
+		} else {
+			obsolete = append(obsolete, "Makefile.gen.app.mk")
 		}
 
 		if r.flag.Flavours.Contains(gen.FlavourKubernetesAPI) {
 			inputs = append(inputs, in.MakefileGenKubernetesAPI()...)
+		} else {
+			obsolete = append(obsolete, "Makefile.gen.k8sapi.mk")
 		}
 
 		if r.flag.Flavours.Contains(gen.FlavourClusterApp) {
 			inputs = append(inputs, in.MakefileGenClusterApp())
+		} else {
+			obsolete = append(obsolete, "Makefile.gen.cluster_app.mk")
 		}
 
 		if r.flag.Language == gen.LanguageGo {
 			inputs = append(inputs, in.MakefileGenGo()...)
 			inputs = append(inputs, golangci.NewInput("."))
+		} else {
+			obsolete = append(obsolete, "Makefile.gen.go.mk")
 		}
 
-		if r.flag.Language == "kyverno-policy" {
+		if r.flag.Language == gen.LanguageKyvernoPolicy {
 			inputs = append(inputs, in.MakefileGenChainsaw()...)
+		} else {
+			obsolete = append(obsolete, "Makefile.gen.chainsaw.mk")
 		}
 	}
 
 	err = gen.Execute(ctx, inputs...)
 	if err != nil {
 		return microerror.Mask(err)
+	}
+
+	// Retire only managed includes, after generating the selected files. Custom
+	// includes and repository-owned scaffolding must survive a declaration change.
+	for _, path := range obsolete {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return microerror.Mask(err)
+		}
 	}
 
 	return nil
