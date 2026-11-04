@@ -101,7 +101,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// Initialize PR statuses with mutex protection for concurrent updates
 	var prStatusesMu sync.Mutex
 	prStatuses := make([]*pr.PRStatus, 0, len(searchResults.Issues))
-	prNumbersMap := make(map[int]bool) // Track PR numbers to avoid duplicates
+	type prKey struct {
+		owner, repo string
+		number      int
+	}
+	seenPRs := make(map[prKey]bool)
 
 	addPRs := func(issues []*github.Issue) []*pr.PRStatus {
 		prStatusesMu.Lock()
@@ -111,13 +115,14 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		for _, issue := range issues {
 			prNumber := issue.GetNumber()
 
-			// Skip if we already have this PR
-			if prNumbersMap[prNumber] {
+			owner, repoName, err := pr.ParseRepoFromURL(issue.GetHTMLURL())
+			if err != nil {
 				continue
 			}
 
-			owner, repoName, err := pr.ParseRepoFromURL(issue.GetHTMLURL())
-			if err != nil {
+			// PR numbers are unique only within a repository.
+			key := prKey{owner: strings.ToLower(owner), repo: strings.ToLower(repoName), number: prNumber}
+			if seenPRs[key] {
 				continue
 			}
 
@@ -138,7 +143,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 				LastUpdate:   time.Now(),
 			}
 			prStatuses = append(prStatuses, ps)
-			prNumbersMap[prNumber] = true
+			seenPRs[key] = true
 			newPRs = append(newPRs, ps)
 		}
 		return newPRs
