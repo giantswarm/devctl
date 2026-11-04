@@ -153,6 +153,8 @@ devctl reservation release --pull-request giantswarm/hello-world#123 --user alic
 make test
 ```
 
+For generated Makefiles and custom lint steps, see [Generating Makefiles](docs/gen.md#generating-makefiles).
+
 The suite includes the end-to-end scenarios under `e2e/`: the built binary against in-process mocks of GitHub,
 CircleCI and the registry, one directory per known incident. See [e2e/README.md](e2e/README.md) for the format
 and how to add one.
