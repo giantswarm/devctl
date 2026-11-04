@@ -75,6 +75,10 @@ func TestGitHubIdentityIsKeptForRedelivery(t *testing.T) {
 					map[string]any{"id": "p1", "number": 12, "state": "pending",
 						"created_at": time.Now().Add(-time.Hour).UTC().Format(time.RFC3339),
 						"vcs":        map[string]any{"revision": "abc"}},
+				}}}, {Body: map[string]any{"items": []any{
+					map[string]any{"id": "p2", "number": 13, "state": "created",
+						"created_at": time.Now().UTC().Format(time.RFC3339),
+						"vcs":        map[string]any{"revision": "abc"}},
 				}}}},
 				"GET /api/v2/pipeline/p1/workflow": {{Body: map[string]any{"items": []any{}}}},
 			})
@@ -101,8 +105,8 @@ func TestGitHubIdentityIsKeptForRedelivery(t *testing.T) {
 			if redelivery := doc["redelivery"].(map[string]any); redelivery["outcome"] != "redelivered" || redelivery["after"] != "abc" {
 				t.Errorf("redelivery: %v", redelivery)
 			}
-			if len(cc.Requests()) != 2 {
-				t.Fatalf("expected pipeline and workflows reads, got %v", cc.Requests())
+			if len(cc.Requests()) != 3 {
+				t.Fatalf("expected pipeline, workflows and post-redelivery pipeline reads, got %v", cc.Requests())
 			}
 			for _, req := range cc.Requests() {
 				if req.Header.Get("Circle-Token") != "token_test" || req.Header.Get("Authorization") != "" {
