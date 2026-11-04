@@ -29,7 +29,8 @@
 // without a tag decided that the commits warranted no release, so the first
 // tag on the base branch after the merge commit carries it, and without one
 // the wait ends at once as no release following the merge ([NoReleaseError]),
-// as does a repository that does not tag merge commits. A commit carrying the
+// as does a repository that does not tag merge commits or whose auto-release
+// push filters exclude the base branch. A commit carrying the
 // release tags of two versions ends it at once too ([AmbiguousReleaseError]):
 // the wait does not choose, the caller names the version. A repository that releases in two steps tags the merge commit with
 // a release candidate and a promote later cuts the stable release; with
@@ -52,6 +53,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
+	"github.com/giantswarm/devctl/v8/pkg/prwait"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
 
@@ -136,11 +138,12 @@ type Config struct {
 	// is, with Result.PromotePending set. devctl rollout wait sets it: an
 	// installation that follows stable releases never deploys the candidate.
 	PreferPromoted bool
-	// Timeout bounds the wait; zero means DefaultTimeout.
+	// Timeout bounds the wait; zero means DefaultTimeout. With Catalog,
+	// repository publication evidence permits one CatalogPublishGrace extension.
 	Timeout time.Duration
 	// Catalog also waits for the catalog index to list every chart.
 	Catalog bool
-	// Images name the images a hand-written tag pipeline pushes outside the
+	// Images name the images a tag pipeline pushes outside the
 	// architect orb (a plain docker push), which its configuration cannot
 	// tell: repository paths such as giantswarm/dex, or with the public or
 	// private registry host in front. Each is expected as <image>:<tag>, the
@@ -157,6 +160,7 @@ type Config struct {
 	// log of each failed job once and keep that many of its last lines in
 	// Result.FailedJobs, read and trimmed as pr wait's --failed-log does. A
 	// green or pending tag reads no log.
+	// prwait.FullFailedLogLines keeps the full log; zero reads no log.
 	FailedLogLines int
 
 	// GitHub is required. Entries and Registry are required; CircleCI is
@@ -173,6 +177,9 @@ type Config struct {
 	// jobs the tag's configuration runs on the tag are listed from it, and
 	// the tag's CI is green once each has posted and none is pending or
 	// failed. FailedLogLines reads no CircleCI log then.
+	// Release-assets waits still need a pipeline verified by tag and time
+	// out in this mode: commit statuses cannot distinguish a promotion
+	// from its candidate on the same commit.
 	CircleCIFromStatuses bool
 
 	// Endpoints name the registries. Zero means production.
@@ -185,14 +192,15 @@ type Config struct {
 	// Progress receives one line per step; nil is silent.
 	Progress *agentcli.Progress
 	// Warn receives the warnings the document carries beside the result: a
-	// team-file entry whose release model lags the repository's workflows.
+	// team-file entry whose release model lags the repository's workflows,
+	// or artifacts a repository-owned job publishes that remain unchecked.
 	// Nil drops them.
 	Warn func(message string)
 }
 
 // ImageFlagUsage is the help of --image on the commands that wait for a
 // release.
-const ImageFlagUsage = "An image the hand-written tag pipeline pushes outside the architect orb (a plain docker push), as <owner>/<name> or with the registry host in front; expected as <image>:<git tag>, the tag as written (v1.2.3). Repeatable"
+const ImageFlagUsage = "An image the tag pipeline pushes outside the architect orb (a plain docker push), as <owner>/<name> or with the registry host in front; expected as <image>:<git tag>, the tag as written (v1.2.3). Repeatable"
 
 // ChartFlagUsage is the help of --chart on the commands that wait for a
 // release.
@@ -204,11 +212,15 @@ type Waiter struct {
 	clock    agentcli.Clock
 	progress *agentcli.Progress
 	circleci CircleCI
+	// baseRef is the pull request's base, read only when branch filters need it.
+	baseRef string
 	// statusesOnly: the tag's CI is on CircleCI and read through its commit
 	// statuses (Config.CircleCIFromStatuses); circleJobs are the jobs the
 	// tag's configuration runs, each expected to post a status.
 	statusesOnly bool
 	circleJobs   []string
+	// releasePending names the release-assets evidence still missing.
+	releasePending string
 	// untagged is, while a pull request's tag is awaited, what the merge
 	// commit's auto-release run was doing at the last poll, for the
 	// timeout's reason.
@@ -225,6 +237,10 @@ type Waiter struct {
 	// green, the contexts of the tag commit's statuses still pending, for the
 	// heartbeat and the timeout's reason.
 	pendingStatuses []string
+	// catalogWaiting names the charts still missing from Pages, distinguishing
+	// repository publication from Pages publication.
+	catalogWaiting  []string
+	catalogExtended bool
 	// warned are the warnings given already, each given once.
 	warned map[string]bool
 }
@@ -276,10 +292,11 @@ func New(config Config) (*Waiter, error) {
 // the wait ended.
 func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 	*result = NewResult(w.config.Owner + "/" + w.config.Repo)
+	parent := ctx
 	ctx, cancel := w.clock.Timeout(ctx, w.config.Timeout)
 	defer cancel()
 
-	err := w.wait(ctx, result)
+	err := w.wait(ctx, parent, result)
 	var ambiguous *AmbiguousReleaseError
 	if errors.As(err, &ambiguous) {
 		result.ConflictingTags = ambiguous.Tags
@@ -290,7 +307,7 @@ func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 	return err
 }
 
-func (w *Waiter) wait(ctx context.Context, result *Result) error {
+func (w *Waiter) wait(ctx, parent context.Context, result *Result) error {
 	owner, repo := w.config.Owner, w.config.Repo
 
 	// The release model decides how a version is found for a pull request,
@@ -382,7 +399,11 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 			if err != nil {
 				return err
 			}
-			plan.custom = len(plan.customJobs) > 0
+			plan.uncheckedImages, err = readUncheckedImageJobs(ctx, w.config.GitHub, owner, repo, result.SHA, *content)
+			if err != nil {
+				return err
+			}
+			plan.custom = len(plan.customJobs) > 0 || len(plan.uncheckedImages) > 0
 			w.progress.Printf("%s/%s at %s declares %d push job(s) beyond the entry's artifacts", circleCIDir, circleCICustom, short(result.SHA), len(plan.customJobs))
 		}
 	case CIModelHandWritten:
@@ -402,8 +423,14 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 		// Nothing to derive: no CircleCI means no image and no chart.
 		plan.setArtifacts(result, nil)
 	}
-	if len(w.config.Images) > 0 && result.CIModel != CIModelHandWritten {
-		w.warn(fmt.Sprintf("--image names the images of a hand-written tag pipeline; the CI of %s is %s, whose artifacts are derived as before, so %s is not probed", result.Tag, result.CIModel, strings.Join(w.config.Images, ", ")))
+	if len(w.config.Images) > 0 && result.CIModel == CIModelGenerated {
+		images, err := namedImageArtifacts(w.config.Images, result.Tag, private, w.config.Endpoints)
+		if err != nil {
+			return err
+		}
+		plan.setArtifacts(result, dedupe(append(result.Artifacts, images...)))
+	} else if len(w.config.Images) > 0 && result.CIModel != CIModelHandWritten {
+		w.warn(fmt.Sprintf("--image names the images of a CircleCI tag pipeline; the CI of %s is %s, whose artifacts are derived as before, so %s is not probed", result.Tag, result.CIModel, strings.Join(w.config.Images, ", ")))
 	}
 	if len(w.config.Charts) > 0 && result.CIModel != CIModelHandWritten {
 		w.warn(fmt.Sprintf("--chart names the charts of a hand-written tag pipeline; the CI of %s is %s, whose artifacts are derived as before, so %s is not probed", result.Tag, result.CIModel, strings.Join(w.config.Charts, ", ")))
@@ -411,6 +438,19 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 	for _, a := range result.Artifacts {
 		w.progress.Printf("expecting %s %s", a.Kind, a.Reference)
 	}
+	err = w.loop(ctx, result, plan)
+	if err == nil || !w.config.Catalog || !plan.catalogReady || ctx.Err() == nil || parent.Err() != nil {
+		return err
+	}
+	if isOutcome(err) && agentcli.Exit(err) != agentcli.ExitTimeout {
+		return err
+	}
+	// Keep the same plan and evidence, with one extension from the caller's
+	// context. The ordinary deadline cannot cancel this Pages allowance.
+	ctx, cancel := w.clock.Timeout(parent, CatalogPublishGrace)
+	defer cancel()
+	w.catalogExtended = true
+	w.progress.Printf("catalog charts are in their repositories; allowing %s more for Pages publication", CatalogPublishGrace)
 	return w.loop(ctx, result, plan)
 }
 
@@ -428,6 +468,7 @@ func (w *Waiter) mergeCommit(ctx context.Context) (string, error) {
 	if !merge.Merged {
 		return "", notApplicableErr("pull request %s/%s#%d is %s and not merged: there is no release to wait for", owner, repo, w.config.PR, merge.State)
 	}
+	w.baseRef = merge.BaseRef
 	return merge.MergeCommitSHA, nil
 }
 
@@ -512,6 +553,9 @@ type plan struct {
 	// jobs, once those exist.
 	customJobs []PushJob
 	custom     bool
+	// uncheckedImages are repository-owned publishers whose repositories
+	// cannot be derived; matching tag jobs are warned about once known.
+	uncheckedImages []uncheckedImageJob
 	// releaseAssets: no image and no chart; the wait is on the published
 	// release and the tag's workflows.
 	releaseAssets bool
@@ -519,6 +563,10 @@ type plan struct {
 	charts []chartArtifact
 	// catalogs are the catalogs --catalog reads, one per chart, once known.
 	catalogs []string
+	// catalogConfirmed caches repository evidence per chart. catalogReady
+	// means every chart still missing from Pages has that evidence.
+	catalogConfirmed map[int]bool
+	catalogReady     bool
 	// failures counts consecutive registry failures that were not answers.
 	failures map[string]int
 }
@@ -558,11 +606,10 @@ type chartArtifact struct{ name, catalog, catalogTest string }
 // loop polls until every artifact is available and the tag's CI is green,
 // the tag's CI failed or the deadline passed.
 func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
-	owner, repo := w.config.Owner, w.config.Repo
 	for {
-		// The jobs name the artifacts of hand-written CI and of a generated
-		// pipeline's custom.yml; once those are known nothing reads them.
-		needJobs := (!p.derived && result.CIModel == CIModelHandWritten) || p.custom
+		// The jobs name the artifacts of hand-written and custom CI. For
+		// release assets they also say whether the tag uploads binaries.
+		needJobs := (!p.derived && result.CIModel == CIModelHandWritten) || p.custom || p.releaseAssets
 		state, err := w.pipelineState(ctx, result, needJobs)
 		if unanswered(ctx, err) {
 			// An API that does not answer says nothing about the release:
@@ -593,41 +640,21 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 			return err
 		}
 		w.unanswered = ""
+		// The registry answers for the artifacts even when CI has failed.
+		// Observe them before returning that independent pipeline verdict.
+		err = w.updateArtifacts(ctx, result, p, state)
 		if state.failed {
-			if w.config.FailedLogLines > 0 {
+			if err != nil {
+				w.warn(fmt.Sprintf("reading artifact availability for %s: %v", result.Tag, err))
+			}
+			if w.config.FailedLogLines > 0 || w.config.FailedLogLines == prwait.FullFailedLogLines {
 				result.FailedJobs = w.failedJobs(ctx, state)
 			}
 			return ciFailedErr("the tag pipeline of %s failed: %s", result.Tag, strings.Join(state.failedJobs, ", "))
 		}
 
-		if !p.derived && result.CIModel == CIModelHandWritten && state.jobs != nil {
-			artifacts, warnings, err := HandWrittenArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, result.Tag, *p.content, state.jobs, p.private, w.config.Images, w.config.Charts, w.config.Endpoints)
-			if err != nil {
-				return err
-			}
-			for _, warning := range warnings {
-				w.warn(warning)
-			}
-			p.setArtifacts(result, artifacts)
-			for _, a := range artifacts {
-				w.progress.Printf("expecting %s %s", a.Kind, a.Reference)
-			}
-		}
-		if p.custom && state.jobs != nil {
-			artifacts, err := CustomArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, p.customJobs, state.jobs, p.private, w.config.Endpoints)
-			if err != nil {
-				return err
-			}
-			p.addArtifacts(result, artifacts)
-			for _, a := range artifacts {
-				w.progress.Printf("expecting %s %s (%s/%s)", a.Kind, a.Reference, circleCIDir, circleCICustom)
-			}
-		}
-
-		if p.derived {
-			if err := w.probe(ctx, result, p); err != nil {
-				return err
-			}
+		if err != nil {
+			return err
 		}
 
 		done := false
@@ -685,6 +712,43 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 	}
 }
 
+// updateArtifacts derives the expected artifacts once their jobs are known
+// and probes those not yet available, independently of the pipeline verdict.
+func (w *Waiter) updateArtifacts(ctx context.Context, result *Result, p *plan, state *pipelineState) error {
+	owner, repo := w.config.Owner, w.config.Repo
+	if !p.derived && result.CIModel == CIModelHandWritten && state.jobs != nil {
+		artifacts, warnings, err := HandWrittenArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, result.Tag, *p.content, state.jobs, p.private, w.config.Images, w.config.Charts, w.config.Endpoints)
+		if err != nil {
+			return err
+		}
+		for _, warning := range warnings {
+			w.warn(warning)
+		}
+		p.setArtifacts(result, artifacts)
+		for _, a := range artifacts {
+			w.progress.Printf("expecting %s %s", a.Kind, a.Reference)
+		}
+	}
+	if p.custom && state.jobs != nil {
+		artifacts, err := CustomArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, p.customJobs, state.jobs, p.private, w.config.Endpoints)
+		if err != nil {
+			return err
+		}
+		w.warnUncheckedImageJobs(p.uncheckedImages, state.jobs)
+		p.addArtifacts(result, artifacts)
+		for _, a := range artifacts {
+			w.progress.Printf("expecting %s %s (%s/%s)", a.Kind, a.Reference, circleCIDir, circleCICustom)
+		}
+	}
+
+	if p.derived {
+		if err := w.probe(ctx, result, p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // pending names what the wait still waits for, for the heartbeat of a wait
 // without --progress: the artifacts not in their registry, the jobs a
 // derivation needs, the tag's CI and the release.
@@ -706,9 +770,13 @@ func (w *Waiter) pending(result *Result, p *plan, state *pipelineState) string {
 	case len(w.pendingStatuses) > 0:
 		parts = append(parts, fmt.Sprintf("the commit statuses of %s: %s pending", short(result.SHA), strings.Join(w.pendingStatuses, ", ")))
 	case p.releaseAssets:
-		parts = append(parts, fmt.Sprintf("the release of %s published", result.Tag))
+		if w.releasePending != "" {
+			parts = append(parts, w.releasePending)
+		} else {
+			parts = append(parts, fmt.Sprintf("the release of %s published", result.Tag))
+		}
 	case w.config.Catalog && len(parts) == 0:
-		parts = append(parts, "the catalog index to list every chart")
+		parts = append(parts, w.catalogWaiting...)
 	}
 	return strings.Join(parts, "; ")
 }
@@ -725,6 +793,10 @@ func (w *Waiter) probe(ctx context.Context, result *Result, p *plan) error {
 		}
 		digest, found, err := w.config.Registry.Probe(ctx, *a)
 		if err != nil {
+			// The wait's own deadline is no registry failure; a real error stays.
+			if ctx.Err() == nil || !errors.Is(err, ctx.Err()) {
+				a.LastProbeError = err.Error()
+			}
 			if ctx.Err() != nil {
 				return err
 			}
@@ -740,6 +812,7 @@ func (w *Waiter) probe(ctx context.Context, result *Result, p *plan) error {
 			continue
 		}
 		p.failures[a.Reference] = 0
+		a.LastProbeError = ""
 		if found {
 			a.Digest, a.State = digest, StateAvailable
 			w.progress.Printf("%s %s available (%s)", a.Kind, a.Reference, digest)
@@ -756,8 +829,17 @@ func (w *Waiter) probe(ctx context.Context, result *Result, p *plan) error {
 const registryFailureLimit = 3
 
 // releasePublished is the release-assets verdict: the release exists and is
-// not a draft, and every workflow of the tag finished green.
+// not a draft, every workflow of the tag finished green, and a pipeline
+// that uploads release assets has at least one asset on its own release.
 func (w *Waiter) releasePublished(ctx context.Context, result *Result, state *pipelineState) (bool, error) {
+	w.releasePending = ""
+	if (w.circleci != nil || w.statusesOnly) && w.statusPipelines.pipeline == nil {
+		// The candidate and stable tag can share a commit. Its statuses
+		// alone never prove that the stable tag's pipeline has finished.
+		w.releasePending = fmt.Sprintf("no CircleCI pipeline verified for tag %s; commit statuses alone cannot identify the tag's pipeline", result.Tag)
+		w.progress.Printf("%s", w.releasePending)
+		return false, nil
+	}
 	if !state.green {
 		w.progress.Printf("the tag's workflows have not all finished")
 		return false, nil
@@ -778,28 +860,13 @@ func (w *Waiter) releasePublished(ctx context.Context, result *Result, state *pi
 	for _, asset := range release.Assets {
 		result.Artifacts = append(result.Artifacts, Artifact{Kind: KindReleaseAsset, Reference: asset.URL, Digest: asset.Digest, State: StateAvailable})
 	}
+	count := len(release.Assets)
+	result.ReleaseAssetCount = &count
 	w.progress.Printf("release %s published with %d asset(s)", result.Tag, len(release.Assets))
-	return true, nil
-}
-
-func (w *Waiter) catalogLists(ctx context.Context, result *Result, p *plan) (bool, error) {
-	if p.catalogs == nil {
-		catalogs, err := w.chartCatalogs(ctx, result, p)
-		if err != nil {
-			return false, err
-		}
-		p.catalogs = catalogs
-	}
-	for i, c := range p.charts {
-		catalog := p.catalogs[i]
-		listed, err := w.config.CatalogIndex.Lists(ctx, catalog, c.name, p.version)
-		if err != nil {
-			return false, usageErr("reading the %s index: %v", catalog, err)
-		}
-		if !listed {
-			w.progress.Printf("catalog %s does not list %s %s yet", catalog, c.name, p.version)
-			return false, nil
-		}
+	if count == 0 && result.Pipeline != nil && len(result.Pipeline.AssetUploadJobs) > 0 {
+		w.releasePending = fmt.Sprintf("release %s has 0 assets after pipeline %d's %s; waiting for at least one release asset", result.Tag, result.Pipeline.Number, strings.Join(result.Pipeline.AssetUploadJobs, ", "))
+		w.progress.Printf("%s", w.releasePending)
+		return false, nil
 	}
 	return true, nil
 }
@@ -873,10 +940,17 @@ func (w *Waiter) awaitTagForCommit(ctx context.Context, sha string, content *Tag
 		// workflow at the merge commit tags it.
 		return "", "", noReleaseErr("the team-file entry of %s/%s declares auto-release, but %s at %s holds no auto-release workflow: nothing tags the merge commit of #%d", owner, repo, workflowsDir, short(sha), number)
 	}
+	branchChecked := false
 	for {
 		tag, err := w.commitTag(ctx, sha)
 		if tag != "" || err != nil {
 			return tag, sha, err
+		}
+		if !branchChecked {
+			if err := w.checkAutoReleaseBranch(ctx, sha, auto); err != nil {
+				return "", "", err
+			}
+			branchChecked = true
 		}
 		run, err := w.autoReleaseRun(ctx, sha, auto)
 		if err != nil {
@@ -963,7 +1037,7 @@ func (w *Waiter) autoReleaseRun(ctx context.Context, sha string, files []string)
 		return nil, fmt.Errorf("listing the Actions runs of %s: %w", short(sha), err)
 	}
 	for _, run := range runs {
-		if run.Event == "push" && slices.Contains(files, path.Base(run.Path)) {
+		if run.Event == pushEvent && slices.Contains(files, path.Base(run.Path)) {
 			return &run, nil
 		}
 	}
@@ -1033,7 +1107,11 @@ func (w *Waiter) timeout(result *Result) error {
 	var missing []string
 	for _, a := range result.Artifacts {
 		if a.State != StateAvailable {
-			missing = append(missing, a.Kind+" "+a.Reference)
+			message := a.Kind + " " + a.Reference
+			if a.LastProbeError != "" {
+				message += " (missing; last probe error: " + a.LastProbeError + ")"
+			}
+			missing = append(missing, message)
 		}
 	}
 	// What the tag pipeline was still doing, so the reason says where the
@@ -1054,6 +1132,14 @@ func (w *Waiter) timeout(result *Result) error {
 		return timeoutErr("not available within %s: %s%s", w.config.Timeout, strings.Join(missing, ", "), unfinished)
 	case len(w.pendingStatuses) > 0:
 		return timeoutErr("%s is available and its tag pipeline green, and the commit statuses of %s did not finish within %s: %s pending; devctl release promote refuses the commit until they succeed", result.Tag, short(result.SHA), w.config.Timeout, strings.Join(w.pendingStatuses, ", "))
+	case len(w.catalogWaiting) > 0:
+		bound := fmt.Sprintf("within %s", w.config.Timeout)
+		if w.catalogExtended {
+			bound += fmt.Sprintf(" plus the %s Pages publication extension", CatalogPublishGrace)
+		}
+		return timeoutErr("catalog publication for %s did not finish %s: %s%s", result.Tag, bound, strings.Join(w.catalogWaiting, "; "), unfinished)
+	case w.releasePending != "":
+		return timeoutErr("%s was not released within %s: %s%s", result.Tag, w.config.Timeout, w.releasePending, unfinished)
 	case result.Pipeline == nil && result.CIModel != CIModelNone && w.unanswered == "":
 		return timeoutErr("no CircleCI pipeline for %s within %s: the tag's webhook may not have reached CircleCI", result.Tag, w.config.Timeout)
 	case len(result.Artifacts) > 0 && w.unanswered != "":

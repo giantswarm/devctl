@@ -27,6 +27,7 @@ type flag struct {
 	Visibility        string
 	Owner             string
 	DryRun            bool
+	Local             bool
 	Output            string
 }
 
@@ -39,8 +40,9 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.Language, "language", "", fmt.Sprintf("gen.language: %s.", oneOf(gen.AllLanguages())))
 	cmd.Flags().StringVar(&f.Description, "description", "", "Description of the repository, set at its creation.")
 	cmd.Flags().StringVar(&f.Visibility, "visibility", "", fmt.Sprintf("Visibility of the repository: %s. Without it the entry says visibility: private, the org's default.", oneOf(reposetup.EmbeddedFieldValues("visibility"))))
-	cmd.Flags().StringVar(&f.Owner, "owner", reposetup.DefaultOwner, "GitHub organisation the repository is declared in and whose teams the guard reads.")
-	cmd.Flags().BoolVar(&f.DryRun, "dry-run", false, "Print the dry run; open no pull request.")
+	cmd.Flags().StringVar(&f.Owner, "owner", reposetup.DefaultOwner, "GitHub organisation the repository is declared in and whose teams the guard reads; another organisation takes --local with --dry-run.")
+	cmd.Flags().BoolVar(&f.DryRun, "dry-run", false, "Print the manager's creation preview; open no pull request.")
+	cmd.Flags().BoolVar(&f.Local, "local", false, "With --dry-run: validate with devctl's own engine instead of asking giantswarm-repo-manager.")
 	cmd.Flags().StringVarP(&f.Output, "output", "o", outputText, "Output format: text or json (the dry run and the pull request URL).")
 }
 
@@ -53,6 +55,12 @@ func (f *flag) Validate() error {
 	}
 	if f.Output != outputText && f.Output != outputJSON {
 		return microerror.Maskf(invalidFlagError, "--output must be %s or %s", outputText, outputJSON)
+	}
+	if f.Local && !f.DryRun {
+		return microerror.Maskf(invalidFlagError, "--local requires --dry-run")
+	}
+	if f.DryRun && !f.Local && f.Owner != reposetup.DefaultOwner {
+		return microerror.Maskf(invalidFlagError, "--owner %s takes --dry-run --local; giantswarm-repo-manager validates declarations of %s", f.Owner, reposetup.DefaultOwner)
 	}
 	if !strings.HasPrefix(f.Team, "team-") {
 		f.Team = "team-" + f.Team
