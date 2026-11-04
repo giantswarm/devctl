@@ -25,7 +25,7 @@ devctl gen workflows --flavour cli
 | Value | What's emitted | When to use |
 |-------|----------------|-------------|
 | `legacy` (default) | `.github/workflows/zz_generated.create_release.yaml`, `zz_generated.create_release_pr.yaml`, `zz_generated.validate_changelog.yaml`. Releases driven by manually-pushed `main#release#patch`-style branches that open a release PR for human approval. | The historical flow; in use by most giantswarm repos today. |
-| `auto-release` | `.github/workflows/zz_generated.auto_release.yaml` and `cliff.toml` (at repo root). Releases driven by conventional commits on `main` -- the workflow runs `git-cliff --unreleased --bump` on every push, computes the next semver, and creates the next release candidate tag + GitHub pre-release atomically. A stable release is a manual promotion of the latest candidate. `feat` bumps the minor version, a breaking change the major, every other type the patch; `docs`, `style` and `test` commits are skipped and release nothing. | Repos that want push-button releases from conventional commits. Requires `semantic_pull_request` enforcement on PR titles. |
+| `auto-release` | `.github/workflows/zz_generated.auto_release.yaml` and `cliff.toml` (at repo root). Releases driven by conventional commits on `main` -- the workflow runs `git-cliff --unreleased --bump` on every push, computes the next semver, and creates the next release candidate tag + GitHub pre-release atomically. A stable release is a manual promotion of the latest candidate. `feat` bumps the minor version, a breaking change the major, every other type the patch; `ci`, `chore`, `docs`, `style` and `test` commits are skipped and release nothing. | Repos that want push-button releases from conventional commits. Requires `semantic_pull_request` enforcement on PR titles. |
 
 Switching between values is bidirectional and self-cleaning: the chosen branch generates its own files and emits deletion inputs for the files of the other branch, so a flipped `--release-workflow` value over two consecutive gen runs leaves the repo with exactly one set of release files.
 
@@ -39,14 +39,15 @@ devctl gen workflows --flavour app --language go --release-workflow=auto-release
 
 #### Release candidates and stable releases
 
-Every releasable push releases the version git-cliff computes from the conventional commits since the last stable release. A minor or major version is cut as the next release candidate, `vX.Y.0-rc.N`; a patch of the last stable release (only fixes and chores since it) is the fast path and is tagged `vX.Y.Z` stable on its push, so there is never a patch candidate:
+Every releasable push releases the version git-cliff computes from the conventional commits since the last stable release. A minor or major version is cut as the next release candidate, `vX.Y.0-rc.N`; a patch of the last stable release (for example, only fixes since it) is the fast path and is tagged `vX.Y.Z` stable on its push, so there is never a patch candidate:
 
 | Merge (after `v1.2.9`) | Tag | Why |
 |-------|-----|-----|
 | `fix: x` | `v1.2.10` | a patch of the last stable release, tagged stable on its push |
 | `feat: add x` | `v1.3.0-rc.1` | a `feat` puts the cycle on the next minor |
 | `fix: y` | `v1.3.0-rc.2` | a fix during a cycle rides its next candidate |
-| `chore(deps): bump y` | `v1.3.0-rc.3` | releasable, so the next candidate |
+| `chore(deps): bump y` | none | `chore` is skipped |
+| `ci(tools): bump y` | none | `ci` is skipped |
 | `docs: fix a typo` | none | `docs` is skipped, so there is nothing new to put in a candidate |
 | `refactor!: drop y` | `v2.0.0-rc.1` | a breaking change moves the target, and the series restarts at `rc.1` |
 
@@ -54,7 +55,9 @@ The first release of a repository with no stable tag is a candidate. On a mainte
 
 `--patch-candidates` (team file `gen.ci.patchCandidates: true`) drops the fast path: a patch is cut as a candidate too, `v1.2.10-rc.1` for `fix: x` above and `v1.2.10-rc.2` for the next fix, on the default branch and on a maintenance branch alike, so no push tags a stable release. It is for a repository whose consumers follow a semver range that takes its next patch on their own (`>=1.17.0 <1.18.0`): every stable release is then a promotion of a candidate proven first. A maintenance branch's candidate is promoted on that branch, `devctl release promote <owner/repo> --branch release-X.Y --version vX.Y.Z-rc.N`.
 
-A push whose commits git-cliff all skips (`docs`, `style`, `test`) or drops as non-conventional tags nothing, so a README typo cannot spend an rc number and a publish pipeline. A candidate is flagged as a GitHub pre-release, so it does not surface as the repo's "Latest release", and the `/^v.*/` CircleCI tag filter publishes it like any other tag.
+A push whose commits git-cliff all skips (`ci`, `chore`, `docs`, `style`, `test`) or drops as non-conventional tags nothing, so a README typo cannot spend an rc number and a publish pipeline. A candidate is flagged as a GitHub pre-release, so it does not surface as the repo's "Latest release", and the `/^v.*/` CircleCI tag filter publishes it like any other tag.
+
+Use `fix` or `feat` for a dependency or build change that needs its own release. A `ci`, `chore` or `docs` change waits for the next releasable commit, including on fork lines.
 
 A job of the repository's own that must not see a candidate, in a hand-written pipeline or in `.circleci/custom.yml`, filters on stable tags before the repository moves to `auto-release`. The krew index update of a CLI is one: krew-release-bot refuses a GitHub pre-release, so a `/^v.*/` filter turns the first candidate's pipeline red.
 
