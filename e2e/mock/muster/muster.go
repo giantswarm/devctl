@@ -395,6 +395,9 @@ func unexpectedArgs(want, got map[string]any) string {
 	sort.Strings(keys)
 	for _, k := range keys {
 		w, _ := json.Marshal(normalise(want[k]))
+		if _, ok := got[k]; !ok {
+			return fmt.Sprintf("%s missing, want %s", k, w)
+		}
 		g, _ := json.Marshal(normalise(got[k]))
 		if string(w) != string(g) {
 			return fmt.Sprintf("%s = %s, want %s", k, g, w)
