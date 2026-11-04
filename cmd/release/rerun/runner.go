@@ -68,14 +68,11 @@ func newDocument(args []string) document {
 }
 
 func (r *runner) rerun(ctx context.Context, args []string, doc *document) error {
-	if len(args) != 2 {
-		return fmt.Errorf("usage: devctl %s <owner/repo> <tag>, got %d argument(s)", command, len(args))
-	}
-	owner, repo, err := agentcli.ParseRepository(args[0])
+	owner, repo, tag, err := agentcli.ParseRepositoryArgument(command, "tag", args)
 	if err != nil {
 		return err
 	}
-	doc.Repository, doc.Tag = owner+"/"+repo, args[1]
+	doc.Repository, doc.Tag = owner+"/"+repo, tag
 	if r.flag.WedgedAfter < 0 {
 		return fmt.Errorf("--%s %s: must not be negative; 0 leaves running workflows alone", flagWedgedAfter, r.flag.WedgedAfter)
 	}
@@ -93,8 +90,8 @@ func (r *runner) rerun(ctx context.Context, args []string, doc *document) error 
 	if err != nil {
 		return err
 	}
-	tags := []string{args[1]}
-	if version, err := releasewait.ParseVersion(args[1]); err == nil {
+	tags := []string{tag}
+	if version, err := releasewait.ParseVersion(tag); err == nil {
 		tags = version.Tags()
 	}
 	for _, tag := range tags {

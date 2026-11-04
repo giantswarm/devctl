@@ -180,9 +180,11 @@ func releasesToBuild(ctx context.Context, gh GitHub, owner, repo string, progres
 // Setup sets owner/repo up on a GitHub App pipeline as the person (Ensure)
 // and runs what the pipeline has not built. First the release tags whose
 // commit carries no status of their own build (reconcile.TagBuildStatuses on
-// the App pipeline's statuses; any OAuth status after the release counts as
-// built): a tag cut before the trigger existed reached no pipeline, as the
-// scaffold's v0.1.0 of a new repository does. Then the default branch, when
+// the App pipeline's statuses for single-image tags; multi-image tags are
+// checked against each workflow's checkout tag). An OAuth status after a
+// single-image release counts as built; ambiguous OAuth evidence for an
+// image tag stops dispatch. A tag cut before the trigger existed reached no
+// pipeline, as the scaffold's v0.1.0 of a new repository does. Then the default branch, when
 // Ensure wrote anything or its head carries no App status, unless a tag run
 // builds the branch's head already. A repository without
 // .circleci/config.yml on its default branch is IsNoConfig, before any
@@ -244,6 +246,10 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
+	builds := tagBuildReader{
+		ci: ci, project: circleciclient.ProjectSlug(owner, repo),
+		workflows: map[string]string{}, pipelines: map[string]string{},
+	}
 	for _, release := range releases {
 		published := release.GetPublishedAt().Time
 		if published.IsZero() {
@@ -253,10 +259,20 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 		if err != nil {
 			return nil, microerror.Mask(fmt.Errorf("reading the statuses of %s: %w", release.TagName, err))
 		}
-		// The App pipeline's statuses tell a tag build by its workflows; an
-		// OAuth follow's name jobs alone, so any of them after the release
-		// counts as built: a tag is never published a second time.
+		// Single-image releases retain the status-time heuristic. OAuth
+		// statuses name jobs alone, so do not republish a tag they built.
 		built := len(reconcile.TagBuildStatuses(reconcile.AppStatuses(statuses), published)) > 0 || reconcile.OAuthBuiltSince(statuses, published)
+		if line, _, _ := reconcile.ReleaseLine(release.TagName); line != "" {
+			// Image tags can share a commit and its status contexts. Only
+			// the checkout tag of a workflow's pipeline identifies its image.
+			built, err = builds.built(ctx, release.TagName, reconcile.AppStatuses(statuses))
+			if err != nil {
+				return nil, microerror.Mask(fmt.Errorf("checking the build of %s: %w", release.TagName, err))
+			}
+			if !built && reconcile.OAuthBuiltSince(statuses, published) {
+				return nil, fmt.Errorf("cannot identify which image tag the OAuth statuses built; refusing to republish %s", release.TagName)
+			}
+		}
 		recent := now().Sub(published) < reconcile.TagBuildGrace && !result.CreatedTrigger
 		switch {
 		case built:
