@@ -117,9 +117,19 @@ func (a *Auth) discoverMuster(ctx context.Context, endpoint string) (musterDisco
 		return musterDiscovery{}, fmt.Errorf("discovering the authorization server of %s: %w", endpoint, lastErr)
 	}
 	issuer := strings.TrimRight(resource.AuthorizationServers[0], "/")
+	metadataURL, err := url.Parse(issuer)
+	if err != nil || metadataURL.Scheme == "" || metadataURL.Host == "" {
+		return musterDiscovery{}, fmt.Errorf("the authorization server %q is not a URL", issuer)
+	}
+	// RFC 8414 inserts the well-known path before the issuer path. The
+	// appended OpenID discovery location remains a legacy fallback below.
+	metadataURL.Path = authorizationServerPath + metadataURL.Path
+	if metadataURL.RawPath != "" {
+		metadataURL.RawPath = authorizationServerPath + metadataURL.RawPath
+	}
 
 	var server authorizationServer
-	if err := a.getJSON(ctx, issuer+authorizationServerPath, nil, &server); err != nil {
+	if err := a.getJSON(ctx, metadataURL.String(), nil, &server); err != nil {
 		if err2 := a.getJSON(ctx, issuer+openIDConfigurationPath, nil, &server); err2 != nil {
 			return musterDiscovery{}, fmt.Errorf("reading the metadata of the authorization server %s: %w", issuer, err)
 		}
