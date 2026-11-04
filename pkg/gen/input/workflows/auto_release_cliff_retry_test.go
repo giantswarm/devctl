@@ -107,7 +107,7 @@ printf '%s\n' "$CLIFF_RESULT"
 					}
 					delays, err := os.ReadFile(filepath.Join(dir, "sleep-calls")) // #nosec G304 -- test temp directory
 					wantDelays := []string{"", "2\n", "2\n4\n"}[attempts-1]
-					if err != nil && !(attempts == 1 && os.IsNotExist(err)) {
+					if err != nil && (attempts != 1 || !os.IsNotExist(err)) {
 						t.Fatal(err)
 					}
 					if string(delays) != wantDelays {
