@@ -49,6 +49,10 @@ red pipeline otherwise. Nobody is load-bearing for the pipeline afterwards.
 The output names the pull request; `--output json` prints the dry run and the pull request URL as one
 document. `--dry-run` prints the dry run and opens nothing.
 
+Opening a declaration pull request requires `--owner giantswarm` (the default): its destination is
+`giantswarm/github`, whose reconciler creates Giant Swarm repositories. Another `--owner` can be checked
+with `--dry-run`; it cannot redirect the declaration to another organisation.
+
 ### A refusal, a rerun
 
 A refusal of the declaration (a taken name, a wrong flavour, a schema violation) ends the command with

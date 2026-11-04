@@ -39,7 +39,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.Language, "language", "", fmt.Sprintf("gen.language: %s.", oneOf(gen.AllLanguages())))
 	cmd.Flags().StringVar(&f.Description, "description", "", "Description of the repository, set at its creation.")
 	cmd.Flags().StringVar(&f.Visibility, "visibility", "", fmt.Sprintf("Visibility of the repository: %s. Without it the entry says visibility: private, the org's default.", oneOf(reposetup.EmbeddedFieldValues("visibility"))))
-	cmd.Flags().StringVar(&f.Owner, "owner", reposetup.DefaultOwner, "GitHub organisation the repository is declared in and whose teams the guard reads.")
+	cmd.Flags().StringVar(&f.Owner, "owner", reposetup.DefaultOwner, "GitHub organisation whose repository name and teams are checked; opening a declaration pull request requires giantswarm.")
 	cmd.Flags().BoolVar(&f.DryRun, "dry-run", false, "Print the dry run; open no pull request.")
 	cmd.Flags().StringVarP(&f.Output, "output", "o", outputText, "Output format: text or json (the dry run and the pull request URL).")
 }
@@ -53,6 +53,9 @@ func (f *flag) Validate() error {
 	}
 	if f.Output != outputText && f.Output != outputJSON {
 		return microerror.Maskf(invalidFlagError, "--output must be %s or %s", outputText, outputJSON)
+	}
+	if !f.DryRun && f.Owner != reposetup.DefaultOwner {
+		return microerror.Maskf(invalidFlagError, "--owner must be %s when opening a declaration pull request: the declaration is written to %s/%s", reposetup.DefaultOwner, reposetup.SchemaRepositoryOwner, reposetup.SchemaRepository)
 	}
 	if !strings.HasPrefix(f.Team, "team-") {
 		f.Team = "team-" + f.Team
