@@ -4,7 +4,7 @@
 // posted nothing yet: a job behind requires: posts its first status when it
 // starts, after the jobs it requires have finished.
 //
-// The configuration is read as CircleCI reads it: devctl's generated setup
+// The configuration is read as CircleCI reads it: devctl's static generated setup
 // workflow continues with .circleci/workflows.yml deep-merged with the
 // optional .circleci/custom.yml (yq's *+: maps merge, lists append), any
 // other configuration is its own. A job's status context is

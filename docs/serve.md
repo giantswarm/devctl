@@ -173,13 +173,13 @@ A promotion's document names the identity source `platform`. The private registr
 The server holds no CircleCI credential; the laptop keeps its own. `pr_wait`, `pr_merge` and `release_wait` read
 CircleCI only through the commit statuses it posts to GitHub (`ci/circleci: <job>`). A job behind `requires:` posts
 nothing until the jobs it requires have finished, so the waits read the jobs CircleCI runs from the revision's
-`.circleci/config.yml` through GitHub: devctl's generated setup workflow continues with `.circleci/workflows.yml`
+`.circleci/config.yml` through GitHub: devctl's static generated setup workflow continues with `.circleci/workflows.yml`
 deep-merged with `.circleci/custom.yml`, any other configuration is its own; a job runs when its `filters` take the
 pull request's branch (`pull/<n>` for a fork) or the tag and every job it requires runs, an approval posts nothing,
 and a workflow runs when its `when`/`unless` holds for a push (pipeline parameters at their defaults, `trigger_source`
 `webhook`), a scheduled one never. Every such job that has posted no status yet keeps a wait pending, named
 `ci/circleci: <job> (not posted yet)`. What the configuration cannot tell before the pipeline runs (a matrix job, a
-condition on another pipeline value, a setup workflow devctl does not generate) is a warning, and those jobs count once
+condition on another pipeline value, a runtime continuation such as multi-image setup, or another setup workflow) is a warning, and those jobs count once
 they post.
 
 `release_wait` judges the tag's CI by those statuses on the tag's commit: green once every tag job posted, no job is
