@@ -24,6 +24,11 @@ already within the tail, a single failing last step, prints the tail alone. The 
 timed-out wait reads no log and costs no extra request. A log that cannot be read (expired, not
 yet uploaded) is named in its job's `logError`; the verdict stays red.
 
+When an authenticated CircleCI workflow-jobs or failed-step job read returns 404, the client
+retries that read once without the token: a public continuation can be readable anonymously
+while hidden from the authenticated caller. Explicit 401/403 refusals are returned without this
+fallback. Signed step-output URLs continue to be read without a token.
+
 The tokens come from the OS keychain (`devctl auth login`, see [auth.md](auth.md)). The GitHub
 token is required before the first request; the CircleCI token only once the head turns out to
 carry a CircleCI configuration for a repository CircleCI builds. The GitHub identity follows the repository's owner: the
@@ -157,6 +162,14 @@ from a fork of a CircleCI-built repository is looked up under the branch CircleC
 `pull/<number>`.
 
 ## Polling
+
+At the configured timeout, a pipeline whose latest workflows are all successful setup workflows,
+with no additional CircleCI job contexts indicating a continuation, reports `CircleCI continuation
+missing` in the reason: the pipeline exists and setup succeeded, but no continuation workflow
+appeared before the deadline. It remains exit 2 (`timeout`) and includes the pipeline and unfinished
+checks. This reports the observed cause of the wait; the API evidence cannot distinguish a dropped
+continuation from an intentionally halted setup or a listing that still lags. A running or failed
+setup, an empty workflow listing, or an unanswered last poll does not establish this cause.
 
 Every GitHub request is conditional: the ETag of the last answer goes out as `If-None-Match`, and
 a `304 Not Modified` costs nothing against the rate limit. The interval between polls comes from

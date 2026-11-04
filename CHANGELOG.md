@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait --failed-log` retries CircleCI workflow-job and failed-step job reads anonymously once
+  after an authenticated 404, so public continuation logs can be read. A wait that reaches its
+  timeout after successful setup with no observed continuation names the missing continuation
+  in its reason, preserving exit 2 and the unfinished checks.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of

@@ -132,6 +132,9 @@ type circleSnapshot struct {
 // evaluation is the verdict of one snapshot with the document fields it
 // fills.
 type evaluation struct {
+	// headSHA identifies the complete poll behind timeout diagnostics when
+	// a later poll has only partly read a changed head.
+	headSHA  string
 	checks   []Check
 	actions  []ActionRun
 	circleci *CircleCI
@@ -150,6 +153,9 @@ type evaluation struct {
 	// unfinished names everything the head still waits for, in the words the
 	// document uses at a timeout.
 	unfinished []string
+	// missingContinuation is the completed setup's evidence for the reason
+	// at the deadline; it does not end the wait early or make the head green.
+	missingContinuation string
 	// notRequired names the pending check runs of named apps other than
 	// GitHub Actions and the pending statuses of other CI than CircleCI the
 	// base does not require: the merge box does not wait for them, and
@@ -255,7 +261,8 @@ func (e *evaluation) approvalReason() string {
 // Actions runs awaiting approval is approvalOnly: no wait starts them, a
 // member's approval does.
 func evaluate(s snapshot) *evaluation {
-	e := &evaluation{checks: []Check{}, actions: []ActionRun{}, seen: map[string]bool{}}
+	e := &evaluation{headSHA: s.headSHA, checks: []Check{}, actions: []ActionRun{}, seen: map[string]bool{}}
+	e.missingContinuation = missingContinuation(s.circleci, circleStatuses(s.statuses))
 	required := map[string]bool{}
 	for _, name := range s.required {
 		required[name] = true

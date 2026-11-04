@@ -368,6 +368,9 @@ func (w *Waiter) timedOut(result *Result, last *evaluation, unanswered string) e
 	if last == nil {
 		return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout, "timeout after %s before the first poll completed%s", w.timeout, suffix)
 	}
+	if unanswered == "" && last.headSHA == result.HeadSHA && last.missingContinuation != "" {
+		suffix = "; " + last.missingContinuation
+	}
 	if len(last.red) > 0 {
 		suffix = "; red already, besides the required contexts it waited for: " + last.redReason() + suffix
 	}
