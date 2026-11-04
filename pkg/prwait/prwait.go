@@ -11,14 +11,15 @@
 // context reported. A pending check of another app, or a pending status of
 // another CI than CircleCI, the base does not require is not waited for, as
 // the merge box does not wait for it: Result.Blocking names it, and a review
-// the base requires that is missing. Draft, closed, conflicting and behind-a-strict-base end
-// the wait before it starts.
+// the base requires that is missing. Closed, conflicting and behind-a-strict-base
+// end the wait before it starts. Drafts wait for CI like other open pull requests.
 package prwait
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -170,6 +171,9 @@ type Result struct {
 	Number     int    `json:"number"`
 	HeadSHA    string `json:"headSha"`
 	BaseRef    string `json:"baseRef"`
+	// Draft is true when the pull request was a draft at the latest poll. A green
+	// draft has passed CI but still cannot be merged by pr merge.
+	Draft bool `json:"draft,omitempty"`
 	// Checks are the head's check runs, every run of a name that counts, and
 	// its statuses, the latest per context.
 	Checks []Check `json:"checks"`
@@ -179,7 +183,7 @@ type Result struct {
 	ChecksVia string `json:"checksVia,omitempty"`
 	// CircleCI is absent when the head carries no CircleCI configuration, the
 	// repository is a template whose entry declares that configuration as
-	// template content, or CircleCI has no project for it.
+	// template content, or CircleCI has no project or listed pipeline for it.
 	CircleCI *CircleCI `json:"circleci,omitempty"`
 	// Actions are the head's GitHub Actions runs, the latest per workflow.
 	Actions []ActionRun `json:"actions"`
@@ -198,7 +202,7 @@ type Result struct {
 	// requires that is missing or asks for changes.
 	Blocking []string `json:"blocking,omitempty"`
 	// Warnings are for the envelope: a head that changed under the wait, a
-	// template repository, a CircleCI project that does not exist.
+	// template repository, a CircleCI project that does not exist or lists no pipeline.
 	Warnings []string `json:"-"`
 }
 
@@ -225,6 +229,8 @@ type head struct {
 	workflows     []string
 	workflowsRead bool
 }
+
+var errHeadChanged = errors.New("head changed while reading checks")
 
 // Wait blocks until owner/repo#number is green (nil), red or otherwise
 // decided (an [*agentcli.ExitError] with the code of the table), or the
@@ -253,9 +259,19 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 	var unanswered string
 	for poll := 1; ; poll++ {
 		e, err := w.poll(ctx, owner, repo, number, h, result)
+		if errors.Is(err, errHeadChanged) {
+			last, unanswered = nil, ""
+			continue
+		}
 		if err != nil {
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
-				return result, w.timedOut(result, last, unanswered)
+				// The deadline interrupted this poll: the preceding complete
+				// poll cannot establish that the continuation is still absent.
+				reason := unanswered
+				if last != nil && last.missingContinuation != "" {
+					reason = err.Error()
+				}
+				return result, w.timedOut(result, last, reason)
 			}
 			// A rate limit resetting after the deadline is a timeout ahead
 			// of it: the document names what was unfinished all the same.
@@ -291,14 +307,14 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 				result.Warnings = append(result.Warnings, fmt.Sprintf("accepted red: %s %s concluded %s (%s), named by --accept-red", a.Source, a.Name, a.Conclusion, a.URL))
 			}
 			w.blocking(ctx, owner, repo, number, h, e, result)
-			w.progress.Printf("poll %d: green", poll)
+			w.progress.Printf("poll %d: green (head %s)", poll, h.sha)
 			return result, nil
 		case e.redDecided():
-			w.progress.Printf("poll %d: red: %s", poll, e.redReason())
+			w.progress.Printf("poll %d: red: head %s: %s", poll, h.sha, e.redReason())
 			if w.failedLogLines > 0 {
 				result.FailedJobs = w.failedJobs(ctx, owner, repo, h, e)
 			}
-			return result, agentcli.NewExitError(agentcli.ExitRed, agentcli.VerdictRed, "%s", e.redReason())
+			return result, agentcli.NewExitError(agentcli.ExitRed, agentcli.VerdictRed, "head %s: %s", h.sha, e.redReason())
 		case e.neverReported():
 			w.progress.Printf("poll %d: required missing: %s", poll, strings.Join(e.requiredMissing, ", "))
 			return result, w.neverReported(result, e)
@@ -368,6 +384,9 @@ func (w *Waiter) timedOut(result *Result, last *evaluation, unanswered string) e
 	if last == nil {
 		return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout, "timeout after %s before the first poll completed%s", w.timeout, suffix)
 	}
+	if unanswered == "" && last.headSHA == result.HeadSHA && last.missingContinuation != "" {
+		suffix = "; " + last.missingContinuation
+	}
 	if len(last.red) > 0 {
 		suffix = "; red already, besides the required contexts it waited for: " + last.redReason() + suffix
 	}
@@ -399,7 +418,29 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 	if err != nil {
 		return nil, err
 	}
-	if err := notApplicable(pr); err != nil {
+	// The PR endpoint can lag a push. Settle the head before trusting even
+	// its mergeability, and repeat whenever the reads disagree. The wait's
+	// deadline bounds continuous pushes and unanswered reads.
+	for {
+		if err := w.clock.Sleep(ctx, time.Second); err != nil {
+			return nil, err
+		}
+		current, err := w.github.PullRequest(ctx, owner, repo, number)
+		if err != nil {
+			return nil, err
+		}
+		stable := current.GetHead().GetSHA() == pr.GetHead().GetSHA()
+		if !stable {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("the head changed from %s to %s during the wait", pr.GetHead().GetSHA(), current.GetHead().GetSHA()))
+		}
+		pr = current
+		if stable {
+			break
+		}
+		w.progress.Printf("head changed while settling; reading head %s again", pr.GetHead().GetSHA())
+	}
+	result.Draft = pr.GetDraft()
+	if err := notApplicable(pr, true); err != nil {
 		result.HeadSHA = pr.GetHead().GetSHA()
 		result.BaseRef = pr.GetBase().GetRef()
 		return nil, err
@@ -438,8 +479,25 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 		return nil, err
 	}
 	if h.circleci != nil {
-		if s.circleci, err = w.readCircleCI(ctx, owner, repo, h); err != nil {
+		if s.circleci, err = w.readCircleCI(ctx, owner, repo, h, s.statuses); err != nil {
 			return nil, err
+		}
+		if s.circleci.pipeline == nil && circleStatuses(s.statuses) == 0 {
+			// A project lookup also succeeds for repositories never set up
+			// on CircleCI. Any listed pipeline, even on another branch, is
+			// enough evidence to keep waiting for this head's pipeline.
+			page, err := h.circleci.ListPipelines(ctx, owner, repo, "")
+			if err != nil {
+				return nil, err
+			}
+			if len(page.Items) == 0 && page.NextPageToken == "" {
+				s.circleci = nil
+				warning := fmt.Sprintf("circleci pipeline for %s is absent; %s/%s has %s but no listed CircleCI pipelines: GitHub alone", sha, owner, repo, CircleCIConfigPath)
+				if !slices.Contains(result.Warnings, warning) {
+					result.Warnings = append(result.Warnings, warning)
+					w.progress.Printf("%s", warning)
+				}
+			}
 		}
 	}
 
@@ -449,6 +507,17 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 		return nil, err
 	}
 	w.awaitRegistration(e)
+	// Checks can take several requests to read. A verdict is only valid if
+	// the PR still names the revision whose checks were evaluated.
+	if e.green() || e.redDecided() || e.neverReported() || e.approvalOnly || w.noChecks(e) {
+		current, err := w.github.PullRequest(ctx, owner, repo, number)
+		if err != nil {
+			return nil, err
+		}
+		if current.GetHead().GetSHA() != sha {
+			return nil, errHeadChanged
+		}
+	}
 	result.Checks, result.Actions, result.CircleCI, result.AcceptedRed = e.checks, e.actions, e.circleci, e.acceptedRed
 	return e, nil
 }
@@ -501,11 +570,11 @@ func (w *Waiter) readChecksREST(ctx context.Context, owner, repo, sha string, s 
 // declares gen.ci.templateContent: that configuration is for the
 // repositories created from it, and the template is never built itself. A
 // template without the declaration carries its own pipeline and is judged
-// like any repository, as the reconciler judges it. Whether the project has
-// run a pipeline before does not decide it: the head's own may be the
-// project's first, and judging the head from GitHub alone until it appeared
-// would call a head green whose pipeline has not started. The token is required only past the first
-// condition, so a repository without CircleCI needs GitHub alone.
+// like any repository, as the reconciler judges it. A successful project
+// lookup alone does not establish that CircleCI builds the repository:
+// the poll also checks the project-wide pipeline listing when the head
+// has no pipeline or CircleCI status. The token is required only past the
+// first condition, so a repository without CircleCI needs GitHub alone.
 func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number int, headRef string, fork, template bool, h *head, result *Result) error {
 	h.decided = true
 	if w.circleci == nil && !w.fromStatuses {
@@ -584,7 +653,7 @@ func (w *Waiter) templateContent(ctx context.Context, owner, repo string) (bool,
 
 // readCircleCI finds the newest pipeline of the head revision on the head's
 // branch and reads its workflows.
-func (w *Waiter) readCircleCI(ctx context.Context, owner, repo string, h *head) (*circleSnapshot, error) {
+func (w *Waiter) readCircleCI(ctx context.Context, owner, repo string, h *head, statuses []*github.RepoStatus) (*circleSnapshot, error) {
 	s := &circleSnapshot{project: h.project}
 	pipeline, err := h.circleci.FindPipelineByRevision(ctx, owner, repo, h.branch, h.sha)
 	if err != nil {
@@ -599,6 +668,19 @@ func (w *Waiter) readCircleCI(ctx context.Context, owner, repo string, h *head) 
 		return nil, err
 	}
 	s.workflows = workflows
+	if s.haltCandidate(w.clock.Now()) {
+		s.setupJobs = map[string][]circleciclient.Job{}
+		for _, workflow := range latestWorkflows(workflows) {
+			jobs, err := h.circleci.ListWorkflowJobs(ctx, workflow.ID)
+			if err != nil && !circleciclient.IsNotFound(err) {
+				return nil, err
+			}
+			s.setupJobs[workflow.ID] = jobs
+		}
+		if s.setupHalted(w.clock.Now(), statuses) {
+			w.progress.Printf("circleci pipeline %d (setup halted, no continuation)", pipeline.Number)
+		}
+	}
 	return s, nil
 }
 
