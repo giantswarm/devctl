@@ -416,17 +416,41 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 
 		// Checks are passing, proceed with approval
 		// Check if already approved
-		reviews, _, err := githubClient.PullRequests.ListReviews(ctx, ps.Owner, ps.Repo, ps.Number, nil)
-		if err != nil {
-			ps.UpdateStatus("Failed to get reviews")
-			return
+		var reviews []*github.PullRequestReview
+		reviewOpts := &github.ListOptions{PerPage: 100}
+		for {
+			page, resp, err := githubClient.PullRequests.ListReviews(ctx, ps.Owner, ps.Repo, ps.Number, reviewOpts)
+			if err != nil {
+				ps.UpdateStatus("Failed to get reviews")
+				return
+			}
+			reviews = append(reviews, page...)
+			if resp.NextPage == 0 {
+				break
+			}
+			reviewOpts.Page = resp.NextPage
 		}
 
 		alreadyApproved := false
-		for _, review := range reviews {
-			if review.GetState() == "APPROVED" {
-				alreadyApproved = true
-				break
+		if len(reviews) > 0 {
+			user, _, err := githubClient.Users.Get(ctx, "")
+			if err != nil || user.GetLogin() == "" {
+				ps.UpdateStatus("Failed to get reviewer")
+				return
+			}
+			// Reviews are chronological. Only the caller's latest decisive
+			// review state can replace their requested approval; comments do
+			// not change that state.
+			for _, review := range reviews {
+				if !strings.EqualFold(review.GetUser().GetLogin(), user.GetLogin()) {
+					continue
+				}
+				switch review.GetState() {
+				case "APPROVED":
+					alreadyApproved = true
+				case "CHANGES_REQUESTED", "DISMISSED":
+					alreadyApproved = false
+				}
 			}
 		}
 
