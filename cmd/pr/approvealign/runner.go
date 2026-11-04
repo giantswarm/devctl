@@ -286,6 +286,10 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 				ps.UpdateStatus("Merged (auto-merge)")
 				return
 			}
+			if prCheck != nil && prCheck.GetHead().GetSHA() != headSHA {
+				ps.UpdateStatus("Head changed; run again")
+				return
+			}
 
 			// Check if PR needs to be updated with base branch
 			if prCheck != nil && prCheck.GetMergeableState() == "behind" {
@@ -295,7 +299,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 				}
 
 				ps.UpdateStatus("Updating branch...")
-				_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, github.UpdatePullRequestBranchRequest{})
+				_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, github.UpdatePullRequestBranchRequest{ExpectedHeadSHA: new(headSHA)})
 				if err != nil {
 					ps.UpdateStatus("Failed to update branch")
 					return
@@ -341,7 +345,8 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 
 		ps.UpdateStatus("Approving...")
 		reviewRequest := &github.PullRequestReviewRequest{
-			Event: new("APPROVE"),
+			CommitID: new(headSHA),
+			Event:    new("APPROVE"),
 		}
 		_, _, err = githubClient.PullRequests.CreateReview(ctx, ps.Owner, ps.Repo, ps.Number, reviewRequest)
 		if err != nil {
@@ -356,11 +361,15 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 			ps.UpdateStatus("Merged (auto-merge)")
 			return
 		}
+		if prCheck != nil && prCheck.GetHead().GetSHA() != headSHA {
+			ps.UpdateStatus("Head changed; run again")
+			return
+		}
 
 		// Check if PR branch is behind and needs updating
 		if prCheck != nil && prCheck.GetMergeableState() == "behind" {
 			ps.UpdateStatus("Updating branch...")
-			_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, github.UpdatePullRequestBranchRequest{})
+			_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, github.UpdatePullRequestBranchRequest{ExpectedHeadSHA: new(headSHA)})
 			if err != nil {
 				ps.UpdateStatus("Failed to update branch")
 				return
@@ -426,7 +435,7 @@ func (r *runner) mergeApproved(ctx context.Context, githubClient *github.Client,
 	}
 
 	ps.UpdateStatus("Merging...")
-	_, _, err := githubClient.PullRequests.Merge(ctx, ps.Owner, ps.Repo, ps.Number, "", &github.PullRequestOptions{MergeMethod: "squash"})
+	_, _, err := githubClient.PullRequests.Merge(ctx, ps.Owner, ps.Repo, ps.Number, "", &github.PullRequestOptions{SHA: prData.GetHead().GetSHA(), MergeMethod: "squash"})
 	if err != nil {
 		ps.UpdateStatus("Failed to merge")
 		return
