@@ -145,6 +145,29 @@ The devctl GitHub App login (`devctl auth login`); a token in `--github-token-en
 organisation's teams and writes the pull request's branch to `giantswarm/github`; the pull request is
 yours. The repository is created by the reconciler's App, never with this token.
 
+## `devctl repo owner`
+
+The supported way to find a repository's declared owning team before a merge or review request is
+the team-file lookup:
+
+```nohighlight
+devctl repo owner devctl
+devctl repo owner giantswarm/devctl --output json
+```
+
+Text output is the GitHub team slug, such as `team-bumblebee`. JSON includes `repository`, `team`
+and `source`, the URL of the declaring `repositories/<team>.yaml` in `giantswarm/github` at `main`.
+The command reads those files directly with the devctl GitHub App login (Contents read), using
+the same lookup as `pr merge`'s team-file policy. It needs no muster session. The normal explicit
+GitHub token environment overrides apply; see [authentication](auth.md).
+
+This is declared ownership, not a list of all teams with access or proof that GitHub's grants have
+converged. Only `giantswarm` repositories are described by this inventory; another owner is refused
+before authentication or any request. An undeclared repository, an unreadable inventory or a malformed
+team file fails without printing an owner. There is no fallback to a person's token or to
+`GET /repos/{owner}/{repo}/teams`: that endpoint requires Administration read, which the agent App
+does not carry. The reconciler checks live grants using its separate administration installation token.
+
 ## The manager's verbs: one subcommand per tool of giantswarm-repo-manager
 
 giantswarm-repo-manager keeps the inventory of the org's repositories and lands every team-file change

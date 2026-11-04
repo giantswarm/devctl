@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo owner [OWNER/]REPOSITORY` exposes the declared owning team from the `giantswarm/github`
+  team-file inventory using Contents read, avoiding the repository-teams endpoint's 403 under the agent
+  App token. Text prints the team slug; `--output json` also names the repository and source declaration.
+  An undeclared repository or unreadable inventory fails without guessing an owner.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
