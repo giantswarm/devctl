@@ -92,7 +92,7 @@ func TestInvalidOutputPreservesExistingRelease(t *testing.T) {
 		t.Errorf("invalid output returned %v, want an invalid --output error", err)
 	}
 	for name, want := range files {
-		got, err := os.ReadFile(filepath.Join(provider, name))
+		got, err := os.ReadFile(filepath.Join(provider, name)) // #nosec G304 -- fixed fixture names under the test's temporary provider directory
 		if err != nil || string(got) != want {
 			t.Errorf("invalid output changed %s (read error: %v)", name, err)
 		}
