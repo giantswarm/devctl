@@ -62,9 +62,10 @@ func TestBootHonorsHTTPCancellation(t *testing.T) {
 					return nil, errors.New("HTTP request detached from Boot context")
 				}
 				var body io.Reader = strings.NewReader("")
-				if stage == "listing body" {
+				switch stage {
+				case "listing body":
 					body = cancelListingReader{cancel: cancel}
-				} else if stage == "release request" {
+				case "release request":
 					body = strings.NewReader(`<a href="1.2.3/">release</a>`)
 				}
 				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(body), Header: make(http.Header)}, nil
