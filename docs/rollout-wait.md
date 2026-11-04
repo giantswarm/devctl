@@ -122,8 +122,9 @@ out the way `kubectl rollout status` judges it: the new generation observed, eve
 no old replica left, the updated ones available (a StatefulSet: ready and at the update revision or
 above its partition; a DaemonSet: every scheduled pod updated and available; `OnDelete` counts as
 rolled out; a HelmRelease a meta chart renders: its generation observed, Ready with no reconcile in flight,
-its dependencies included, a suspended one counted, Stalled or a failed install, upgrade or test exit 1). The workloads of a HelmRelease with `spec.kubeConfig` or of an App into a workload cluster
-live elsewhere and are not read; a warning says so.
+its dependencies included, a suspended one counted; while `Reconciling=True` it keeps waiting, then
+Stalled or a failed install, upgrade or test exits 1 once the retry has settled). The workloads of a
+HelmRelease with `spec.kubeConfig` or of an App into a workload cluster live elsewhere and are not read; a warning says so.
 
 ### When a deployment will not get there
 
