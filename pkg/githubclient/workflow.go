@@ -57,18 +57,19 @@ func (c *Client) ListReleases(ctx context.Context, owner, repo string) ([]Releas
 		}
 		for _, rel := range releases {
 			out = append(out, Release{
-				Tag:        rel.GetTagName(),
-				URL:        rel.GetHTMLURL(),
-				Published:  !rel.GetDraft(),
-				Prerelease: rel.GetPrerelease(),
+				Tag:           rel.GetTagName(),
+				URL:           rel.GetHTMLURL(),
+				Published:     !rel.GetDraft(),
+				Prerelease:    rel.GetPrerelease(),
+				PublishFailed: hasPublishFailure(rel.GetBody()),
 			})
 		}
 		if resp.NextPage == 0 {
-			break
+			return out, nil
 		}
 		opts.Page = resp.NextPage
 	}
-	return out, nil
+	return nil, microerror.Maskf(executionError, "listing releases of %s/%s exceeded %d pages", owner, repo, releasePages)
 }
 
 // DefaultBranch returns the default branch of a repository. IsNotFound when
