@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- CircleCI waits read every workflow page, so a failed or running workflow on a later page is no longer missed.
+
 - Bulk PR approval targets the checked commit, and direct merges and Align branch updates
   require that head so a concurrent push cannot substitute unchecked code.
 - The bulk PR approval commands require readable commit statuses and every page of check runs;
