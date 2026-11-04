@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait` ignores a cancelled check superseded by a later-started check of the same name in
+  another run of the same workflow, even when that workflow run has a lower ID. A lone
+  cancellation, cancelled matrix jobs and checks from separate workflows still count.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
