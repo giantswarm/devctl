@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `deploy` renews the stored GitHub App login on an API 401 and retries once, so a token expiring or rotated by
+  another devctl process while a pull request is reviewed does not end the merge wait. Refused environment-token
+  overrides still fail without falling back to the keychain.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
