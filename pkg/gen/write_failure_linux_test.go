@@ -35,7 +35,7 @@ func Test_Execute_WriteFailurePreservesFile(t *testing.T) {
 		if !errors.Is(err, syscall.EFBIG) {
 			t.Fatalf("got %v, want EFBIG from the bounded write", err)
 		}
-		data, err := os.ReadFile(destination)
+		data, err := os.ReadFile(destination) // #nosec G304 -- test fixture
 		if err != nil || string(data) != original {
 			t.Errorf("failed publication replaced the original: %q, %v", data, err)
 		}
@@ -80,7 +80,7 @@ func Test_Execute_PublicationRestrictiveUmask(t *testing.T) {
 			if err := Execute(t.Context(), input.Input{Path: destination, Permissions: permissions, TemplateBody: "fixture"}); err != nil {
 				t.Fatal(err)
 			}
-			info, err := os.Stat(destination)
+			info, err := os.Stat(destination) // #nosec G703 -- test fixture
 			if err != nil {
 				t.Fatal(err)
 			}

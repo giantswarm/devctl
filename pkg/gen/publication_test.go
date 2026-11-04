@@ -47,7 +47,7 @@ func Test_Execute_PublicationModes(t *testing.T) {
 			if err := Execute(t.Context(), input.Input{Path: destination, Permissions: tc.permissions, TemplateBody: "complete"}); err != nil {
 				t.Fatal(err)
 			}
-			data, err := os.ReadFile(destination)
+			data, err := os.ReadFile(destination) // #nosec G304 -- test fixture
 			if err != nil || string(data) != "complete" {
 				t.Fatalf("output = %q, %v", data, err)
 			}
@@ -94,7 +94,7 @@ func Test_Execute_PublicationSymlink(t *testing.T) {
 			if err != nil || link != "target" {
 				t.Errorf("output symlink changed: %q, %v", link, err)
 			}
-			data, err := os.ReadFile(target)
+			data, err := os.ReadFile(target) // #nosec G304 -- test fixture
 			if err != nil || string(data) != "replacement" {
 				t.Errorf("symlink target = %q, %v", data, err)
 			}
@@ -114,7 +114,7 @@ func Test_Execute_PublicationReadOnlyFile(t *testing.T) {
 	if !errors.Is(err, fs.ErrPermission) {
 		t.Errorf("read-only output must still be refused: %v", err)
 	}
-	data, err := os.ReadFile(destination)
+	data, err := os.ReadFile(destination) // #nosec G304 -- test fixture
 	if err != nil || string(data) != "original" {
 		t.Errorf("read-only output changed: %q, %v", data, err)
 	}
@@ -141,7 +141,7 @@ func Test_Execute_PublicationSymlinkParentTraversal(t *testing.T) {
 	if err := Execute(t.Context(), input.Input{Path: destination, TemplateBody: "replacement"}); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(filepath.Join(physical, "target"))
+	data, err := os.ReadFile(filepath.Join(physical, "target")) // #nosec G304 -- test fixture
 	if err != nil || string(data) != "replacement" {
 		t.Errorf("physical symlink target = %q, %v", data, err)
 	}
