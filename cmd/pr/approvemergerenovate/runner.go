@@ -392,51 +392,50 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 		// Check status checks BEFORE checking auto-merge
 		// This way we report failed checks even if auto-merge is enabled
 		headSHA := pr.GetHead().GetSHA()
-		combinedStatus, _, _ := githubClient.Repositories.GetCombinedStatus(ctx, ps.Owner, ps.Repo, headSHA, nil)
-		checkRuns, _, _ := githubClient.Checks.ListCheckRunsForRef(ctx, ps.Owner, ps.Repo, headSHA, nil)
-
-		// Check if any checks are failing or pending
-		hasFailedChecks := false
-		checksPending := false
-
-		// Check combined status first - this is for traditional status checks
-		if combinedStatus != nil {
-			state := combinedStatus.GetState()
-			totalCount := combinedStatus.GetTotalCount()
-
-			if state == "success" {
-				// All required checks passed
-				checksPending = false
-				hasFailedChecks = false
-			} else if state == stateFailure || state == "error" {
-				hasFailedChecks = true
-			} else if state == "pending" && totalCount > 0 {
-				// Only treat as pending if there are actual status checks
-				// pending with totalCount=0 just means no checks exist, not that checks are waiting
-				checksPending = true
-			}
+		combinedStatus, _, err := githubClient.Repositories.GetCombinedStatus(ctx, ps.Owner, ps.Repo, headSHA, nil)
+		if err != nil || combinedStatus == nil {
+			ps.UpdateStatus("Failed to get checks")
+			return
 		}
 
-		// Check individual check runs (GitHub Actions checks)
-		if checkRuns != nil && len(checkRuns.CheckRuns) > 0 && !hasFailedChecks {
-			// Only check runs if combinedStatus didn't already give us a definitive answer
-			if combinedStatus == nil || (combinedStatus.GetState() != "success" && combinedStatus.GetState() != stateFailure) {
-				for _, run := range checkRuns.CheckRuns {
-					conclusion := run.GetConclusion()
-					status := run.GetStatus()
+		hasFailedChecks := false
+		checksPending := false
+		switch combinedStatus.GetState() {
+		case "success":
+		case "pending":
+			// GitHub returns pending with zero statuses when none exist.
+			checksPending = combinedStatus.GetTotalCount() > 0
+		default:
+			hasFailedChecks = true
+		}
 
-					if status == "completed" {
-						if conclusion == stateFailure || conclusion == "cancelled" || conclusion == "timed_out" {
-							hasFailedChecks = true
-							break
-						}
-						// success, neutral, skipped are OK
-					} else {
-						// Check is not completed (queued, in_progress)
-						checksPending = true
-					}
+		// Commit statuses and check runs are independent. A successful status
+		// cannot override an Actions failure or an unfinished check run.
+		checkOpts := &github.ListCheckRunsOptions{
+			Filter:      new("latest"),
+			ListOptions: github.ListOptions{PerPage: 100},
+		}
+		for !hasFailedChecks {
+			checkRuns, resp, err := githubClient.Checks.ListCheckRunsForRef(ctx, ps.Owner, ps.Repo, headSHA, checkOpts)
+			if err != nil || checkRuns == nil {
+				ps.UpdateStatus("Failed to get checks")
+				return
+			}
+			for _, run := range checkRuns.CheckRuns {
+				if run.GetStatus() != "completed" {
+					checksPending = true
+					continue
+				}
+				switch run.GetConclusion() {
+				case "success", "neutral", "skipped":
+				default:
+					hasFailedChecks = true
 				}
 			}
+			if resp.NextPage == 0 {
+				break
+			}
+			checkOpts.Page = resp.NextPage
 		}
 
 		if hasFailedChecks {
