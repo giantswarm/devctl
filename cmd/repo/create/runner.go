@@ -11,6 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
@@ -21,20 +22,21 @@ type runner struct {
 	logger *logrus.Logger
 	stdout io.Writer
 	stderr io.Writer
+	open   client.Opener
 }
 
 // output is what the command prints with --output json: the dry run and,
 // once opened, the pull request.
 type output struct {
-	DryRun      *reposetup.Result `json:"dryRun"`
-	PullRequest string            `json:"pullRequest,omitempty"`
+	DryRun      any    `json:"dryRun"`
+	PullRequest string `json:"pullRequest,omitempty"`
 	// Next is the command that follows the repository to readiness and
 	// creates its CircleCI pipeline as the person, once it is set up.
 	Next string `json:"next,omitempty"`
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
@@ -49,6 +51,10 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 func (r *runner) run(ctx context.Context) error {
 	// The dry run is the command's output and stdout is for it alone.
 	r.logger.SetOutput(r.stderr)
+
+	if r.flag.DryRun && !r.flag.Local {
+		return microerror.Mask(r.manager(ctx))
+	}
 
 	var envVars []string
 	if r.flag.GithubTokenEnvVar != "" {
@@ -134,7 +140,7 @@ func (r *runner) run(ctx context.Context) error {
 	}
 	out := output{DryRun: dryRun}
 	if r.flag.Output == outputText {
-		if err := r.printDryRun(teamFile, dryRun); err != nil {
+		if err := r.printDryRun(dryRun); err != nil {
 			return microerror.Mask(err)
 		}
 	}
@@ -182,10 +188,10 @@ func (r *runner) run(ctx context.Context) error {
 // printDryRun writes the dry run as text: the entry as it goes into the
 // team file, the template and the chart added beside it, the name check,
 // the problems and the notices.
-func (r *runner) printDryRun(tf *reposetup.RemoteTeamFile, result *reposetup.Result) error {
+func (r *runner) printDryRun(result *reposetup.Result) error {
 	var buf bytes.Buffer
 	entry := result.Entries[0]
-	fmt.Fprintf(&buf, "%s/%s in %s of %s (schema: %s)\n\n", r.flag.Owner, entry.Name, tf.Path, tf.Team, result.Schema)
+	fmt.Fprintf(&buf, "%s/%s in %s of %s (schema: %s)\n\n", r.flag.Owner, entry.Name, reposetup.TeamFilePath(result.Team), result.Team, result.Schema)
 	fmt.Fprint(&buf, entry.Rendered)
 	fmt.Fprintln(&buf)
 	if entry.Template != "" {
