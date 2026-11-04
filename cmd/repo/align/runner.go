@@ -102,7 +102,9 @@ func print(w io.Writer, repository string, d *manager.Dispatch, dryRun bool) {
 	}
 	if d.OptIn != nil {
 		fmt.Fprintln(w, "opt-in pull request:")
-		client.PrintPlan(w, &d.OptIn.Plan)
+		if dryRun {
+			client.PrintPlan(w, &d.OptIn.Plan)
+		}
 		if d.OptIn.Committed != nil {
 			client.PrintCommitted(w, d.OptIn.Committed)
 		}
