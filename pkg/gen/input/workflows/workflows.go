@@ -187,6 +187,12 @@ func (w *Workflows) UpdateChart() input.Input {
 	return file.NewUpdateChartInput(w.params)
 }
 
+// PullRequestTemplate drops the checklist item asking for a CHANGELOG.md edit
+// from a repository's existing pull request template.
+func (w *Workflows) PullRequestTemplate() input.Input {
+	return file.NewPullRequestTemplateInput()
+}
+
 func (w *Workflows) ValidateChangelog() input.Input {
 	return file.NewValidateChangelogInput(w.params)
 }
