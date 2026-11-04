@@ -170,6 +170,13 @@ A release is available when every artifact resolves to a digest, the tag's CI is
 section) **and** every commit status of the tag's commit succeeded ([The commit's statuses](#the-commits-statuses)). The artifacts alone are not the release: a repository's own tag jobs push more than the sources
 name, and a job signs what it pushed after the digest resolves.
 
+Artifact presence is read independently of the tag pipeline's verdict. A failed pipeline still
+derives and probes its expected images and charts before returning: pullable artifacts carry
+`state: available` and their digests, absent artifacts remain `missing`, and the document carries
+`verdict: ci_failed`, exit 1, with `pipeline.failedJobs`. If artifact derivation or probing returns
+a terminal error while CI is already known to have failed, a warning names that read failure
+and the CI verdict still decides the exit code.
+
 An artifact is available when its manifest resolves to a digest:
 
 - images at `<registry>/<name>:<X.Y.Z>`, charts at `<registry>/charts/<owner>/<chart>:<X.Y.Z>`
