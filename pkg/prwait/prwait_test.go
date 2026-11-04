@@ -432,16 +432,16 @@ func Test_Wait_templateEntryReadFailureIsAToolingFailure(t *testing.T) {
 	}
 }
 
-func Test_Wait_firstPipelineOfTheProject(t *testing.T) {
-	// A new repository's first pull request: CircleCI has the project and
-	// no pipeline when the wait starts, GitHub reads green. The head is not
-	// green from GitHub alone; its pipeline, the project's first, is waited
-	// for, read once it exists and judged like any other.
+func Test_Wait_delayedPipelineOfBuiltProject(t *testing.T) {
+	// The base has a pipeline, but the pull request's first pipeline has not
+	// started when the wait begins. GitHub reads green; the head still waits
+	// for its own pipeline and judges it once it exists.
 	gh := gitHubGreen()
 	gh[confPath] = []sequence.Response{config}
 	none := body(map[string]any{"items": []any{}, "next_page_token": nil})
 	cc := sequence.Routes{
 		projPath: {project},
+		listPath: {body(map[string]any{"items": []any{map[string]any{"id": "base", "vcs": map[string]any{"revision": "base123", "branch": "main"}}}})},
 		pipePath: {none, pipelines, pipelines},
 		wfPath: {
 			body(map[string]any{"items": []any{map[string]any{"id": "w1", "name": "build", "status": "running"}}}),
@@ -541,7 +541,8 @@ func Test_Wait_notApplicable(t *testing.T) {
 	}{
 		{name: "conflicting", pull: pull("dirty", nil), want: "conflicts with main"},
 		{name: "behind a strict base", pull: pull("behind", nil), want: "behind main"},
-		{name: "draft", pull: pull("clean", map[string]any{"draft": true}), want: "a draft"},
+		{name: "conflicting draft", pull: pull("dirty", map[string]any{"draft": true}), want: "conflicts with main"},
+		{name: "closed draft", pull: pull("clean", map[string]any{"draft": true, "state": "closed"}), want: "is closed"},
 		{name: "closed", pull: pull("clean", map[string]any{"state": "closed"}), want: "is closed"},
 		{name: "merged", pull: pull("clean", map[string]any{"state": "closed", "merged": true}), want: "is merged"},
 	}
@@ -555,8 +556,11 @@ func Test_Wait_notApplicable(t *testing.T) {
 			if result.HeadSHA != sha {
 				t.Errorf("the document still names the head: want %s, got %q", sha, result.HeadSHA)
 			}
-			if n := len(h.github.Requests()); n != 1 {
-				t.Errorf("want the pull request read and nothing else, got %d requests", n)
+			if want := tc.pull.Body.(map[string]any)["draft"].(bool); result.Draft != want {
+				t.Errorf("want draft %v even on a refusal, got %v", want, result.Draft)
+			}
+			if n := len(h.github.Requests()); n != 2 {
+				t.Errorf("want two settling reads and nothing else, got %d requests", n)
 			}
 		})
 	}
@@ -843,5 +847,81 @@ func Test_Wait_graphQLFailureGoesBackToREST(t *testing.T) {
 	}
 	if !strings.Contains(h.progress.String(), "through GraphQL failed") {
 		t.Errorf("want the return to REST in the progress:\n%s", h.progress.String())
+	}
+}
+
+// A push can reach the branch before the PR endpoint. Neither an old red
+// check nor an old green/conflicting merge box is a verdict for the push.
+func Test_Wait_settlesHeadBeforeVerdict(t *testing.T) {
+	for _, state := range []string{"clean", "dirty", "behind"} {
+		t.Run(state, func(t *testing.T) {
+			gh := gitHubGreen()
+			gh[runsPath] = []sequence.Response{checkRuns(run("old", "completed", "failure"))}
+			newHead := pull("clean", map[string]any{"head": map[string]any{"sha": "def456", "ref": "feature"}})
+			gh[pullPath] = []sequence.Response{pull(state, nil), newHead}
+			gh["GET /repos/o/r/commits/def456/check-runs"] = []sequence.Response{checkRuns(run("new", "completed", "success"))}
+			gh["GET /repos/o/r/commits/def456/status"] = []sequence.Response{noStatuses}
+			gh["GET /repos/o/r/actions/runs?head_sha=def456"] = []sequence.Response{noRuns}
+			h := start(t, gh, nil, false, time.Minute)
+			result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+			if err != nil || result.HeadSHA != "def456" {
+				t.Fatalf("want new head green, got %+v, %v", result, err)
+			}
+			if !strings.Contains(h.progress.String(), "green (head def456)") {
+				t.Errorf("missing judged SHA: %s", h.progress.String())
+			}
+			for _, request := range h.github.Requests() {
+				if request.Path == "/repos/o/r/commits/abc123/check-runs" {
+					t.Error("evaluated the stale head")
+				}
+			}
+		})
+	}
+}
+
+func Test_Wait_rechecksHeadAfterChecks(t *testing.T) {
+	for _, conclusion := range []string{"success", "failure"} {
+		t.Run(conclusion, func(t *testing.T) {
+			gh := gitHubGreen()
+			gh[runsPath] = []sequence.Response{checkRuns(run("old", "completed", conclusion))}
+			newHead := pull("clean", map[string]any{"head": map[string]any{"sha": "def456", "ref": "feature"}})
+			gh[pullPath] = []sequence.Response{pull("clean", nil), pull("clean", nil), newHead}
+			gh["GET /repos/o/r/commits/def456/check-runs"] = []sequence.Response{checkRuns(run("new", "completed", "success"))}
+			gh["GET /repos/o/r/commits/def456/status"] = []sequence.Response{noStatuses}
+			gh["GET /repos/o/r/actions/runs?head_sha=def456"] = []sequence.Response{noRuns}
+			h := start(t, gh, nil, false, time.Minute)
+			result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+			if err != nil || result.HeadSHA != "def456" || len(result.Checks) != 1 || result.Checks[0].Name != "new" {
+				t.Fatalf("want only new head's verdict, got %+v, %v", result, err)
+			}
+		})
+	}
+}
+
+func Test_Wait_redNamesHead(t *testing.T) {
+	gh := gitHubGreen()
+	gh[runsPath] = []sequence.Response{checkRuns(run("build", "completed", "failure"))}
+	h := start(t, gh, nil, false, time.Minute)
+	_, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if err == nil || !strings.Contains(err.Error(), "head abc123") || !strings.Contains(h.progress.String(), "red: head abc123") {
+		t.Fatalf("want SHA in red progress and error: %v; %s", err, h.progress.String())
+	}
+}
+
+func Test_Wait_headSettlingRespectsDeadline(t *testing.T) {
+	gh := gitHubGreen()
+	gh[pullPath] = nil
+	for _, revision := range []string{"one", "two", "three", "four"} {
+		gh[pullPath] = append(gh[pullPath], pull("clean", map[string]any{"head": map[string]any{"sha": revision}}))
+	}
+	h := start(t, gh, nil, false, 2*time.Second)
+	_, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if exitCode(err) != agentcli.ExitTimeout {
+		t.Fatalf("want timeout while the head keeps moving, got %v", err)
+	}
+	for _, request := range h.github.Requests() {
+		if request.Path != "/repos/o/r/pulls/42" {
+			t.Errorf("read checks before head settled: %s", request.Path)
+		}
 	}
 }
