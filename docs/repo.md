@@ -64,6 +64,10 @@ without falling back to local validation.
 login or the token in `--github-token-envvar`. It needs no muster login. An organisation other than
 `giantswarm` (`--owner`) takes this explicit local mode for a dry run.
 
+Opening a declaration pull request requires `--owner giantswarm` (the default): its destination is
+`giantswarm/github`, whose reconciler creates Giant Swarm repositories. Another `--owner` can be checked
+with `--dry-run --local`; it cannot redirect the declaration to another organisation.
+
 ### A refusal, a rerun
 
 A refusal of the declaration (a taken name, a wrong flavour, a schema violation) ends the command with

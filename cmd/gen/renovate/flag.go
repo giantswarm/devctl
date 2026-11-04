@@ -25,6 +25,10 @@ const (
 // presetFile is a preset file at the root of giantswarm/renovate-presets.
 var presetFile = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*\.json5$`)
 
+// repoName accepts the same repository-name characters as origin discovery,
+// without owner/path components or Renovate preset delimiters.
+var repoName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
 type flag struct {
 	Interval          string
 	Language          string
@@ -50,6 +54,9 @@ func (f *flag) Init(cmd *cobra.Command) {
 func (f *flag) Validate() error {
 	if f.Language == "" {
 		return microerror.Maskf(invalidFlagError, "--%s cannot be empty", flagLanguage)
+	}
+	if f.RepoName != "" && !repoName.MatchString(f.RepoName) {
+		return microerror.Maskf(invalidFlagError, "--%s must be a repository name under giantswarm, using only letters, digits, dots, underscores or hyphens (without an owner or path)", flagRepoName)
 	}
 	for _, e := range f.Extends {
 		if !presetFile.MatchString(e) {

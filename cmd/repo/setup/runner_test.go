@@ -38,7 +38,7 @@ func (c setupReportedChecks) ReportedChecks(_ context.Context, _ *github.Reposit
 	return []string(c), nil
 }
 
-func TestSetupDefaultSchemaGate(t *testing.T) {
+func TestSetupChecksSelection(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -47,6 +47,20 @@ func TestSetupDefaultSchemaGate(t *testing.T) {
 		{
 			name: "the default filter keeps the reported values-schema gate",
 			want: []string{"legacy-ci", "pre-commit", "check-values-schema / validate", "ci/circleci: go-build"},
+		},
+		{
+			name: "an explicit list replaces the current and detected contexts",
+			args: []string{"--checks=run-tests"},
+			want: []string{"run-tests"},
+		},
+		{
+			name: "an empty list removes every required context",
+			args: []string{"--checks="},
+		},
+		{
+			name: "explicit checks override the filter",
+			args: []string{"--checks=validate-changelog", "--checks-filter=["},
+			want: []string{"validate-changelog"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
