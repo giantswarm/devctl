@@ -276,6 +276,56 @@ func TestALatestReleaseWithoutAssetsFallsBackToTheListed(t *testing.T) {
 	}
 }
 
+// The list and latest requests straddle an asset upload, or return cached
+// views of its progress. The same release ID must keep the binary and bundle
+// found by either request, with the latest response winning a replacement.
+func TestLatestReleaseRefreshesAssetsOfAListedRelease(t *testing.T) {
+	asset := func(id int64, name string) map[string]any {
+		return map[string]any{"id": id, "name": name, "browser_download_url": "https://example.test/" + name}
+	}
+	binary := asset(20, binaryAsset())
+	bundle := asset(21, binaryAsset()+".bundle")
+	for _, tc := range []struct {
+		name         string
+		listedAssets []map[string]any
+		latestAssets []map[string]any
+		wantBinaryID int64
+		wantBundleID int64
+	}{
+		{"binary uploaded", nil, []map[string]any{binary, bundle}, 20, 21},
+		{"bundle uploaded", []map[string]any{binary}, []map[string]any{binary, bundle}, 20, 21},
+		{"latest has fewer assets", []map[string]any{binary, bundle}, nil, 20, 21},
+		{"assets split across responses", []map[string]any{binary}, []map[string]any{bundle}, 20, 21},
+		{"latest replaces named assets", []map[string]any{binary, bundle}, []map[string]any{
+			asset(30, binaryAsset()), asset(31, binaryAsset()+".bundle"),
+		}, 30, 31},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			listed := releaseJSON(2, "v"+newerVersion, false)
+			listed["assets"] = tc.listedAssets
+			latest := releaseJSON(2, "v"+newerVersion, false)
+			latest["assets"] = tc.latestAssets
+			g := &flakyGitHub{
+				lists:        [][]map[string]any{{listed, releaseJSON(1, "v"+currentVersion, true)}},
+				latestStatus: http.StatusOK,
+				latest:       latest,
+			}
+			up, err := selfupdate.NewUpdater(selfupdate.Config{Source: g.source(t), Validator: accepting{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			rel, found, err := up.DetectLatest(context.Background(), selfupdate.ParseSlug("giantswarm/devctl"))
+			if err != nil || !found {
+				t.Fatalf("DetectLatest = %v, %v; want the release with its uploaded binary and bundle", found, err)
+			}
+			if rel.Version() != newerVersion || rel.AssetID != tc.wantBinaryID || rel.ValidationAssetID != tc.wantBundleID {
+				t.Errorf("release = %s, binary %d, bundle %d; want %s, binary %d, bundle %d",
+					rel.Version(), rel.AssetID, rel.ValidationAssetID, newerVersion, tc.wantBinaryID, tc.wantBundleID)
+			}
+		})
+	}
+}
+
 func TestListReleasesWithTheLatestRelease(t *testing.T) {
 	listed := []map[string]any{releaseJSON(1, "v1.0.0", true)}
 	for _, tc := range []struct {
@@ -311,6 +361,82 @@ func TestListReleasesWithTheLatestRelease(t *testing.T) {
 				t.Errorf("listed %v, want %v", tags, tc.want)
 			}
 		})
+	}
+}
+
+// A newer release is still uploading, while the highest version with a
+// platform binary is on a later list page, behind a maintenance release.
+func TestLatestVersionIncludesLaterReleasePages(t *testing.T) {
+	mux := http.NewServeMux()
+	var pages []string
+	mux.HandleFunc("GET /repos/giantswarm/devctl/releases", func(w http.ResponseWriter, r *http.Request) {
+		pages = append(pages, r.URL.Query().Get("page"))
+		if got := r.URL.Query().Get("per_page"); got != "100" {
+			t.Errorf("per_page = %q, want 100", got)
+		}
+		if r.URL.Query().Get("page") == "2" {
+			_ = json.NewEncoder(w).Encode([]map[string]any{releaseJSON(2, "v2.0.0", true)})
+			return
+		}
+		w.Header().Set("Link", "<http://"+r.Host+"/repos/giantswarm/devctl/releases?page=2>; rel=\"next\"")
+		_ = json.NewEncoder(w).Encode([]map[string]any{releaseJSON(3, "v3.0.0", false), releaseJSON(1, "v1.0.1", true)})
+	})
+	mux.HandleFunc("GET /repos/giantswarm/devctl/releases/latest", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(releaseJSON(3, "v3.0.0", false))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	u := newGitHubUpdater(t, &githubAPI{url: srv.URL}, "", nil)
+
+	version, err := u.GetLatestFromSource()
+	if !IsHasNewVersion(err) || version != newerVersion {
+		t.Fatalf("GetLatestFromSource = %q, %v; want %s from the later page", version, err, newerVersion)
+	}
+	if !slices.Equal(pages, []string{"", "2"}) {
+		t.Errorf("release pages = %v, want the first and second page once each", pages)
+	}
+}
+
+func TestLatestVersionReturnsALaterPageError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /repos/giantswarm/devctl/releases", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "2" {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Link", "<http://"+r.Host+"/repos/giantswarm/devctl/releases?page=2>; rel=\"next\"")
+		_ = json.NewEncoder(w).Encode([]map[string]any{releaseJSON(1, "v1.0.1", true)})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	u := newGitHubUpdater(t, &githubAPI{url: srv.URL}, "", nil)
+
+	version, err := u.GetLatestFromSource()
+	if err == nil || !strings.Contains(err.Error(), "502") || version != "" {
+		t.Fatalf("GetLatestFromSource = %q, %v; want the later page's error, not a partial version", version, err)
+	}
+}
+
+func TestReleasePaginationHasALookupDeadline(t *testing.T) {
+	previous := releaseLookupTimeout
+	releaseLookupTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { releaseLookupTimeout = previous })
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /repos/giantswarm/devctl/releases", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "2" {
+			<-r.Context().Done()
+			return
+		}
+		w.Header().Set("Link", "<http://"+r.Host+"/repos/giantswarm/devctl/releases?page=2>; rel=\"next\"")
+		_ = json.NewEncoder(w).Encode([]map[string]any{releaseJSON(1, "v1.0.1", true)})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	u := newGitHubUpdater(t, &githubAPI{url: srv.URL}, "", nil)
+
+	version, err := u.GetLatestFromSource()
+	if !errors.Is(err, context.DeadlineExceeded) || version != "" {
+		t.Fatalf("GetLatestFromSource = %q, %v; want the lookup deadline, not a partial version", version, err)
 	}
 }
 

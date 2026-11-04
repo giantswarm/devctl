@@ -29,6 +29,10 @@ func (e *UsageError) Unwrap() error { return e.Err }
 // validation returns: mistakes in the call, printed like a [UsageError].
 var usageKinds = []string{"invalidArgError", "invalidFlagError", "invalidFlagsError"}
 
+// helpOnlyAnnotation marks a group made runnable only so Cobra validates its
+// arguments. Showing its help must still skip the root preflight.
+const helpOnlyAnnotation = "devctl.giantswarm.io/help-only"
+
 // isUsageKind reports whether err is a runner's flag or argument validation
 // error.
 func isUsageKind(err error) bool {
@@ -51,6 +55,15 @@ func guardUsage(root *cobra.Command) {
 			c.Args = explainArgs(c.Args)
 		case c.HasSubCommands():
 			c.Args = subcommandArgs
+		}
+		if c.HasSubCommands() && !c.Runnable() {
+			// Cobra skips Args on non-runnable commands and exits successfully
+			// with help, even when an unknown subcommand was supplied.
+			c.RunE = func(cmd *cobra.Command, _ []string) error { return cmd.Help() }
+			if c.Annotations == nil {
+				c.Annotations = make(map[string]string)
+			}
+			c.Annotations[helpOnlyAnnotation] = "true"
 		}
 		for _, sub := range c.Commands() {
 			walk(sub)
