@@ -14,7 +14,7 @@ own shell and never enters an agent session.
 | Command | GitHub token |
 |---|---|
 | `auth exec` and the `gh` link | the App login; `gh` on a repository of an owner the App is not installed on keeps your own `gh` login |
-| `deploy`, `pr approve-align`, `pr approve-merge-renovate`, `release create`, `release promote`, `repo create`, `repo owner` | the App login; a token in the environment overrides it |
+| `deploy`, [`pr approve-align-files`](pr-approve-align-files.md), `pr approve-merge-renovate`, `release create`, `release promote`, `repo create`, `repo owner` | the App login; a token in the environment overrides it |
 | the version check that precedes every command, `version check`, `version update`, `repo validate --local` | the same, optional and looked up only when GitHub is asked (never while the one-hour version cache is fresh): without one a public read is anonymous (`repo validate --local`: the embedded schema, repository names unchecked) |
 | `pr wait`, `pr merge`, `pr rerun` | the App login for giantswarm; your own `gh` login (`gh auth token`) for every other owner; never a token in the environment |
 | `release wait`, `rollout wait` | the App login only (`rollout wait` reads the installation with your kube context) |
