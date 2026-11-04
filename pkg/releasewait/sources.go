@@ -76,7 +76,7 @@ func NewSources(endpoints agentcli.Endpoints, transport http.RoundTripper, crede
 			return client, nil
 		},
 		Registry:     RegistryProber{Endpoints: endpoints, Keychain: credentials.Registry},
-		CatalogIndex: CatalogIndex{BaseURL: CatalogURLFromEnv()},
+		CatalogIndex: CatalogIndex{BaseURL: CatalogURLFromEnv(), GitHub: gh.GitHub()},
 		Rate:         conditional.Rate,
 		Client:       gh,
 	}, nil
