@@ -72,6 +72,16 @@ func execute(ctx context.Context, file input.Input) error {
 		return microerror.Mask(err)
 	}
 
+	if fileExists && file.TemplateBody != "" {
+		existing, err := os.ReadFile(file.Path) // #nosec G304 -- same caller-selected destination as the write below
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		if onlyFallbackProvenanceChanged(existing, buf.Bytes()) {
+			return nil
+		}
+	}
+
 	w, err := os.OpenFile(file.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, permissions)
 	if err != nil {
 		return microerror.Mask(err)
@@ -83,6 +93,21 @@ func execute(ctx context.Context, file input.Input) error {
 	}
 
 	return nil
+}
+
+// A build without generated .sha files has only a module tree link. Keep the
+// existing provenance when that less precise link is the only change. Real
+// template commit links and changes anywhere after the header still get written.
+func onlyFallbackProvenanceChanged(existing, rendered []byte) bool {
+	const prefix = "# DO NOT EDIT. Generated with:\n#\n#    devctl\n#\n#    https://github.com/giantswarm/devctl/"
+	existingPrelude, existingHeader, existingOK := bytes.Cut(existing, []byte(prefix))
+	renderedPrelude, renderedHeader, renderedOK := bytes.Cut(rendered, []byte(prefix+"tree/"))
+	if !existingOK || !renderedOK || !bytes.Equal(existingPrelude, renderedPrelude) {
+		return false
+	}
+	_, existingBody, _ := bytes.Cut(existingHeader, []byte("\n"))
+	_, renderedBody, _ := bytes.Cut(renderedHeader, []byte("\n"))
+	return bytes.HasPrefix(existingBody, []byte("#\n")) && bytes.Equal(existingBody, renderedBody)
 }
 
 // isRegenerable returns true if the file should be overridden with the

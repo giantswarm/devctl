@@ -303,16 +303,11 @@ func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, vers
 		return nil, nil, err
 	}
 
-	for _, name := range images {
-		path, private, err := namedImage(name, endpoints)
-		if err != nil {
-			return nil, nil, err
-		}
-		if private == nil {
-			private = &privateRepo
-		}
-		artifacts = append(artifacts, imageArtifact(path, tag, *private, endpoints))
+	named, err := namedImageArtifacts(images, tag, privateRepo, endpoints)
+	if err != nil {
+		return nil, nil, err
 	}
+	artifacts = append(artifacts, named...)
 	for _, name := range charts {
 		path, private, err := namedChart(name, endpoints)
 		if err != nil {
@@ -342,12 +337,29 @@ func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, vers
 	return dedupe(artifacts), warnings, nil
 }
 
+// namedImageArtifacts are the additional images explicitly requested with
+// --image, for generated as well as hand-written CI.
+func namedImageArtifacts(images []string, tag string, privateRepo bool, endpoints agentcli.Endpoints) ([]Artifact, error) {
+	var artifacts []Artifact
+	for _, name := range images {
+		path, private, err := namedImage(name, endpoints)
+		if err != nil {
+			return nil, err
+		}
+		if private == nil {
+			private = &privateRepo
+		}
+		artifacts = append(artifacts, imageArtifact(path, tag, *private, endpoints))
+	}
+	return artifacts, nil
+}
+
 // CustomPushJobs are the architect push jobs the repository's own custom.yml
 // adds to a generated pipeline, read at the tag: what the pipeline publishes
 // beyond the team-file entry's artifacts (a second chart released off the
 // same tag, giantswarm/agent-platform's connectivity chart). None for a
-// custom.yml of test and repository-owned jobs alone, which then names no
-// artifact and needs no look at the pipeline's jobs.
+// custom.yml of test and repository-owned jobs alone; its unchecked image
+// publishers are read separately by readUncheckedImageJobs.
 func CustomPushJobs(ctx context.Context, gh GitHub, owner, repo, sha string, content TagContent) ([]PushJob, error) {
 	jobs, err := readPushJobs(ctx, gh, owner, repo, sha, content, []string{circleCICustom})
 	if err != nil {
