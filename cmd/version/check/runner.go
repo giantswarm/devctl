@@ -24,7 +24,7 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	err := r.flag.Validate()
 	if err != nil {
@@ -40,12 +40,16 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	if err := ctx.Err(); err != nil {
+		return microerror.Mask(err)
+	}
+
 	updaterService, err := versiongate.NewUpdater(r.flag.NoCache, r.stderr)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
-	_, err = updaterService.GetLatestFromSource()
+	_, err = updaterService.GetLatestFromSourceContext(ctx)
 	if updater.IsHasNewVersion(err) {
 		_, _ = color.New(color.Bold, color.FgYellow).Fprintf(r.stderr, "There's a new version available!\n")
 		fmt.Fprintf(r.stderr, "Run \"%s version update\" to update to the latest version.\n", project.Name())
