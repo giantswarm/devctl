@@ -6,10 +6,12 @@ import (
 	"maps"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/giantswarm/devctl/v8/e2e/mock/sequence"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
+	"github.com/giantswarm/devctl/v8/pkg/releasewait/releasewaittest"
 )
 
 // releaseCall records what the merge handed the release wait.
@@ -40,11 +42,18 @@ func Test_Merge_release(t *testing.T) {
 	}{
 		{name: "available", tag: "v1.2.3", wantCode: 0, wantRelease: agentcli.VerdictAvailable},
 		{name: "no release follows", err: &releasewait.NoReleaseError{Reason: "the Auto-release run finished without a tag"}, wantCode: 0, wantRelease: agentcli.VerdictNoRelease, wantReason: "finished without a tag"},
+		{name: "base excluded by auto-release", err: &releasewait.NoReleaseError{Reason: "the auto-release workflow of o/r triggers on giantswarm; nothing tags a merge into release-1.3"}, wantCode: 0, wantRelease: agentcli.VerdictNoRelease, wantReason: "triggers on giantswarm; nothing tags a merge into release-1.3"},
 		{
 			name: "the tag pipeline failed", tag: "v1.2.3",
 			err:      agentcli.NewExitError(agentcli.ExitRed, agentcli.VerdictCIFailed, "the tag pipeline of v1.2.3 failed: build/push-to-registries-release"),
 			wantCode: agentcli.ExitReleaseFailed, wantVerdict: agentcli.VerdictReleaseFailed, wantRelease: agentcli.VerdictCIFailed,
 			wantReason: "merged as m1, and the release failed: the tag pipeline of v1.2.3 failed: build/push-to-registries-release",
+		},
+		{
+			name: "the tag pipeline is empty", tag: "v1.2.3",
+			err:      agentcli.NewExitError(agentcli.ExitTagPipelineEmpty, agentcli.VerdictTagPipelineEmpty, "the tag pipeline 12 (https://app.circleci.com/pipelines/github/o/r/12) of v1.2.3 is created with no workflows; re-trigger the pipeline for tag v1.2.3"),
+			wantCode: agentcli.ExitTagPipelineEmpty, wantVerdict: agentcli.VerdictTagPipelineEmpty, wantRelease: agentcli.VerdictTagPipelineEmpty,
+			wantReason: "merged as m1: the tag pipeline 12 (https://app.circleci.com/pipelines/github/o/r/12)",
 		},
 		{
 			name: "timeout", tag: "v1.2.3",
@@ -108,6 +117,47 @@ func Test_Merge_release(t *testing.T) {
 				t.Errorf("want verdict %s with %q, got %s %q", tc.wantVerdict, tc.wantReason, exitErr.Verdict, exitErr.Reason)
 			}
 		})
+	}
+}
+
+func Test_Merge_emptyTagPipeline(t *testing.T) {
+	sources, err := releasewaittest.GeneratedRelease("o", "r", &releasewaittest.Registry{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gh := sources.GitHub.(*releasewaittest.GitHub)
+	gh.Tags["v1.2.3"] = "m1"
+	ci, err := sources.CircleCI(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ci.(*releasewaittest.CircleCI).Pipeline.State = "created"
+	clock := agentcli.NewVirtualClock(time.Now())
+	start := clock.Now()
+	h := newHarness(t, routes(pull(nil)), func(c *Config) {
+		c.Release = func(ctx context.Context, owner, repo string, number int, sha string, result *releasewait.Result) error {
+			waiter, err := releasewait.New(releasewait.Config{
+				Owner: owner, Repo: repo, PR: number, MergeCommitSHA: sha,
+				GitHub: sources.GitHub, Entries: sources.Entries, CircleCI: sources.CircleCI,
+				Registry: sources.Registry, Clock: clock,
+			})
+			if err != nil {
+				return err
+			}
+			return waiter.Wait(ctx, result)
+		}
+	})
+	result, err := h.merge(t)
+	code, verdict := agentcli.Outcome(err)
+	if code != agentcli.ExitTagPipelineEmpty || verdict != agentcli.VerdictTagPipelineEmpty {
+		t.Fatalf("want the empty tag pipeline outcome after the merge, got %d %s: %v", code, verdict, err)
+	}
+	if result.MergeCommitSHA != "m1" || !result.BranchDeleted || result.Release == nil || result.Release.Verdict != agentcli.VerdictTagPipelineEmpty || !clock.Now().Equal(start) {
+		t.Fatalf("merge/release evidence: %+v, elapsed %s", result, clock.Now().Sub(start))
+	}
+	pipeline := result.Release.Pipeline
+	if pipeline == nil || pipeline.Number != 12 || pipeline.URL != "https://app.circleci.com/pipelines/github/o/r/12" || !strings.Contains(err.Error(), "merged as m1:") || !strings.Contains(result.Release.Reason, "re-trigger the pipeline for tag v1.2.3") {
+		t.Fatalf("missing pipeline or recovery evidence: %+v, %v", result.Release, err)
 	}
 }
 
