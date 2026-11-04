@@ -62,11 +62,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// Search for align-files PRs
 	// Note: We don't filter by status:success here because we want to find all PRs
 	// and then check/wait for their status in processPR (similar to approve-merge-renovate)
-	searchQuery := `is:pr is:open archived:false org:giantswarm review-requested:@me "` + alignTitle + `"`
+	searchQuery := `is:pr is:open archived:false org:giantswarm review-requested:@me in:title "` + alignTitle + `"`
 	if r.flag.Team != "" {
 		// Team scope: a repository that requests no reviewer never puts its
 		// Align files PR into anyone's queue, so search without the review filter.
-		searchQuery = `is:pr is:open archived:false org:giantswarm "` + alignTitle + `"`
+		searchQuery = `is:pr is:open archived:false org:giantswarm in:title "` + alignTitle + `"`
 	}
 
 	issues, err := r.searchIssues(ctx, githubClient, searchQuery)
@@ -170,7 +170,11 @@ func (r *runner) searchIssues(ctx context.Context, githubClient *github.Client, 
 		if err != nil {
 			return nil, microerror.Maskf(executionFailedError, "failed to search for PRs: %v", err)
 		}
-		issues = append(issues, results.Issues...)
+		for _, issue := range results.Issues {
+			if strings.HasPrefix(issue.GetTitle(), alignTitle) {
+				issues = append(issues, issue)
+			}
+		}
 		if resp.NextPage == 0 {
 			return issues, nil
 		}
@@ -198,6 +202,12 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 		// Check if already merged
 		if prData.GetMerged() {
 			ps.UpdateStatus("Already merged")
+			return
+		}
+
+		// Search results can be stale when a PR has been renamed.
+		if !strings.HasPrefix(prData.GetTitle(), alignTitle) {
+			ps.UpdateStatus("Skipped: not an Align files PR")
 			return
 		}
 
@@ -460,7 +470,7 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 			approved++
 		} else if strings.Contains(status, "Blocked") || strings.Contains(status, "not mergeable") || strings.HasSuffix(status, "blocked") {
 			blocked++
-		} else if strings.Contains(status, "Already") {
+		} else if strings.Contains(status, "Already") || strings.HasPrefix(status, "Skipped:") {
 			skipped++
 		} else if strings.Contains(status, "Failed") {
 			failed++
