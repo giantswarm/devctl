@@ -58,6 +58,10 @@ A push whose commits git-cliff all skips (`docs`, `style`, `test`) or drops as n
 
 A job of the repository's own that must not see a candidate, in a hand-written pipeline or in `.circleci/custom.yml`, filters on stable tags before the repository moves to `auto-release`. The krew index update of a CLI is one: krew-release-bot refuses a GitHub pre-release, so a `/^v.*/` filter turns the first candidate's pipeline red.
 
+Before moving a hand-written CircleCI pipeline to RC promotion, review the
+[architect orb < 10 inventory and bump queue](architect-orb-inventory.md), including the build-context
+and branch-publishing checks.
+
 ```yaml
 workflows:
   release:
