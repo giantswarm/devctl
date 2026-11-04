@@ -248,6 +248,13 @@ type Person struct {
 // to be readable, then the caller's membership in it, active or not. A 404
 // on the membership is "not a member"; a team the token cannot read is
 // Unread.
+//
+// Since v8.140.0, only the supplied team slugs are checked. With no teams
+// (including a nil or empty slice), Person reads only the login and returns
+// empty Teams and Unread. Earlier releases listed all of the caller's teams
+// in owner. Callers needing that list must use Teams.ListUserTeams on the
+// GitHub client, following pagination and filtering by organisation; callers
+// checking a guard must pass its owning and fallback team slugs explicitly.
 func (r Remote) Person(ctx context.Context, owner string, teams ...string) (Person, error) {
 	if r.GitHub == nil {
 		return Person{}, microerror.Maskf(invalidConfigError, "%T.GitHub must not be nil", r)

@@ -1,13 +1,10 @@
 package deploy
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
@@ -26,11 +23,13 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
-	var addAppCmd *exec.Cmd
+	ctx := cmd.Context()
 
 	err := r.Flag.Validate()
 	if err != nil {
+		return microerror.Mask(err)
+	}
+	if err := ctx.Err(); err != nil {
 		return microerror.Mask(err)
 	}
 
@@ -41,10 +40,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	token.WarnOnce(r.Stderr)
 	notFoundHint := authstore.GitHubNotFoundHint(token)
 
-	githubClient, err := githubclient.New(githubclient.Config{
-		Logger:      logrus.StandardLogger(),
-		AccessToken: token.Value,
-	})
+	githubClient, err := newGitHubClient(token)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -64,9 +60,15 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
 	// Clone repository
+	if err := ctx.Err(); err != nil {
+		return microerror.Mask(err)
+	}
 	err = githubClient.CloneRepository(ctx, owner, repo, tempDir)
 	if err != nil {
 		return githubclient.ExplainNotFound(microerror.Mask(err), notFoundHint)
+	}
+	if err := ctx.Err(); err != nil {
+		return microerror.Mask(err)
 	}
 
 	// Create new branch
@@ -77,22 +79,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		return microerror.Mask(err)
 	}
 
-	// Execute kubectl gs gitops add app
-	addAppArgs := []string{
-		"gs", "gitops", "add", "app",
-		"--app", r.Flag.AppName,
-		"--version", r.Flag.AppVersion,
-		"--catalog", r.Flag.AppCatalog,
-		"--target-namespace", r.Flag.AppNamespace,
-		"--management-cluster", r.Flag.ManagementCluster,
-		"--workload-cluster", r.Flag.WorkloadCluster,
-		"--organization", r.Flag.Organization,
-	}
-	addAppCmd = exec.Command("kubectl", addAppArgs...) // #nosec G204 -- fixed binary; every interpolated flag value is constrained by flag.Validate and passed as its own argument element
-	addAppCmd.Dir = tempDir
-	addAppCmd.Stdout = r.Stdout
-	addAppCmd.Stderr = r.Stderr
-	err = addAppCmd.Run()
+	err = r.addApp(ctx, tempDir)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -105,19 +92,18 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create pull request
+	if err := ctx.Err(); err != nil {
+		return microerror.Mask(err)
+	}
 	pr, err := githubClient.CreatePullRequest(ctx, owner, repo, newBranch, commitMsg)
 	if err != nil {
 		return githubclient.ExplainNotFound(microerror.Mask(err), notFoundHint)
 	}
 
 	r.Logger.Infof("PR created: %s. Please approve to continue.", pr.GetHTMLURL())
-	// Wait for PR merge
-	err = githubClient.WaitForPRMerge(ctx, owner, repo, pr.GetNumber(), time.Duration(r.Flag.Timeout)*time.Second)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return microerror.Mask(err)
 	}
-
-	// Check app status
 	appStatusClient, err := appstatus.New(appstatus.Config{
 		Logger: r.Logger,
 		Stderr: r.Stderr,
@@ -126,14 +112,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		return microerror.Mask(err)
 	}
 
-	orgNamespace := "org-" + r.Flag.Organization
-	appName := r.Flag.WorkloadCluster + "-" + r.Flag.AppName
-	err = appStatusClient.WaitForAppDeployment(ctx, appName, orgNamespace, r.Flag.ManagementCluster, time.Duration(r.Flag.Timeout)*time.Second)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	return nil
+	return r.waitForDeployment(ctx, owner, repo, pr.GetNumber(), githubClient, appStatusClient)
 }
 
 func parseGitOpsRepo(repo string) (string, string, error) {
