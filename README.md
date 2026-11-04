@@ -62,7 +62,7 @@ devctl auth status
 
 ### Waiting for a pull request's CI (`devctl pr wait`)
 
-`devctl pr wait <owner/repo> <number>` blocks until the pull request's head is green as the merge box sees it (the latest run per check, every CircleCI workflow of the head revision, no GitHub Actions run still open or awaiting approval, every required context reported), red, or in a state no CI can turn green (draft, closed, conflicting, behind a strict base), then prints one JSON document and exits 0, 1, 2 (timeout), 3, 4 (a required context never reported), 7 or 8. See [docs/pr-wait.md](docs/pr-wait.md).
+`devctl pr wait <owner/repo> <number>` blocks until the pull request's head is green as the merge box sees it (the latest run per check, every CircleCI workflow of the head revision, no GitHub Actions run still open or awaiting approval, every required context reported), red, or in a state no CI can turn green (closed, conflicting, behind a strict base), then prints one JSON document and exits 0, 1, 2 (timeout), 3, 4 (a required context never reported), 7 or 8. Drafts wait for their checks too, with their latest state in `draft`; `pr merge` still refuses them with exit 3. See [docs/pr-wait.md](docs/pr-wait.md).
 
 ```bash
 devctl pr wait giantswarm/devctl 2277 --timeout 45m --progress
@@ -135,6 +135,10 @@ devctl pr merge giantswarm/devctl 2278 --timeout 45m --progress
 ### Repository set-up (`devctl repo`)
 
 Giant Swarm repositories are declared in the team files of [giantswarm/github](https://github.com/giantswarm/github); the reconciler keeps them as declared. `devctl repo create` opens the team-file pull request the reconciler creates the repository from; `--dry-run` previews it through giantswarm-repo-manager and `--dry-run --local` validates with devctl's own engine. The other verbs are giantswarm-repo-manager's tools called through muster as you (`devctl auth login --muster-only` first): `list`, `get`, `refresh`, `status`, `sweep`, `watch`, `adopt`, `update`, `transfer`, `set-lifecycle`, `approve`, `align`, each with `--dry-run` where it writes and `-o json` for the manager's answer. See [docs/repo.md](docs/repo.md).
+
+`devctl repo owner giantswarm/devctl` reads the declared owning team directly from those team files
+with the agent App login, without muster or the repository-teams endpoint that requires Administration
+read. `--output json` includes the source declaration. See [the ownership lookup](docs/repo.md#devctl-repo-owner).
 
 ```bash
 devctl repo create --team bumblebee --name my-service --component-type service --flavour app --language go --description "What it does"

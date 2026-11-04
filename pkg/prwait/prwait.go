@@ -11,8 +11,8 @@
 // context reported. A pending check of another app, or a pending status of
 // another CI than CircleCI, the base does not require is not waited for, as
 // the merge box does not wait for it: Result.Blocking names it, and a review
-// the base requires that is missing. Draft, closed, conflicting and behind-a-strict-base end
-// the wait before it starts.
+// the base requires that is missing. Closed, conflicting and behind-a-strict-base
+// end the wait before it starts. Drafts wait for CI like other open pull requests.
 package prwait
 
 import (
@@ -171,6 +171,9 @@ type Result struct {
 	Number     int    `json:"number"`
 	HeadSHA    string `json:"headSha"`
 	BaseRef    string `json:"baseRef"`
+	// Draft is true when the pull request was a draft at the latest poll. A green
+	// draft has passed CI but still cannot be merged by pr merge.
+	Draft bool `json:"draft,omitempty"`
 	// Checks are the head's check runs, every run of a name that counts, and
 	// its statuses, the latest per context.
 	Checks []Check `json:"checks"`
@@ -436,7 +439,8 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 		}
 		w.progress.Printf("head changed while settling; reading head %s again", pr.GetHead().GetSHA())
 	}
-	if err := notApplicable(pr); err != nil {
+	result.Draft = pr.GetDraft()
+	if err := notApplicable(pr, true); err != nil {
 		result.HeadSHA = pr.GetHead().GetSHA()
 		result.BaseRef = pr.GetBase().GetRef()
 		return nil, err

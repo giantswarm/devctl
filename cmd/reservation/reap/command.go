@@ -36,9 +36,10 @@ For each release the command prints one tab-separated line to stdout: cluster,
 app, user, branch, pull request, reason ("expired", "closed" or "renamed"), until (RFC
 3339) and commit. It prints nothing when it finds nothing to release. With
 --output json it prints the same entries as a JSON array, [] when there are
-none. A failure on one cluster or reservation does not stop the sweep: the
-command prints every release that landed, then reports the failure and exits
-non-zero.`
+none. A failure on one cluster or reservation does not stop the sweep unless
+a failed push leaves an unpushed commit or a dirty checkout prevents its retry.
+The command prints every release that landed, then reports the failure and
+exits non-zero.`
 	example = `  devctl reservation reap --gitops-dir ~/umbrella/cmc/giantswarm-management-clusters --user reservation-reaper`
 )
 

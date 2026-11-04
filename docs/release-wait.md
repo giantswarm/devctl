@@ -189,6 +189,13 @@ A release is available when every artifact resolves to a digest, the tag's CI is
 section) **and** every commit status of the tag's commit succeeded ([The commit's statuses](#the-commits-statuses)). The artifacts alone are not the release: a repository's own tag jobs push more than the sources
 name, and a job signs what it pushed after the digest resolves.
 
+Artifact presence is read independently of the tag pipeline's verdict. A failed pipeline still
+derives and probes its expected images and charts before returning: pullable artifacts carry
+`state: available` and their digests, absent artifacts remain `missing`, and the document carries
+`verdict: ci_failed`, exit 1, with `pipeline.failedJobs`. If artifact derivation or probing returns
+a terminal error while CI is already known to have failed, a warning names that read failure
+and the CI verdict still decides the exit code.
+
 An artifact is available when its manifest resolves to a digest:
 
 - images at `<registry>/<name>:<X.Y.Z>`, charts at `<registry>/charts/<owner>/<chart>:<X.Y.Z>`
@@ -290,9 +297,10 @@ the rate_limit endpoint is never asked. `DEVCTL_TIME_SCALE` multiplies every sle
 (the end-to-end tests run at 0.001). A GitHub or CircleCI read that fails in transit (a reset
 connection, an EOF, a try over 60 s) or with a 5xx is sent again, up to fifteen tries in a row with a
 pause from 2 s doubling to 60 s, each retried failure a warning with its time, as in
-[`pr wait`](pr-wait.md#polling); a read that fails all fifteen is exit 7 naming the request and the count,
-except a read of the tag's CI (the CircleCI pipeline, or the tag's Actions runs): an API that does not
-answer says nothing about the release, so the next poll reads again until the timeout. A timeout after
+[`pr wait`](pr-wait.md#polling); a read that fails all fifteen is exit 2 with verdict `transient`,
+naming the request, count, elapsed time and last failure, except a read of the tag's CI (the CircleCI
+pipeline, or the tag's Actions runs): an API that does not answer says nothing about the release, so the
+next poll reads again until the timeout. A timeout after
 such reads is exit 2 whose reason ends `the release is unknown, not failed: the last read of the tag's CI
 went unanswered: <request and failure>`.
 A read refused for a spent rate limit is sent again after the reset (or `Retry-After`), a warning
@@ -341,7 +349,7 @@ stderr.
 
 | Field | Meaning |
 |---|---|
-| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `available`, `ci_failed`, `timeout`, `not_applicable`, `no_release`, `ambiguous_release`, `status_failed`, `tag_pipeline_empty`, `usage` or `auth_required`. `warnings` carries the CircleCI token's seven-day expiry notice and a team-file declaration that disagrees with the tag's workflows about the release model. |
+| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `available`, `ci_failed`, `timeout`, `not_applicable`, `no_release`, `ambiguous_release`, `status_failed`, `tag_pipeline_empty`, `transient`, `usage` or `auth_required`. `warnings` carries the CircleCI token's seven-day expiry notice and a team-file declaration that disagrees with the tag's workflows about the release model. |
 | `repository`, `tag`, `sha` | What was waited for. `tag` is empty when it never appeared; `sha` is the tag's commit (with `--pr` the merge commit). |
 | `releaseModel` | `auto-release` or `legacy`. |
 | `ciModel` | `generated`, `hand-written`, `actions` or `none`. |
@@ -366,10 +374,10 @@ as the CircleCI commit-status wait. A wait without a CircleCI client cannot esta
 |---|---|---|
 | 0 | `available` | Every artifact resolves to a digest and every workflow of the tag pipeline finished green (and, with `--catalog`, the index lists every chart); or the release of a repository without image and chart is published with its workflows green. |
 | 1 | `ci_failed` | A workflow of the tag pipeline, or an Actions run of the tag, failed or was cancelled; with `--pr`, the merge commit's auto-release run failed before it tagged. `reason` and `pipeline.failedJobs` name the jobs. The release is incomplete until a rerun of the failed workflow succeeds or a fix lands as the next tag; artifacts that did resolve are listed `available`. |
-| 2 | `timeout` | The deadline passed, including the single 10-minute Pages extension when repository publication was confirmed with `--catalog`. `reason` names what is missing: the tag, the pipeline, the artifacts by reference, the pipeline's unfinished workflows (also when every artifact is already available), or the charts Pages still lacks and their repository publication evidence. |
+| 2 | `timeout`, `transient` | The deadline passed, including the single 10-minute Pages extension when repository publication was confirmed with `--catalog`, or a read outside the polling loop exhausted its retry window (`transient`). `reason` names what is missing: the tag, the pipeline, the artifacts by reference, and the pipeline's unfinished workflows (also when every artifact is already available). |
 | 3 | `not_applicable` | The pull request is not merged, or its auto-release run was cancelled before it tagged (superseded by a newer push), so `--pr` cannot resolve a version. |
 | 3 | `no_release` | No release follows the pull request's merge: the repository does not tag merge commits (the legacy release model, or no release workflow at all), or the merge commit's auto-release run finished without a tag and no later tag on the pull request's base branch carries it; the reason names the branch. |
-| 7 | `usage` | A bad argument or flag; a newer devctl released (the reason names `devctl version update`); no source says how the repository releases; the sources disagree about the CI model or the artifacts; a registry answer that is neither a digest nor "manifest unknown"; a tooling error, a GitHub or CircleCI read that failed eight tries in a row among them. |
+| 7 | `usage` | A bad argument or flag; a newer devctl released (the reason names `devctl version update`); no source says how the repository releases; the sources disagree about the CI model or the artifacts; a registry answer that is neither a digest nor "manifest unknown"; a tooling error. An exhausted API read is exit 2 with verdict `transient`, naming its attempts and elapsed time. |
 | 8 | `auth_required` | No usable token in the keychain; `reason` names the `devctl auth login` invocation. |
 | 11 | `ambiguous_release` | With `--pr`, the commit the wait resolves to (the merge commit, or the first tagged commit after it) carries the release tags (`vX.Y.Z`, `vX.Y.Z-rc.N`) of more than one version, or the `<image>/vX.Y.Z` tags of more than one image: the wait does not choose. `reason` and `conflictingTags` name every release tag on the commit, newest first; a wait given the version waits on it. A candidate and its promoted stable on one commit are one version. |
 | 12 | `status_failed` | Every artifact is available and the tag's CI is green, and a commit status of the tag's commit (the branch pipeline's, another CI's) is `failure` or `error`: `devctl release promote` refuses the commit. `reason` and `statuses[]` name the failed contexts. |
