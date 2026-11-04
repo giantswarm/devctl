@@ -175,6 +175,9 @@ type Config struct {
 	// jobs the tag's configuration runs on the tag are listed from it, and
 	// the tag's CI is green once each has posted and none is pending or
 	// failed. FailedLogLines reads no CircleCI log then.
+	// Release-assets waits still need a pipeline verified by tag and time
+	// out in this mode: commit statuses cannot distinguish a promotion
+	// from its candidate on the same commit.
 	CircleCIFromStatuses bool
 
 	// Endpoints name the registries. Zero means production.
@@ -214,6 +217,8 @@ type Waiter struct {
 	// tag's configuration runs, each expected to post a status.
 	statusesOnly bool
 	circleJobs   []string
+	// releasePending names the release-assets evidence still missing.
+	releasePending string
 	// untagged is, while a pull request's tag is awaited, what the merge
 	// commit's auto-release run was doing at the last poll, for the
 	// timeout's reason.
@@ -600,9 +605,9 @@ type chartArtifact struct{ name, catalog, catalogTest string }
 // the tag's CI failed or the deadline passed.
 func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 	for {
-		// The jobs name the artifacts of hand-written CI and of a generated
-		// pipeline's custom.yml; once those are known nothing reads them.
-		needJobs := (!p.derived && result.CIModel == CIModelHandWritten) || p.custom
+		// The jobs name the artifacts of hand-written and custom CI. For
+		// release assets they also say whether the tag uploads binaries.
+		needJobs := (!p.derived && result.CIModel == CIModelHandWritten) || p.custom || p.releaseAssets
 		state, err := w.pipelineState(ctx, result, needJobs)
 		if unanswered(ctx, err) {
 			// An API that does not answer says nothing about the release:
@@ -763,7 +768,11 @@ func (w *Waiter) pending(result *Result, p *plan, state *pipelineState) string {
 	case len(w.pendingStatuses) > 0:
 		parts = append(parts, fmt.Sprintf("the commit statuses of %s: %s pending", short(result.SHA), strings.Join(w.pendingStatuses, ", ")))
 	case p.releaseAssets:
-		parts = append(parts, fmt.Sprintf("the release of %s published", result.Tag))
+		if w.releasePending != "" {
+			parts = append(parts, w.releasePending)
+		} else {
+			parts = append(parts, fmt.Sprintf("the release of %s published", result.Tag))
+		}
 	case w.config.Catalog && len(parts) == 0:
 		parts = append(parts, w.catalogWaiting...)
 	}
@@ -818,8 +827,17 @@ func (w *Waiter) probe(ctx context.Context, result *Result, p *plan) error {
 const registryFailureLimit = 3
 
 // releasePublished is the release-assets verdict: the release exists and is
-// not a draft, and every workflow of the tag finished green.
+// not a draft, every workflow of the tag finished green, and a pipeline
+// that uploads release assets has at least one asset on its own release.
 func (w *Waiter) releasePublished(ctx context.Context, result *Result, state *pipelineState) (bool, error) {
+	w.releasePending = ""
+	if (w.circleci != nil || w.statusesOnly) && w.statusPipelines.pipeline == nil {
+		// The candidate and stable tag can share a commit. Its statuses
+		// alone never prove that the stable tag's pipeline has finished.
+		w.releasePending = fmt.Sprintf("no CircleCI pipeline verified for tag %s; commit statuses alone cannot identify the tag's pipeline", result.Tag)
+		w.progress.Printf("%s", w.releasePending)
+		return false, nil
+	}
 	if !state.green {
 		w.progress.Printf("the tag's workflows have not all finished")
 		return false, nil
@@ -840,7 +858,14 @@ func (w *Waiter) releasePublished(ctx context.Context, result *Result, state *pi
 	for _, asset := range release.Assets {
 		result.Artifacts = append(result.Artifacts, Artifact{Kind: KindReleaseAsset, Reference: asset.URL, Digest: asset.Digest, State: StateAvailable})
 	}
+	count := len(release.Assets)
+	result.ReleaseAssetCount = &count
 	w.progress.Printf("release %s published with %d asset(s)", result.Tag, len(release.Assets))
+	if count == 0 && result.Pipeline != nil && len(result.Pipeline.AssetUploadJobs) > 0 {
+		w.releasePending = fmt.Sprintf("release %s has 0 assets after pipeline %d's %s; waiting for at least one release asset", result.Tag, result.Pipeline.Number, strings.Join(result.Pipeline.AssetUploadJobs, ", "))
+		w.progress.Printf("%s", w.releasePending)
+		return false, nil
+	}
 	return true, nil
 }
 
@@ -1111,6 +1136,8 @@ func (w *Waiter) timeout(result *Result) error {
 			bound += fmt.Sprintf(" plus the %s Pages publication extension", CatalogPublishGrace)
 		}
 		return timeoutErr("catalog publication for %s did not finish %s: %s%s", result.Tag, bound, strings.Join(w.catalogWaiting, "; "), unfinished)
+	case w.releasePending != "":
+		return timeoutErr("%s was not released within %s: %s%s", result.Tag, w.config.Timeout, w.releasePending, unfinished)
 	case result.Pipeline == nil && result.CIModel != CIModelNone && w.unanswered == "":
 		return timeoutErr("no CircleCI pipeline for %s within %s: the tag's webhook may not have reached CircleCI", result.Tag, w.config.Timeout)
 	case len(result.Artifacts) > 0 && w.unanswered != "":
