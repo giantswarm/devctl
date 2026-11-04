@@ -26,7 +26,13 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return microerror.Mask(err)
+	}
 
 	err := r.flag.Validate()
 	if err != nil {
@@ -75,11 +81,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			return microerror.Mask(err)
 		}
 
-		err = updateGoModule(f)
+		err = updateGoModule(ctx, f)
 		if err != nil {
 			return microerror.Mask(err)
 		}
-		err = goModTidy(f)
+		err = goModTidy(ctx, f)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -92,16 +98,22 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	return nil
 }
 
-func updateGoModule(workingDir string) error {
-	cmd := exec.Command("go", "get", "-u", "github.com/giantswarm/apptest-framework")
-	cmd.Dir = workingDir
-	_, err := cmd.Output()
-	return err
+func updateGoModule(ctx context.Context, workingDir string) error {
+	return runGo(ctx, workingDir, "get", "-u", "github.com/giantswarm/apptest-framework")
 }
 
-func goModTidy(workingDir string) error {
-	cmd := exec.Command("go", "mod", "tidy")
+func goModTidy(ctx context.Context, workingDir string) error {
+	return runGo(ctx, workingDir, "mod", "tidy")
+}
+
+func runGo(ctx context.Context, workingDir string, args ...string) error {
+	cmd := exec.CommandContext(ctx, "go", args...) // #nosec G204 -- callers pass fixed Go subcommands and arguments, without a shell
 	cmd.Dir = workingDir
 	_, err := cmd.Output()
+	// A running process killed by CommandContext otherwise reports only a
+	// process exit error, hiding the caller's cancellation or deadline.
+	if err != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
 	return err
 }
