@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `rollout wait` waits past a HelmRelease failure on obsolete values, compares the current merged values
+  with Flux's last attempted digest, and reports a new failure on those values even at the same chart
+  version. `--reconcile` requests the new attempt once, including for a named component HelmRelease.
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of

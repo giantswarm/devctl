@@ -322,15 +322,20 @@ func (w *Waiter) requestReconciles(ctx context.Context, list []Deployment) error
 			w.progress.Printf("requested a reconcile of %s", d.self)
 			continue
 		}
-		// A named HelmRelease of another chart is not behind the version.
-		if d.Kind != KindHelmRelease || !w.charts[d.Chart] || atLeast(d.RunningVersion, w.version) {
+		// A failure on changed values needs a new attempt even at the
+		// deployed version or on a named component's own version line.
+		behind := w.charts[d.Chart] && !atLeast(d.RunningVersion, w.version)
+		if d.Kind != KindHelmRelease || (!behind && d.self == nil) {
 			continue
 		}
 		targets := []object{{resource: helmReleases, kind: KindHelmRelease, namespace: d.Namespace, name: d.Name}}
-		if d.source != nil {
+		if behind && d.source != nil {
 			targets = append([]object{*d.source}, targets...)
 		}
 		for _, o := range targets {
+			if w.requested[o.String()] != "" {
+				continue
+			}
 			if err := w.requestReconcile(ctx, o); err != nil {
 				return err
 			}
