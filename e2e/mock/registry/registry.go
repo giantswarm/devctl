@@ -104,7 +104,7 @@ func withManifestDefaults(resp sequence.Response, name, reference string) sequen
 			"Docker-Content-Digest": Digest(body),
 		}
 		for k, v := range resp.Headers {
-			headers[k] = v
+			headers[http.CanonicalHeaderKey(k)] = v
 		}
 		return sequence.Response{Status: resp.Status, Headers: headers, Body: body}
 	case http.StatusNotFound:
