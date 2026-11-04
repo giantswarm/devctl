@@ -33,6 +33,9 @@ func TestGHOwner(t *testing.T) {
 		{name: "upstream before origin", args: []string{"pr", "list"}, remotes: forkRemotes, want: "giantswarm"},
 		{name: "set-default wins", args: []string{"pr", "list"}, remotes: defaultRemotes, want: "teemow"},
 		{name: "outside a repository", args: []string{"search", "prs", "x"}, want: ""},
+		{name: "search ignores working directory repository", args: []string{"search", "prs", "x"}, remotes: "remote.origin.url https://github.com/teemow/devctl.git\n", want: ""},
+		{name: "search ignores GH_REPO default", args: []string{"search", "prs", "x"}, env: []string{"GH_REPO=teemow/devctl"}, want: ""},
+		{name: "search repo filters do not select a base repository", args: []string{"search", "prs", "x", "--repo", "teemow/devctl", "--repo", "giantswarm/devctl"}, want: ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

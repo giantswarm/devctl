@@ -25,6 +25,11 @@ var repoCommands = map[string]bool{
 // upstream, github and origin). remotes reads the working directory's
 // remote configuration; nil reads none.
 func GHOwner(args []string, environ []string, remotes func() string) string {
+	// Search is global; --repo is a repeatable search filter, not a base
+	// repository override. Neither GH_REPO nor the checkout selects its repo.
+	if len(args) > 0 && args[0] == "search" {
+		return ""
+	}
 flags:
 	for i, a := range args {
 		switch {

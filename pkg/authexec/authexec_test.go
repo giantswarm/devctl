@@ -133,6 +133,7 @@ func TestRun(t *testing.T) {
 		wantExec bool
 		wantErr  string
 		args     []string
+		remotes  string
 		// wantPerson: gh runs without the token, on the person's login.
 		wantPerson bool
 	}{
@@ -142,6 +143,7 @@ func TestRun(t *testing.T) {
 		{name: "another owner's repository keeps the person's login", program: "gh", args: []string{"pr", "list", "--repo", "teemow/klaus-lab"}, wantExec: true, wantPerson: true},
 		{name: "an upload keeps the person's login", program: "gh", args: []string{"issue", "comment", "12", "--repo", "giantswarm/devctl", "--attach", "proof.png"}, wantExec: true, wantPerson: true},
 		{name: "a comment without an upload acts as the App", program: "gh", args: []string{"pr", "comment", "5", "--repo", "giantswarm/devctl", "--body", "done"}, wantExec: true},
+		{name: "search in a personal checkout stays on the App", program: "gh", args: []string{"search", "prs", "query"}, remotes: "remote.origin.url https://github.com/teemow/devctl.git\n", wantExec: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -158,6 +160,7 @@ func TestRun(t *testing.T) {
 				Path:    path,
 				Environ: []string{"PATH=" + path, "GH_TOKEN=person-token", "GITHUB_TOKEN=other-token"},
 				Stderr:  &stderr,
+				Remotes: func() string { return tc.remotes },
 				Exec: func(p string, argv, env []string) (int, error) {
 					execPath, execArgv, execEnv = p, argv, env
 					return tc.execCode, nil
