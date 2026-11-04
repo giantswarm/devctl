@@ -58,7 +58,8 @@ func NewJobResult(repository string) *JobResult {
 // ReadJob reads job number ref of org/repo into result: its status, its steps
 // and the tail of its failed steps' output, lines of it. Exit 3 when
 // CircleCI has no such job of the repository. Steps CircleCI does not answer
-// are a warning; output it does not answer is the job's LogError.
+// are a warning; output it does not answer is the job's LogError. Caller
+// cancellation ends the read with its context error and retains the job data.
 func ReadJob(ctx context.Context, client *circleciclient.Client, org, repo, ref string, lines int, result *JobResult, warn func(string)) error {
 	number, err := strconv.ParseInt(ref, 10, 64)
 	if err != nil || number <= 0 {
@@ -85,6 +86,9 @@ func ReadJob(ctx context.Context, client *circleciclient.Client, org, repo, ref 
 	result.Job = detail
 
 	steps, err := client.JobSteps(ctx, org, repo, number)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err != nil {
 		warn(fmt.Sprintf("the steps of job %s (%d) could not be read: %v", job.Name, number, err))
 	}
@@ -94,6 +98,9 @@ func ReadJob(ctx context.Context, client *circleciclient.Client, org, repo, ref 
 
 	logs := prwait.LogReader{Lines: lines}.CircleCIJob(ctx, org, repo, client, number, job.Name, job.WebURL)
 	detail.LogTail, detail.LogError = logs.LogTail, logs.LogError
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if detail.LogTail == "" && detail.LogError == "" && circleciclient.JobFailed(job.Status) {
 		warn(fmt.Sprintf("job %s (%d) reads %s, but no step of it failed with output", job.Name, number, job.Status))
 	}
