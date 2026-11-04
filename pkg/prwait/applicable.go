@@ -9,18 +9,19 @@ import (
 )
 
 // notApplicable is exit 3 for a pull request no wait can turn green: closed
-// or merged, a draft, conflicting with its base, or behind a base whose
+// or merged, conflicting with its base, or behind a base whose
 // protection requires it to be up to date. A mergeable state GitHub has not
 // computed yet ("unknown") is not one of them: the wait goes on and reads the
-// pull request again on the next poll.
-func notApplicable(pr *github.PullRequest) error {
+// pull request again on the next poll. The merge gate also refuses drafts;
+// the wait allows them so their checks can finish before human review.
+func notApplicable(pr *github.PullRequest, allowDraft bool) error {
 	reason := ""
 	switch {
 	case pr.GetMerged():
 		reason = "the pull request is merged"
 	case pr.GetState() != "open":
 		reason = fmt.Sprintf("the pull request is %s", pr.GetState())
-	case pr.GetDraft():
+	case pr.GetDraft() && !allowDraft:
 		reason = "the pull request is a draft"
 	case pr.GetMergeableState() == "dirty":
 		reason = fmt.Sprintf("the pull request conflicts with %s", pr.GetBase().GetRef())
