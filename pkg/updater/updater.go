@@ -133,42 +133,63 @@ func New(c Config) (*Updater, error) {
 // binary or the new one, several updates may run at once, and no other file
 // is touched.
 func (u *Updater) InstallLatest() error {
+	_, err := u.InstallLatestWithResult()
+	return err
+}
+
+// InstallResult reports the release selected for installation and whether it
+// actually replaced the executable. A release at or below the running version
+// is a successful no-op, with Installed false.
+type InstallResult struct {
+	Version   string
+	Installed bool
+}
+
+// InstallLatestWithResult installs with the same verification guarantees as
+// InstallLatest and reports the actual outcome. The version cache is refreshed
+// from this selection after a successful install or no-op, since discovery may
+// have seen a different release before installation.
+func (u *Updater) InstallLatestWithResult() (InstallResult, error) {
 	ctx := context.Background()
 
 	// The release must come from the validating updater so that the bundle
 	// asset is attached to it.
 	latest, found, err := u.installer.DetectLatest(ctx, selfupdate.ParseSlug(u.repository))
 	if errors.Is(err, selfupdate.ErrValidationAssetNotFound) {
-		return microerror.Mask(fmt.Errorf("the latest release of %s has no signature bundle for this platform's binary, so it cannot be verified; refusing to install it: %w", u.repository, err))
+		return InstallResult{}, microerror.Mask(fmt.Errorf("the latest release of %s has no signature bundle for this platform's binary, so it cannot be verified; refusing to install it: %w", u.repository, err))
 	} else if err != nil {
-		return microerror.Mask(err)
+		return InstallResult{}, microerror.Mask(err)
 	}
 
 	if !found {
-		return microerror.Maskf(versionNotFoundError, "couldn't find the latest version and/or release assets on GitHub, probably due to token without access to the repository %s.", u.repository)
+		return InstallResult{}, microerror.Maskf(versionNotFoundError, "couldn't find the latest version and/or release assets on GitHub, probably due to token without access to the repository %s.", u.repository)
 	}
 
 	latestVersion, err := semver.Parse(latest.Version())
 	if err != nil {
-		return microerror.Mask(err)
+		return InstallResult{}, microerror.Mask(err)
 	}
+	result := InstallResult{Version: latestVersion.String()}
 
 	if latestVersion.LTE(u.currentVersion) {
 		// Nothing newer to install.
-		return nil
+		u.persistLatestVersion(latestVersion)
+		return result, nil
 	}
 
 	exe, err := executablePath()
 	if err != nil {
-		return microerror.Mask(err)
+		return InstallResult{}, microerror.Mask(err)
 	}
 
 	err = selfupdatecosign.Install(ctx, u.installer, latest, exe)
 	if err != nil {
-		return microerror.Mask(fmt.Errorf("update failed, %s is unchanged: %w", exe, err))
+		return InstallResult{}, microerror.Mask(fmt.Errorf("update failed, %s is unchanged: %w", exe, err))
 	}
 
-	return nil
+	result.Installed = true
+	u.persistLatestVersion(latestVersion)
+	return result, nil
 }
 
 // GetLatest returns the latest version available in the
@@ -230,16 +251,20 @@ func (u *Updater) getLatestVersion(readCache bool) (semver.Version, error) {
 		return semver.Version{}, microerror.Mask(err)
 	}
 
-	if allowCache {
+	u.persistLatestVersion(latestVersion)
+
+	return latestVersion, nil
+}
+
+func (u *Updater) persistLatestVersion(latestVersion semver.Version) {
+	if len(u.cacheDir) > 0 {
 		u.cache.LatestVersion = latestVersion.String()
 
-		err = u.cache.Persist(u.cacheDir)
+		err := u.cache.Persist(u.cacheDir)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "WARNING: Failed to persist the cache with error: %s", err)
 		}
 	}
-
-	return latestVersion, nil
 }
 
 func (u *Updater) parseRepoFromURL(sourceURL string) (string, error) {
