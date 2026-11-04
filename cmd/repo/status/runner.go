@@ -38,8 +38,8 @@ type output struct {
 	// Align is the repository's opt-in to alignment as its entry declares
 	// it; nil when the record carries no entry.
 	Align *bool
-	// DefaultBranch is the entry's default branch, the baseline's when it
-	// declares none, the repository's own on GitHub when the entry keeps it;
+	// DefaultBranch is the repository's own on GitHub when the entry keeps
+	// it, otherwise the entry's default branch or the baseline's;
 	// Flavours the entry's gen.flavours.
 	DefaultBranch string
 	Flavours      []string
@@ -127,7 +127,7 @@ func fromRecord(record *manager.Record, endpoint string) (*output, error) {
 		align := fields.Align
 		out.Align = &align
 		out.DefaultBranch = fields.DefaultBranch
-		if out.DefaultBranch == "" && fields.KeepsDefaultBranch() && record.Reality != nil {
+		if fields.KeepsDefaultBranch() && record.Reality != nil && record.Reality.DefaultBranch != "" {
 			out.DefaultBranch = record.Reality.DefaultBranch
 		}
 		if out.DefaultBranch == "" {
