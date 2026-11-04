@@ -9,7 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- `gen apptest` honors command cancellation before writing its scaffold and while running dependency setup.
+- The file-generating `gen` commands preserve their caller's context and reject canceled calls before changing files.
+  `gen apptest` also cancels its Go dependency setup when that context ends.
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of

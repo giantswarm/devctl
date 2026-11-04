@@ -27,6 +27,9 @@ type runner struct {
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if err := ctx.Err(); err != nil {
 		return microerror.Mask(err)
 	}
