@@ -42,6 +42,7 @@ func Test_Merge_release(t *testing.T) {
 	}{
 		{name: "available", tag: "v1.2.3", wantCode: 0, wantRelease: agentcli.VerdictAvailable},
 		{name: "no release follows", err: &releasewait.NoReleaseError{Reason: "the Auto-release run finished without a tag"}, wantCode: 0, wantRelease: agentcli.VerdictNoRelease, wantReason: "finished without a tag"},
+		{name: "base excluded by auto-release", err: &releasewait.NoReleaseError{Reason: "the auto-release workflow of o/r triggers on giantswarm; nothing tags a merge into release-1.3"}, wantCode: 0, wantRelease: agentcli.VerdictNoRelease, wantReason: "triggers on giantswarm; nothing tags a merge into release-1.3"},
 		{
 			name: "the tag pipeline failed", tag: "v1.2.3",
 			err:      agentcli.NewExitError(agentcli.ExitRed, agentcli.VerdictCIFailed, "the tag pipeline of v1.2.3 failed: build/push-to-registries-release"),
