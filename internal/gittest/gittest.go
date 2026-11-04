@@ -19,6 +19,9 @@ func isolate(t testing.TB) {
 		t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	}
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	// Git passes -c settings through hooks and shell aliases in this variable.
+	// They override GIT_CONFIG_COUNT, including the fixture's default branch.
+	t.Setenv("GIT_CONFIG_PARAMETERS", "")
 	// The fixtures are repos of a GitOps repo whose branch is main.
 	t.Setenv("GIT_CONFIG_COUNT", "1")
 	t.Setenv("GIT_CONFIG_KEY_0", "init.defaultBranch")
