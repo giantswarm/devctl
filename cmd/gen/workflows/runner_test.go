@@ -350,6 +350,15 @@ func Test_Run_PullRequestTemplate(t *testing.T) {
 		require.Equal(t, "### Checklist\n\n- [ ] Tests\n", string(got))
 	})
 
+	t.Run("auto-release drops a checklist the item was alone in", func(t *testing.T) {
+		setup(t, "### Why?\n\nBecause.\n\n### Checklist\n\n- [ ] Update changelog in CHANGELOG.md.\n\n### Notes\n\n")
+		run(t, releaseWorkflowAutoRelease)
+
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, "### Why?\n\nBecause.\n\n### Notes\n", string(got))
+	})
+
 	t.Run("a second run changes nothing", func(t *testing.T) {
 		setup(t, asks)
 		run(t, releaseWorkflowAutoRelease)

@@ -60,7 +60,7 @@ func TestReleasePromoteSourcesKeepsTheSelectedIdentity(t *testing.T) {
 				case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/repos/giantswarm/fixture"):
 					token := r.Header.Get("Authorization")
 					tokens = append(tokens, token)
-					if token != "Bearer test-app-fresh" && !(tc.acceptOverride && token == "Bearer test-override") { // #nosec G101 -- fixture value
+					if token != "Bearer test-app-fresh" && (!tc.acceptOverride || token != "Bearer test-override") { // #nosec G101 -- fixture value
 						w.WriteHeader(http.StatusUnauthorized)
 						_, _ = w.Write([]byte(`{"message":"synthetic token rejection"}`))
 						return
