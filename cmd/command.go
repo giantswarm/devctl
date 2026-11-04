@@ -14,6 +14,7 @@ import (
 	"github.com/giantswarm/devctl/v8/cmd/completion"
 	"github.com/giantswarm/devctl/v8/cmd/deploy"
 	"github.com/giantswarm/devctl/v8/cmd/gen"
+	"github.com/giantswarm/devctl/v8/cmd/nancy"
 	"github.com/giantswarm/devctl/v8/cmd/pr"
 	"github.com/giantswarm/devctl/v8/cmd/release"
 	"github.com/giantswarm/devctl/v8/cmd/replace"
@@ -98,6 +99,11 @@ func New(config Config) (*cobra.Command, error) {
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
+	}
+
+	nancyCmd, err := nancy.New(nancy.Config{Stderr: config.Stderr, Stdout: config.Stdout})
+	if err != nil {
+		return nil, microerror.Mask(err)
 	}
 
 	var prCmd *cobra.Command
@@ -245,6 +251,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(completionCmd)
 	c.AddCommand(deployCmd)
 	c.AddCommand(genCmd)
+	c.AddCommand(nancyCmd)
 	c.AddCommand(prCmd)
 	c.AddCommand(releaseCmd)
 	c.AddCommand(replaceCmd)
