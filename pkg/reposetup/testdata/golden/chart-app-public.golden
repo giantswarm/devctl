@@ -909,12 +909,19 @@ jobs:
             # cliff-context.json holds exactly the commits git-cliff counted
             # for this release, so intersecting it with the range since the
             # last candidate needs no second copy of cliff.toml's skip rules.
+            # A new conventional `test:` commit is also enough once this
+            # target has a candidate: a test fix must be able to replace a
+            # red candidate. It opens no cycle and changes no version or notes.
             if [ -n "${n}" ]; then
               counted=$(jq -r '.[0].commits[].id' "$CLIFF_CONTEXT")
               since=$(git rev-list "${NEXT}-rc.${n}..HEAD")
               fresh=0
               if [ -n "$counted" ] && [ -n "$since" ]; then
                 fresh=$(printf '%s\n' "$since" | { grep -cxF "$counted" || true; })
+              fi
+              if [ "$fresh" -eq 0 ]; then
+                fresh=$(git log --format='%s' "${NEXT}-rc.${n}..HEAD" \
+                  | { grep -cE '^test(\([^)]*\))?!?: ' || true; })
               fi
               if [ "$fresh" -eq 0 ]; then
                 echo "No releasable commits since ${NEXT}-rc.${n}; skipping tag."
@@ -2269,9 +2276,10 @@ commit_preprocessors = [
 # ships. git-cliff decides the bump from the commits that are NOT skipped: a
 # breaking change bumps the major, `feat` the minor, every other type at least
 # the patch. A skipped commit is left out of the release notes and of the
-# bump, so a docs-, style- or test-only push to main computes the current
-# version and the workflow tags nothing; the change ships with the next
-# release. `chore` and `ci` keep releasing: a `chore(deps)` bump changes what
+# bump, so a docs-, style- or test-only push outside a candidate cycle computes
+# the current version and the workflow tags nothing. During a cycle the workflow
+# lets a new test commit advance an existing candidate without changing its
+# version or notes. `chore` and `ci` keep releasing: a `chore(deps)` bump changes what
 # ships, a `ci` change how it is built.
 commit_parsers = [
   { message = "^feat",     group = "Added" },
