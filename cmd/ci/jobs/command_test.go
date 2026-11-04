@@ -154,7 +154,7 @@ func assertRequests(t *testing.T, srv *circlemock.Server, paths ...string) {
 			t.Errorf("request %d = %s, want GET %s", i, req, wantPath)
 		}
 		// The retry of a hidden job listing is anonymous, for public projects.
-		anonymousRetry := i > 0 && paths[i-1] == wantPath && strings.HasSuffix(wantPath, "/job") && req.Header.Get("Circle-Token") == ""
+		anonymousRetry := i > 0 && paths[i-1] == wantPath && strings.HasSuffix(wantPath, "/job") && req.Header.Get("Circle-Token") == "" // #nosec G602 -- the equal-length check above bounds i
 		if req.Header.Get("Circle-Token") != loginToken && !anonymousRetry {
 			t.Errorf("request %d did not use the stored login", i)
 		}
