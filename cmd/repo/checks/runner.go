@@ -123,7 +123,7 @@ func (r *runner) run(ctx context.Context, arg string) error {
 // hasEngineRuleset says whether the repository carries the engine's ruleset
 // [reconcile.RulesetName].
 func hasEngineRuleset(ctx context.Context, gh *github.Client, owner, repo string) (bool, error) {
-	rulesets, _, err := gh.Repositories.GetAllRulesets(ctx, owner, repo, &github.RepositoryListRulesetsOptions{IncludesParents: new(false)})
+	rulesets, err := reconcile.ListRepositoryRulesets(ctx, gh, owner, repo)
 	if err != nil {
 		return false, err
 	}

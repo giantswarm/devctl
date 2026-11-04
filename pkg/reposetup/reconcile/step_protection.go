@@ -614,7 +614,7 @@ type engineRulesets struct {
 // declaration standing. The organization's rulesets are not read.
 func (r *Runner) ownRuleset(ctx context.Context, s *run, sr *StepResult) (engineRulesets, error) {
 	var own engineRulesets
-	list, _, err := r.GitHub.Repositories.GetAllRulesets(ctx, s.owner, s.name, &github.RepositoryListRulesetsOptions{IncludesParents: new(false)})
+	list, err := ListRepositoryRulesets(ctx, r.GitHub, s.owner, s.name)
 	if err != nil {
 		return own, err
 	}
