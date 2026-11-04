@@ -35,7 +35,9 @@ whose job that pipeline does not have.
 
 --checks names are required whatever reported, --checks-if-reported names
 once they have reported, --remove names never. Without --update the drift
-is printed and nothing changes. The branch's reviews, admin enforcement
+is printed and nothing changes. Check names do not select a reporting App:
+existing source pins stay, and new checks have no explicit source pin.
+The branch's reviews, admin enforcement
 and "up to date" (strict) setting are left as they are; the branch must
 already be protected, by classic branch protection or by the ruleset
 'devctl: default branch', of which only the required_status_checks rule
