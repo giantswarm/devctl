@@ -112,7 +112,12 @@ devctl release promote giantswarm/devctl --version v1.2.3-rc.14
 
 ```nohighlight
 devctl rollout wait myinstallation giantswarm/app-operator v7.5.4 --progress
+devctl rollout wait myinstallation giantswarm/agent-platform --chart agent-platform-connectivity v1.2.3
 ```
+
+A bare `--chart <chart-name>` waits directly for that component's version, readiness and workloads,
+skipping the repository release wait when its meta chart is unchanged. An OCI path in `--chart`
+keeps the release wait.
 
 ### Merging a pull request (`devctl pr merge`)
 

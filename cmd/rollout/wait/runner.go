@@ -77,7 +77,7 @@ func (r *runner) kubeContext(installation string) string {
 
 func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Document) error {
 	if len(args) < 2 || len(args) > 3 {
-		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "usage: devctl %s <installation> <owner/repo> [<vX.Y.Z|X.Y.Z>] [--version <vX.Y.Z>] [--pr <number>], got %d argument(s)", rolloutwait.Command, len(args))
+		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "usage: devctl %s <installation> <owner/repo> [<vX.Y.Z|X.Y.Z>] [--version <vX.Y.Z>] [--pr <number>], or devctl %s <installation> <owner/repo> --chart <chart-name> <version> for a component; got %d argument(s)", rolloutwait.Command, rolloutwait.Command, len(args))
 	}
 	installation := args[0]
 	if installation == "" || strings.ContainsAny(installation, "/ ") {
@@ -95,12 +95,16 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		version = args[2]
 	}
 	if (version == "") == (r.flag.PR == 0) {
-		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "pass exactly one of a version (vX.Y.Z or X.Y.Z) and --pr <number>")
+		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "pass exactly one of a version (vX.Y.Z or X.Y.Z) and --pr <number>; for a component, use --chart <chart-name> <version> to skip the repository release wait")
 	}
 	if version != "" {
 		if _, err := releasewait.ParseVersion(version); err != nil {
 			return err
 		}
+	}
+	component, err := r.flag.componentChart()
+	if err != nil {
+		return err
 	}
 	failedLogLines, err := r.flag.FailedLog.TailLines()
 	if err != nil {
@@ -135,6 +139,28 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 	})
 	if err != nil {
 		return err
+	}
+
+	if component != "" {
+		doc.Release.Verdict = agentcli.VerdictNotApplicable
+		doc.Release.Reason = "component form: the repository release is not checked"
+		waiter, err := rolloutwait.New(rolloutwait.Config{
+			Installation: installation,
+			KubeContext:  kubeContext,
+			Version:      version,
+			Charts:       []string{component},
+			HelmReleases: r.flag.HelmReleases,
+			Timeout:      r.flag.Timeout,
+			Reconcile:    r.flag.Reconcile,
+			Client:       client,
+			Clock:        clock,
+			Progress:     progress,
+			Warn:         doc.Warn,
+		})
+		if err != nil {
+			return err
+		}
+		return waiter.Wait(ctx, &doc.Result)
 	}
 
 	progress.Printf("reading the GitHub token from the keychain")

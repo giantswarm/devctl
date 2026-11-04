@@ -4,9 +4,11 @@
 devctl rollout wait <installation> <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--context <kube-context>] [--kubeconfig <file>]
     [--timeout 30m] [--release-timeout 60m] [--image <owner/name>]... [--chart <path>]... [--helmrelease [<namespace>/]<name>]...
     [--reconcile] [--progress] [--failed-log [--failed-log-lines 50]]
+devctl rollout wait <installation> <owner/repo> --chart <chart-name> (<version> | --version <version>)
+    [--context <kube-context>] [--kubeconfig <file>] [--timeout 30m] [--reconcile] [--progress]
 ```
 
-Blocks until a release runs on an installation, then prints one JSON document and exits with a code
+Blocks until a release or a component runs on an installation, then prints one JSON document and exits with a code
 that says what happened. It is the last step after [`devctl pr merge`](pr-merge.md) and
 [`devctl release wait`](release-wait.md): the release is pullable, and now Flux (or app-operator) on the
 installation's management cluster has to pick it up, deploy it and roll its workloads out. An agent
@@ -32,6 +34,29 @@ giantswarm/agent-platform's connectivity chart, whose HelmRelease upgrades minut
 chart's), and a chart named differently from its repository is found. A release that ships no
 chart is exit 3; for hand-written CI the reason names `--chart`. The document's `release` carries that
 wait's verdict, reason and result.
+
+### A component under an unchanged meta chart
+
+When a component rolls under a version range without a new meta-chart release, name its chart and
+version directly:
+
+```nohighlight
+devctl rollout wait myinstallation giantswarm/agent-platform --chart agent-platform-connectivity v1.2.3
+```
+
+A bare `--chart <chart-name>` skips the repository release wait. The version, as an argument or
+`--version`, is the component's; no meta-chart version, PR, GitHub or CircleCI login is needed. The
+repository is carried in the document but is not queried. The existing cluster wait finds that chart's
+HelmReleases and Apps and judges their running version, readiness and workloads as described below.
+An unchanged meta chart is not selected by this form. `--timeout` bounds the cluster wait and
+`--reconcile` asks Flux to reconcile the component's source and HelmRelease once when behind.
+
+This form takes one bare chart name and no `--pr`, `--image` or `--failed-log`; an OCI path such as
+`--chart giantswarm/kagent/helm/kagent` keeps the repository release wait. The component form checks
+no release pipeline or registry artifact: `release.verdict` is `not_applicable`, `release.reason` says
+the repository release is not checked, and the top-level verdict describes the component rollout.
+The component must already have a matching HelmRelease or App; none is exit 3. Without a version or
+`--pr`, the exit-7 usage error names this component form.
 
 ### A pull request on a release candidate: release, then promote
 
@@ -161,7 +186,7 @@ shown as progress) and:
 | `installation`, `context` | The installation and the kube context it was read through. |
 | `version` | The version waited for, bare; empty for a configuration change. |
 | `revision` | The merge commit of a configuration change waited for; absent for a version. |
-| `charts` | The release's charts, the names deployments are matched by. |
+| `charts` | The release's charts, or the component chart named directly, the names deployments are matched by. |
 | `deployments[]` | Every HelmRelease and App of the charts at the last poll (for a configuration change, the GitRepositories, Kustomizations, Konfigurations, HelmReleases, Apps and ConfigMaps above, `runningVersion` the commit each applied or the chart version): `kind`, `namespace`, `name`, `chart`, `source` (`OCIRepository <ns>/<name>`, `HelmChart <ns>/<name>`, `catalog <name>`), `follows` (`semver <range>`, `tag <tag>`, `digest <digest>`, `version <v>`), `runningVersion`, `state` (`rolled_out`, `progressing`, `failed`, `not_following`, `suspended`, `unknown`), `message` (what it waits for or why it failed) and `workloads[]` (`kind`, `namespace`, `name`, `ready`, `message`). |
 | `release` | The release wait's `verdict` and `reason`, and its result fields (see [release-wait.md](release-wait.md#the-document)); with `--failed-log`, `release.failedJobs[]` when the release's CI failed. |
 
