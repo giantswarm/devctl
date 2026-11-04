@@ -10,6 +10,7 @@ import (
 
 	"github.com/giantswarm/devctl/v8/cmd/release/archive"
 	"github.com/giantswarm/devctl/v8/cmd/release/create"
+	"github.com/giantswarm/devctl/v8/cmd/release/failed"
 	"github.com/giantswarm/devctl/v8/cmd/release/promote"
 	"github.com/giantswarm/devctl/v8/cmd/release/rerun"
 	"github.com/giantswarm/devctl/v8/cmd/release/wait"
@@ -17,7 +18,7 @@ import (
 
 const (
 	name        = "release"
-	description = "Commands for working with releases: create and archive them on the local filesystem, wait until one is pullable, promote release candidates."
+	description = "Commands for working with releases: create and archive them on the local filesystem, wait until one is pullable, list failed publishes, promote release candidates."
 )
 
 type Config struct {
@@ -129,6 +130,11 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(waitCmd)
 	c.AddCommand(rerunCmd)
 	c.AddCommand(promoteCmd)
+	failedCmd, err := failed.New(failed.Config{Stdout: config.Stdout})
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	c.AddCommand(failedCmd)
 
 	return c, nil
 }

@@ -88,7 +88,7 @@ func (a *Auth) do(req *http.Request, out any, accepted ...int) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("%s %s: HTTP %d", req.Method, req.URL.Redacted(), resp.StatusCode)
+	return fmt.Errorf("%s %s: %w", req.Method, req.URL.Redacted(), &httpStatusError{code: resp.StatusCode})
 }
 
 // oauthErrorer is a response document that can carry an OAuth error.
