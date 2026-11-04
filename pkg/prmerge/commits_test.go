@@ -120,15 +120,9 @@ func Test_Merge_autosquashEveryPage(t *testing.T) {
 	first := make([]map[string]any, 100)
 	second := make([]map[string]any, 100)
 	third := make([]map[string]any, 51)
-	for i := range 251 {
-		c := commit(fmt.Sprintf("c%d", i), "fix: clean")
-		switch {
-		case i < 100:
-			first[i] = c
-		case i < 200:
-			second[i-100] = c
-		default:
-			third[i-200] = c
+	for pageIndex, page := range [][]map[string]any{first, second, third} {
+		for i := range page {
+			page[i] = commit(fmt.Sprintf("c%d", pageIndex*100+i), "fix: clean")
 		}
 	}
 	third[48] = commit("amend-sha", "amend! fix: one\n\nbody must not be listed")
