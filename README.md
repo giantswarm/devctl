@@ -54,15 +54,23 @@ cosign verify-blob "${ASSET}" \
 
 `devctl auth login` logs in to GitHub (the device flow of the devctl GitHub App, refreshed without a human) and CircleCI (OAuth 2.0 with PKCE and dynamic client registration, a 90-day token) and keeps both tokens in the OS keychain; `devctl auth login --muster-only` signs in to muster the same way, for the `repo` commands that call giantswarm-repo-manager through it, and completes the sign-in to the manager; `devctl auth status` shows the identities and validates the CircleCI token, never printing a token; `devctl auth exec -- gh …` (or a `gh` link to devctl first on an agent's `PATH`) runs gh with the App's short-lived token, never your long-lived gh login. Commands that need a token exit 8 naming `devctl auth login` when none is usable. See [docs/auth.md](docs/auth.md).
 
+`devctl nancy` scans a local Go repository with CircleCI's dependency selection and Nancy scan options,
+including both repository ignore files. Its OSS Index username and token come from the OS keychain's
+`devctl/ossindex` record and reach only Nancy's environment. See [docs/nancy.md](docs/nancy.md) for setup.
+
 ```bash
 devctl auth login
 devctl auth login --muster-only
 devctl auth status
 ```
 
+`pr wait`, `pr merge` and `release wait` recover from a CircleCI 401 by pausing two seconds,
+re-reading the keychain once and retrying the read. A persistent CircleCI error is exit 13
+(`remote_error`); missing credentials remain exit 8.
+
 ### Waiting for a pull request's CI (`devctl pr wait`)
 
-`devctl pr wait <owner/repo> <number>` blocks until the pull request's head is green as the merge box sees it (the latest run per check, every CircleCI workflow of the head revision, no GitHub Actions run still open or awaiting approval, every required context reported), red, or in a state no CI can turn green (closed, conflicting, behind a strict base), then prints one JSON document and exits 0, 1, 2 (timeout), 3, 4 (a required context never reported), 7 or 8. Drafts wait for their checks too, with their latest state in `draft`; `pr merge` still refuses them with exit 3. See [docs/pr-wait.md](docs/pr-wait.md).
+`devctl pr wait <owner/repo> <number>` blocks until the pull request's head is green as the merge box sees it (the latest run per check, every CircleCI workflow of the head revision, no GitHub Actions run still open or awaiting approval, every required context reported), red, or in a state no CI can turn green (closed, conflicting, behind a strict base), then prints one JSON document and exits 0, 1, 2 (timeout), 3, 4 (a required context never reported), 7, 8 or 13 (`remote_error`). Drafts wait for their checks too, with their latest state in `draft`; `pr merge` still refuses them with exit 3. See [docs/pr-wait.md](docs/pr-wait.md).
 
 ```bash
 devctl pr wait giantswarm/devctl 2277 --timeout 45m --progress
@@ -133,13 +141,18 @@ with an interrupted reason and the last observed state. The wait exits 2; after 
 Without an explicit method, an unreadable `gen.flavours` or a GitHub fork whose team-file entry does not declare
 `fork` is refused before waiting or writing (exit 3). Repair the declaration or choose `--rebase` or `--squash`.
 
-`devctl pr merge <owner/repo> <number>` is the one call an agent makes to land its own pull request: it runs the wait of `pr wait`, squash-merges the pull request (`--rebase` for a rebase merge, the default on a fork line, whose team-file entry lists the `fork` flavour, where `--squash` squashes; a merge commit where the repository allows only that) through the merge API with the judged head as the expected head, deletes the branch through the refs API, and then runs the wait of `release wait --pr` on the merge commit until the release is pullable (`--release-timeout`, 60 minutes by default; `--no-release-wait` ends at the merge). A base with a merge queue is enqueued and waited for instead of merged. A merge that no release follows (a repository that does not tag merge commits, an auto-release run that tagged nothing) is exit 0. Refused before any wait: a draft, closed or conflicting pull request and one behind its base, strict or not, whose checks ran against an older base (exit 3; `--update-branch` updates it and waits for the new head); a base that moved during the wait is compared again before the merge, with the same rule, another human's pull request and a repository whose team-file entry says `agentMerge: false` (exit 5). A reviewer's `COMMENTED` or `CHANGES_REQUESTED` review or comment newer than the head that the author has not answered refuses it too (exit 5), read before the wait and again right before the merge. No protection setting is read to be changed or written: the merge is made as you, through the bypass the repository's ruleset grants its owning team and its admins. One JSON document (`pr wait`'s fields plus `mergeCommitSha`, `mergedBy`, `method`, `branchDeleted`, `enqueued`, `unansweredReviews` and `release`), exit 0, 1, 2, 3, 4, 5, 7 or 8, and after a merge 6 (the release failed), 9 (the release not confirmed) or 14 (`tag_pipeline_empty`: re-trigger the tag pipeline). `--detach` starts the same merge in a process of its own and returns within seconds with a handle; `devctl pr merge status <handle>` reads its outcome later, with the merge's exit code, and `--on-done <command>` runs a command when it ended. See [docs/pr-merge.md](docs/pr-merge.md).
+`devctl pr merge <owner/repo> <number>` is the one call an agent makes to land its own pull request: it runs the wait of `pr wait`, squash-merges the pull request (`--rebase` for a rebase merge, the default on a fork line, whose team-file entry lists the `fork` flavour, where `--squash` squashes; a merge commit where the repository allows only that) through the merge API with the judged head as the expected head, deletes the branch through the refs API, and then runs the wait of `release wait --pr` on the merge commit until the release is pullable (`--release-timeout`, 60 minutes by default; `--no-release-wait` ends at the merge). A base with a merge queue is enqueued and waited for instead of merged. A merge that no release follows (a repository that does not tag merge commits, an auto-release run that tagged nothing) is exit 0. Refused before any wait: a draft, closed or conflicting pull request and one behind its base, strict or not, whose checks ran against an older base (exit 3; `--update-branch` updates it and waits for the new head); a base that moved during the wait is compared again before the merge, with the same rule, another human's pull request and a repository whose team-file entry says `agentMerge: false` (exit 5). A reviewer's `COMMENTED` or `CHANGES_REQUESTED` review or comment newer than the head that the author has not answered refuses it too (exit 5), read before the wait and again right before the merge. No protection setting is read to be changed or written: the merge is made as you, through the bypass the repository's ruleset grants its owning team and its admins. One JSON document (`pr wait`'s fields plus `mergeCommitSha`, `mergedBy`, `method`, `branchDeleted`, `enqueued`, `unansweredReviews` and `release`), exit 0, 1, 2, 3, 4, 5, 7, 8 or 13, and after a merge 6 (the release failed), 9 (the release not confirmed) or 14 (`tag_pipeline_empty`: re-trigger the tag pipeline). `--detach` starts the same merge in a process of its own and returns within seconds with a handle; `devctl pr merge status <handle>` reads its outcome later, with the merge's exit code, and `--on-done <command>` runs a command when it ended. See [docs/pr-merge.md](docs/pr-merge.md).
 
 Rebase merges refuse commits whose subjects start with `amend!`, `fixup!` or `squash!` (exit 3), listing their SHAs and subjects. Autosquash them before merging; `--accept-red` cannot override this history guard. Squash merges are unaffected.
 
 ```bash
 devctl pr merge giantswarm/devctl 2278 --timeout 45m --progress
 ```
+
+For a colleague's commits carried in your own pull request, `--carry-of <original number>` uses
+rebase to preserve their authorship and names their original pull request in `carryOf` in the JSON
+document. Every commit must be verifiably by that colleague; mixed authorship and merge queues are
+refused, and the repository must allow rebase merging. See [carrying a colleague's commits](docs/pr-merge.md#carrying-a-colleagues-commits---carry-of).
 
 ### The agent-facing commands as MCP tools (`devctl serve`)
 

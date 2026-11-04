@@ -53,6 +53,7 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
+	"github.com/giantswarm/devctl/v8/pkg/prwait"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
 
@@ -137,7 +138,8 @@ type Config struct {
 	// is, with Result.PromotePending set. devctl rollout wait sets it: an
 	// installation that follows stable releases never deploys the candidate.
 	PreferPromoted bool
-	// Timeout bounds the wait; zero means DefaultTimeout.
+	// Timeout bounds the wait; zero means DefaultTimeout. With Catalog,
+	// repository publication evidence permits one CatalogPublishGrace extension.
 	Timeout time.Duration
 	// Catalog also waits for the catalog index to list every chart.
 	Catalog bool
@@ -158,6 +160,7 @@ type Config struct {
 	// log of each failed job once and keep that many of its last lines in
 	// Result.FailedJobs, read and trimmed as pr wait's --failed-log does. A
 	// green or pending tag reads no log.
+	// prwait.FullFailedLogLines keeps the full log; zero reads no log.
 	FailedLogLines int
 
 	// GitHub is required. Entries and Registry are required; CircleCI is
@@ -234,6 +237,10 @@ type Waiter struct {
 	// green, the contexts of the tag commit's statuses still pending, for the
 	// heartbeat and the timeout's reason.
 	pendingStatuses []string
+	// catalogWaiting names the charts still missing from Pages, distinguishing
+	// repository publication from Pages publication.
+	catalogWaiting  []string
+	catalogExtended bool
 	// warned are the warnings given already, each given once.
 	warned map[string]bool
 }
@@ -285,10 +292,11 @@ func New(config Config) (*Waiter, error) {
 // the wait ended.
 func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 	*result = NewResult(w.config.Owner + "/" + w.config.Repo)
+	parent := ctx
 	ctx, cancel := w.clock.Timeout(ctx, w.config.Timeout)
 	defer cancel()
 
-	err := w.wait(ctx, result)
+	err := w.wait(ctx, parent, result)
 	var ambiguous *AmbiguousReleaseError
 	if errors.As(err, &ambiguous) {
 		result.ConflictingTags = ambiguous.Tags
@@ -299,7 +307,7 @@ func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 	return err
 }
 
-func (w *Waiter) wait(ctx context.Context, result *Result) error {
+func (w *Waiter) wait(ctx, parent context.Context, result *Result) error {
 	owner, repo := w.config.Owner, w.config.Repo
 
 	// The release model decides how a version is found for a pull request,
@@ -430,6 +438,19 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 	for _, a := range result.Artifacts {
 		w.progress.Printf("expecting %s %s", a.Kind, a.Reference)
 	}
+	err = w.loop(ctx, result, plan)
+	if err == nil || !w.config.Catalog || !plan.catalogReady || ctx.Err() == nil || parent.Err() != nil {
+		return err
+	}
+	if isOutcome(err) && agentcli.Exit(err) != agentcli.ExitTimeout {
+		return err
+	}
+	// Keep the same plan and evidence, with one extension from the caller's
+	// context. The ordinary deadline cannot cancel this Pages allowance.
+	ctx, cancel := w.clock.Timeout(parent, CatalogPublishGrace)
+	defer cancel()
+	w.catalogExtended = true
+	w.progress.Printf("catalog charts are in their repositories; allowing %s more for Pages publication", CatalogPublishGrace)
 	return w.loop(ctx, result, plan)
 }
 
@@ -542,6 +563,10 @@ type plan struct {
 	charts []chartArtifact
 	// catalogs are the catalogs --catalog reads, one per chart, once known.
 	catalogs []string
+	// catalogConfirmed caches repository evidence per chart. catalogReady
+	// means every chart still missing from Pages has that evidence.
+	catalogConfirmed map[int]bool
+	catalogReady     bool
 	// failures counts consecutive registry failures that were not answers.
 	failures map[string]int
 }
@@ -622,7 +647,7 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 			if err != nil {
 				w.warn(fmt.Sprintf("reading artifact availability for %s: %v", result.Tag, err))
 			}
-			if w.config.FailedLogLines > 0 {
+			if w.config.FailedLogLines > 0 || w.config.FailedLogLines == prwait.FullFailedLogLines {
 				result.FailedJobs = w.failedJobs(ctx, state)
 			}
 			return ciFailedErr("the tag pipeline of %s failed: %s", result.Tag, strings.Join(state.failedJobs, ", "))
@@ -751,7 +776,7 @@ func (w *Waiter) pending(result *Result, p *plan, state *pipelineState) string {
 			parts = append(parts, fmt.Sprintf("the release of %s published", result.Tag))
 		}
 	case w.config.Catalog && len(parts) == 0:
-		parts = append(parts, "the catalog index to list every chart")
+		parts = append(parts, w.catalogWaiting...)
 	}
 	return strings.Join(parts, "; ")
 }
@@ -842,28 +867,6 @@ func (w *Waiter) releasePublished(ctx context.Context, result *Result, state *pi
 		w.releasePending = fmt.Sprintf("release %s has 0 assets after pipeline %d's %s; waiting for at least one release asset", result.Tag, result.Pipeline.Number, strings.Join(result.Pipeline.AssetUploadJobs, ", "))
 		w.progress.Printf("%s", w.releasePending)
 		return false, nil
-	}
-	return true, nil
-}
-
-func (w *Waiter) catalogLists(ctx context.Context, result *Result, p *plan) (bool, error) {
-	if p.catalogs == nil {
-		catalogs, err := w.chartCatalogs(ctx, result, p)
-		if err != nil {
-			return false, err
-		}
-		p.catalogs = catalogs
-	}
-	for i, c := range p.charts {
-		catalog := p.catalogs[i]
-		listed, err := w.config.CatalogIndex.Lists(ctx, catalog, c.name, p.version)
-		if err != nil {
-			return false, usageErr("reading the %s index: %v", catalog, err)
-		}
-		if !listed {
-			w.progress.Printf("catalog %s does not list %s %s yet", catalog, c.name, p.version)
-			return false, nil
-		}
 	}
 	return true, nil
 }
@@ -1129,6 +1132,12 @@ func (w *Waiter) timeout(result *Result) error {
 		return timeoutErr("not available within %s: %s%s", w.config.Timeout, strings.Join(missing, ", "), unfinished)
 	case len(w.pendingStatuses) > 0:
 		return timeoutErr("%s is available and its tag pipeline green, and the commit statuses of %s did not finish within %s: %s pending; devctl release promote refuses the commit until they succeed", result.Tag, short(result.SHA), w.config.Timeout, strings.Join(w.pendingStatuses, ", "))
+	case len(w.catalogWaiting) > 0:
+		bound := fmt.Sprintf("within %s", w.config.Timeout)
+		if w.catalogExtended {
+			bound += fmt.Sprintf(" plus the %s Pages publication extension", CatalogPublishGrace)
+		}
+		return timeoutErr("catalog publication for %s did not finish %s: %s%s", result.Tag, bound, strings.Join(w.catalogWaiting, "; "), unfinished)
 	case w.releasePending != "":
 		return timeoutErr("%s was not released within %s: %s%s", result.Tag, w.config.Timeout, w.releasePending, unfinished)
 	case result.Pipeline == nil && result.CIModel != CIModelNone && w.unanswered == "":

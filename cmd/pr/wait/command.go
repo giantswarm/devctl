@@ -71,7 +71,9 @@ logError}]. See docs/pr-wait.md.
 
 --failed-log: on a red verdict, read the log of each failed GitHub Actions
 and CircleCI job once and print its last --failed-log-lines lines (default
-50) to stderr; a green or pending wait reads no log.
+50) to stderr; --failed-log-lines 0 keeps the full Actions log, including
+cleanup, or all failed-step output on CircleCI, with terminal controls
+removed. A green or pending wait reads no log.
 
 Exit codes:
   0  green
@@ -84,7 +86,8 @@ Exit codes:
      member's approval and nothing else is pending
   7  usage or a tooling failure
   8  authentication required; reason names the devctl auth login (or gh auth
-     login, for an owner outside giantswarm) to run`
+     login, for an owner outside giantswarm) to run
+ 13  remote_error: a CircleCI request failed; the command line was valid`
 	example = `  devctl pr wait giantswarm/devctl 2277
   devctl pr wait giantswarm/devctl 2277 --timeout 45m --progress`
 )

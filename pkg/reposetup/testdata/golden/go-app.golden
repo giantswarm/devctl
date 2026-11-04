@@ -294,7 +294,7 @@ You are an AI assistant acting as an expert software developer and platform engi
 - Write comprehensive tests and documentation.
 - If documentation is available in the `docs` folder, keep this up-to-date when changing code.
 - Maintain the main README.md file for correctness.
-- If a changelog is available as CHANGELOG.md, add your changes to it, unless the repository has `.github/workflows/zz_generated.auto_release.yaml`: that release writes CHANGELOG.md from the pull request titles, so a pull request does not edit it.
+- If a changelog is available as CHANGELOG.md, add your changes to it, unless the repository has `.github/workflows/zz_generated.auto_release.yaml`: there GitHub Releases are the changelog, written from the pull request titles, and CHANGELOG.md only points at them, so a pull request does not edit it.
 
 ## Release Management
 
@@ -387,7 +387,6 @@ Manual changes will be overwritten.
 
 ### Should this change be mentioned in the release notes?
 
-The pull request title is the release note: the release writes CHANGELOG.md, so do not edit it.
 
 --- .github/workflows/zz_generated.add-team-labels.yaml
 name: Add appropriate labels to issue
@@ -648,8 +647,6 @@ jobs:
 #      a candidate flagged as a pre-release
 #   3. checks that CircleCI picked the tag up and triggers the pipeline if
 #      the webhook got lost (repos with a .circleci/config.yml only)
-#   4. after a stable release, writes its notes into CHANGELOG.md through a
-#      pull request of its own: pull requests do not edit that file
 #
 # A minor or major vX.Y.0 is cut only by running this workflow by hand with
 # `release-type: stable`, which promotes the latest release candidate, or
@@ -715,11 +712,6 @@ jobs:
       # The stable run reads the commit statuses of the candidate it promotes,
       # and every run with a tag those of the tag's CircleCI build.
       statuses: read
-    outputs:
-      # The stable tag this run released, empty for a candidate or no release.
-      # Read from the release step, so a failure of the CircleCI check after
-      # it still reaches the changelog job.
-      stable: ${{ steps.release.outcome == 'success' && steps.decide.outputs.prerelease == 'false' && steps.decide.outputs.tag || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -1260,216 +1252,6 @@ jobs:
           echo "::error::CircleCI never built ${TAG}: no CircleCI status on ${TARGET:0:8} from a workflow started in the ${CIRCLECI_STATUS_WAIT_SECONDS} s after the release" \
             "(GitHub delivers the webhook once and never retries). Run it as you: ${fix}"
           exit 1
-
-  # CHANGELOG.md belongs to the release, not to pull requests: every pull
-  # request inserting at the same place made each merge conflict the others.
-  # After a stable release this job writes the release's notes, the text
-  # git-cliff rendered for the GitHub Release, under their version.
-  #
-  # A candidate writes nothing: its notes are cumulative, and the stable
-  # release of the cycle carries them all.
-  #
-  # Nothing waits for this job. No pull request check reads CHANGELOG.md, and
-  # `continue-on-error` keeps a failure here from turning a release's run red
-  # after the release exists (`devctl release promote` reads the run's
-  # conclusion). The sections are written from the tags, not from this run's
-  # release alone, so the next release repairs what a failed run or a pull
-  # request nobody merged left out. The pull request's `docs` title releases
-  # nothing when it merges.
-  changelog:
-    name: Changelog
-    needs: tag
-    if: ${{ !cancelled() && needs.tag.outputs.stable != '' }}
-    runs-on: ubuntu-26.04
-    continue-on-error: true
-    permissions:
-      contents: read
-    steps:
-      - name: Check the release App's secrets are available
-        id: secrets
-        env:
-          RELEASE_BOT_CLIENT_ID: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
-          RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
-        run: |
-          if [ -z "$RELEASE_BOT_CLIENT_ID" ] || [ -z "$RELEASE_BOT_PRIVATE_KEY" ]; then
-            # A run started by Dependabot sees Dependabot secrets alone.
-            echo "::warning::The giantswarm-release App secrets are not available to this run: CHANGELOG.md is not written, the next stable release writes this one too."
-            echo "available=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      # A push with GITHUB_TOKEN starts no checks, so the pull request could
-      # never turn green.
-      - name: Generate the giantswarm-release token
-        id: release-token
-        if: steps.secrets.outputs.available == 'true'
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
-
-      - name: Checkout
-        if: steps.secrets.outputs.available == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          ref: ${{ github.ref_name }}
-          fetch-depth: 0        # every tag's place on this branch
-          fetch-tags: true
-          # The App token is kept in the checkout so `git push` below uses it.
-          token: ${{ steps.release-token.outputs.token }}
-
-      - name: Write the release into CHANGELOG.md
-        id: section
-        if: steps.secrets.outputs.available == 'true'
-        env:
-          GH_TOKEN: ${{ steps.release-token.outputs.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.tag.outputs.stable }}
-        run: |
-          set -euo pipefail
-          # An open pull request of an earlier release is replaced, never
-          # stacked on: the sections are rebuilt from the branch below, so what
-          # the old one carried comes back unless it merged in the meantime.
-          # `--jq` filters what the list returned, and `gh pr list` stops at 30
-          # by default, newest first: the limit has to reach an old pull request
-          # behind every other open one.
-          open=$(gh pr list --base "$GITHUB_REF_NAME" --state open --limit 5000 --json number,headRefName \
-            --jq '.[] | select(.headRefName | startswith("auto-release/changelog-")) | .number')
-          for number in $open; do
-            gh pr close "$number" --delete-branch --comment "Replaced by the changelog of ${TAG}."
-          done
-          git fetch -q origin "$GITHUB_REF_NAME"
-          git checkout -q --detach FETCH_HEAD
-
-          # A repository without the file keeps its notes on the releases page.
-          if [ ! -f CHANGELOG.md ]; then
-            echo "::notice::no CHANGELOG.md on ${GITHUB_REF_NAME}: the notes of ${TAG} stay on its GitHub Release"
-            exit 0
-          fi
-
-          # Every stable release of this branch newer than the newest one the
-          # file names, newest first. The limit bounds the first run on a
-          # file that fell far behind.
-          limit=20
-          mapfile -t tags < <(git tag --merged HEAD --list 'v*.*.*' \
-            | { grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true; } | sort -rV)
-          scratch=$(mktemp -d)
-          : > "$scratch/first.md"
-          : > "$scratch/rest.md"
-          : > "$scratch/links.md"
-          newest="" written=0
-          for i in "${!tags[@]}"; do
-            tag=${tags[$i]}
-            version=${tag#v}
-            if grep -qE "^## \[v?${version//./\\.}\]" CHANGELOG.md || [ "$written" -ge "$limit" ]; then
-              break
-            fi
-            if ! release=$(gh release view "$tag" --json body,publishedAt); then
-              echo "::warning::${tag} has no GitHub release to read notes from: left out of CHANGELOG.md"
-              continue
-            fi
-            target=rest
-            if [ -z "$newest" ]; then
-              newest=$tag
-              target=first
-            fi
-            body=$(jq -r '.body' <<<"$release")
-            {
-              echo "## [${version}] - $(jq -r '.publishedAt[:10]' <<<"$release")"
-              echo
-              echo "$body"
-              echo
-            } >> "$scratch/$target.md"
-            previous=${tags[$((i + 1))]:-}
-            if [ -n "$previous" ]; then
-              echo "[${version}]: https://github.com/${GH_REPO}/compare/${previous}...${tag}" >> "$scratch/links.md"
-            else
-              echo "[${version}]: https://github.com/${GH_REPO}/releases/tag/${tag}" >> "$scratch/links.md"
-            fi
-            written=$((written + 1))
-          done
-          if [ -z "$newest" ]; then
-            echo "CHANGELOG.md already names ${TAG}"
-            exit 0
-          fi
-
-          # The newest section goes right under `## [Unreleased]`, the others
-          # after it. Whatever a person or an older pull request wrote under
-          # Unreleased moves into the newest section, so nothing is lost and
-          # Unreleased ends up empty. A `[Unreleased]:` link line at the end of
-          # the file, where a repository keeps those, moves on to the new tag.
-          awk -v first="$scratch/first.md" -v rest="$scratch/rest.md" -v links="$scratch/links.md" \
-            -v unreleased="[Unreleased]: https://github.com/${GH_REPO}/compare/${newest}...HEAD" '
-            function emit(file,   line) {
-              while ((getline line < file) > 0) print line
-              close(file)
-            }
-            function cut() {
-              sub(/^[ \t\n]+/, "", hand)
-              sub(/[ \t\n]+$/, "", hand)
-              print ""
-              print marker
-              print ""
-              emit(first)
-              if (hand != "") {
-                print "Written by hand before this release:"
-                print ""
-                print hand
-                print ""
-              }
-              emit(rest)
-            }
-            BEGIN {
-              marker = "<!-- Written at release from the pull request titles. Pull requests do not edit this file. -->"
-              state = "before"
-            }
-            state == "before" && /^## \[?[Uu]nreleased\]?/ { print; state = "unreleased"; next }
-            state == "before" && /^## / { print "## [Unreleased]"; cut(); state = "after" }
-            state == "unreleased" && (/^## / || /^\[[^]]+\]: /) { cut(); state = "after" }
-            state == "unreleased" {
-              if ($0 != marker) hand = hand $0 "\n"
-              next
-            }
-            /^\[[Uu]nreleased\]: / { print unreleased; emit(links); next }
-            { print }
-            END {
-              if (state == "before") print "## [Unreleased]"
-              if (state != "after") cut()
-            }
-          ' CHANGELOG.md > "$scratch/CHANGELOG.md"
-          cp "$scratch/CHANGELOG.md" CHANGELOG.md
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-
-      # The giantswarm-release App passes the review ruleset where the
-      # repository's reconciler lets it (`--release-app-id`), so the pull
-      # request lands once its checks are green. Elsewhere it waits for a
-      # review, and blocks nothing while it does.
-      - name: Open the changelog pull request
-        if: steps.section.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ steps.release-token.outputs.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.tag.outputs.stable }}
-        run: |
-          set -euo pipefail
-          head="auto-release/changelog-${TAG}"
-          git switch -q -c "$head"
-          git config user.name 'giantswarm-release[bot]'
-          git config user.email '342014845+giantswarm-release[bot]@users.noreply.github.com'
-          git commit -q -m "docs(changelog): ${TAG}" -- CHANGELOG.md
-          # A branch left from a closed pull request of this tag, on a re-run.
-          if git ls-remote --exit-code --heads origin "$head" >/dev/null; then
-            git push -q origin --delete "$head"
-          fi
-          git push -q origin "$head"
-          url=$(gh pr create --base "$GITHUB_REF_NAME" --head "$head" \
-            --title "docs(changelog): ${TAG}" \
-            --body "Writes ${TAG} into CHANGELOG.md from its release notes. Opened by the Auto-release workflow; the next stable release replaces it if it is still open.")
-          gh pr merge --auto --squash "$url" \
-            || echo "::warning::Could not enable auto-merge on ${url}: check that the repository allows auto-merge. Nothing waits for it, and the next stable release replaces it."
 
 --- .github/workflows/zz_generated.chart_tests.yaml
 # DO NOT EDIT. Generated with:
@@ -2016,18 +1798,11 @@ rules:
 --- CHANGELOG.md
 # Changelog
 
-All notable changes to this project will be documented in this file.
+The changes of each release are in its notes on GitHub Releases:
+https://github.com/giantswarm/example-go-service/releases
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-
-
-## [Unreleased]
-
-
-
-[Unreleased]: https://github.com/giantswarm/example-go-service/tree/main
+This file is not updated any more: a pull request does not edit it. The
+pull request title is the release note.
 
 --- CODEOWNERS
 # generated by giantswarm/github actions - changes will be overwritten
@@ -2455,11 +2230,15 @@ MODULE         := $(shell go list -m)
 MAIN_SOURCE    := $(shell if test -e cmd/main.go; then echo cmd/main.go; else echo main.go; fi)
 OS             := $(shell go env GOOS)
 SOURCES        := $(shell find . -name '*.go')
-VERSION        := $(shell gitsemver get)
-# Expanded first in every recipe that stamps VERSION into its output, so a failed
-# `gitsemver get` fails the build instead of producing an unversioned binary.
+# Older gitsemver releases cannot open a worktree's .git file. Fall back to
+# local version tags; without one, leave VERSION empty so shipping targets fail.
+VERSION        := $(shell if version=$$(gitsemver get 2>/dev/null) && [ -n "$$version" ]; then \
+  printf '%s\n' "$$version"; \
+  else git describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' 2>/dev/null | sed 's/^v//'; fi)
+# Expanded first in every recipe that stamps VERSION into its output, so failed
+# lookups fail the build instead of producing an unversioned binary.
 # Targets that do not ship a version (test, lint, ...) never expand it.
-REQUIRE_VERSION = $(if $(VERSION),,$(error VERSION is empty: `gitsemver get` failed in $(CURDIR); pass VERSION=<version> to override))
+REQUIRE_VERSION = $(if $(VERSION),,$(error VERSION is empty: `gitsemver get` and `git describe` found no version in $(CURDIR); pass VERSION=<version> to override))
 ifeq ($(OS), linux)
 EXTLDFLAGS := -static
 endif

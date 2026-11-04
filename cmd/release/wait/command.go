@@ -61,7 +61,10 @@ candidate: a late job, the branch pipeline and other CIs report there too.
 The wait goes on while one is pending; a failed one ends it with exit 12
 naming it. --catalog also waits for the catalog index to list the chart: the
 test catalog for a pre-release when the tag's architect orb (10.12.0 on) sends
-it there.
+it there. A chart in the catalog repository's index but missing from Pages is
+reported distinctly. If every chart missing from Pages is in its repository,
+the wait permits one additional 10 minutes after --timeout for Pages to publish;
+an earlier caller deadline or cancellation still ends the wait.
 
 When a verified CircleCI tag pipeline fails, the CLI adds a visible "Not
 published" notice linking that pipeline to the GitHub release's notes.
@@ -110,6 +113,7 @@ Exit codes:
      green, and a commit status of the tag's commit failed (the branch
      pipeline's, another CI's): devctl release promote refuses the commit;
      the reason names the failed statuses
+ 13  remote_error: a CircleCI request failed; the command line was valid
  14  tag_pipeline_empty: the tag pipeline settled without workflows
      although its configuration admits the tag; re-trigger the pipeline
      for the tag (pipeline.number and pipeline.url name it)

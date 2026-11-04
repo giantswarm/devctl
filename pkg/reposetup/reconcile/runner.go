@@ -94,6 +94,13 @@ type Runner struct {
 	Dispatch *github.Client
 	// Checks answers which check contexts have reported.
 	Checks ReportedChecker
+	// WriteClassicChecks replaces the full classic-protection write with a
+	// checks-only writer. When set, only required-check differences are
+	// compared; all other classic settings, including strictness, stay as
+	// read. The writer receives the latest protection snapshot and must
+	// refuse nil protection rather than creating it. Nil uses the baseline's
+	// full protection policy. repo checks supplies its narrower writer here.
+	WriteClassicChecks func(ctx context.Context, owner, repo, branch string, protection *github.Protection, want []string) error
 	// CircleCI is a person's CircleCI client the circleci step reads the
 	// project's pipeline definitions with; nil reads GitHub's statuses. The
 	// engine writes nothing on CircleCI.

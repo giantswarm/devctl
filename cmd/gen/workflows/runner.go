@@ -128,11 +128,13 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 			workflowsInput.CreateReleasePRDeletion(),
 			workflowsInput.ValidateChangelogDeletion(),
 		)
-		// The release writes CHANGELOG.md here, so the template stops asking
-		// for an edit. A repository without a template has nothing to change.
-		pullRequestTemplate := workflowsInput.PullRequestTemplate()
-		if _, err := os.Stat(pullRequestTemplate.Path); err == nil {
-			inputs = append(inputs, pullRequestTemplate)
+		// GitHub Releases are the changelog here: CHANGELOG.md is frozen as a
+		// pointer at them, and the pull request template stops asking for an
+		// edit. A repository without either file gets none.
+		for _, in := range []input.Input{workflowsInput.ChangelogPointer(), workflowsInput.PullRequestTemplate()} {
+			if _, err := os.Stat(in.Path); err == nil {
+				inputs = append(inputs, in)
+			}
 		}
 	} else {
 		r.warnAutoReleaseDeclaredLegacy(workflowsInput.AutoReleaseDeletion(), workflowsInput.CliffTomlDeletion())

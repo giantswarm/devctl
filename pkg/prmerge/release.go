@@ -18,7 +18,7 @@ type ReleaseWait func(ctx context.Context, owner, repo string, number int, merge
 type Release struct {
 	// Verdict is the release wait's: available, no_release (none follows
 	// the merge), ci_failed, timeout, not_applicable, ambiguous_release,
-	// status_failed, tag_pipeline_empty, usage, auth_required.
+	// status_failed, tag_pipeline_empty, usage, remote_error, auth_required.
 	Verdict agentcli.Verdict `json:"verdict"`
 	// Reason is the release wait's reason; empty when available.
 	Reason string `json:"reason"`
@@ -52,7 +52,7 @@ func (m *Merger) awaitRelease(ctx context.Context, owner, repo string, number in
 		return agentcli.NewExitError(agentcli.ExitTagPipelineEmpty, agentcli.VerdictTagPipelineEmpty, "merged as %s: %s", result.MergeCommitSHA, err)
 	}
 	resume := ""
-	if verdict == agentcli.VerdictTimeout || verdict == agentcli.VerdictAuthRequired {
+	if verdict == agentcli.VerdictTimeout || verdict == agentcli.VerdictAuthRequired || verdict == agentcli.VerdictRemoteError {
 		resume = fmt.Sprintf("; devctl release wait %s --pr %d resumes the wait", result.Repository, number)
 	}
 	return agentcli.NewExitError(agentcli.ExitReleaseUnconfirmed, agentcli.VerdictReleaseUnconfirmed, "merged as %s, and the release is not confirmed: %s%s", result.MergeCommitSHA, err, resume)

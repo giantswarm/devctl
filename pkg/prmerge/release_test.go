@@ -74,6 +74,12 @@ func Test_Merge_release(t *testing.T) {
 			wantReason: "run devctl auth login --circleci-only; devctl release wait o/r --pr 42 resumes the wait",
 		},
 		{
+			name: "a persistent CircleCI refusal", tag: "v1.2.3",
+			err:      &agentcli.RemoteError{Err: errors.New("CircleCI: HTTP 401 Invalid token provided")},
+			wantCode: agentcli.ExitReleaseUnconfirmed, wantVerdict: agentcli.VerdictReleaseUnconfirmed, wantRelease: agentcli.VerdictRemoteError,
+			wantReason: "merged as m1, and the release is not confirmed: CircleCI: HTTP 401 Invalid token provided; devctl release wait o/r --pr 42 resumes the wait",
+		},
+		{
 			name: "a tooling failure", err: errors.New("listing tags: connection reset"),
 			wantCode: agentcli.ExitReleaseUnconfirmed, wantVerdict: agentcli.VerdictReleaseUnconfirmed, wantRelease: agentcli.VerdictUsage,
 			wantReason: "merged as m1, and the release is not confirmed: listing tags: connection reset",
