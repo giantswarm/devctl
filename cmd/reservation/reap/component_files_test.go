@@ -19,12 +19,12 @@ func TestReapPreservesUntrackedComponentFiles(t *testing.T) {
 			component := filepath.Join(collections, "reservations", "hello-world")
 			if mode == "quoted-reference" {
 				kustomization := filepath.Join(collections, "kustomization.yaml")
-				data, err := os.ReadFile(kustomization)
+				data, err := os.ReadFile(kustomization) // #nosec G304 -- fixture path under t.TempDir()
 				if err != nil {
 					t.Fatal(err)
 				}
 				data = bytes.ReplaceAll(data, []byte("- reservations/hello-world"), []byte("- \"reservations/hello-world\""))
-				if err := os.WriteFile(kustomization, data, 0o600); err != nil {
+				if err := os.WriteFile(kustomization, data, 0o600); err != nil { // #nosec G703 -- fixture path under t.TempDir()
 					t.Fatal(err)
 				}
 			}
@@ -61,7 +61,7 @@ func TestReapPreservesUntrackedComponentFiles(t *testing.T) {
 				t.Fatalf("got %v, want refusal before deleting user files", err)
 			}
 			for name, want := range notes {
-				got, err := os.ReadFile(filepath.Join(component, name))
+				got, err := os.ReadFile(filepath.Join(component, name)) // #nosec G304 -- fixture path under t.TempDir()
 				if err != nil || string(got) != want {
 					t.Errorf("%s: got %q, error %v; want %q", name, got, err, want)
 				}
