@@ -62,6 +62,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 	// gates, runtime config) is test content, so it lives next to .ats/main.yaml
 	// and the tests rather than in a gen.ci key.
 	hasATSKindConfig := detectATSKindConfig()
+	chartTestRequires, err := readChartTestRequires()
+	if err != nil {
+		return microerror.Mask(err)
+	}
 
 	// The images the repo's own jobs push are derived from its custom.yml: an
 	// architect/push-to-registries job there builds a second image the chart
@@ -126,6 +130,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 			ATSVersion:              r.flag.ATSVersion,
 			ATSOnRelease:            r.flag.ATSOnRelease,
 			ATSResourceClass:        r.flag.ATSResourceClass,
+			ChartTestRequires:       chartTestRequires,
 			HasATSKindConfig:        hasATSKindConfig,
 			HasDockerfile:           hasDockerfile,
 			CustomImages:            customImages,

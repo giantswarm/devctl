@@ -34,7 +34,7 @@ func runCommandWithCluster(t *testing.T, args []string, f *flag, openErr, cluste
 		flag:   f,
 		stdout: &stdout,
 		stderr: &stderr,
-		openRelease: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+		openRelease: func(context.Context, string, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
 			if clusterErr != nil {
 				t.Error("the release must not be read when the kube context fails")
 			}
@@ -135,7 +135,7 @@ func TestRunPassesKubeconfigAndTeleport(t *testing.T) {
 		flag:   &flag{Kubeconfig: "/home/me/own.kubeconfig"},
 		stdout: &stdout,
 		stderr: &bytes.Buffer{},
-		openRelease: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+		openRelease: func(context.Context, string, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
 			return nil, errors.New("stop after the cluster")
 		},
 		openCluster: func(_ context.Context, c laptop.ClusterConfig) (dynamic.Interface, error) {
