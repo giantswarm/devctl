@@ -44,6 +44,18 @@ func Test_Run_RepoName(t *testing.T) {
 			wantExtends:  "'github>giantswarm/valkey-app:renovate-custom.json5'",
 		},
 		{
+			name:         "dot-prefixed repository name",
+			repoNameFlag: ".github",
+			customConfig: true,
+			wantExtends:  "'github>giantswarm/.github:renovate-custom.json5'",
+		},
+		{
+			name:         "repository name with all permitted characters",
+			repoNameFlag: "Fixture_repo.name-2",
+			customConfig: true,
+			wantExtends:  "'github>giantswarm/Fixture_repo.name-2:renovate-custom.json5'",
+		},
+		{
 			name:         "origin remote outside giantswarm",
 			remote:       "git@github.com:teemow/valkey-app.git",
 			customConfig: true,
