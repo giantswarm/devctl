@@ -175,7 +175,17 @@ func (r *runner) signInManager(ctx context.Context, token authstore.Token, progr
 	}
 
 	text := strings.Trim(string(answer), "\"")
-	if url := urlPattern.FindString(text); url != "" {
+	// Current muster returns a structured challenge. Decode it before
+	// looking for a URL: JSON escapes query separators as \u0026.
+	var challenge struct {
+		AuthURL string `json:"authUrl"`
+	}
+	_ = json.Unmarshal(answer, &challenge)
+	url := urlPattern.FindString(challenge.AuthURL)
+	if url == "" {
+		url = urlPattern.FindString(text)
+	}
+	if url != "" {
 		fmt.Fprintf(r.stderr, "%s: open %s and authorize the GitHub App %s\n", manager.Server, url, manager.Server)
 		if err := r.browse(url); err != nil {
 			fmt.Fprintf(r.stderr, "(no browser opened: %v; open the URL yourself)\n", err)
