@@ -327,7 +327,7 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 
 // mergedAlready is the outcome of a pull request merged before the call:
 // the merge commit and its merger as GitHub records them, a warning saying
-// so, and the release wait on that commit, whose exits 6 and 9 stay the
+// so, and the release wait on that commit, whose exits 6, 9 and 14 stay the
 // merge's. Nothing is written: the branch, the dispatch and the merge were
 // the first merge's.
 func (m *Merger) mergedAlready(ctx context.Context, owner, repo string, number int, pr *github.PullRequest, result *Result) error {

@@ -143,7 +143,7 @@ DEVCTL_MERGE_NUMBER set. The blocking call stays the default.
 
 The wait ignores SIGHUP and reads no stdin, so it outlives its terminal.
 
-Exit codes 6 and 9 mean the pull request was merged; never merge it again.
+Exit codes 6, 9 and 14 mean the pull request was merged; never merge it again.
 
 Exit codes:
   0  merged (or enqueued and merged by the queue), branch deleted, and the
@@ -164,7 +164,10 @@ Exit codes:
      login, for an owner outside giantswarm) to run
   9  merged, and the release was not confirmed: --release-timeout passed
      first, or the release wait could not judge it (release.verdict and the
-     reason say which; devctl release wait <owner/repo> --pr <n> resumes it)`
+     reason say which; devctl release wait <owner/repo> --pr <n> resumes it)
+ 14  tag_pipeline_empty: merged, and the tag pipeline settled without
+     workflows although its configuration admits the tag; re-trigger the
+     tag pipeline named in release.pipeline`
 	example = `  devctl pr merge giantswarm/devctl 2278
   devctl pr merge giantswarm/devctl 2278 --timeout 45m --release-timeout 30m --progress
   devctl pr merge giantswarm/devctl 2278 --no-release-wait

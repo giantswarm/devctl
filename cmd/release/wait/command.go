@@ -99,6 +99,9 @@ Exit codes:
      green, and a commit status of the tag's commit failed (the branch
      pipeline's, another CI's): devctl release promote refuses the commit;
      the reason names the failed statuses
+ 14  tag_pipeline_empty: the tag pipeline settled without workflows
+     although its configuration admits the tag; re-trigger the pipeline
+     for the tag (pipeline.number and pipeline.url name it)
 
 GitHub uses the same login as pr wait: the devctl App login from the keychain
 (devctl auth login) for giantswarm, your own gh login (gh auth login) for
