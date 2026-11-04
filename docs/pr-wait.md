@@ -235,9 +235,10 @@ the timeout. Each retried failure is a warning with its time:
 
 A read that fails all fifteen tries says nothing about the head either: the poll is unanswered, a
 warning names it (`poll 3 went unanswered: Get "https://api.github.com/repos/giantswarm/devctl/pulls/2360":
-failed 15 times in a row: 500 Internal Server Error`) and the wait polls again at the next interval. An
-outage shorter than the timeout ends in the head's verdict; one that outlasts it is exit 2, the reason
-adding that the head is unknown, not failed, and the last unanswered read. A 4xx is an answer and is never
+failed 15 times in a row: 500 Internal Server Error; transient API or network failure after 10m2s`)
+and the wait polls again at the next interval. An outage shorter than the timeout ends in the head's
+verdict; one that outlasts it is exit 2, the reason adding that the head is unknown, not failed, and the
+last unanswered read. A 4xx is an answer and is never
 retried, nor is a certificate the client refuses or a host that does not exist; only reads (GET, HEAD) are
 retried.
 
