@@ -279,4 +279,5 @@ Watch mode (`--watch`) is particularly useful for:
   - New PRs are discovered every minute
   - Command runs indefinitely, never exits automatically
   - Perfect for long-running Renovate batch updates
-  - Exit gracefully with Ctrl+C or Cmd+C
+  - Exit with Ctrl+C or Cmd+C: in-flight requests and waits are canceled and workers finish before the command returns
+- Cancellation is reported as a failure; writes GitHub already accepted remain in effect

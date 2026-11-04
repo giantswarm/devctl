@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/giantswarm/microerror"
@@ -14,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/pr/internal/checks"
+	"github.com/giantswarm/devctl/v8/cmd/pr/internal/prcontext"
 	"github.com/giantswarm/devctl/v8/internal/pr"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
@@ -27,7 +31,15 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
 	}
@@ -35,6 +47,9 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	token, err := authstore.ResolveGitHub(ctx)
 	if err != nil {
 		return err
@@ -129,10 +144,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	// Update display periodically until all PRs are done
-	done := make(chan bool)
+	done := make(chan struct{})
 	go func() {
 		wg.Wait()
-		done <- true
+		close(done)
 	}()
 
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -140,6 +155,13 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	for {
 		select {
+		case <-ctx.Done():
+			wg.Wait()
+			pr.UpdateTable(r.stdout, prStatuses)
+			fmt.Fprintln(r.stdout, "")
+			r.printSummary(prStatuses)
+			return ctx.Err()
+
 		case <-done:
 			// Final update
 			prStatusesMu.Lock()
@@ -152,7 +174,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			r.printSummary(prStatuses)
 			prStatusesMu.Unlock()
 
-			return nil
+			return ctx.Err()
 
 		case <-ticker.C:
 			prStatusesMu.Lock()
@@ -188,8 +210,15 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 	retryDelay := 5 * time.Second
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
+		if ctx.Err() != nil {
+			ps.UpdateStatus("Cancelled")
+			return
+		}
 		if attempt > 0 {
-			time.Sleep(retryDelay)
+			if err := prcontext.Sleep(ctx, retryDelay); err != nil {
+				ps.UpdateStatus("Cancelled")
+				return
+			}
 		}
 
 		// Get PR details
@@ -272,7 +301,10 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 				}
 
 				// Wait a bit for the update to process, then continue to check if it merged
-				time.Sleep(3 * time.Second)
+				if err := prcontext.Sleep(ctx, 3*time.Second); err != nil {
+					ps.UpdateStatus("Cancelled")
+					return
+				}
 				prCheck, _, err = githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
 				if err == nil && prCheck.GetMerged() {
 					ps.UpdateStatus("Merged (auto-merge)")
@@ -326,7 +358,10 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 		}
 
 		// After approval, check if PR needs to be updated with base branch
-		time.Sleep(2 * time.Second)
+		if err := prcontext.Sleep(ctx, 2*time.Second); err != nil {
+			ps.UpdateStatus("Cancelled")
+			return
+		}
 		prCheck, _, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
 		if err == nil && prCheck.GetMerged() {
 			ps.UpdateStatus("Merged (auto-merge)")
@@ -348,7 +383,10 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 			}
 
 			// Wait a bit for the update to process, then check if it merged
-			time.Sleep(3 * time.Second)
+			if err := prcontext.Sleep(ctx, 3*time.Second); err != nil {
+				ps.UpdateStatus("Cancelled")
+				return
+			}
 			prCheck, _, err = githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
 			if err == nil && prCheck.GetMerged() {
 				ps.UpdateStatus("Merged (auto-merge)")
