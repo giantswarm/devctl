@@ -51,7 +51,13 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// The optional repo-owned renovate-custom.json5 is referenced from the
 	// generated config's `extends` when present. Its presence is the signal;
 	// devctl never generates or touches the file itself.
-	_, statErr := os.Stat("renovate-custom.json5")
+	customInfo, statErr := os.Stat("renovate-custom.json5")
+	if statErr != nil && !os.IsNotExist(statErr) {
+		return microerror.Mask(statErr)
+	}
+	if statErr == nil && !customInfo.Mode().IsRegular() {
+		return microerror.Maskf(invalidConfigError, "renovate-custom.json5 must be a regular file")
+	}
 	hasCustomConfig := statErr == nil
 
 	// The repository name only goes into the renovate-custom.json5 extends
