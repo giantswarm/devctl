@@ -455,7 +455,7 @@ func (r *Runner) skipReason(ctx context.Context, s *run, step Step) (string, err
 	if s.hasFlavour(flavourCustomer) {
 		switch step {
 		case StepProtection:
-			if s.fields.Protection != "baseline" {
+			if s.fields.Protection != reposetup.ProtectionBaseline {
 				return "flavour " + flavourCustomer, nil
 			}
 		case StepCircleCI, StepCodeowners, StepRelease:

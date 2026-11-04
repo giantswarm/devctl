@@ -16,6 +16,9 @@ import (
 	sigsyaml "sigs.k8s.io/yaml"
 )
 
+// ProtectionBaseline opts a customer repository into the protection baseline.
+const ProtectionBaseline = "baseline"
+
 // TeamFile is one repositories/<team>.yaml of giantswarm/github: the team
 // that owns every entry in it and the entries themselves.
 type TeamFile struct {
