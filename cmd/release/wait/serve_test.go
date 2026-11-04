@@ -86,7 +86,7 @@ func cliDocument(t *testing.T, s *releasewait.Sources) map[string]any {
 		flag:   &flag{Timeout: releasewait.DefaultTimeout},
 		stdout: stdout,
 		stderr: io.Discard,
-		open: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+		open: func(context.Context, string, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
 			return s, nil
 		},
 	}
