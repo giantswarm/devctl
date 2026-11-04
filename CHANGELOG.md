@@ -9,7 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- `pr approve-align-files` reads every page of check runs and commit-status contexts before approval and missing-required-check diagnostics, and stops on incomplete reads.
+- Concurrent updates to `DEVCTL_KEYRING_FILE` preserve changes to every identity and readers see complete records.
+- CircleCI waits read every workflow page, so a failed or running workflow on a later page is no longer missed.
+
+- Bulk PR approval targets the checked commit, and direct merges and Align branch updates
+  require that head so a concurrent push cannot substitute unchecked code.
+- The bulk PR approval commands require readable commit statuses and every page of check runs;
+  a green status no longer hides a failed or pending Actions check.
+- `gen dependabot` detects root Python requirements, Pipfile, setup.cfg and pyproject manifests.
 
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
@@ -59,6 +66,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `.github/workflows/zz_generated.*`, which align-files regenerates.
 
 ### Added
+
+- `ci job --step-output` includes the first and last lines of every step's output, including
+  successful steps, so a soft-passed nancy scanner outage is visible without the CircleCI UI.
+  `--lines` bounds each excerpt (200 by default); unreadable output is reported per step.
 
 - `ci job` takes the URL a CircleCI commit status links, alone, including a GitHub App pipeline's
   `app.circleci.com/workflow/<id>/job/<id>`, which it resolves to the project and job number through the workflow.
