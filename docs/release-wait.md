@@ -18,9 +18,11 @@ devctl release wait giantswarm/app-operator 7.5.4 --catalog
 devctl release wait giantswarm/dex v2.43.3 --image giantswarm/dex
 ```
 
-Tokens come from the keychain (`devctl auth login`, see [auth.md](auth.md)). GitHub is always
-needed; CircleCI only when the tag carries a `.circleci/config.yml`. A missing token is exit 8 with
-the login command in `reason`, before anything is waited for.
+GitHub uses the same login as `pr wait`: the devctl App login from the keychain for `giantswarm`
+(`devctl auth login`, see [auth.md](auth.md)), and your own `gh` login for other owners (`gh auth login`).
+Only the App login renews itself. GitHub is always needed; CircleCI uses the keychain only when the tag
+carries a `.circleci/config.yml`. A missing token is exit 8 with the login command in `reason`, before
+anything is waited for.
 
 ## What the command reads, and why
 
