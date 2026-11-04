@@ -104,7 +104,15 @@ devctl release wait giantswarm/devctl --pr 2289 --progress
 devctl release promote --team team-bumblebee --dry-run
 devctl release promote giantswarm/devctl giantswarm/klaus --progress
 devctl release promote giantswarm/devctl --version v1.2.3-rc.14
+devctl release promote giantswarm/substrate --ref release-1.9 --dry-run
 ```
+
+For one repository, `--ref <branch>` selects the default branch or a maintenance branch `release-X.Y`
+whose auto-release workflow enables pushes on that branch and manual dispatch. The workflow is read,
+candidate reachability checked, and stable promotion dispatched on that branch. Maintenance refs use
+the highest reachable stable of their X.Y series as the baseline; `--version` can name an older candidate
+on the same branch. An unsupported ref is exit 7 before candidate checks or dispatch. Calls without
+`--ref` retain their behavior, including the older `--branch` option; the two options cannot be combined.
 
 ### Waiting for a rollout (`devctl rollout wait`)
 

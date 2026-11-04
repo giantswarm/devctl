@@ -58,6 +58,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `release promote --ref <branch>` promotes on the default branch or a `release-X.Y` maintenance
+  branch enabled by its auto-release workflow. Candidate checks and dispatch use that branch, with
+  its series' stable baseline; unsupported refs are usage errors. Existing calls retain their behavior.
+
 - `ci job` takes the URL a CircleCI commit status links, alone, including a GitHub App pipeline's
   `app.circleci.com/workflow/<id>/job/<id>`, which it resolves to the project and job number through the workflow.
 
