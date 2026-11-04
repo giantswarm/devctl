@@ -265,19 +265,13 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 
 		// Checks are passing, proceed with approval
 		// Check if already approved
-		reviews, _, err := githubClient.PullRequests.ListReviews(ctx, ps.Owner, ps.Repo, ps.Number, nil)
+		reviews, err := allReviews(ctx, githubClient, ps.Owner, ps.Repo, ps.Number)
 		if err != nil {
 			ps.UpdateStatus("Failed to get reviews")
 			return
 		}
 
-		alreadyApproved := false
-		for _, review := range reviews {
-			if review.GetState() == "APPROVED" {
-				alreadyApproved = true
-				break
-			}
-		}
+		alreadyApproved := hasCurrentApproval(reviews)
 
 		if alreadyApproved {
 			// Check if it merged after being approved
