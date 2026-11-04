@@ -85,7 +85,7 @@ func newDocument() document {
 	return document{Envelope: agentcli.NewEnvelope(command, time.Now()), Status: authstore.NewStatus()}
 }
 
-func (r *runner) login(ctx context.Context, args []string, doc *document) error {
+func (r *runner) login(ctx context.Context, args []string, doc *document) (err error) {
 	if len(args) > 0 {
 		return fmt.Errorf("usage: devctl %s [flags], got %d argument(s)", command, len(args))
 	}
@@ -99,6 +99,22 @@ func (r *runner) login(ctx context.Context, args []string, doc *document) error 
 	if err != nil {
 		return err
 	}
+	// Each flow stores its identity independently. Report the state that is
+	// actually persisted even if a subsequent flow or manager sign-in fails.
+	defer func() {
+		status, statusErr := auth.Status()
+		if statusErr != nil {
+			err = errors.Join(err, statusErr)
+			return
+		}
+		doc.Status = status
+		for _, w := range status.CircleCI.Warnings {
+			doc.Warn(w)
+		}
+		if doc.Manager != nil && doc.Manager.Note != "" {
+			doc.Warn(doc.Manager.Note)
+		}
+	}()
 	progress := agentcli.NewProgress(r.stderr, r.flag.Progress)
 
 	switch {
@@ -136,17 +152,6 @@ func (r *runner) login(ctx context.Context, args []string, doc *document) error 
 		}
 	}
 
-	status, err := auth.Status()
-	if err != nil {
-		return err
-	}
-	doc.Status = status
-	for _, w := range status.CircleCI.Warnings {
-		doc.Warn(w)
-	}
-	if doc.Manager != nil && doc.Manager.Note != "" {
-		doc.Warn(doc.Manager.Note)
-	}
 	return nil
 }
 
