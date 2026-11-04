@@ -159,10 +159,12 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	// Start processing initial PRs in parallel
 	var wg sync.WaitGroup
+	work := newActivity(len(initialPRs), r.flag.Watch)
 	for _, ps := range initialPRs {
 		wg.Add(1)
 		go func(ps *pr.PRStatus) {
 			defer wg.Done()
+			defer work.finishPR()
 			r.processPR(ctx, githubClient, ps)
 		}(ps)
 	}
@@ -175,7 +177,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	stopPolling := make(chan bool)
+	pollingDone := make(chan struct{})
 	go func() {
+		defer close(pollingDone)
 		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
 
@@ -184,14 +188,19 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			case <-stopPolling:
 				return
 			case <-ticker.C:
+				if !work.beginPoll() {
+					return
+				}
 				// Re-run the search query
 				newResults, _, err := githubClient.Search.Issues(ctx, searchQuery, searchOpts)
 				if err != nil {
+					work.endPoll(0)
 					continue
 				}
 
 				// Add any new PRs found
 				newPRs := addPRs(newResults.Issues)
+				work.endPoll(len(newPRs))
 				if len(newPRs) > 0 {
 					// Add empty rows for new PRs
 					prStatusesMu.Lock()
@@ -205,6 +214,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 						wg.Add(1)
 						go func(ps *pr.PRStatus) {
 							defer wg.Done()
+							defer work.finishPR()
 							r.processPR(ctx, githubClient, ps)
 						}(ps)
 					}
@@ -218,14 +228,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	// Update display periodically until all PRs are done (or forever in watch mode)
-	done := make(chan bool)
-	go func() {
-		wg.Wait()
-		if !r.flag.Watch {
-			done <- true
-		}
-		// In watch mode, don't signal done - keep running
-	}()
+	done := work.done
 
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
@@ -261,6 +264,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			// All current PRs processed (only happens in non-watch mode)
 			// Stop polling for new PRs
 			close(stopPolling)
+			<-pollingDone
+			wg.Wait()
 
 			// Final update
 			prStatusesMu.Lock()
