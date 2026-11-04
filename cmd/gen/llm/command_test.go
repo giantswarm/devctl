@@ -113,8 +113,12 @@ func executeCommand(t *testing.T, args ...string) error {
 // Include directory entries so an otherwise empty .cursor/rules is a mutation.
 func checkoutContents(t *testing.T) map[string]string {
 	t.Helper()
+	root, err := os.OpenRoot(".")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, root.Close()) })
+
 	contents := make(map[string]string)
-	err := filepath.WalkDir(".", func(path string, entry fs.DirEntry, err error) error {
+	err = filepath.WalkDir(".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -122,7 +126,7 @@ func checkoutContents(t *testing.T) map[string]string {
 			contents[path] = "directory"
 			return nil
 		}
-		data, err := os.ReadFile(path) // #nosec G304 -- only synthetic files under t.TempDir().
+		data, err := root.ReadFile(path)
 		if err != nil {
 			return err
 		}
