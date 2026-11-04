@@ -206,8 +206,16 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 
 		// Check status checks BEFORE checking if already approved
 		headSHA := prData.GetHead().GetSHA()
-		combinedStatus, _, _ := githubClient.Repositories.GetCombinedStatus(ctx, ps.Owner, ps.Repo, headSHA, nil)
-		checkRuns, _, _ := githubClient.Checks.ListCheckRunsForRef(ctx, ps.Owner, ps.Repo, headSHA, nil)
+		combinedStatus, err := combinedStatuses(ctx, githubClient, ps.Owner, ps.Repo, headSHA)
+		if err != nil {
+			ps.UpdateStatus("Failed to get status checks")
+			return
+		}
+		checkRuns, err := allCheckRuns(ctx, githubClient, ps.Owner, ps.Repo, headSHA)
+		if err != nil {
+			ps.UpdateStatus("Failed to get check runs")
+			return
+		}
 
 		// Check if any checks are failing or pending
 		hasFailedChecks := false
