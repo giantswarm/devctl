@@ -71,7 +71,7 @@ func List(ctx context.Context, read Reader, run Run) (Jobs, bool, error) {
 	names := map[string]bool{}
 	jobs.add(names, config, run)
 	if setup, _ := config["setup"].(bool); setup {
-		continued, err := continuation(ctx, read, content)
+		continued, err := continuation(ctx, read, config)
 		if err != nil {
 			return Jobs{}, true, err
 		}
@@ -91,8 +91,8 @@ func List(ctx context.Context, read Reader, run Run) (Jobs, bool, error) {
 
 // continuation is the configuration devctl's generated setup workflow
 // continues with, nil for another setup workflow.
-func continuation(ctx context.Context, read Reader, setup []byte) (map[string]any, error) {
-	if !strings.Contains(string(setup), WorkflowsPath) {
+func continuation(ctx context.Context, read Reader, setup map[string]any) (map[string]any, error) {
+	if !staticContinuation(setup) {
 		return nil, nil
 	}
 	content, found, err := read(ctx, WorkflowsPath)
@@ -115,6 +115,49 @@ func continuation(ctx context.Context, read Reader, setup []byte) (map[string]an
 		merged, _ = deepMerge(merged, custom).(map[string]any)
 	}
 	return merged, nil
+}
+
+// staticContinuation recognizes the generated setup's complete static merge
+// contract. A path mention alone also matches runtime renderers (including
+// multi-image setup), which do not run the jobs of workflows.yml verbatim.
+// Fail closed to the unknown-continuation warning when that contract changes.
+func staticContinuation(config map[string]any) bool {
+	definitions, _ := config["jobs"].(map[string]any)
+	workflows, _ := config["workflows"].(map[string]any)
+	if len(definitions) != 1 || len(workflows) != 1 {
+		return false
+	}
+	workflow, _ := workflows["setup"].(map[string]any)
+	entries, _ := workflow["jobs"].([]any)
+	if len(entries) != 1 {
+		return false
+	}
+	ref, _ := jobEntry(entries[0])
+	if ref != "setup" {
+		return false
+	}
+	definition, _ := definitions["setup"].(map[string]any)
+	steps, _ := definition["steps"].([]any)
+	if len(steps) != 3 || steps[0] != "checkout" {
+		return false
+	}
+	merge, _ := steps[1].(map[string]any)
+	run, _ := merge["run"].(map[string]any)
+	command, _ := run["command"].(string)
+	const generatedMerge = `if [ -f .circleci/custom.yml ]; then
+  yq eval-all '. as $item ireduce ({}; . *+ $item)' \
+    .circleci/workflows.yml .circleci/custom.yml > .circleci/continue.yml
+else
+  cp .circleci/workflows.yml .circleci/continue.yml
+fi`
+	if strings.Join(strings.Fields(command), " ") != strings.Join(strings.Fields(generatedMerge), " ") {
+		return false
+	}
+	step, _ := steps[2].(map[string]any)
+	continued, _ := step["continuation/continue"].(map[string]any)
+	orbs, _ := config["orbs"].(map[string]any)
+	orb, _ := orbs["continuation"].(string)
+	return strings.HasPrefix(orb, "circleci/continuation@") && continued["configuration_path"] == ".circleci/continue.yml"
 }
 
 func parse(path string, content []byte) (map[string]any, error) {
