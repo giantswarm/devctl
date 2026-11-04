@@ -56,9 +56,12 @@ const (
 	// VerdictListed: a read-only view (devctl ci jobs) was read in full; the
 	// document, not the verdict, says where the pipeline stands.
 	VerdictListed Verdict = "listed"
+	// VerdictTagPipelineEmpty: the tag pipeline settled without workflows
+	// although its configuration admits the tag; re-trigger the pipeline.
+	VerdictTagPipelineEmpty Verdict = "tag_pipeline_empty"
 )
 
-// The exit codes of every agent-facing command. 6 and 9 say that devctl pr
+// The exit codes of every agent-facing command. 6, 9 and 14 say that devctl pr
 // merge merged: they are never a reason to merge again.
 const (
 	// ExitOK: the wait ended green, the merge happened, the release is
@@ -103,6 +106,10 @@ const (
 	// ExitRemoteError: a CircleCI request failed; retrying the command may
 	// succeed. The command line itself was valid.
 	ExitRemoteError = 13
+	// ExitTagPipelineEmpty: the tag pipeline settled without workflows
+	// although its configuration admits the tag. After pr merge, the merge
+	// already happened: re-trigger the tag pipeline, never merge again.
+	ExitTagPipelineEmpty = 14
 )
 
 // Envelope is the head of every command's JSON document. A command's document

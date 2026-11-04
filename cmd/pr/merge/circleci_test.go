@@ -3,103 +3,142 @@ package merge
 import (
 	"context"
 	"encoding/base64"
-	"net/http"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
-	circlemock "github.com/giantswarm/devctl/v8/e2e/mock/circleci"
+	"github.com/spf13/cobra"
+
 	"github.com/giantswarm/devctl/v8/e2e/mock/sequence"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
-	"github.com/giantswarm/devctl/v8/pkg/authstore"
+	"github.com/giantswarm/devctl/v8/pkg/githubclient"
+	"github.com/giantswarm/devctl/v8/pkg/releasewait"
+	"github.com/giantswarm/devctl/v8/pkg/releasewait/releasewaittest"
 )
 
-func TestRunCircleCILoginRenewal(t *testing.T) {
+type timedReleaseStatuses struct {
+	*releasewaittest.GitHub
+	clock agentcli.Clock
+	reads []time.Time
+}
+
+func (g *timedReleaseStatuses) ListCommitStatuses(ctx context.Context, owner, repo, sha string) ([]githubclient.CommitStatus, error) {
+	g.reads = append(g.reads, g.clock.Now())
+	return g.GitHub.ListCommitStatuses(ctx, owner, repo, sha)
+}
+
+const circleConfig = `version: 2.1
+workflows:
+  ci:
+    jobs:
+      - build:
+          filters:
+            tags: {only: /^v.*/}
+`
+
+// Both the PR and its release carry CircleCI configuration. The published
+// release is still pending until its tag job posts a successful status.
+func Test_run_circleCIFromStatuses(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		status     int
-		persistent bool
+		state     string
+		failedLog bool
+		exit      int
+		verdict   string
+		merges    int
 	}{
-		{name: "renewed login", status: 401},
-		{name: "transient 5xx", status: 503},
-		{name: "persistent 401", status: 401, persistent: true},
+		{state: "success", verdict: "green", merges: 1},
+		{state: "failure", exit: agentcli.ExitRed, verdict: "red"},
+		{state: "success", failedLog: true, exit: agentcli.ExitAuthRequired, verdict: "auth_required"},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
+		name := tc.state
+		if tc.failedLog {
+			name += " with failed logs"
+		}
+		t.Run(name, func(t *testing.T) {
 			routes := green()
-			routes["GET /repos/o/r/contents/.circleci/config.yml"] = []sequence.Response{{Body: map[string]any{"type": "file", "path": ".circleci/config.yml", "encoding": "base64", "content": base64.StdEncoding.EncodeToString([]byte("version: 2.1\n"))}}}
-			r, stdout, _, github := newRunner(t, routes, loggedIn, &flag{Timeout: 2 * time.Minute, NoReleaseWait: true})
-			workflow := func(status string) sequence.Response {
-				return sequence.Response{Body: map[string]any{"items": []any{map[string]any{"id": "w1", "name": "build", "status": status, "pipeline_number": 12}}}}
-			}
-			replies := []sequence.Response{workflow("running"), {Status: tc.status, Body: map[string]any{"message": "Invalid token provided"}}}
-			if !tc.persistent {
-				replies = append(replies, workflow("success"))
-			}
-			circle, err := circlemock.Start(sequence.Routes{
-				"GET /api/v2/project/gh/o/r":          {{Body: map[string]any{"slug": "gh/o/r"}}},
-				"GET /api/v2/project/gh/o/r/pipeline": {{Body: map[string]any{"items": []any{map[string]any{"id": "p1", "number": 12, "vcs": map[string]any{"revision": "abc123"}}}}}},
-				"GET /api/v2/pipeline/p1/workflow":    replies,
-			})
-			if err != nil {
+			routes["GET /repos/o/r/contents/.circleci/config.yml?ref=abc123"] = []sequence.Response{{Body: map[string]any{
+				"type": "file", "encoding": "base64", "content": base64.StdEncoding.EncodeToString([]byte(circleConfig)),
+			}}}
+			routes["GET /repos/o/r/commits/abc123/status"] = []sequence.Response{{Body: map[string]any{"statuses": []any{
+				map[string]any{"context": "ci/circleci: build", "state": tc.state, "target_url": "https://circleci.com/gh/o/r/1"},
+			}}}}
+			r, stdout, stderr, server := newRunner(t, routes, loggedIn, nil)
+			cmd := &cobra.Command{}
+			r.flag.Init(cmd)
+			if err := cmd.ParseFlags([]string{"--circleci-from-statuses", "--progress"}); err != nil {
 				t.Fatal(err)
 			}
-			defer circle.Close()
-			endpoints := r.endpoints()
-			endpoints.CircleCIAPIURL = circle.APIURL()
-			r.endpoints = func() agentcli.Endpoints { return endpoints }
-			r.clock = func() (agentcli.Clock, error) { return agentcli.NewVirtualClock(time.Now()), nil }
-			reads := 0
-			r.requireCircleCI = func(context.Context) (authstore.Token, error) {
-				reads++
-				value := "fixture-old"
-				if reads > 1 {
-					value = "fixture-new"
+			if tc.failedLog {
+				if err := cmd.ParseFlags([]string{"--failed-log"}); err != nil {
+					t.Fatal(err)
 				}
-				return authstore.Token{Value: value, Source: authstore.SourceKeychain}, nil
+			} else {
+				r.requireCircleCI = nil
 			}
-			err = r.run(t.Context(), []string{"o/r", "42"})
-			wantCode := 0
-			if tc.persistent {
-				wantCode = agentcli.ExitRemoteError
+			clock := agentcli.NewVirtualClock(time.Now())
+			r.clock = func() (agentcli.Clock, error) { return clock, nil }
+			var releaseGitHub *timedReleaseStatuses
+			r.github = func(config githubclient.Config) (clients, error) {
+				c, err := newClients(config)
+				releaseGitHub = &timedReleaseStatuses{clock: clock, GitHub: &releasewaittest.GitHub{
+					Tags: map[string]string{"v1.2.3": "m1"},
+					Files: map[string]string{
+						".circleci/config.yml":                             circleConfig,
+						".github/workflows/zz_generated.auto_release.yaml": "on: push\n",
+					},
+					Releases: []githubclient.Release{{Tag: "v1.2.3", Published: true}},
+					StatusReads: [][]githubclient.CommitStatus{
+						{},
+						{{Context: "ci/circleci: build", State: "success", TargetURL: "https://circleci.com/gh/o/r/2"}},
+					},
+				}}
+				c.release = releaseGitHub
+				return c, err
+			}
+
+			err := r.run(t.Context(), []string{"o/r", "42"})
+			if agentcli.Exit(err) != tc.exit {
+				t.Fatalf("want exit %d, got %v\n%s", tc.exit, err, stdout)
 			}
 			doc := decode(t, stdout)
-			if agentcli.Exit(err) != wantCode || doc["exitCode"] != float64(wantCode) {
-				t.Fatalf("exit=%d document=%v error=%v", agentcli.Exit(err), doc, err)
+			if doc["verdict"] != tc.verdict {
+				t.Fatalf("document: %v", doc)
 			}
-			if tc.persistent && doc["verdict"] != "remote_error" {
-				t.Fatalf("verdict=%v", doc["verdict"])
+			if tc.failedLog && !strings.Contains(doc["reason"].(string), "devctl auth login --circleci-only") {
+				t.Errorf("CircleCI log access should name the login: %v", doc)
 			}
-			wantReads := 1
-			if tc.status == 401 {
-				wantReads = 2
-			}
-			if reads != wantReads {
-				t.Fatalf("credential reads=%d, want %d", reads, wantReads)
-			}
-			workflowReads := 0
-			for _, req := range circle.Requests() {
-				if req.Path == "/api/v2/pipeline/p1/workflow" {
-					workflowReads++
-				}
-				want := "fixture-old"
-				if tc.status == 401 && workflowReads >= 3 {
-					want = "fixture-new"
-				}
-				if req.Header.Get("Circle-Token") != want {
-					t.Fatal("CircleCI request used the wrong credential")
+			merges := 0
+			for _, req := range server.Requests() {
+				if req.Method == "PUT" && req.Path == "/repos/o/r/pulls/42/merge" {
+					merges++
 				}
 			}
-			if workflowReads != 3 {
-				t.Fatalf("workflow reads=%d, want pending, refused, retry", workflowReads)
+			if merges != tc.merges {
+				t.Errorf("want %d merge calls, got %d", tc.merges, merges)
 			}
-			merged := false
-			for _, req := range github.Requests() {
-				if req.Method == http.MethodPut && req.Path == "/repos/o/r/pulls/42/merge" {
-					merged = true
+			if tc.merges > 0 {
+				release, _ := doc["release"].(map[string]any)
+				if release["verdict"] != "available" || release["tag"] != "v1.2.3" {
+					t.Errorf("release should wait for its tag job: %v\n%s", release, stderr)
 				}
-			}
-			if merged == tc.persistent {
-				t.Fatalf("mocked merge=%v after persistent refusal=%v", merged, tc.persistent)
+				if reads := releaseGitHub.reads; len(reads) < 2 || reads[1].Sub(reads[0]) < releasewait.IntervalFloor {
+					t.Errorf("release did not wait between the missing and successful tag status: %v", reads)
+				}
 			}
 		})
+	}
+}
+
+func TestCircleCIFromStatusesReachesDetachedMerge(t *testing.T) {
+	f := &flag{}
+	cmd := &cobra.Command{}
+	f.Init(cmd)
+	if err := cmd.ParseFlags([]string{"--circleci-from-statuses", "--detach"}); err != nil {
+		t.Fatal(err)
+	}
+	args := f.childArgs("o/r", 42, "handle")
+	if !slices.Contains(args, "--circleci-from-statuses") {
+		t.Errorf("detached merge lost status mode: %v", args)
 	}
 }

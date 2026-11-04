@@ -119,6 +119,13 @@ func Test_Wait_missingReviewIsNamed(t *testing.T) {
 	if diff := cmp.Diff(want, result.Blocking); diff != "" {
 		t.Errorf("blocking (-want +got):\n%s", diff)
 	}
+	warnings := []string{
+		"pending: check Heimdall - PR Gatekeeper (in_progress, not required, not waited for)",
+		"GitHub blocks the merge: an approving review the base requires is missing",
+	}
+	if diff := cmp.Diff(warnings, result.Warnings); diff != "" {
+		t.Errorf("warnings (-want +got):\n%s", diff)
+	}
 }
 
 func Test_Wait_changesRequestedIsNamed(t *testing.T) {

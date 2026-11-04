@@ -125,10 +125,10 @@ func (r *runner) wait(ctx context.Context, args []string, doc *prwait.Document) 
 		return err
 	}
 
-	waiter, err := prwait.New(prwait.Config{
-		GitHub: github,
-		Rate:   rate,
-		CircleCI: func(ctx context.Context) (*circleciclient.Client, error) {
+	var openCircleCI func(context.Context) (*circleciclient.Client, error)
+	fromStatuses := r.flag.CircleCIFromStatuses && failedLogLines == 0
+	if !fromStatuses {
+		openCircleCI = func(ctx context.Context) (*circleciclient.Client, error) {
 			token, err := r.requireCircleCI(ctx)
 			if err != nil {
 				return nil, err
@@ -149,12 +149,18 @@ func (r *runner) wait(ctx context.Context, args []string, doc *prwait.Document) 
 				HTTPClient: &http.Client{Transport: retrying},
 				Logger:     logger,
 			})
-		},
-		Entries:        entries,
-		Clock:          clock,
-		Progress:       progress,
-		Timeout:        r.flag.Timeout,
-		FailedLogLines: failedLogLines,
+		}
+	}
+	waiter, err := prwait.New(prwait.Config{
+		GitHub:               github,
+		Rate:                 rate,
+		CircleCI:             openCircleCI,
+		CircleCIFromStatuses: fromStatuses,
+		Entries:              entries,
+		Clock:                clock,
+		Progress:             progress,
+		Timeout:              r.flag.Timeout,
+		FailedLogLines:       failedLogLines,
 	})
 	if err != nil {
 		return err

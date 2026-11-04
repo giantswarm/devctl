@@ -1,99 +1,116 @@
 package wait
 
 import (
-	"context"
 	"encoding/base64"
+	"strings"
 	"testing"
 	"time"
 
-	circlemock "github.com/giantswarm/devctl/v8/e2e/mock/circleci"
+	"github.com/spf13/cobra"
+
 	"github.com/giantswarm/devctl/v8/e2e/mock/sequence"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
-	"github.com/giantswarm/devctl/v8/pkg/authstore"
 )
 
-func TestRunCircleCILoginRenewal(t *testing.T) {
+// publish only runs on tags; test cannot post until build has finished.
+const circleConfig = `version: 2.1
+workflows:
+  ci:
+    jobs:
+      - build
+      - test:
+          requires: [build]
+      - publish:
+          filters:
+            branches: {ignore: /.*/}
+            tags: {only: /^v.*/}
+`
+
+func circleStatuses(testState string) sequence.Response {
+	statuses := []any{map[string]any{"context": "ci/circleci: build", "state": "success", "target_url": "https://circleci.com/gh/o/r/1"}}
+	if testState != "" {
+		statuses = append(statuses, map[string]any{"context": "ci/circleci: test", "state": testState, "target_url": "https://circleci.com/gh/o/r/2"})
+	}
+	return sequence.Response{Body: map[string]any{"statuses": statuses}}
+}
+
+func circleRoutes(statuses ...sequence.Response) sequence.Routes {
+	return sequence.Routes{
+		"GET /repos/o/r/pulls/42": {{Body: map[string]any{
+			"number": 42, "state": "open", "mergeable_state": "clean",
+			"head": map[string]any{"sha": "abc123", "ref": "feature"}, "base": map[string]any{"ref": "main"},
+		}}},
+		"GET /repos/o/r/contents/.circleci/config.yml?ref=abc123": {{Body: map[string]any{
+			"type": "file", "encoding": "base64", "content": base64.StdEncoding.EncodeToString([]byte(circleConfig)),
+		}}},
+		"GET /repos/o/r/commits/abc123/check-runs":    {{Body: map[string]any{"check_runs": []any{}}}},
+		"GET /repos/o/r/commits/abc123/status":        statuses,
+		"GET /repos/o/r/actions/runs?head_sha=abc123": {{Body: map[string]any{"workflow_runs": []any{}}}},
+	}
+}
+
+func Test_run_circleCIFromStatuses(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		status     int
-		persistent bool
+		name     string
+		statuses []sequence.Response
+		exit     int
+		verdict  string
+		reason   string
 	}{
-		{name: "renewed login", status: 401},
-		{name: "transient 5xx", status: 503},
-		{name: "persistent 401", status: 401, persistent: true},
+		{name: "waits for a downstream job", statuses: []sequence.Response{circleStatuses(""), circleStatuses("pending"), circleStatuses("success")}, verdict: "green"},
+		{name: "missing downstream job", statuses: []sequence.Response{circleStatuses("")}, exit: agentcli.ExitTimeout, verdict: "timeout", reason: "ci/circleci: test (not posted yet)"},
+		{name: "failed downstream job", statuses: []sequence.Response{circleStatuses("failure")}, exit: agentcli.ExitRed, verdict: "red", reason: "ci/circleci: test"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			routes := sequence.Routes{
-				"GET /repos/o/r/pulls/42":                  {{Body: map[string]any{"number": 42, "state": "open", "mergeable_state": "clean", "head": map[string]any{"sha": "abc123", "ref": "feature"}, "base": map[string]any{"ref": "main"}}}},
-				"GET /repos/o/r/commits/abc123/check-runs": {{Body: map[string]any{"total_count": 1, "check_runs": []any{map[string]any{"id": 1, "name": "build", "status": "completed", "conclusion": "success"}}}}},
-			}
-			routes["GET /repos/o/r/commits/abc123/status"] = []sequence.Response{{Body: map[string]any{"state": "success", "total_count": 0, "statuses": []any{}}}}
-			routes["GET /repos/o/r/actions/runs?head_sha=abc123"] = []sequence.Response{{Body: map[string]any{"total_count": 0, "workflow_runs": []any{}}}}
-			routes["GET /repos/o/r/contents/.circleci/config.yml"] = []sequence.Response{{Body: map[string]any{"type": "file", "path": ".circleci/config.yml", "encoding": "base64", "content": base64.StdEncoding.EncodeToString([]byte("version: 2.1\n"))}}}
-			r, stdout, _, _ := newRunner(t, routes, loggedIn)
-			workflow := func(status string) sequence.Response {
-				return sequence.Response{Body: map[string]any{"items": []any{map[string]any{"id": "w1", "name": "build", "status": status, "pipeline_number": 12}}}}
-			}
-			replies := []sequence.Response{workflow("running"), {Status: tc.status, Body: map[string]any{"message": "Invalid token provided"}}}
-			if !tc.persistent {
-				replies = append(replies, workflow("success"))
-			}
-			circle, err := circlemock.Start(sequence.Routes{
-				"GET /api/v2/project/gh/o/r":          {{Body: map[string]any{"slug": "gh/o/r"}}},
-				"GET /api/v2/project/gh/o/r/pipeline": {{Body: map[string]any{"items": []any{map[string]any{"id": "p1", "number": 12, "vcs": map[string]any{"revision": "abc123"}}}}}},
-				"GET /api/v2/pipeline/p1/workflow":    replies,
-			})
-			if err != nil {
+			r, stdout, stderr, server := newRunner(t, circleRoutes(tc.statuses...), loggedIn)
+			cmd := &cobra.Command{}
+			r.flag.Init(cmd)
+			if err := cmd.ParseFlags([]string{"--circleci-from-statuses", "--progress", "--timeout=2m"}); err != nil {
 				t.Fatal(err)
 			}
-			defer circle.Close()
-			endpoints := r.endpoints()
-			endpoints.CircleCIAPIURL = circle.APIURL()
-			r.endpoints = func() agentcli.Endpoints { return endpoints }
-			r.clock = func() (agentcli.Clock, error) { return agentcli.NewVirtualClock(time.Now()), nil }
-			reads := 0
-			r.requireCircleCI = func(context.Context) (authstore.Token, error) {
-				reads++
-				value := "fixture-old"
-				if reads > 1 {
-					value = "fixture-new"
-				}
-				return authstore.Token{Value: value, Source: authstore.SourceKeychain}, nil
-			}
-			err = r.run(t.Context(), []string{"o/r", "42"})
-			wantCode := 0
-			if tc.persistent {
-				wantCode = agentcli.ExitRemoteError
+			clock := agentcli.NewVirtualClock(time.Now())
+			r.clock = func() (agentcli.Clock, error) { return clock, nil }
+			// A nil token gate would panic if status mode asked for it.
+			r.requireCircleCI = nil
+
+			err := r.run(t.Context(), []string{"o/r", "42"})
+			if agentcli.Exit(err) != tc.exit {
+				t.Fatalf("want exit %d, got %v\n%s", tc.exit, err, stdout)
 			}
 			doc := decode(t, stdout)
-			if agentcli.Exit(err) != wantCode || doc["exitCode"] != float64(wantCode) {
-				t.Fatalf("exit=%d document=%v error=%v", agentcli.Exit(err), doc, err)
+			if doc["verdict"] != tc.verdict || !strings.Contains(doc["reason"].(string), tc.reason) {
+				t.Fatalf("document: %v", doc)
 			}
-			if tc.persistent && doc["verdict"] != "remote_error" {
-				t.Fatalf("verdict=%v", doc["verdict"])
-			}
-			wantReads := 1
-			if tc.status == 401 {
-				wantReads = 2
-			}
-			if reads != wantReads {
-				t.Fatalf("credential reads=%d, want %d", reads, wantReads)
-			}
-			workflowReads := 0
-			for _, req := range circle.Requests() {
-				if req.Path == "/api/v2/pipeline/p1/workflow" {
-					workflowReads++
+			if tc.verdict == "green" {
+				reads := 0
+				for _, req := range server.Requests() {
+					if req.Path == "/repos/o/r/commits/abc123/status" {
+						reads++
+					}
 				}
-				want := "fixture-old"
-				if tc.status == 401 && workflowReads >= 3 {
-					want = "fixture-new"
-				}
-				if req.Header.Get("Circle-Token") != want {
-					t.Fatal("CircleCI request used the wrong credential")
+				if reads != 3 || !strings.Contains(stderr.String(), "ci/circleci: test (not posted yet)") {
+					t.Errorf("green before all jobs posted and passed: %d status reads\n%s", reads, stderr)
 				}
 			}
-			if workflowReads != 3 {
-				t.Fatalf("workflow reads=%d, want pending, refused, retry", workflowReads)
+		})
+	}
+}
+
+func Test_run_circleCIAPIStillRequiresAuthentication(t *testing.T) {
+	for _, args := range [][]string{nil, {"--circleci-from-statuses", "--failed-log"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			r, stdout, _, _ := newRunner(t, circleRoutes(circleStatuses("success")), loggedIn)
+			cmd := &cobra.Command{}
+			r.flag.Init(cmd)
+			if err := cmd.ParseFlags(args); err != nil {
+				t.Fatal(err)
+			}
+			err := r.run(t.Context(), []string{"o/r", "42"})
+			if agentcli.Exit(err) != agentcli.ExitAuthRequired {
+				t.Fatalf("want exit 8 for CircleCI API access, got %v", err)
+			}
+			if doc := decode(t, stdout); doc["verdict"] != "auth_required" || !strings.Contains(doc["reason"].(string), "devctl auth login --circleci-only") {
+				t.Errorf("document: %v", doc)
 			}
 		})
 	}

@@ -86,9 +86,9 @@ func TestRunCircleCILoginRenewal(t *testing.T) {
 				var stdout bytes.Buffer
 				r := &runner{
 					gate: func(bool) error { return nil }, flag: &flag{Timeout: 2 * time.Minute}, stdout: &stdout, stderr: io.Discard,
-					open: func(ctx context.Context, endpoints agentcli.Endpoints, retry http.RoundTripper, warn func(string)) (*releasewait.Sources, error) {
+					open: func(ctx context.Context, owner string, endpoints agentcli.Endpoints, retry http.RoundTripper, warn func(string)) (*releasewait.Sources, error) {
 						retry.(*agentcli.Retrying).Base = transport
-						actual, err := laptop.ReleaseWaitSources(ctx, endpoints, retry, warn)
+						actual, err := laptop.ReleaseWaitSources(ctx, owner, endpoints, retry, warn)
 						if err != nil {
 							return nil, err
 						}
