@@ -43,7 +43,7 @@ func Test_Run_survivesHangupAndClosedStdin(t *testing.T) {
 			flag:   &flag{Timeout: 2 * time.Minute},
 			stdout: os.Stdout,
 			stderr: io.Discard,
-			open: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+			open: func(context.Context, string, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
 				return sources, nil
 			},
 		}
