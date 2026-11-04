@@ -55,7 +55,13 @@ func Test_Run_RepoName(t *testing.T) {
 			wantErr:      "pass --repo-name <name>",
 		},
 		{
-			name: "no renovate-custom.json5 needs no name",
+			name:    "no custom config still needs a repository name",
+			wantErr: "pass --repo-name <name>",
+		},
+		{
+			name:        "origin names the preset before custom rules exist",
+			remote:      "https://github.com/giantswarm/valkey-app.git",
+			wantExtends: "'github>giantswarm/valkey-app:renovate-custom.json5'",
 		},
 	}
 
@@ -76,6 +82,9 @@ func Test_Run_RepoName(t *testing.T) {
 			if tc.wantErr != "" {
 				require.ErrorContains(t, err, tc.wantErr)
 				require.NoFileExists(t, "renovate.json5")
+				if !tc.customConfig {
+					require.NoFileExists(t, "renovate-custom.json5")
+				}
 				return
 			}
 			require.NoError(t, err)
@@ -142,10 +151,11 @@ func Test_Run_Fork(t *testing.T) {
 				require.NoError(t, os.WriteFile(name, []byte(content), 0o600))
 			}
 
-			r := &runner{flag: &flag{Language: "go", Flavours: tc.flavours}}
+			r := &runner{flag: &flag{Language: "go", RepoName: "some-repo", Flavours: tc.flavours}}
 			err := r.Run(&cobra.Command{}, nil)
 			if tc.wantErr != "" {
 				require.ErrorContains(t, err, tc.wantErr)
+				require.NoFileExists(t, "renovate-custom.json5")
 				for name, content := range tc.existing {
 					got, err := os.ReadFile(name) // #nosec G304 -- the test's own file
 					require.NoError(t, err)
