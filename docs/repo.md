@@ -460,3 +460,39 @@ the remote team-file source (`reposetup.Remote.Overrides`) lists the override di
 and reads only the overrides it names. A differing file gets one pull request from `reposetup/codeowners` with the
 desired file; while it is open the step reports it and changes nothing. A fork line and a customer repository have no
 codeowners step.
+
+## `reposetup` library: `Person` memberships
+
+In v8.140.0, `Remote.Person(ctx, owner, teams...)` changed from listing every team the caller belongs to
+in `owner` to checking only the supplied team slugs. An old `remote.Person(ctx, owner)` call still compiles,
+but now reads only the login and returns empty `Teams` and `Unread`; passing a nil or empty slice does the
+same. This is a behavior change for library consumers, introduced by commit
+[`24690c0409331e7c8ea392b985ca333d4a255a69`](https://github.com/giantswarm/devctl/commit/24690c0409331e7c8ea392b985ca333d4a255a69).
+
+For a creation guard, pass the owning team and `reposetup.FallbackTeam` explicitly, check the returned
+error, and supply both `person.Teams` and `person.Unread` to the validator as `AuthorTeams` and
+`AuthorTeamsUnread`. `Teams` contains active memberships only. A pending membership or a membership 404
+is not active; an unreadable team (403/404), or a membership 403, belongs to `Unread`, so the guard can
+report unknown membership. Unexpected API errors are returned to the caller.
+
+For a complete membership list (for example, a scope named `mine`), use the GitHub client's
+`Teams.ListUserTeams`, follow every page, and filter by organisation. `Remote.Teams` lists team files,
+not the caller's memberships.
+
+### Caller audit, 2026-11-04
+
+Paginated GitHub code searches for `"github.com/giantswarm/devctl/v8/pkg/reposetup" org:giantswarm` and
+`reposetup org:giantswarm language:Go` found the following importers on indexed default branches visible
+to the audit. Their source was inspected at the linked commits; no live team or account operation was run.
+
+| Checked repository | Result |
+|---|---|
+| [giantswarm/devctl](https://github.com/giantswarm/devctl/blob/f4b312bbb50d8ce8b54c66dcd36616f2ecb673b9/cmd/repo/create/runner.go) | The only production `Remote.Person` call, in `repo create`, explicitly supplies the owning and fallback teams and forwards `Teams` and `Unread` to the validator. No migration needed. |
+| [giantswarm/giantswarm-repo-manager](https://github.com/giantswarm/giantswarm-repo-manager/blob/cf48cdd3a82ca519884d29aa4b7e91b0870fe092/internal/tools/person.go) | All Go sources were checked: no `Remote.Person` call remains. `userTeams` lists every page of the caller's teams and filters by organisation for scope `mine` and the guards. Already fixed by https://github.com/giantswarm/giantswarm-repo-manager/pull/236, commit `cc5caf09872391be48f6fdfd19c4e0e701342142`. |
+
+The broader search also found `giantswarm/marge` and `giantswarm/beekeeper`; their matches were branch-name
+strings in code and fixtures, not imports. The
+[giantswarm/github validation workflow](https://github.com/giantswarm/github/blob/8b032a0cb52d0ecdc361921dbe83f9120dd06f7e/.github/workflows/validate-repo-yaml.yaml)
+uses the devctl CLI, reads memberships itself, and passes `--author-team`; it does not call `Remote.Person`.
+No additional affected caller was found, so no new downstream fix was filed. The search does not cover
+unindexed branches or repositories inaccessible to the audit.
