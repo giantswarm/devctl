@@ -25,6 +25,10 @@ CircleCI: a job behind requires: has posted nothing to GitHub until it starts),
 no GitHub Actions run of the head queued, in progress, waiting or awaiting a
 maintainer's approval, and every status context the base requires reported.
 
+Before judging a head, the wait reads the pull request again after a short delay
+until two consecutive reads name the same head. It rechecks the head after reading
+its checks before returning a verdict. Red and green progress lines name the SHA.
+
 The wait ends before it starts for a pull request no CI can turn green: a draft,
 a closed or merged one, one conflicting with its base, one behind a base that
 requires branches to be up to date. A failure anywhere ends the wait at once, and
@@ -37,7 +41,11 @@ so is a template repository whose team-file entry in giantswarm/github declares
 gen.ci.templateContent: its configuration is for the repositories created from
 it. A template without that declaration carries its own pipeline and is judged
 like any repository. Tokens come from the keychain (` + "`devctl auth login`" + `); the CircleCI token is
-required only when CircleCI is consulted. The GitHub identity follows the owner: the devctl App login for giantswarm,
+required only when CircleCI is consulted. With --circleci-from-statuses, the jobs
+the head's configuration runs on its branch are read from GitHub instead: each
+must post a status and finish successfully, without a CircleCI token, as in
+devctl serve. --failed-log takes precedence and uses the CircleCI API for its
+job logs. The GitHub identity follows the owner: the devctl App login for giantswarm,
 where the App is installed, your own gh login (gh auth token) for every other
 owner; the document's identity says which ("app" or "gh").
 

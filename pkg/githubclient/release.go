@@ -16,6 +16,8 @@ type PullRequestMerge struct {
 	Number int
 	State  string
 	Merged bool
+	// BaseRef is the branch the pull request targets.
+	BaseRef string
 	// MergeCommitSHA is the commit on the base branch; empty until merged.
 	MergeCommitSHA string
 	MergedAt       time.Time
@@ -27,7 +29,7 @@ func (c *Client) GetPullRequestMerge(ctx context.Context, owner, repo string, nu
 	if err != nil {
 		return PullRequestMerge{}, microerror.Mask(err)
 	}
-	m := PullRequestMerge{Number: pr.GetNumber(), State: pr.GetState(), Merged: pr.GetMerged()}
+	m := PullRequestMerge{Number: pr.GetNumber(), State: pr.GetState(), Merged: pr.GetMerged(), BaseRef: pr.GetBase().GetRef()}
 	if m.Merged {
 		m.MergeCommitSHA = pr.GetMergeCommitSHA()
 		m.MergedAt = pr.GetMergedAt().Time
