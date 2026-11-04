@@ -165,9 +165,10 @@ A run of the name newer than the one given is named in `warnings`; the rerun is 
 |---|---|---|
 | 0 | `green` | the rerun started; `rerunId` and `rerunUrl` are the new workflow |
 | 2 | `timeout` | `--cancel`: the workflow still reads running two minutes after the cancel |
+| 2 | `transient` | a read exhausted its bounded retry window; the reason names the attempts, elapsed time and last API or network failure |
 | 3 | `not_applicable` | no such workflow, or one of another repository |
 | 5 | `refused` | a rerun of the workflow's name within the hour, a workflow still running without `--cancel`, or a rerun CircleCI refused (the reason carries its message) |
 | 7 | `usage` | wrong usage or a tooling failure |
 | 8 | `auth_required` | no CircleCI login, or one without Write access (`devctl auth login --circleci-only`) |
 
-`ci jobs` exits 0 (`listed`), 3 (no such pipeline of the repository), 7 or 8.
+`ci jobs` exits 0 (`listed`), 2 (`transient`), 3 (no such pipeline of the repository), 7 or 8.

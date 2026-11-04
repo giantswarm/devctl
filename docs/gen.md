@@ -142,6 +142,14 @@ The `--language` flag sets the primary language (`go`, `python`, `generic`). The
 - `md` — Markdown linting via `markdownlint-cli`
 - `helmchart` — Helm chart schema and docs hooks (auto-detects charts under `helm/`)
 
+With `--flavors helmchart`, generation also writes `helm/<chart>/values.schema.json`.
+The schema hook prints a regeneration command containing the original language, repository,
+flavors, Kubernetes schema version and `--go-generate` setting. Run that complete command
+from the repository root: a bare `devctl gen precommit` uses empty language and flavor
+defaults, which removes the language and Helm hooks and skips schema generation. For
+example, a Go repository with a chart can regenerate with
+`devctl gen precommit --language go --flavors helmchart`; keep any other original options.
+
 A Go repository's config also refuses a `require` line in any `go.mod` (single or in a block) whose trailing comment has more than one word (`go-mod-require-comment`): Renovate's gomod manager reads only a one-word comment such as `// indirect` and skips the whole line otherwise, so that dependency is never updated and nothing says so. The explanation goes on a comment line above the require.
 
 A Go repository's `golangci-lint` hook, like `make lint` of `devctl gen makefile --language go`, passes no linter flags: the linters live in the repository's golangci-lint configuration, so a bare `golangci-lint run` lints with the same set. Both commands write `.golangci.yaml` (gosec and goconst on top of the standard set) when the repository has no configuration. A repository's own `.golangci.yml` or `.golangci.yaml` is kept as it is, except that gosec and goconst are added to `linters.enable` when it neither enables nor disables them (and govet too when `linters.default` replaces the standard set); a TOML or JSON configuration, or one whose `linters.enable` is a flow sequence, fails generation naming the linters to enable.
@@ -190,7 +198,11 @@ devctl gen plans --flavour plans
 
 ## Generating CircleCI configuration
 
-Generates the dynamic-config pipeline of a repository on devctl-generated CI: `.circleci/config.yml` (the static setup workflow, which merges the optional repo-owned `.circleci/custom.yml` in at pipeline runtime) and `.circleci/workflows.yml` (the pipeline), plus the canonical `tests/ats` dependency file of a chart repository. The chart tests themselves -- `.ats/main.yaml` and the Python files under `tests/ats` -- are the repository's own and never generated; app-test-suite picks the pytest executor from the dependency file and refuses a `tests/ats` without a test, so a chart repository carries at least one (`devctl repo create` writes a first smoke test into a new repository's scaffold).
+Generates the dynamic-config pipeline of a repository on devctl-generated CI: `.circleci/config.yml` (the static setup workflow, which merges the optional repo-owned `.circleci/custom.yml` in at pipeline runtime) and `.circleci/workflows.yml` (the pipeline), plus the canonical `tests/ats` dependency file of a chart repository.
+
+When chart-test jobs are emitted and neither `.ats/main.yaml` nor `.ats/main.yml` exists, generation also creates a starter `.ats/main.yaml` with `skip-steps: [smoke, functional, upgrade]`. A repository without ATS scenarios can then run the job without failing on missing test configuration. The legacy ATS 0.x starter also sets the smoke and upgrade cluster types to `kind`; ATS 1.x receives its cluster from the orb and does not accept those old options. Existing configuration, including an empty file, is kept byte for byte, and an existing `main.yml` is never shadowed by a new `main.yaml`. Non-app, fork, template and `--skip-ats` repositories get no starter.
+
+The configuration and Python tests are the repository's own after creation. Add tests and remove their scenario names from `skip-steps` to enable them; app-test-suite picks the pytest executor from the generated dependency file and requires test files for enabled scenarios. `devctl repo create` continues to write a first smoke test and its smoke-enabled configuration into a new repository's scaffold, preserving any configuration supplied by the template.
 
 ```nohighlight
 devctl gen circleci --repo-name REPOSITORY --language LANGUAGE --flavour FLAVOUR[,FLAVOUR]
