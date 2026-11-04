@@ -175,7 +175,7 @@ CircleCI only through the commit statuses it posts to GitHub (`ci/circleci: <job
 nothing until the jobs it requires have finished, so the waits read the jobs CircleCI runs from the revision's
 `.circleci/config.yml` through GitHub: devctl's generated setup workflow continues with `.circleci/workflows.yml`
 deep-merged with `.circleci/custom.yml`, any other configuration is its own; a job runs when its `filters` take the
-pull request's branch (`pull/<n>` for a fork) or the tag and every job it requires runs, an approval posts nothing,
+pull request's branch (`pull/<n>` for a fork) or the tag and at least one job it requires runs (or it requires none), an approval posts nothing,
 and a workflow runs when its `when`/`unless` holds for a push (pipeline parameters at their defaults, `trigger_source`
 `webhook`), a scheduled one never. Every such job that has posted no status yet keeps a wait pending, named
 `ci/circleci: <job> (not posted yet)`. What the configuration cannot tell before the pipeline runs (a matrix job, a
