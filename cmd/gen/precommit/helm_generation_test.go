@@ -100,9 +100,10 @@ func TestHelmGeneration_LaterChartFailure(t *testing.T) {
 			writeHelmFixture(t, "a-first", "firstOnly: fixture\n")
 			values := "replicaCount: 1\n"
 			refFile := "fixture-" + filepath.Base(t.TempDir()) + ".json"
-			if failure == "schema request" {
+			switch failure {
+			case "schema request":
 				values = "resources: {} # @schema $ref: $k8s/" + refFile + "#/definitions/Fixture\n"
-			} else if failure == "malformed values" {
+			case "malformed values":
 				values = "invalid: [\n"
 			}
 			writeHelmFixture(t, "b-failed", values)
