@@ -149,8 +149,9 @@ func assertRequests(t *testing.T, srv *circlemock.Server, paths ...string) {
 		t.Fatalf("got %d requests, want %d: %v", len(requests), len(paths), requests)
 	}
 	for i, req := range requests {
-		if req.Method != http.MethodGet || req.Path != paths[i] || len(req.Query) != 0 {
-			t.Errorf("request %d = %s, want GET %s", i, req, paths[i])
+		wantPath := paths[i] // #nosec G602 -- the equal-length check above terminates the test before this loop on mismatch
+		if req.Method != http.MethodGet || req.Path != wantPath || len(req.Query) != 0 {
+			t.Errorf("request %d = %s, want GET %s", i, req, wantPath)
 		}
 		if req.Header.Get("Circle-Token") != loginToken {
 			t.Errorf("request %d did not use the stored login", i)
@@ -162,7 +163,7 @@ func TestCommandReadsPipelineNumberAndID(t *testing.T) {
 	for _, ref := range []string{"12", pipelineID} {
 		t.Run(ref, func(t *testing.T) {
 			srv, path := commandEnvironment(t, pipelineRoutes(), &authstore.Record{Token: loginToken})
-			before, err := os.ReadFile(path)
+			before, err := os.ReadFile(path) // #nosec G304 -- path is the synthetic store in this test's temporary directory
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -178,7 +179,7 @@ func TestCommandReadsPipelineNumberAndID(t *testing.T) {
 				first = "/api/v2/project/gh/o/r/pipeline/12"
 			}
 			assertRequests(t, srv, first, "/api/v2/pipeline/"+pipelineID+"/workflow", "/api/v2/workflow/w1/job")
-			after, err := os.ReadFile(path)
+			after, err := os.ReadFile(path) // #nosec G304 -- path is the synthetic store in this test's temporary directory
 			if err != nil || !bytes.Equal(before, after) {
 				t.Errorf("read changed the stored login: %v", err)
 			}
