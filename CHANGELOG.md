@@ -9,12 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- Use Helm v4.3.1 for rollout values parsing to avoid the vulnerable v4.2.0 dependency
-  flagged by the dependency security scan (CVE-2026-63308).
+- `gen dependabot` detects root Python requirements, Pipfile, setup.cfg and pyproject manifests.
 
-- `rollout wait` waits past a HelmRelease failure on obsolete values, compares the current merged values
-  with Flux's last attempted digest, and reports a new failure on those values even at the same chart
-  version. `--reconcile` requests the new attempt once, including for a named component HelmRelease.
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
@@ -63,6 +59,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `.github/workflows/zz_generated.*`, which align-files regenerates.
 
 ### Added
+
+- `ci job --step-output` includes the first and last lines of every step's output, including
+  successful steps, so a soft-passed nancy scanner outage is visible without the CircleCI UI.
+  `--lines` bounds each excerpt (200 by default); unreadable output is reported per step.
 
 - `ci job` takes the URL a CircleCI commit status links, alone, including a GitHub App pipeline's
   `app.circleci.com/workflow/<id>/job/<id>`, which it resolves to the project and job number through the workflow.
