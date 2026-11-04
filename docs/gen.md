@@ -156,6 +156,10 @@ devctl gen precommit --language go --repo-name my-app --flavors bash,helmchart
 devctl gen precommit --language generic --repo-name my-service --flavors md,bash
 ```
 
+With `--flavors helmchart`, the `helm-docs` hook builds the pinned revision in pre-commit's Go environment and uses file order for the values table. A globally installed `helm-docs` cannot change that hook's output. The schema generator and normalizer are likewise pinned to devctl's own dependencies. `devctl gen precommit` writes the schema and scaffolds `README.md.gotmpl`; run `pre-commit run helm-docs --all-files` to update the README. Hook environments need their pinned sources on first installation; cached environments run offline. Schema annotations that reference remote documents still require those documents to be reachable.
+
+A devctl build without generated template provenance files keeps an existing generated YAML file untouched when only its fallback module tree link differs. Changes to the rendered body still regenerate the file, and builds with a known template commit continue to update that provenance.
+
 ## Generating renovate configuration
 
 Generates a `renovate.json5` file in the repo root to configure [renovate](https://docs.renovatebot.com/), which automatically updates dependencies in the configured repository.
@@ -193,6 +197,31 @@ devctl gen circleci --repo-name REPOSITORY --language LANGUAGE --flavour FLAVOUR
 ```
 
 The pipeline is derived from the repository's signals — the language, the flavours, the presence of a `Dockerfile`, a `.ats/kind-config.yaml`, a lockfile or `.nvmrc` — rather than configured: `go` and `node` select a build/test job, a `Dockerfile` the image jobs, the `app` flavour the chart jobs (build, chart tests, push on the release tag). The knobs the giantswarm/github team file exposes under `gen.ci` are the flags of this command; `devctl gen circleci --help` documents each, and the architect-orb version is baked into devctl next to the template.
+
+A chart whose tests need an image pushed by a custom job can add that job's workflow name to
+`.circleci/config.custom.yml`:
+
+```yaml
+chart_tests:
+  requires:
+  - push-buzz-minio-to-registries
+```
+
+`gen circleci` reads this repository-owned file on every regeneration and adds the names to
+`execute-chart-tests.requires`, keeping `build-chart` and the generated branch image push when present.
+Duplicate names are emitted once. The file is generator input; `.circleci/custom.yml` still defines
+the jobs and their invocations in the `build` workflow, and is merged at pipeline runtime. Neither
+custom file is generated or overwritten. Malformed configuration, unknown keys, and empty or
+self-referencing job names fail before generated files are written. Nonempty dependencies require the app flavour with chart tests
+enabled, and are refused for template and multi-image repositories.
+
+The custom jobs must run on the same branches as `execute-chart-tests`: a job filtered to release
+tags cannot gate branch tests. For a custom image, publish the branch's computed version before
+chart tests and let the chart's test values select that version instead of pinning a released tag.
+The generated chart and image builds use the same version for the same commit. A custom image job
+should set `persist-build-version: false`, leaving `build-chart` to persist its version file into the
+shared workspace. This setting affects branch chart tests only; `execute-chart-tests-release` keeps
+its existing dependencies when `--ats-on-release` is enabled.
 
 ### Template repositories
 
