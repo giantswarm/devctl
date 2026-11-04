@@ -1138,6 +1138,13 @@ func (c *CircleCI) ATSInputs() []input.Input {
 	return ats.CreateATS(c.params.ATSKindCluster)
 }
 
+// ATSConfig returns the starter configuration for the selected ATS version.
+// The caller emits it only when ATSInputs is nonempty and the repository has
+// no configuration of its own.
+func (c *CircleCI) ATSConfig() input.Input {
+	return ats.CreateConfig(c.params.ATSKindCluster)
+}
+
 // atsCreatesKindCluster decides from the app-test-suite container tag whether
 // the chart-test jobs must create the kind cluster themselves: app-test-suite
 // 1.0 dropped its built-in kind lifecycle, so every 1.x tag needs

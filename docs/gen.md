@@ -171,7 +171,11 @@ devctl gen plans --flavour plans
 
 ## Generating CircleCI configuration
 
-Generates the dynamic-config pipeline of a repository on devctl-generated CI: `.circleci/config.yml` (the static setup workflow, which merges the optional repo-owned `.circleci/custom.yml` in at pipeline runtime) and `.circleci/workflows.yml` (the pipeline), plus the canonical `tests/ats` dependency file of a chart repository. The chart tests themselves -- `.ats/main.yaml` and the Python files under `tests/ats` -- are the repository's own and never generated; app-test-suite picks the pytest executor from the dependency file and refuses a `tests/ats` without a test, so a chart repository carries at least one (`devctl repo create` writes a first smoke test into a new repository's scaffold).
+Generates the dynamic-config pipeline of a repository on devctl-generated CI: `.circleci/config.yml` (the static setup workflow, which merges the optional repo-owned `.circleci/custom.yml` in at pipeline runtime) and `.circleci/workflows.yml` (the pipeline), plus the canonical `tests/ats` dependency file of a chart repository.
+
+When chart-test jobs are emitted and neither `.ats/main.yaml` nor `.ats/main.yml` exists, generation also creates a starter `.ats/main.yaml` with `skip-steps: [smoke, functional, upgrade]`. A repository without ATS scenarios can then run the job without failing on missing test configuration. The legacy ATS 0.x starter also sets the smoke and upgrade cluster types to `kind`; ATS 1.x receives its cluster from the orb and does not accept those old options. Existing configuration, including an empty file, is kept byte for byte, and an existing `main.yml` is never shadowed by a new `main.yaml`. Non-app, fork, template and `--skip-ats` repositories get no starter.
+
+The configuration and Python tests are the repository's own after creation. Add tests and remove their scenario names from `skip-steps` to enable them; app-test-suite picks the pytest executor from the generated dependency file and requires test files for enabled scenarios. `devctl repo create` continues to write a first smoke test and its smoke-enabled configuration into a new repository's scaffold, preserving any configuration supplied by the template.
 
 ```nohighlight
 devctl gen circleci --repo-name REPOSITORY --language LANGUAGE --flavour FLAVOUR[,FLAVOUR]
