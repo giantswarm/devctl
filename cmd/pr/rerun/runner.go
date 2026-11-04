@@ -20,6 +20,7 @@ const command = rerun.CommandPR
 
 type runner struct {
 	stdout io.Writer
+	clock  func() (agentcli.Clock, error)
 	// gate is versiongate.Check: an outdated devctl ends the run in the
 	// document.
 	gate func(noCache bool) error
@@ -72,9 +73,13 @@ func (r *runner) rerun(ctx context.Context, args []string, doc *document) error 
 	if err := r.gate(false); err != nil {
 		return err
 	}
+	clock, err := r.clock()
+	if err != nil {
+		return err
+	}
 
 	endpoints := r.endpoints()
-	retrying := &agentcli.Retrying{Warn: doc.Warn}
+	retrying := &agentcli.Retrying{Warn: doc.Warn, Clock: clock}
 	github, token, err := rerun.NewGitHub(ctx, owner, r.requireGitHub, r.personGitHub, endpoints, retrying)
 	if err != nil {
 		return err
@@ -86,7 +91,8 @@ func (r *runner) rerun(ctx context.Context, args []string, doc *document) error 
 	}
 	sha := pr.GetHead().GetSHA()
 	doc.HeadSHA = sha
-	branch := circleciclient.PullRequestBranch(pr.GetHead().GetRef(), prwait.IsFork(pr), number)
+	fork := prwait.IsFork(pr)
+	branch := circleciclient.PullRequestBranch(pr.GetHead().GetRef(), fork, number)
 
 	circleci, err := rerun.NewCircleCI(ctx, r.requireCircleCI, endpoints, retrying, doc.Warn)
 	if err != nil {
@@ -101,6 +107,23 @@ func (r *runner) rerun(ctx context.Context, args []string, doc *document) error 
 	}
 	// A pipeline without a workflow gets the push of its revision again, with
 	// the client and identity that read the pull request.
-	redelivery := rerun.Redelivery{Hooks: func(context.Context) (rerun.Hooks, string, error) { return github, doc.Identity, nil }}
-	return rerun.FromFailed(ctx, circleci, owner, repo, pipeline, doc.Result, doc.Warn, redelivery, rerun.Wedged{})
+	redelivery := rerun.Redelivery{
+		Hooks: func(context.Context) (rerun.Hooks, string, error) {
+			// A matching revision in the base's deliveries can belong to another
+			// branch. It cannot recover a pipeline built for a fork's pull ref.
+			if fork {
+				return nil, "", agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable,
+					"the head %s was pushed to a fork: %s/%s has no push delivery for it to redeliver", sha, owner, repo)
+			}
+			return github, doc.Identity, nil
+		},
+		Now: clock.Now,
+	}
+	if err := rerun.FromFailed(ctx, circleci, owner, repo, pipeline, doc.Result, doc.Warn, redelivery, rerun.Wedged{}); err != nil {
+		return err
+	}
+	if doc.Redelivery != nil && doc.Redelivery.Outcome == rerun.OutcomeRedelivered {
+		return awaitRedelivery(ctx, circleci, owner, repo, branch, doc, clock)
+	}
+	return nil
 }
