@@ -26,13 +26,14 @@ type runner struct {
 	gate func(noCache bool) error
 	// openRelease is laptop.ReleaseWaitSources and openCluster
 	// laptop.OpenCluster; tests inject fakes.
-	openRelease func(ctx context.Context, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*releasewait.Sources, error)
+	openRelease func(ctx context.Context, owner string, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*releasewait.Sources, error)
 	openCluster func(ctx context.Context, c laptop.ClusterConfig) (dynamic.Interface, error)
 	// teleport logs in to an installation the kubeconfig lacks.
 	teleport laptop.Teleport
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
+	agentcli.IgnoreHangup()
 	return r.run(cmd.Context(), args)
 }
 
@@ -102,6 +103,9 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 			return err
 		}
 	}
+	if err := rolloutwait.ValidateHelmReleases(r.flag.HelmReleases); err != nil {
+		return err
+	}
 	failedLogLines, err := r.flag.FailedLog.TailLines()
 	if err != nil {
 		return err
@@ -137,8 +141,8 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		return err
 	}
 
-	progress.Printf("reading the GitHub token from the keychain")
-	sources, err := r.openRelease(ctx, endpoints, retrying(nil), doc.Warn)
+	progress.Printf("reading the GitHub login for %s", owner)
+	sources, err := r.openRelease(ctx, owner, endpoints, retrying(nil), doc.Warn)
 	if err != nil {
 		return err
 	}

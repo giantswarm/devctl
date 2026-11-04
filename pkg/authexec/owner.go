@@ -12,21 +12,55 @@ import (
 // keeps the person's own login for it.
 var AppOwners = map[string]bool{"giantswarm": true}
 
+// ghIssue is gh's issue command.
+const ghIssue = "issue"
+
+// ghClose is the close subcommand of gh issue and gh pr.
+const ghClose = "close"
+
 // repoCommands are gh's commands whose first argument may be a repository
 // or a URL of one (`gh pr view <url>`, `gh repo view <owner/repo>`).
 var repoCommands = map[string]bool{
-	"issue": true, "pr": true, "release": true, "repo": true, "run": true, "workflow": true,
+	ghIssue: true, "pr": true, "release": true, "repo": true, "run": true, "workflow": true,
 }
 
 // GHOwner is the owner of the repository a gh invocation acts on, "" when it
-// names none: --repo/-R, $GH_REPO, a repository path of `gh api`, the URL or
-// repository argument of a repository command, else the repository of the
+// names none: an explicit API path, URL or repository argument, then
+// --repo/-R, $GH_REPO, else the repository of the
 // working directory, resolved like gh (its default, then the remotes
 // upstream, github and origin). remotes reads the working directory's
 // remote configuration; nil reads none.
 func GHOwner(args []string, environ []string, remotes func() string) string {
+	// Search is global; --repo is a repeatable search filter, not a base
+	// repository override. Neither GH_REPO nor the checkout selects its repo.
+	if len(args) > 0 && args[0] == "search" {
+		return ""
+	}
+	if len(args) >= 2 && args[0] == "api" {
+		if owner, named := apiOwner(args[1:]); named {
+			if owner != "{owner}" && owner != ":owner" {
+				return owner
+			}
+			return defaultOwner(environ, remotes)
+		}
+		return ""
+	}
+	if len(args) >= 3 && repoCommands[args[0]] {
+		repo := repositoryArgument(args)
+		if owner := urlOwner(repo); owner != "" {
+			return owner
+		}
+		if args[0] == "repo" && strings.Count(repo, "/") == 1 {
+			return repoOwner(repo)
+		}
+	}
 flags:
-	for i, a := range args {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if ghTextValueFlag(args, a) {
+			i++
+			continue
+		}
 		switch {
 		case a == "--":
 			break flags
@@ -38,26 +72,68 @@ flags:
 			return repoOwner(a[2:])
 		}
 	}
+	return defaultOwner(environ, remotes)
+}
+
+// repositoryValueFlags consume a value before the positional selector of a
+// repository command. Attached values already occupy just one argument.
+var repositoryValueFlags = map[string]bool{
+	"--repo": true, "-R": true, "--json": true, "--jq": true, "-q": true, "--template": true, "-t": true,
+	"--body": true, "-b": true, "--body-file": true, "-F": true, "--title": true, "--comment": true,
+	"--branch": true, "--base": true, "-B": true, "--head": true, "-H": true, "--color": true,
+	"--interval": true, "-i": true, "--subject": true, "--author-email": true, "-A": true, "--match-head-commit": true,
+	"--reason": true, "--ref": true, "--job": true, "-j": true, "--attempt": true,
+	"--add-assignee": true, "--remove-assignee": true, "--add-label": true, "--remove-label": true,
+	"--add-project": true, "--remove-project": true, "--add-reviewer": true, "--remove-reviewer": true,
+	"--milestone": true, "--type": true, "--name": true, "--pattern": true, "--dir": true, "--output": true,
+	"--exclude": true, "--notes-file": true, "--discussion-category": true, "--notes-start-tag": true, "--target": true,
+	"--notes": true, "--tag": true, "--attach": true,
+}
+
+func repositoryValueFlag(args []string, flag string) bool {
+	if repositoryValueFlags[flag] {
+		return true
+	}
+	switch flag {
+	case "-c":
+		return args[1] == ghClose || args[1] == "reopen"
+	case "-r":
+		return args[0] == "workflow" || args[0] == ghIssue && args[1] == ghClose
+	case "-m":
+		return args[1] == "edit"
+	case "-a":
+		return args[0] == "run" && args[1] == "view"
+	case "-n":
+		return args[0] == ghIssue && args[1] == "develop"
+	case "-e":
+		return args[0] == "pr" && args[1] == "diff"
+	}
+	return false
+}
+
+func repositoryArgument(args []string) string {
+	for i := 2; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			if i+1 < len(args) {
+				return args[i+1]
+			}
+			return ""
+		}
+		if !strings.HasPrefix(a, "-") {
+			return a
+		}
+		if repositoryValueFlag(args, a) {
+			i++
+		}
+	}
+	return ""
+}
+
+func defaultOwner(environ []string, remotes func() string) string {
 	for _, kv := range environ {
 		if v, ok := strings.CutPrefix(kv, "GH_REPO="); ok && v != "" {
 			return repoOwner(v)
-		}
-	}
-	if len(args) >= 2 && args[0] == "api" {
-		if owner, named := apiOwner(args[1:]); named {
-			if owner != "{owner}" {
-				return owner
-			}
-			return remoteOwner(remotes)
-		}
-		return ""
-	}
-	if len(args) >= 3 && repoCommands[args[0]] && !strings.HasPrefix(args[2], "-") {
-		if owner := urlOwner(args[2]); owner != "" {
-			return owner
-		}
-		if args[0] == "repo" && strings.Count(args[2], "/") == 1 {
-			return repoOwner(args[2])
 		}
 	}
 	return remoteOwner(remotes)
@@ -68,16 +144,36 @@ flags:
 // refuses an App user token with a 404, which gh reports as missing write
 // access, so such an invocation keeps the person's own gh login.
 func GHAttaches(args []string) bool {
-	if len(args) == 0 || (args[0] != "issue" && args[0] != "pr") {
+	if len(args) == 0 || (args[0] != ghIssue && args[0] != "pr") {
 		return false
 	}
-	for _, a := range args[1:] {
+	for i := 1; i < len(args); i++ {
+		a := args[i]
+		if ghTextValueFlag(args, a) {
+			i++
+			continue
+		}
 		if a == "--" {
 			return false
 		}
 		if a == "--attach" || strings.HasPrefix(a, "--attach=") {
 			return true
 		}
+	}
+	return false
+}
+
+// ghTextValueFlag identifies free-form issue/PR text options. Their next
+// argument is data even when it looks like --repo, --attach or --.
+func ghTextValueFlag(args []string, flag string) bool {
+	if len(args) < 2 || (args[0] != ghIssue && args[0] != "pr") {
+		return false
+	}
+	switch flag {
+	case "--body", "-b", "--body-file", "-F", "--title", "-t", "--subject", "--comment":
+		return true
+	case "-c":
+		return args[1] == ghClose || args[1] == "reopen"
 	}
 	return false
 }
@@ -100,6 +196,9 @@ func apiOwner(args []string) (string, bool) {
 		}
 		if strings.HasPrefix(a, "-") {
 			continue
+		}
+		if u, err := url.Parse(a); err == nil && u.IsAbs() && u.Host != "" {
+			a = u.Path
 		}
 		parts := strings.Split(strings.TrimPrefix(a, "/"), "/")
 		if len(parts) >= 2 && (parts[0] == "repos" || parts[0] == "orgs") {
@@ -148,6 +247,7 @@ func remoteOwner(remotes func() string) string {
 	urls := map[string]string{}
 	var order []string
 	resolved := ""
+	resolvedRepo := ""
 	for _, line := range strings.Split(remotes(), "\n") {
 		key, value, ok := strings.Cut(strings.TrimSpace(line), " ")
 		if !ok {
@@ -165,7 +265,11 @@ func remoteOwner(remotes func() string) string {
 			urls[name] = value
 		case "gh-resolved":
 			resolved = name
+			resolvedRepo = value
 		}
+	}
+	if _, ok := urls[resolved]; ok && resolvedRepo != "base" {
+		return repoOwner(resolvedRepo)
 	}
 	for _, name := range append([]string{resolved, "upstream", "github", "origin"}, order...) {
 		if u, ok := urls[name]; ok {
