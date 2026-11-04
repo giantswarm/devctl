@@ -207,7 +207,7 @@ func snapshotFiles(t *testing.T) map[string]string {
 			files[filepath.ToSlash(path)+"/"] = ""
 			return nil
 		}
-		content, err := os.ReadFile(path) // #nosec G304 -- only synthetic files under t.TempDir()
+		content, err := os.ReadFile(path) // #nosec G304 G122 -- private t.TempDir contains only synthetic fixtures; no concurrent writers or symlinks
 		if err != nil {
 			return err
 		}
