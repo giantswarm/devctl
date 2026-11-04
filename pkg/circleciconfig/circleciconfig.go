@@ -224,6 +224,10 @@ func (j *Jobs) add(names map[string]bool, config map[string]any, run Run) {
 			if !filtered(params["filters"], run) {
 				continue
 			}
+			if !allowsSuccess(params["requires"]) {
+				j.Warnings = append(j.Warnings, fmt.Sprintf("workflow %s runs %s only for particular dependency outcomes: its jobs count once they post a status", key, name))
+				continue
+			}
 			// An approval posts no status; the jobs it holds do.
 			approval := params["type"] == "approval" || definition["type"] == "approval"
 			listed = append(listed, job{name: name, requires: requires(params["requires"]), approval: approval})
@@ -280,6 +284,42 @@ func requires(value any) []string {
 	return names
 }
 
+// allowsSuccess reports whether every explicitly required outcome admits a
+// successful dependency. A failure-only job may never post in a green run;
+// its actual execution and that of its dependents are only known at runtime.
+func allowsSuccess(value any) bool {
+	switch value := value.(type) {
+	case []any:
+		for _, item := range value {
+			if !allowsSuccess(item) {
+				return false
+			}
+		}
+	case map[string]any:
+		for _, statuses := range value {
+			switch statuses := statuses.(type) {
+			case string:
+				if statuses != "success" && statuses != "terminal" {
+					return false
+				}
+			case []any:
+				accepted := false
+				for _, status := range statuses {
+					accepted = accepted || status == "success" || status == "terminal"
+				}
+				if !accepted {
+					return false
+				}
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// runnable are the names of the jobs that post a status and whose required
+// jobs all run: a job behind one the run filters out never starts.
 // runnable are the names of jobs that can post a status. CircleCI ignores
 // filtered dependencies, but skips a job when all its dependencies are filtered.
 func runnable(jobs []job) []string {
