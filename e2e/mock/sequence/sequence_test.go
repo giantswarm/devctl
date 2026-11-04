@@ -1,13 +1,25 @@
 package sequence
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDelayedResponseHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/slow", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+	err := Write(w, req, Response{Delay: time.Hour, Body: "unreached"})
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, w.Body.String())
+}
 
 func TestNextAdvancesAndRepeatsTheLast(t *testing.T) {
 	s, err := New(Routes{
