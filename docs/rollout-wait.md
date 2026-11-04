@@ -84,6 +84,9 @@ A failed values attempt is exit 1 once helm-controller has observed the current 
 finished reconciling, even when a new history digest or a handled reconcile proves it attempted the
 change. Active retries keep waiting.
 
+A failed attempt of the requested revision is still a failure when that revision was already applied,
+including a failed health check.
+
 With `--reconcile`, the wait asks the GitRepository, the Kustomizations and, once its values are
 rendered, each HelmRelease to reconcile, once each.
 

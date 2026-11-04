@@ -354,7 +354,7 @@ func (w *Waiter) judgeApplier(ctx context.Context, d Deployment, u *unstructured
 	if done && current && ready.status == conditionTrue {
 		return d.set(StateRolledOut, ""), nil
 	}
-	if !done && ready.status == conditionFalse && failure(ready) {
+	if ready.status == conditionFalse && failure(ready) {
 		tried, err := w.applied(ctx, attempted)
 		if err != nil {
 			return d, err
