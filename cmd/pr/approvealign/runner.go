@@ -233,22 +233,19 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 
 		// Check individual check runs (GitHub Actions checks)
 		if checkRuns != nil && len(checkRuns.CheckRuns) > 0 && !hasFailedChecks {
-			// Only check runs if combinedStatus didn't already give us a definitive answer
-			if combinedStatus == nil || (combinedStatus.GetState() != "success" && combinedStatus.GetState() != stateFailure) {
-				for _, run := range checkRuns.CheckRuns {
-					conclusion := run.GetConclusion()
-					status := run.GetStatus()
+			for _, run := range checkRuns.CheckRuns {
+				conclusion := run.GetConclusion()
+				status := run.GetStatus()
 
-					if status == "completed" {
-						if conclusion == stateFailure || conclusion == "cancelled" || conclusion == "timed_out" {
-							hasFailedChecks = true
-							break
-						}
-						// success, neutral, skipped are OK
-					} else {
-						// Check is not completed (queued, in_progress)
-						checksPending = true
+				if status == "completed" {
+					if conclusion == stateFailure || conclusion == "cancelled" || conclusion == "timed_out" {
+						hasFailedChecks = true
+						break
 					}
+					// success, neutral, skipped are OK
+				} else {
+					// Check is not completed (queued, in_progress)
+					checksPending = true
 				}
 			}
 		}
