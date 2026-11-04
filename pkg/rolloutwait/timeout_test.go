@@ -40,7 +40,7 @@ func TestRolloutTimeoutBoundsClusterReads(t *testing.T) {
 						Body:       io.NopCloser(strings.NewReader("unavailable")),
 					}, nil
 				}
-				if err := clock.Sleep(req.Context(), 10*time.Second); err != nil {
+				if err := clock.Sleep(req.Context(), time.Hour); err != nil {
 					return nil, err
 				}
 				return nil, errors.New("the cluster read outlived the rollout timeout")
@@ -82,7 +82,7 @@ func TestRolloutTimeoutBoundsReconcileAndKeepsLastPoll(t *testing.T) {
 	transport := rolloutRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		if req.Method == http.MethodPatch {
 			patches++
-			if err := clock.Sleep(req.Context(), 10*time.Second); err != nil {
+			if err := clock.Sleep(req.Context(), time.Hour); err != nil {
 				return nil, err
 			}
 			return nil, errors.New("the reconcile write outlived the rollout timeout")
