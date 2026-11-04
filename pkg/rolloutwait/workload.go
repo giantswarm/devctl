@@ -172,10 +172,13 @@ func judgeChildHelmRelease(u *unstructured.Unstructured) judgement {
 		return j
 	}
 	ready, stalled := condition(u, "Ready"), condition(u, "Stalled")
+	if reconciling := condition(u, "Reconciling"); reconciling.status == conditionTrue {
+		return judgement{message: "retrying or reconciling: " + orUnknown(reconciling)}
+	}
 	if stalled.status == conditionTrue || (ready.status == conditionFalse && helmReleaseFailures[ready.reason]) {
 		return judgement{message: orUnknown(ready), failed: true}
 	}
-	if ready.status != conditionTrue || condition(u, "Reconciling").status == conditionTrue {
+	if ready.status != conditionTrue {
 		return judgement{message: "not ready: " + orUnknown(ready)}
 	}
 	return judgement{ready: true}

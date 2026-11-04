@@ -1,6 +1,6 @@
 {{ .Header }}
 
-include Makefile.*.mk
+-include Makefile.*.mk
 
 ##@ General
 
