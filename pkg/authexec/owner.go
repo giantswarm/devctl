@@ -14,8 +14,10 @@ var AppOwners = map[string]bool{"giantswarm": true}
 
 // repoCommands are gh's commands whose first argument may be a repository
 // or a URL of one (`gh pr view <url>`, `gh repo view <owner/repo>`).
+const ghIssue = "issue"
+
 var repoCommands = map[string]bool{
-	"issue": true, "pr": true, "release": true, "repo": true, "run": true, "workflow": true,
+	ghIssue: true, "pr": true, "release": true, "repo": true, "run": true, "workflow": true,
 }
 
 // GHOwner is the owner of the repository a gh invocation acts on, "" when it
@@ -82,13 +84,13 @@ func repositoryValueFlag(args []string, flag string) bool {
 	case "-c":
 		return args[1] == "close" || args[1] == "reopen"
 	case "-r":
-		return args[0] == "workflow" || args[0] == "issue" && args[1] == "close"
+		return args[0] == "workflow" || args[0] == ghIssue && args[1] == "close"
 	case "-m":
 		return args[1] == "edit"
 	case "-a":
 		return args[0] == "run" && args[1] == "view"
 	case "-n":
-		return args[0] == "issue" && args[1] == "develop"
+		return args[0] == ghIssue && args[1] == "develop"
 	case "-e":
 		return args[0] == "pr" && args[1] == "diff"
 	}
@@ -128,7 +130,7 @@ func defaultOwner(environ []string, remotes func() string) string {
 // refuses an App user token with a 404, which gh reports as missing write
 // access, so such an invocation keeps the person's own gh login.
 func GHAttaches(args []string) bool {
-	if len(args) == 0 || (args[0] != "issue" && args[0] != "pr") {
+	if len(args) == 0 || (args[0] != ghIssue && args[0] != "pr") {
 		return false
 	}
 	for _, a := range args[1:] {
