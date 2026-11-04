@@ -50,7 +50,7 @@ func TestParseChangelog_Security(t *testing.T) {
 	defer srv.Close()
 
 	component := registerTestComponent(t, srv)
-	v, err := ParseChangelog(component, "1.2.0", "1.1.0")
+	v, err := ParseChangelog("", component, "1.2.0", "1.1.0")
 	if err != nil {
 		t.Fatalf("ParseChangelog: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestParseChangelog_Deprecated(t *testing.T) {
 	defer srv.Close()
 
 	component := registerTestComponent(t, srv)
-	v, err := ParseChangelog(component, "2.0.0", "1.9.0")
+	v, err := ParseChangelog("", component, "2.0.0", "1.9.0")
 	if err != nil {
 		t.Fatalf("ParseChangelog: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestParseChangelog_AllSections(t *testing.T) {
 	defer srv.Close()
 
 	component := registerTestComponent(t, srv)
-	v, err := ParseChangelog(component, "3.0.0", "2.0.0")
+	v, err := ParseChangelog("", component, "3.0.0", "2.0.0")
 	if err != nil {
 		t.Fatalf("ParseChangelog: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestParseChangelog_SectionOrder(t *testing.T) {
 	defer srv.Close()
 
 	component := registerTestComponent(t, srv)
-	v, err := ParseChangelog(component, "1.0.0", "0.9.0")
+	v, err := ParseChangelog("", component, "1.0.0", "0.9.0")
 	if err != nil {
 		t.Fatalf("ParseChangelog: %v", err)
 	}

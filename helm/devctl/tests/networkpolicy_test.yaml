@@ -1,0 +1,263 @@
+suite: devctl serve egress from its installations
+templates:
+  - templates/networkpolicy.yaml
+  - templates/configmap.yaml
+  - templates/deployment.yaml
+release:
+  name: tools
+  namespace: agent-platform
+tests:
+  - it: leaves the policy disabled by default even with installations
+    set:
+      installations.first.baseDomain: first.example.test
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: templates/networkpolicy.yaml
+
+  - it: allows DNS and the server defaults without installations or ingress isolation
+    set:
+      networkPolicy.enabled: true
+      nameOverride: server
+    asserts:
+      - isKind:
+          of: CiliumNetworkPolicy
+        template: templates/networkpolicy.yaml
+      - isAPIVersion:
+          of: cilium.io/v2
+        template: templates/networkpolicy.yaml
+      - equal:
+          path: metadata.name
+          value: tools-server-egress
+        template: templates/networkpolicy.yaml
+      - equal:
+          path: metadata.namespace
+          value: agent-platform
+        template: templates/networkpolicy.yaml
+      - equal:
+          path: spec.endpointSelector.matchLabels
+          value:
+            app.kubernetes.io/name: server
+            app.kubernetes.io/instance: tools
+        template: templates/networkpolicy.yaml
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: server
+            app.kubernetes.io/instance: tools
+        template: templates/deployment.yaml
+      - notExists:
+          path: spec.ingress
+        template: templates/networkpolicy.yaml
+      - lengthEqual:
+          path: spec.egress
+          count: 2
+        template: templates/networkpolicy.yaml
+      - equal:
+          path: spec.egress[0]
+          value:
+            toEndpoints:
+              - matchLabels:
+                  io.kubernetes.pod.namespace: kube-system
+                  k8s-app: kube-dns
+              - matchLabels:
+                  io.kubernetes.pod.namespace: kube-system
+                  k8s-app: coredns
+              - matchLabels:
+                  io.kubernetes.pod.namespace: kube-system
+                  k8s-app: k8s-dns-node-cache
+            toPorts:
+              - ports:
+                  - port: "1053"
+                    protocol: UDP
+                  - port: "1053"
+                    protocol: TCP
+                  - port: "53"
+                    protocol: UDP
+                  - port: "53"
+                    protocol: TCP
+                rules:
+                  dns:
+                    - matchPattern: "*"
+        template: templates/networkpolicy.yaml
+      - equal:
+          path: spec.egress[1]
+          value:
+            toFQDNs:
+              - matchName: api.github.com
+              - matchName: github.com
+              - matchName: gsoci.azurecr.io
+              - matchName: gsociprivate.azurecr.io
+              - matchName: giantswarm.github.io
+            toPorts:
+              - ports:
+                  - port: "443"
+                    protocol: TCP
+        template: templates/networkpolicy.yaml
+
+  - it: adds both hosts for every installation from the same endpoints as the file
+    set:
+      networkPolicy.enabled: true
+      installations.first.baseDomain: first.example.test
+      installations.second.baseDomain: second.example.test
+    asserts:
+      - lengthEqual:
+          path: spec.egress
+          count: 6
+        template: templates/networkpolicy.yaml
+      - equal:
+          path: spec.egress[2]
+          value:
+            toFQDNs:
+              - matchName: dex.first.example.test
+            toPorts:
+              - ports:
+                  - port: "443"
+                    protocol: TCP
+        template: templates/networkpolicy.yaml
+      - equal:
+          path: spec.egress[3].toFQDNs
+          value:
+            - matchName: happaapi.first.example.test
+        template: templates/networkpolicy.yaml
+      - equal:
+          path: spec.egress[4].toFQDNs
+          value:
+            - matchName: dex.second.example.test
+        template: templates/networkpolicy.yaml
+      - equal:
+          path: spec.egress[5].toFQDNs
+          value:
+            - matchName: happaapi.second.example.test
+        template: templates/networkpolicy.yaml
+      - matchRegex:
+          path: data["installations.json"]
+          pattern: '"apiServer":"https://happaapi.first.example.test".*"tokenEndpoint":"https://dex.first.example.test/token"'
+        template: templates/configmap.yaml
+      - matchRegex:
+          path: data["installations.json"]
+          pattern: '"apiServer":"https://happaapi.second.example.test".*"tokenEndpoint":"https://dex.second.example.test/token"'
+        template: templates/configmap.yaml
+
+  - it: uses explicit endpoint hosts and ports instead of the base domain or issuer
+    set:
+      networkPolicy.enabled: true
+      installations.custom:
+        baseDomain: unused.example.test
+        apiServer: https://API.example.test:7443/proxy
+        dex:
+          tokenEndpoint: https://TOKEN.example.test:8443/oauth/token
+          issuer: https://issuer.example.test
+    asserts:
+      - lengthEqual:
+          path: spec.egress
+          count: 4
+        template: templates/networkpolicy.yaml
+      - equal:
+          path: spec.egress[2]
+          value:
+            toFQDNs:
+              - matchName: token.example.test
+            toPorts:
+              - ports:
+                  - port: "8443"
+                    protocol: TCP
+        template: templates/networkpolicy.yaml
+      - equal:
+          path: spec.egress[3]
+          value:
+            toFQDNs:
+              - matchName: api.example.test
+            toPorts:
+              - ports:
+                  - port: "7443"
+                    protocol: TCP
+        template: templates/networkpolicy.yaml
+      - matchRegex:
+          path: data["installations.json"]
+          pattern: '"apiServer":"https://API.example.test:7443/proxy".*"tokenEndpoint":"https://TOKEN.example.test:8443/oauth/token"'
+        template: templates/configmap.yaml
+
+  - it: accepts explicit endpoints without a base domain and defaults to HTTPS ports
+    set:
+      networkPolicy.enabled: true
+      installations.custom:
+        apiServer: https://api.example.test/
+        dex:
+          tokenEndpoint: https://token.example.test./oauth/token?client=devctl
+    asserts:
+      - equal:
+          path: spec.egress[2]
+          value:
+            toFQDNs:
+              - matchName: token.example.test
+            toPorts:
+              - ports:
+                  - port: "443"
+                    protocol: TCP
+        template: templates/networkpolicy.yaml
+      - equal:
+          path: spec.egress[3].toFQDNs
+          value:
+            - matchName: api.example.test
+        template: templates/networkpolicy.yaml
+
+  - it: keeps the derived API host when only the token endpoint is overridden
+    set:
+      networkPolicy.enabled: true
+      installations.custom:
+        baseDomain: custom.example.test
+        dex:
+          tokenEndpoint: https://token.example.test/token
+    asserts:
+      - equal:
+          path: spec.egress[2].toFQDNs
+          value:
+            - matchName: token.example.test
+        template: templates/networkpolicy.yaml
+      - equal:
+          path: spec.egress[3].toFQDNs
+          value:
+            - matchName: happaapi.custom.example.test
+        template: templates/networkpolicy.yaml
+
+  - it: allows literal IP endpoints without depending on a DNS lookup
+    set:
+      networkPolicy.enabled: true
+      installations.custom:
+        apiServer: https://[2001:db8::1]:6443
+        dex:
+          tokenEndpoint: https://192.0.2.1/token
+    asserts:
+      - equal:
+          path: spec.egress[2]
+          value:
+            toCIDR:
+              - 192.0.2.1/32
+            toPorts:
+              - ports:
+                  - port: "443"
+                    protocol: TCP
+        template: templates/networkpolicy.yaml
+      - equal:
+          path: spec.egress[3]
+          value:
+            toCIDR:
+              - 2001:db8::1/128
+            toPorts:
+              - ports:
+                  - port: "6443"
+                    protocol: TCP
+        template: templates/networkpolicy.yaml
+
+  - it: rejects a non-HTTPS installation endpoint before installing the policy
+    set:
+      networkPolicy.enabled: true
+      installations.custom:
+        apiServer: http://api.example.test
+        dex:
+          tokenEndpoint: https://token.example.test/token
+    asserts:
+      - failedTemplate:
+          errorMessage: "installations.custom: networkPolicy requires https endpoint URLs"
+        template: templates/networkpolicy.yaml

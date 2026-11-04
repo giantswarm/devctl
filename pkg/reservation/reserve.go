@@ -247,12 +247,17 @@ func Reserve(req Request) (res Result, err error) {
 	sourceName := chart + SourceNameSuffix
 	component := path.Join(reservationsDir, chart)
 
+	created, err := newComponentFiles(req.RepoDir, req.Cluster, chart)
+	if err != nil {
+		return Result{}, microerror.Mask(err)
+	}
+
 	// The entry and the component are one change. Everything below is staged in
 	// the working tree and lands in a single commit, or the run fails and the
 	// writes are discarded, so the user's checkout stays clean for the next run.
 	defer func() {
 		if err != nil {
-			discardWrites(req.RepoDir, req.Cluster, chart)
+			discardWrites(req.RepoDir, req.Cluster, chart, created...)
 		}
 	}()
 	err = writeComponent(filepath.Join(collectionsPath, reservationsDir, chart),
