@@ -238,7 +238,10 @@ completed. A refused or timed-out authorization is exit 7 with the reason in the
 devctl auth status
 ```
 
-Reads the records, contacts nothing and prints:
+Reads the records and validates an unexpired CircleCI token with one authenticated
+[`GET /me`](https://circleci.com/docs/api/v2/index.html#operation/getCurrentUser).
+Missing, empty or expired CircleCI tokens make no request. GitHub and muster are
+described from the stored metadata; no token is refreshed or changed. Prints:
 
 ```json
 {
@@ -271,11 +274,18 @@ Reads the records, contacts nothing and prints:
 ```
 
 A GitHub token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` adds the override warning to
-`warnings` and `github.warnings`, never the token and never with `CI` set; the exit code stays the keychain's.
+`warnings` and `github.warnings`, never the token and never with `CI` set; the warning does not change the exit code.
 
 Exit 0 when the GitHub and CircleCI identities are usable without a human (valid, or expired with
 a valid refresh token); exit 8 with the `devctl auth login` invocation that fixes it when one is
-missing or expired for good. An agent runs `devctl auth status || devctl auth login`. The `muster`
+missing, empty, expired for good or rejected. HTTP 401 or 403 from CircleCI adds
+`"invalid": true` and `"httpStatus": 401` (or 403) under `circleci`, preserves its
+stored expiry, and names `devctl auth login --circleci-only` in the reason when
+GitHub is usable. A successful validation reports CircleCI's current login.
+Service errors (including rate limiting), network failures and malformed responses
+are exit 7: validation could not be completed, rather than proof of invalid credentials.
+Failed HTTP responses include `circleci.httpStatus`; their bodies are never printed.
+The `muster`
 identity is the third block of the document, with its `endpoint`, and is reported, not required:
 only the `repo` commands need it, and they exit 8 naming `devctl auth login --muster-only`
 themselves.
