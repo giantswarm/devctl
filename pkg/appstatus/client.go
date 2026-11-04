@@ -3,7 +3,9 @@ package appstatus
 import (
 	"context"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/giantswarm/microerror"
@@ -53,9 +55,19 @@ func (c *Client) WaitForAppDeployment(ctx context.Context, appName, orgNamespace
 
 	c.logger.Infof("Waiting for app %s to be deployed in namespace %s", appName, orgNamespace)
 
+	// Each invocation owns its cluster selection. A terminal or another wait
+	// may switch the ambient kubeconfig while this wait is polling.
+	dir, err := os.MkdirTemp("", "devctl-appstatus-")
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	env := append(os.Environ(), "KUBECONFIG="+filepath.Join(dir, "config"))
+
 	// Login to management cluster
 	loginCmd := exec.Command("tsh", "kube", "login", managementCluster) // #nosec G204 -- fixed binary; managementCluster is checked above and passed as its own argument element
-	err := loginCmd.Run()
+	loginCmd.Env = env
+	err = loginCmd.Run()
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -71,6 +83,7 @@ func (c *Client) WaitForAppDeployment(ctx context.Context, appName, orgNamespace
 		kubectlCmd := exec.Command("kubectl", "get", "app", appName, // #nosec G204 -- fixed binary and subcommand; appName and orgNamespace are checked above and passed as their own argument elements
 			"-n", orgNamespace,
 			"-o", "jsonpath={.status.release.status}")
+		kubectlCmd.Env = env
 		kubectlCmd.Stderr = c.stderr
 
 		output, err := kubectlCmd.Output()
