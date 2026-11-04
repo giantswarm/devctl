@@ -38,15 +38,15 @@ func TestCommandRejectsOtherCreationOwner(t *testing.T) {
 
 func TestCreationOwnerValidation(t *testing.T) {
 	for _, tc := range []struct {
-		name, owner string
-		dryRun      bool
+		name, owner   string
+		dryRun, local bool
 	}{
 		{name: "normal creation", owner: reposetup.DefaultOwner},
 		{name: "normal preview", owner: reposetup.DefaultOwner, dryRun: true},
-		{name: "another organisation preview", owner: "fixture-org", dryRun: true},
+		{name: "another organisation local preview", owner: "fixture-org", dryRun: true, local: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := &flag{Team: "fixture", Name: "fixture-repo", Owner: tc.owner, DryRun: tc.dryRun, Output: outputJSON}
+			f := &flag{Team: "fixture", Name: "fixture-repo", Owner: tc.owner, DryRun: tc.dryRun, Local: tc.local, Output: outputJSON}
 			require.NoError(t, f.Validate())
 			require.Equal(t, tc.owner, f.Owner)
 			require.Equal(t, "team-fixture", f.Team)

@@ -66,7 +66,7 @@ login or the token in `--github-token-envvar`. It needs no muster login. An orga
 
 Opening a declaration pull request requires `--owner giantswarm` (the default): its destination is
 `giantswarm/github`, whose reconciler creates Giant Swarm repositories. Another `--owner` can be checked
-with `--dry-run`; it cannot redirect the declaration to another organisation.
+with `--dry-run --local`; it cannot redirect the declaration to another organisation.
 
 ### A refusal, a rerun
 
