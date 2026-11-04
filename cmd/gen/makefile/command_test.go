@@ -132,7 +132,7 @@ func repositorySnapshot(t *testing.T) map[string]string {
 			files[path] = "directory"
 			return nil
 		}
-		content, err := os.ReadFile(path) // #nosec G304 -- only synthetic files inside t.TempDir.
+		content, err := os.ReadFile(path) // #nosec G122 G304 -- synthetic t.TempDir files, with no symlinks or concurrent writers.
 		if err != nil {
 			return err
 		}
