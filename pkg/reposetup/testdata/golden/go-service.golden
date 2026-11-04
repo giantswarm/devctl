@@ -1393,6 +1393,8 @@ repos:
       - id: go-mod-tidy
       - id: golangci-lint
         args:
+          # Let independent sessions and worktrees lint at the same time.
+          - --allow-parallel-runners
           # No --timeout: golangci-lint v2 has none by default and a flag would
           # override a repo's `run.timeout` in .golangci.yml, its place to set one.
           # List all issues found
