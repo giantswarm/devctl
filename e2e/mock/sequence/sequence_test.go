@@ -101,6 +101,34 @@ func TestNewRefusesMalformedRoutes(t *testing.T) {
 	assert.Error(t, err, "no responses")
 }
 
+func TestNewRefusesMalformedQueries(t *testing.T) {
+	for _, query := range []string{
+		"branch=%",
+		"branch=%zz",
+		"branch=feature;other",
+		"branch=feature&page-token=%zz",
+		"br%zzanch=feature",
+	} {
+		t.Run(query, func(t *testing.T) {
+			key := "GET /pipelines?" + query
+			s, err := New(Routes{key: {{}}})
+			assert.Nil(t, s)
+			assert.ErrorContains(t, err, key)
+		})
+	}
+}
+
+func TestNextMatchesEscapedQueryValues(t *testing.T) {
+	s, err := New(Routes{"GET /pipelines?branch=feature%3B100%25": {{Body: "matched"}}})
+	require.NoError(t, err)
+
+	resp, ok := s.Next(httptest.NewRequest(http.MethodGet, "/pipelines?branch=feature%3B100%25&page-token=next", nil))
+	require.True(t, ok)
+	assert.Equal(t, "matched", resp.Body)
+	_, ok = s.Next(httptest.NewRequest(http.MethodGet, "/pipelines?branch=other", nil))
+	assert.False(t, ok, "the escaped branch remains a filter")
+}
+
 func TestResponseBytes(t *testing.T) {
 	data, err := Response{}.Bytes()
 	require.NoError(t, err)

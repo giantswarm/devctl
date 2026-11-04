@@ -138,6 +138,10 @@ func New(routes Routes) (*Script, error) {
 		if err != nil {
 			return nil, fmt.Errorf("route %q: %w", key, err)
 		}
+		query, err := url.ParseQuery(u.RawQuery)
+		if err != nil {
+			return nil, fmt.Errorf("route %q: %w", key, err)
+		}
 		if len(responses) == 0 {
 			return nil, fmt.Errorf("route %q has no responses", key)
 		}
@@ -145,7 +149,7 @@ func New(routes Routes) (*Script, error) {
 			key:       key,
 			method:    strings.ToUpper(method),
 			path:      u.Path,
-			query:     u.Query(),
+			query:     query,
 			responses: responses,
 		})
 	}
