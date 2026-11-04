@@ -1,6 +1,7 @@
 package sequence
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -127,6 +128,39 @@ func TestWrite(t *testing.T) {
 	require.NoError(t, Write(rec, httptest.NewRequest(http.MethodGet, "/", nil), text))
 	assert.Equal(t, "text/plain", rec.Header().Get("Content-Type"), "the fixture's Content-Type stays")
 	assert.Equal(t, "hi", rec.Body.String())
+}
+
+func TestWritePreservesFixtureContentLength(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for _, key := range []string{"Content-Length", "content-length"} {
+			t.Run(method+"/"+key, func(t *testing.T) {
+				rec := httptest.NewRecorder()
+				resp := Response{Headers: map[string]string{key: "100"}, Body: "partial"}
+				require.NoError(t, Write(rec, httptest.NewRequest(method, "/", nil), resp))
+				assert.Equal(t, "100", rec.Header().Get("Content-Length"))
+				if method == http.MethodHead {
+					assert.Empty(t, rec.Body.String())
+				} else {
+					assert.Equal(t, "partial", rec.Body.String())
+				}
+			})
+		}
+	}
+}
+
+func TestWriteCanScriptTruncatedBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = Write(w, r, Response{Headers: map[string]string{"Content-Length": "100"}, Body: "partial"})
+	}))
+	t.Cleanup(server.Close)
+
+	resp, err := server.Client().Get(server.URL + "/")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	assert.Equal(t, int64(100), resp.ContentLength)
+	assert.Equal(t, "partial", string(body))
 }
 
 func TestRequestString(t *testing.T) {
