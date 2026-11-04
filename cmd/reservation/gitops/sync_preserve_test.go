@@ -38,7 +38,7 @@ func TestSyncPreservesUntrackedFilesInTheFastForward(t *testing.T) {
 			if got := gittest.GitOutput(t, dir, "rev-parse", "HEAD"); got != before {
 				t.Errorf("HEAD moved from %s to %s", before, got)
 			}
-			got, err := os.ReadFile(file)
+			got, err := os.ReadFile(file) //nolint:gosec // fixed filename inside the test's temporary checkout
 			if err != nil || string(got) != local {
 				t.Errorf("local file: got %q, %v; want %q", got, err, local)
 			}
