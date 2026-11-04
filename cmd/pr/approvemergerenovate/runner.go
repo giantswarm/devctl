@@ -587,7 +587,7 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 			approved++
 		} else if strings.Contains(status, "Already") || strings.Contains(status, "Auto-merge enabled") {
 			skipped++
-		} else if strings.Contains(status, "Failed") || strings.Contains(status, "conflicts") || strings.Contains(status, "not allowed") {
+		} else if strings.Contains(strings.ToLower(status), "failed") || status == "No merge methods" || strings.Contains(status, "conflicts") || strings.Contains(status, "not allowed") {
 			failed++
 		} else if strings.Contains(status, "Waiting") || strings.Contains(status, "Timeout") {
 			waiting++
