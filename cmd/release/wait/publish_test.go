@@ -51,7 +51,7 @@ func TestRunRecordsFailedPublish(t *testing.T) {
 			stdout := &bytes.Buffer{}
 			r := &runner{
 				gate: func(bool) error { return nil }, flag: &flag{Timeout: time.Minute}, stdout: stdout, stderr: io.Discard,
-				open: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+				open: func(context.Context, string, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
 					return s, nil
 				},
 			}
