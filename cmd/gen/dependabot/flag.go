@@ -47,9 +47,10 @@ func (f *flag) Validate() error {
 		if exists("package.json") {
 			f.Ecosystems = append(f.Ecosystems, gen.EcosystemNPM.String())
 		}
-		// Detecting setup.py tells us the entire repo is likely using python.
-		// Detecting .abs/main.yaml tells us that abs tests written in python are likely used.
-		if exists("setup.py") || exists(".abs/main.yaml") {
+		// Detect root Python manifests and retain the legacy ABS test marker.
+		if exists("setup.py") || exists("setup.cfg") || exists("pyproject.toml") ||
+			exists("requirements.txt") || exists("requirements.in") || exists("Pipfile") ||
+			exists(".abs/main.yaml") {
 			f.Ecosystems = append(f.Ecosystems, gen.EcosystemPIP.String())
 		}
 	}

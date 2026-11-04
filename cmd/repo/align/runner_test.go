@@ -39,3 +39,23 @@ func TestPrint(t *testing.T) {
 	print(&out, "orphan", &manager.Dispatch{Mode: "check", Team: "team-bumblebee", Warning: "w", Dispatched: true, Workflow: "reconcile-repositories.yaml", As: "alice", RunsURL: "u"}, false)
 	require.Contains(t, out.String(), "orphan: mode check (not declared; checked from team-bumblebee)")
 }
+
+// An opt-in that opened a pull request prints its outcome without saying
+// that the command was a dry run and wrote nothing.
+func TestPrintCommittedOptIn(t *testing.T) {
+	var out bytes.Buffer
+	print(&out, "my-service", &manager.Dispatch{
+		Mode: "opt-in", Declared: true, Team: "team-bumblebee",
+		OptIn: &manager.OptIn{
+			Plan: manager.Plan{Repository: "giantswarm/my-service", Team: "team-bumblebee", Accepted: true},
+			Committed: &manager.Committed{
+				PullRequest: &manager.PullRequest{URL: "https://github.com/giantswarm/github/pull/6179", Title: "chore: opt in", AutoMerge: true},
+				Ask:         &manager.Delivery{Team: "team-bumblebee", Channel: "CTEAM", Delivered: true},
+			},
+		},
+	}, false)
+	require.Contains(t, out.String(), "opt-in pull request:\npull request: https://github.com/giantswarm/github/pull/6179 (chore: opt in; opened, auto-merge armed)")
+	require.Contains(t, out.String(), "ask: delivered to team-bumblebee in #CTEAM")
+	require.NotContains(t, out.String(), "dry run")
+	require.NotContains(t, out.String(), "nothing written")
+}
