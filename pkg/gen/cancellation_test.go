@@ -43,7 +43,7 @@ func Test_Execute_CanceledBeforeMutation(t *testing.T) {
 				t.Error("started generation after cancellation")
 			}
 			if deletion {
-				data, err := os.ReadFile(destination)
+				data, err := os.ReadFile(destination) // #nosec G304 -- test fixture
 				if err != nil || string(data) != "original" {
 					t.Errorf("canceled deletion changed the file: %q, %v", data, err)
 				}
@@ -85,7 +85,7 @@ func Test_Execute_CanceledDuringGeneration(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("got %v, want context.Canceled", err)
 	}
-	data, readErr := os.ReadFile(destination)
+	data, readErr := os.ReadFile(destination) // #nosec G304 -- test fixture
 	if readErr != nil || string(data) != "original" {
 		t.Errorf("published output after cancellation: %q, %v", data, readErr)
 	}
