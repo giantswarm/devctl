@@ -37,7 +37,7 @@ func TestProcessPRReviewHistory(t *testing.T) {
 		{name: "another reviewer still approves", states: []string{"APPROVED", "CHANGES_REQUESTED"}, other: true, want: "Already approved"},
 		{name: "approval on later page", states: []string{"COMMENTED", "APPROVED"}, paged: true, want: "Already approved"},
 		{name: "withdrawal on later page", states: []string{"APPROVED", "CHANGES_REQUESTED"}, paged: true, want: "Would approve"},
-		{name: "later page fails", states: []string{"APPROVED", "CHANGES_REQUESTED"}, paged: true, failPage: true, want: "Failed to get reviews"},
+		{name: "later page fails", states: []string{"APPROVED", "CHANGES_REQUESTED"}, paged: true, failPage: true, want: "Failed to get reviews: HTTP 503 fixture unavailable"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pages := 0
