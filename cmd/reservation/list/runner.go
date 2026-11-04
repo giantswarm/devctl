@@ -68,8 +68,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if len(all) == 0 {
-		_, _ = fmt.Fprintf(r.stdout, "No reservations on %s.\n", r.flag.Cluster)
-		return nil
+		_, err := fmt.Fprintf(r.stdout, "No reservations on %s.\n", r.flag.Cluster)
+		return microerror.Mask(err)
 	}
 
 	w := tabwriter.NewWriter(r.stdout, 0, 0, 2, ' ', 0)
