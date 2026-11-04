@@ -80,8 +80,15 @@ reconcile, once each.
 The management cluster is read through the kube context `tsh kube login <installation>` writes,
 `teleport.giantswarm.io-<installation>`, as you. An installation reached through another context
 (`kubectl gs login`'s `gs-<installation>`, a kind lab) is read through the one `--context` names. The
-contexts come from the default kubeconfig (`KUBECONFIG`, `~/.kube/config`), or from the one file
-`--kubeconfig <file>` names, for both the context lookup and the reads; neither is ever written.
+context lookup and cluster reads use the first configured source: `--kubeconfig <file>`, then
+`DEVCTL_KUBECONFIG` (one file), then `KUBECONFIG` (a platform-separated list of files merged by
+client-go), then `~/.kube/config`. An explicit file replaces the default search; it is not merged
+with `KUBECONFIG`. None of these files or environment variables is written. For a private file:
+
+```nohighlight
+devctl rollout wait myinstallation giantswarm/app-operator --pr 1234 --kubeconfig /path/to/private-config
+DEVCTL_KUBECONFIG=/path/to/private-config devctl rollout wait myinstallation giantswarm/app-operator --pr 1234
+```
 
 The context is checked before the release wait. When the kubeconfig lacks the Teleport context and `tsh`
 is logged in (`tsh status` shows a profile that has not expired), the wait runs
@@ -90,7 +97,8 @@ reads the installation through it and removes the file before the release wait s
 no login of its own and the machine's kubeconfig stays as it was. A `tsh` that is not logged in, or
 whose profile expired, is exit 8 naming `tsh login`; the wait never starts an interactive login. Any
 other missing context (one `--context` names, or the Teleport one without `tsh` installed) is exit 7 at
-once, its reason naming the kubeconfig's contexts that mention the installation and `--context`, as is a
+once, its reason naming the expected context, the kubeconfig files searched (including missing files),
+the contexts that mention the installation and `--context`, as is a
 `tsh kube login` that fails (an installation Teleport does not know). A context that is not signed in,
 or whose credentials expired, is exit 8 naming `tsh kube login`. Reads that fail in transit or with a
 5xx are retried like every other agent-facing command's.

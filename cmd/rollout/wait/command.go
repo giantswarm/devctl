@@ -26,9 +26,10 @@ tag included. Then the installation's management cluster,
 read through the kube context tsh kube login writes
 (teleport.giantswarm.io-<installation>), as you. An installation reached
 through another context (kubectl gs login's gs-<installation>, a kind lab)
-is read through the one --context names. The contexts come from KUBECONFIG
-or ~/.kube/config, or from the one file --kubeconfig names; neither is
-written. The context is checked before the release wait: when the
+is read through the one --context names. --kubeconfig names one file,
+then DEVCTL_KUBECONFIG, then KUBECONFIG's merged files or ~/.kube/config;
+none is written. A missing-context error names the expected context and
+the kubeconfig files searched. The context is checked before the release wait: when the
 kubeconfig lacks the Teleport context and tsh is logged in, tsh kube login
 <installation> runs into a private temporary kubeconfig for that one
 command, which is read and removed; a tsh not logged in is exit 8. Any

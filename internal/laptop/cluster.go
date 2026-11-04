@@ -28,8 +28,9 @@ type ClusterConfig struct {
 	// Context is the kube context, [rolloutwait.ContextPrefix]+Installation by
 	// default.
 	Context string
-	// Kubeconfig is the one file the context is read from; empty is the
-	// default loading rules (KUBECONFIG, ~/.kube/config).
+	// Kubeconfig is the one file the context is read from; empty uses
+	// DEVCTL_KUBECONFIG, then the default loading rules (KUBECONFIG,
+	// ~/.kube/config).
 	Kubeconfig string
 	// Wrap wraps the transport of every request.
 	Wrap func(http.RoundTripper) http.RoundTripper
@@ -52,9 +53,17 @@ type ClusterConfig struct {
 // the installation, --context and tsh kube login.
 func OpenCluster(ctx context.Context, c ClusterConfig) (dynamic.Interface, error) {
 	rules := loadingRules(c.Kubeconfig)
+	client, err := openCluster(ctx, c, rules)
+	if err != nil {
+		return nil, fmt.Errorf("%w; kubeconfig files searched: %#q", err, rules.GetLoadingPrecedence())
+	}
+	return client, nil
+}
+
+func openCluster(ctx context.Context, c ClusterConfig, rules *clientcmd.ClientConfigLoadingRules) (dynamic.Interface, error) {
 	raw, err := rules.Load()
 	if err != nil {
-		return nil, agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "loading the kubeconfig: %v", err)
+		return nil, agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "loading the kubeconfig for context %s: %v", c.Context, err)
 	}
 	if _, ok := raw.Contexts[c.Context]; !ok {
 		missing := MissingContextError(c.Installation, c.Context, slices.Collect(maps.Keys(raw.Contexts)))
@@ -104,8 +113,12 @@ func openWithTeleport(ctx context.Context, c ClusterConfig, missing error) (dyna
 	return openContext(rules, c)
 }
 
-// loadingRules reads the one file kubeconfig names, or the default rules.
+// loadingRules reads the one file kubeconfig or DEVCTL_KUBECONFIG names,
+// in that order, or the default rules.
 func loadingRules(kubeconfig string) *clientcmd.ClientConfigLoadingRules {
+	if kubeconfig == "" {
+		kubeconfig = os.Getenv("DEVCTL_KUBECONFIG")
+	}
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	rules.ExplicitPath = kubeconfig
 	return rules
@@ -126,7 +139,7 @@ func openContext(rules *clientcmd.ClientConfigLoadingRules, c ClusterConfig) (dy
 
 // otherContexts names the flags that read an installation whose context is
 // not in the default kubeconfig.
-const otherContexts = "--kubeconfig <file> reads the context from a kubeconfig outside KUBECONFIG and ~/.kube/config, --context <name> reads the installation through another context"
+const otherContexts = "--kubeconfig <file> or DEVCTL_KUBECONFIG reads the context from a private kubeconfig instead of KUBECONFIG or ~/.kube/config, --context <name> reads the installation through another context"
 
 // MissingContextError is the usage error for a kube context the kubeconfig
 // does not have. An installation reached through another context than the
