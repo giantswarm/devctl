@@ -34,8 +34,8 @@ type Verdict struct {
 	// upstream's files plus one commit per carried patch, so the default
 	// merge method is a rebase.
 	ForkLine bool
-	// Warning is why the entry's flavours could not be read; the repository
-	// is then not taken for a fork line. Empty when they could.
+	// Warning is why the entry's flavours could not be read; its fork-line
+	// status is unknown, so no default method is chosen. Empty when they could.
 	Warning string
 }
 
@@ -50,8 +50,8 @@ type Policy func(ctx context.Context, owner, repo string) (Verdict, error)
 // outside the organisation the team files declare are not opted out. The
 // verdict names the team whose file declares the entry and says whether
 // its gen.flavours make it a fork line; flavours that do not decode leave
-// it no fork line, with a warning. Team files the token cannot read are an
-// error: the opt-out is not guessed.
+// its status unknown, with a warning that refuses the default method.
+// Team files the token cannot read are an error: the opt-out is not guessed.
 func TeamFilePolicy(gh *github.Client) Policy {
 	return func(ctx context.Context, owner, repo string) (Verdict, error) {
 		if !strings.EqualFold(owner, reposetup.DefaultOwner) {
@@ -78,7 +78,7 @@ func TeamFilePolicy(gh *github.Client) Policy {
 		declared, err := entry.Fields()
 		switch {
 		case err != nil:
-			verdict.Warning = fmt.Sprintf("the gen.flavours of %s could not be read (%v): the repository is not taken for a fork line", verdict.Entry, err)
+			verdict.Warning = fmt.Sprintf("the gen.flavours of %s could not be read (%v): fork-line status is unknown", verdict.Entry, err)
 		case declared.Gen != nil:
 			verdict.ForkLine = slices.Contains(declared.Gen.Flavours, gen.FlavourFork.String())
 		}
