@@ -141,6 +141,10 @@ devctl gen precommit --language go --repo-name my-app --flavors bash,helmchart
 devctl gen precommit --language generic --repo-name my-service --flavors md,bash
 ```
 
+With `--flavors helmchart`, the `helm-docs` hook builds the pinned revision in pre-commit's Go environment and uses file order for the values table. A globally installed `helm-docs` cannot change that hook's output. The schema generator and normalizer are likewise pinned to devctl's own dependencies. `devctl gen precommit` writes the schema and scaffolds `README.md.gotmpl`; run `pre-commit run helm-docs --all-files` to update the README. Hook environments need their pinned sources on first installation; cached environments run offline. Schema annotations that reference remote documents still require those documents to be reachable.
+
+A devctl build without generated template provenance files keeps an existing generated YAML file untouched when only its fallback module tree link differs. Changes to the rendered body still regenerate the file, and builds with a known template commit continue to update that provenance.
+
 ## Generating renovate configuration
 
 Generates a `renovate.json5` file in the repo root to configure [renovate](https://docs.renovatebot.com/), which automatically updates dependencies in the configured repository.
