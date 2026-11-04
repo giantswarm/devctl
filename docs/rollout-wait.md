@@ -200,3 +200,4 @@ shown as progress) and:
 | 8 | `auth_required` | No GitHub token (`devctl auth login`), the kube context is not signed in (`tsh kube login <installation>`), or it is missing and `tsh` is not logged in (`tsh login`). |
 | 11 | `ambiguous_release` | With `--pr`, the release's commit carries the release tags of more than one version, as in [`release wait`](release-wait.md#exit-codes); `release.conflictingTags` names them, and the wait given the version follows it. |
 | 12 | `status_failed` | The release's artifacts are available and its tag pipeline is green, and a commit status of its commit failed, as in [`release wait`](release-wait.md#exit-codes); the reason names the failed contexts. |
+| 13 | `remote_error` | A CircleCI request failed. The command line was valid; the reason preserves the service error. Existing timeout and post-merge outcomes take precedence. |

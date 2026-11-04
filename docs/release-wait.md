@@ -338,6 +338,10 @@ pipeline, or the tag's Actions runs): an API that does not answer says nothing a
 next poll reads again until the timeout. A timeout after
 such reads is exit 2 whose reason ends `the release is unknown, not failed: the last read of the tag's CI
 went unanswered: <request and failure>`.
+A CircleCI read refused with 401 pauses for two seconds, re-reads the keychain and retries once,
+even if the token is unchanged. Later reads keep the replacement token. A second 401 is exit 13
+(`remote_error`), preserving the API failure rather than reporting invalid usage. The pause is
+bounded by the caller's context and uses wall time. CircleCI writes are never retried.
 A read refused for a spent rate limit is sent again after the reset (or `Retry-After`), a warning
 naming the limit and the reset time; a reset after the deadline is exit 2 at once, naming it.
 
@@ -384,7 +388,7 @@ stderr.
 
 | Field | Meaning |
 |---|---|
-| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `available`, `ci_failed`, `timeout`, `not_applicable`, `no_release`, `ambiguous_release`, `status_failed`, `tag_pipeline_empty`, `transient`, `usage` or `auth_required`. `warnings` carries the CircleCI token's seven-day expiry notice and a team-file declaration that disagrees with the tag's workflows about the release model. |
+| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `available`, `ci_failed`, `timeout`, `not_applicable`, `no_release`, `ambiguous_release`, `status_failed`, `tag_pipeline_empty`, `transient`, `usage`, `remote_error` or `auth_required`. `warnings` carries the CircleCI token's seven-day expiry notice and a team-file declaration that disagrees with the tag's workflows about the release model. |
 | `repository`, `tag`, `sha` | What was waited for. `tag` is empty when it never appeared; `sha` is the tag's commit (with `--pr` the merge commit). |
 | `releaseModel` | `auto-release` or `legacy`. |
 | `ciModel` | `generated`, `hand-written`, `actions` or `none`. |
@@ -418,6 +422,7 @@ as the CircleCI commit-status wait. A wait without a CircleCI client cannot esta
 | 8 | `auth_required` | No usable token in the keychain; `reason` names the `devctl auth login` invocation. |
 | 11 | `ambiguous_release` | With `--pr`, the commit the wait resolves to (the merge commit, or the first tagged commit after it) carries the release tags (`vX.Y.Z`, `vX.Y.Z-rc.N`) of more than one version, or the `<image>/vX.Y.Z` tags of more than one image: the wait does not choose. `reason` and `conflictingTags` name every release tag on the commit, newest first; a wait given the version waits on it. A candidate and its promoted stable on one commit are one version. |
 | 12 | `status_failed` | Every artifact is available and the tag's CI is green, and a commit status of the tag's commit (the branch pipeline's, another CI's) is `failure` or `error`: `devctl release promote` refuses the commit. `reason` and `statuses[]` name the failed contexts. |
+| 13 | `remote_error` | A CircleCI request failed. The command line was valid; the reason preserves the service error. Existing timeout and post-merge outcomes take precedence. |
 | 14 | `tag_pipeline_empty` | The CircleCI tag pipeline is `created` or `errored` with no workflows although the configuration at the tag admits jobs. `pipeline.number`, `pipeline.url` and `reason` identify it. Re-trigger the pipeline for that tag; waiting on this pipeline cannot publish the release. |
 
 ## Environment

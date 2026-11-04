@@ -178,6 +178,7 @@ Exit codes:
      first, SIGINT/SIGTERM interrupted the wait, or the release wait could
      not judge it (release.verdict and the
      reason say which; devctl release wait <owner/repo> --pr <n> resumes it)
+ 13  remote_error: a CircleCI request failed before the merge
  14  tag_pipeline_empty: merged, and the tag pipeline settled without
      workflows although its configuration admits the tag; re-trigger the
      tag pipeline named in release.pipeline`

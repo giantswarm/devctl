@@ -477,7 +477,7 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 | `branchDeleted` | The head branch was deleted after the merge, or was gone already. `false` when nothing merged and for a head in a fork. |
 | `enqueued` | The base has a merge queue and the pull request went through it. |
 | `unansweredReviews` | The feedback the last review read found unanswered, each with `kind` (`review`, `review_comment`, `comment`), `login`, `state` (reviews only), `at`, `url` and `standing` (a standing request for changes); empty when nothing held the merge, `null` when a refusal came before the read. |
-| `release` | The release the merge triggered, as `devctl release wait --pr` reports it: `verdict` (`available`, `no_release`, `ci_failed`, `timeout`, `transient`, `not_applicable`, `tag_pipeline_empty`, `usage`, `auth_required`), `reason`, and its result fields (`repository`, `tag`, `sha`, `releaseModel`, `ciModel`, `artifacts[]`, `pipeline`, `actions[]`, see [release-wait.md](release-wait.md#the-document)). `null` with `--no-release-wait` and when nothing merged. |
+| `release` | The release the merge triggered, as `devctl release wait --pr` reports it: `verdict` (`available`, `no_release`, `ci_failed`, `timeout`, `transient`, `not_applicable`, `tag_pipeline_empty`, `usage`, `remote_error`, `auth_required`), `reason`, and its result fields (`repository`, `tag`, `sha`, `releaseModel`, `ciModel`, `artifacts[]`, `pipeline`, `actions[]`, see [release-wait.md](release-wait.md#the-document)). `null` with `--no-release-wait` and when nothing merged. |
 | `dispatch` | The workflow dispatched after the merge ([above](#after-the-merge-a-workflow-dispatch)): `workflow` (`<owner>/<repo>/<file>`), `ref`, `inputs` (`repository`, `pull_request`, `release`), `dispatched` and, when GitHub refused it, `reason`. `null` without `--dispatch` (or `DEVCTL_MERGE_DISPATCH`) and when nothing merged. |
 
 ## Exit codes
@@ -491,16 +491,17 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 | 4 | `required_missing`, `approval_required`, `no_checks` | A required status context never reported, the head waits only for Actions runs awaiting a member's approval (`approval_required`), or its `pull_request` workflows never started (`no_checks`: close and reopen the pull request), known at the poll that saw it and before any merge; `reason` names the context or the runs. |
 | 5 | `refused` | Another human's pull request, a repository whose entry says `agentMerge: false`, or a standing request for changes or an unanswered review; `reason` names the author, the field or the feedback (`changes requested: …`, `unanswered review: …`, listed in `unansweredReviews`). |
 | 6 | `release_failed` | **Merged**, and the release failed: the merge commit's auto-release run failed before it tagged, or the tag pipeline failed; `release.pipeline.failedJobs` names the jobs. |
-| 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure (GitHub or CircleCI answered with an error other than a 5xx; the team files could not be read). |
+| 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure (GitHub answered with an error other than a 5xx; the team files could not be read). |
 | 8 | `auth_required` | No usable token; `reason` names the `devctl auth login` to run. |
 | 9 | `release_unconfirmed` | **Merged**, and the release was not confirmed pullable: `--release-timeout` passed, the release wait could not judge it, the auto-release run was superseded, or a commit status of the release's commit failed (`status_failed`); `release.verdict` and `reason` say which. |
+| 13 | `remote_error` | A CircleCI request failed. The command line was valid; the reason preserves the service error. Existing timeout and post-merge outcomes take precedence. |
 | 14 | `tag_pipeline_empty` | **Merged**, and the CircleCI tag pipeline settled without workflows although its configuration admits the tag. Returned within that poll with the same `release.verdict`; `release.pipeline` and `reason` name its number and URL and advise re-triggering the tag's pipeline. Never merge the pull request again. |
 
 `--detach` exits 0 with verdict `detached` once the merge started, or with the code of the check
 that refused the call. `devctl pr merge status` exits with the merge's code once it ended, 10
 (`running`) while it runs, and 7 for a lost merge or an unknown handle.
 
-Codes 1 to 5 mean nothing was merged, and 6, 9 and 14 that the pull request was merged. A 7 or 8 is read
+Codes 1 to 5 mean nothing was merged, and 6, 9 and 14 that the pull request was merged. A 7, 8 or 13 is read
 with `mergeCommitSha`: a failure after the merge (deleting the branch) leaves it set, while the release
 wait's own tooling and authentication failures are 9.
 

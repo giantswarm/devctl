@@ -110,6 +110,7 @@ Exit codes:
      green, and a commit status of the tag's commit failed (the branch
      pipeline's, another CI's): devctl release promote refuses the commit;
      the reason names the failed statuses
+ 13  remote_error: a CircleCI request failed; the command line was valid
  14  tag_pipeline_empty: the tag pipeline settled without workflows
      although its configuration admits the tag; re-trigger the pipeline
      for the tag (pipeline.number and pipeline.url name it)

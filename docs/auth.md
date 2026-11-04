@@ -345,6 +345,7 @@ its final repository document. This is the CLI's behavior; `devctl serve` keeps 
 | 5 | `refused` | another author, an opt-out |
 | 7 | `usage` | wrong usage, a newer devctl released (the reason names `devctl version update`), or a tooling failure |
 | 8 | `auth_required` | no usable token; the reason names `devctl auth login` |
+| 13 | `remote_error` | A CircleCI request failed. The command line was valid; the reason preserves the service error. Existing timeout and post-merge outcomes take precedence. |
 
 ## Environment
 

@@ -250,7 +250,9 @@ warning names it (`poll 3 went unanswered: Get "https://api.github.com/repos/gia
 failed 15 times in a row: 500 Internal Server Error; transient API or network failure after 10m2s`)
 and the wait polls again at the next interval. An outage shorter than the timeout ends in the head's
 verdict; one that outlasts it is exit 2, the reason adding that the head is unknown, not failed, and the
-last unanswered read. A 4xx is an answer and is never
+last unanswered read. A CircleCI read refused with 401 pauses for two seconds, reads the selected keychain
+credential again and retries once, even if that credential is unchanged. Later reads use the replacement
+token. A second 401 ends with exit 13 (`remote_error`). Other 4xx answers are never
 retried, nor is a certificate the client refuses or a host that does not exist; only reads (GET, HEAD) are
 retried.
 
@@ -317,7 +319,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 
 | Field | Meaning |
 |---|---|
-| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `green`, `red`, `timeout`, `not_applicable`, `required_missing`, `approval_required`, `no_checks`, `auth_required` or `usage`; `reason` is one sentence for anything but green; `warnings` carries the CircleCI token's expiry notice, a head change, a CircleCI project missing or never built, each retried read and each unanswered poll (Polling). |
+| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `green`, `red`, `timeout`, `not_applicable`, `required_missing`, `approval_required`, `no_checks`, `auth_required`, `remote_error` or `usage`; `reason` is one sentence for anything but green; `warnings` carries the CircleCI token's expiry notice, a head change, a CircleCI project missing or never built, each retried read and each unanswered poll (Polling). |
 | `repository`, `number` | The pull request as given. |
 | `identity` | Who read GitHub: `app`, the devctl App login (giantswarm), or `gh`, your own `gh` login (every other owner); empty when the run ended before choosing. |
 | `headSha`, `baseRef` | The head commit judged and the base branch whose protection was read. |
@@ -341,8 +343,9 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 | 4 | `required_missing` | Every check, run and workflow of the head has finished, the pull request's last update is more than a minute old (registration grace), and a required status context never reported; `reason` names it. Known at the poll that saw it, before the timeout; with anything still pending, another app's pending check included, the outcome is 2, not 4. |
 | 4 | `approval_required` | Nothing is red and the head waits only for GitHub Actions runs awaiting a repository member's approval (and the required contexts they may report); `reason` names each run with its URL. Known at the poll that saw it; approve the runs and wait again. |
 | 4 | `no_checks` | The head has no check run, status or Actions run two minutes after the pull request's last update, and the repository has workflows that run on `pull_request`: GitHub did not deliver the event. `reason` names the workflows; close and reopen the pull request to trigger them, and wait again. |
-| 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure: GitHub or CircleCI answered with an error other than a 5xx. A read that fails every try is no tooling failure: the wait polls again (Polling). |
+| 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure: GitHub answered with an error other than a 5xx. A read that fails every try is no tooling failure: the wait polls again (Polling). |
 | 8 | `auth_required` | No usable token; `reason` names the `devctl auth login` to run. |
+| 13 | `remote_error` | A CircleCI request failed. The command line was valid; the reason preserves the service error. Existing timeout and post-merge outcomes take precedence. |
 
 ## Environment
 
