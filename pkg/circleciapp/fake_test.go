@@ -118,6 +118,10 @@ func (f *fakeCircleCI) GetPipeline(_ context.Context, id string) (*circleciclien
 	return &circleciclient.PipelineDetail{Pipeline: circleciclient.Pipeline{ID: id, State: f.current().state}}, nil
 }
 
+func (f *fakeCircleCI) GetWorkflow(context.Context, string) (*circleciclient.WorkflowDetail, error) {
+	return nil, fmt.Errorf("unexpected workflow attribution read")
+}
+
 func (f *fakeCircleCI) ListPipelineWorkflows(context.Context, string) ([]circleciclient.Workflow, error) {
 	r := f.current()
 	f.read++
