@@ -214,7 +214,7 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 	var changes []string
 	if protection == nil {
 		changes = append(changes, "protect "+branch)
-	} else {
+	} else if r.WriteClassicChecks == nil {
 		if got := protection.GetRequiredPullRequestReviews().GetRequiredApprovingReviewCount(); got != b.RequiredReviews {
 			changes = append(changes, fmt.Sprintf("required reviews %d → %d", got, b.RequiredReviews))
 		}
@@ -246,6 +246,9 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 	}
 
 	return s.plan(sr, strings.Join(changes, "; "), func() error {
+		if r.WriteClassicChecks != nil {
+			return r.WriteClassicChecks(ctx, s.owner, s.name, branch, protection, want)
+		}
 		req := &github.ProtectionRequest{
 			RequiredPullRequestReviews: &github.PullRequestReviewsEnforcementRequest{
 				RequiredApprovingReviewCount: b.RequiredReviews,
