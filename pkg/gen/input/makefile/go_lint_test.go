@@ -129,6 +129,7 @@ var _ = client.New
 				}
 			}
 
+			// #nosec G204 -- make comes from exec.LookPath; arguments are fixed test fixtures.
 			cmd := exec.CommandContext(t.Context(), makeBin, "-f", in.Path, "lint",
 				"APPLICATION=fixture", "MODULE="+module, "OS=linux", "SOURCES=",
 				"VERSION=unused", "GITSHA1=unused", "BUILDTIMESTAMP=unused", "RACE=")
@@ -141,7 +142,7 @@ var _ = client.New
 			if !strings.Contains(string(out), tc.wantOutput) {
 				t.Errorf("make lint output does not contain %q:\n%s", tc.wantOutput, out)
 			}
-			calls, err := os.ReadFile(filepath.Join(dir, "lint-ran"))
+			calls, err := os.ReadFile(filepath.Join(dir, "lint-ran")) // #nosec G304 -- fixed path under t.TempDir()
 			if tc.wantLinter {
 				if err != nil || string(calls) != "run --timeout=15m ./...\n" {
 					t.Errorf("golangci-lint calls = %q, error = %v", calls, err)
@@ -150,7 +151,7 @@ var _ = client.New
 				t.Errorf("golangci-lint ran after an import check failure: calls = %q, error = %v", calls, err)
 			}
 			for path, want := range map[string]string{sourcePath: tc.source, "clean.go": "package fixture\n"} {
-				got, err := os.ReadFile(filepath.Join(dir, path))
+				got, err := os.ReadFile(filepath.Join(dir, path)) // #nosec G304 -- fixed fixture paths under t.TempDir()
 				if err != nil || string(got) != want {
 					t.Errorf("make lint changed %s: error = %v", path, err)
 				}
