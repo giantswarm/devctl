@@ -328,7 +328,9 @@ func finished(p circleciclient.Pipeline, workflows []circleciclient.Workflow) *O
 		case wf.Status == workflowOnHold:
 			outcome.OnHold = append(outcome.OnHold, wf.Name)
 		case wf.Status == workflowNotRun:
-		case !circleciclient.WorkflowFinished(wf.Status):
+		case circleciclient.WorkflowRunning(wf.Status) || !circleciclient.WorkflowFinished(wf.Status):
+			// A failing workflow has a failed job, but its other jobs still
+			// run. Wait for them as for a running workflow.
 			return nil
 		case circleciclient.WorkflowFailed(wf.Status):
 			outcome.Green = false
