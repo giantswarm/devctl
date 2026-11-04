@@ -32,7 +32,7 @@ func TestFileStoreRejectsNullRecords(t *testing.T) {
 			if err == nil || errors.Is(err, ErrNotFound) {
 				t.Errorf("invalid keyring error = %v, want a corrupt-file error", err)
 			}
-			if data, err := os.ReadFile(path); err != nil || string(data) != "null\n" {
+			if data, err := os.ReadFile(path); err != nil || string(data) != "null\n" { // #nosec G304 -- fixture path under t.TempDir()
 				t.Errorf("invalid file was changed: %v", err)
 			}
 		})
