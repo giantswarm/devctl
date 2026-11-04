@@ -140,7 +140,7 @@ type Config struct {
 	Timeout time.Duration
 	// Catalog also waits for the catalog index to list every chart.
 	Catalog bool
-	// Images name the images a hand-written tag pipeline pushes outside the
+	// Images name the images a tag pipeline pushes outside the
 	// architect orb (a plain docker push), which its configuration cannot
 	// tell: repository paths such as giantswarm/dex, or with the public or
 	// private registry host in front. Each is expected as <image>:<tag>, the
@@ -185,14 +185,15 @@ type Config struct {
 	// Progress receives one line per step; nil is silent.
 	Progress *agentcli.Progress
 	// Warn receives the warnings the document carries beside the result: a
-	// team-file entry whose release model lags the repository's workflows.
+	// team-file entry whose release model lags the repository's workflows,
+	// or artifacts a repository-owned job publishes that remain unchecked.
 	// Nil drops them.
 	Warn func(message string)
 }
 
 // ImageFlagUsage is the help of --image on the commands that wait for a
 // release.
-const ImageFlagUsage = "An image the hand-written tag pipeline pushes outside the architect orb (a plain docker push), as <owner>/<name> or with the registry host in front; expected as <image>:<git tag>, the tag as written (v1.2.3). Repeatable"
+const ImageFlagUsage = "An image the tag pipeline pushes outside the architect orb (a plain docker push), as <owner>/<name> or with the registry host in front; expected as <image>:<git tag>, the tag as written (v1.2.3). Repeatable"
 
 // ChartFlagUsage is the help of --chart on the commands that wait for a
 // release.
@@ -382,7 +383,11 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 			if err != nil {
 				return err
 			}
-			plan.custom = len(plan.customJobs) > 0
+			plan.uncheckedImages, err = readUncheckedImageJobs(ctx, w.config.GitHub, owner, repo, result.SHA, *content)
+			if err != nil {
+				return err
+			}
+			plan.custom = len(plan.customJobs) > 0 || len(plan.uncheckedImages) > 0
 			w.progress.Printf("%s/%s at %s declares %d push job(s) beyond the entry's artifacts", circleCIDir, circleCICustom, short(result.SHA), len(plan.customJobs))
 		}
 	case CIModelHandWritten:
@@ -402,8 +407,14 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 		// Nothing to derive: no CircleCI means no image and no chart.
 		plan.setArtifacts(result, nil)
 	}
-	if len(w.config.Images) > 0 && result.CIModel != CIModelHandWritten {
-		w.warn(fmt.Sprintf("--image names the images of a hand-written tag pipeline; the CI of %s is %s, whose artifacts are derived as before, so %s is not probed", result.Tag, result.CIModel, strings.Join(w.config.Images, ", ")))
+	if len(w.config.Images) > 0 && result.CIModel == CIModelGenerated {
+		images, err := namedImageArtifacts(w.config.Images, result.Tag, private, w.config.Endpoints)
+		if err != nil {
+			return err
+		}
+		plan.setArtifacts(result, dedupe(append(result.Artifacts, images...)))
+	} else if len(w.config.Images) > 0 && result.CIModel != CIModelHandWritten {
+		w.warn(fmt.Sprintf("--image names the images of a CircleCI tag pipeline; the CI of %s is %s, whose artifacts are derived as before, so %s is not probed", result.Tag, result.CIModel, strings.Join(w.config.Images, ", ")))
 	}
 	if len(w.config.Charts) > 0 && result.CIModel != CIModelHandWritten {
 		w.warn(fmt.Sprintf("--chart names the charts of a hand-written tag pipeline; the CI of %s is %s, whose artifacts are derived as before, so %s is not probed", result.Tag, result.CIModel, strings.Join(w.config.Charts, ", ")))
@@ -512,6 +523,9 @@ type plan struct {
 	// jobs, once those exist.
 	customJobs []PushJob
 	custom     bool
+	// uncheckedImages are repository-owned publishers whose repositories
+	// cannot be derived; matching tag jobs are warned about once known.
+	uncheckedImages []uncheckedImageJob
 	// releaseAssets: no image and no chart; the wait is on the published
 	// release and the tag's workflows.
 	releaseAssets bool
@@ -618,6 +632,7 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 			if err != nil {
 				return err
 			}
+			w.warnUncheckedImageJobs(p.uncheckedImages, state.jobs)
 			p.addArtifacts(result, artifacts)
 			for _, a := range artifacts {
 				w.progress.Printf("expecting %s %s (%s/%s)", a.Kind, a.Reference, circleCIDir, circleCICustom)

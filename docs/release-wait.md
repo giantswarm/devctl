@@ -115,8 +115,17 @@ The table names what the generator renders; a repository adds jobs in `.circleci
 setup workflow merges into the build workflow. Its architect push jobs that the tag pipeline runs are read
 like those of hand-written CI (below) once the pipeline lists its jobs, and their images and charts are
 probed by name too: giantswarm/agent-platform's connectivity chart, released off the same tag as the meta
-chart, is part of the release. A custom job that pushes outside the architect orb (vm-manager's guest image)
-is not probed by name; the release waits for it through the tag pipeline being green (below).
+chart, is part of the release.
+
+A repository-owned job's image repositories and tags cannot be derived from its commands. When its
+`run` steps contain `docker push`, `docker buildx … --push`, `crane push` / `copy`, `skopeo copy`, or
+a tool's `publish --registry` command (models' publisher), and the tag pipeline lists the job, the
+document's `warnings` names the job in `.circleci/custom.yml` and says its images are unchecked unless
+explicitly named with `--image`. Workflow `name` overrides are matched to their job definitions, and
+`run` steps nested under `when` / `unless` are included. This warning also appears when `artifacts` is
+empty; a published GitHub Release and green pipeline do not prove those images are pullable. Test-only
+custom jobs produce no warning and need no job listing. Detection inspects visible commands; it does
+not execute scripts, expand custom CircleCI commands, or infer images or tags computed by a tool.
 
 **Hand-written CI**: the artifacts are the push jobs the tag pipeline runs. The command reads the
 `.circleci/config.yml` (and `workflows.yml`, `custom.yml` when present) at the tag, collects every
@@ -135,8 +144,10 @@ whose upstream Dockerfile builds the binary) cannot be read from the configurati
 its image with `--image <owner>/<name>` (repeatable; the public or private registry host may come
 first and then decides the registry, else the repository's visibility does). Each is expected as
 `<image>:<git tag>`, the tag as written (`v2.43.3`, the `$CIRCLE_TAG` such a job pushes), beside what the push jobs name, and the release is out when every artifact is
-pullable and the tag pipeline is green. `--image` applies to hand-written CI only: with generated CI or
-none, the artifacts are derived as before and a warning says the named image is not probed.
+pullable and the tag pipeline is green. `--image` also adds explicit probes to generated CI, alongside
+the entry's artifacts and the custom architect push jobs. With no CircleCI, a warning says the named
+image is not probed. A custom job can publish tags unrelated to the release tag; `--image` checks only
+the git tag as written, so those other tags still require separate verification.
 
 A job the configuration defines itself whose commands run `helm push <package> oci://<target>` (the
 substrate line's `charts` job) is read as well: every chart directory under `helm/` or `charts/` at the
@@ -158,7 +169,7 @@ A chart a job pushes with helm in a way the configuration and the Makefile do no
 way with `--chart <path>` (repeatable), its repository path in the registry:
 `--chart giantswarm/kagent/helm/kagent`. It is expected as `<path>:<version>`, the bare version helm
 requires (`1.2.4`), its chart name the path's last element; it goes to no app catalog, so `--catalog`
-does not wait for it. `--chart` applies to hand-written CI only, like `--image`.
+does not wait for it. `--chart` applies to hand-written CI only.
 
 When a `Dockerfile` exists at the tag and neither a push job of the pipeline nor `--image` names an
 image: exit 7 with the jobs seen, the reason naming `--image`. The repository name is never used as a
