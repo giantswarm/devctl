@@ -8,6 +8,9 @@ dry run, the same pull request the Repositories page and the Repo Manager agent 
 the engine locally with the devctl App login and `reconcile` with your own token; `validate` and the
 other verbs call the manager through muster as you (`validate --local` runs the engine locally).
 
+A manager call that muster answers with a retryable `interrupted` during a rolling update is retried once
+after one second, within the command's context. A non-retryable error or a failed retry is reported as before.
+
 ## `devctl repo create`
 
 Declares a new repository: the team-file pull request the reconciler creates the repository from.
