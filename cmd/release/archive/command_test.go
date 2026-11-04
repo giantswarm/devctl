@@ -30,7 +30,7 @@ func TestArchiveVersionInput(t *testing.T) {
 			active := filepath.Join(provider, "v30.1.0")
 			archived := filepath.Join(provider, "archived", "v30.1.0")
 			for _, dir := range []string{active, filepath.Dir(archived)} {
-				if err := os.MkdirAll(dir, 0755); err != nil {
+				if err := os.MkdirAll(dir, 0700); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -71,14 +71,14 @@ func TestArchiveVersionInput(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			data, err := os.ReadFile(filepath.Join(archived, "release.yaml"))
+			data, err := os.ReadFile(filepath.Join(archived, "release.yaml")) // #nosec G304 -- fixed fixture path under t.TempDir, independent of command input
 			if err != nil || string(data) != string(release) {
 				t.Fatalf("archived release: %q, %v", data, err)
 			}
 			if _, err := os.Stat(active); !os.IsNotExist(err) {
 				t.Fatalf("active release still exists: %v", err)
 			}
-			data, err = os.ReadFile(index)
+			data, err = os.ReadFile(index) // #nosec G304 -- fixed fixture path under t.TempDir, independent of command input
 			if err != nil {
 				t.Fatal(err)
 			}
