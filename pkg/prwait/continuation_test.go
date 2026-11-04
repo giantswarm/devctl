@@ -64,7 +64,8 @@ func Test_Wait_missingContinuationReason(t *testing.T) {
 			if got := strings.Contains(err.Error(), "CircleCI continuation missing: pipeline 12 exists and its setup succeeded, but no continuation workflow appeared before the deadline"); got != tc.wantCause {
 				t.Errorf("missing continuation cause = %v, want %v: %v", got, tc.wantCause, err)
 			}
-			if elapsed := h.waiter.clock.Now().Sub(started); elapsed != 2*time.Minute {
+			// Each poll spends a second settling the head beyond the poll interval.
+			if elapsed := h.waiter.clock.Now().Sub(started); elapsed < 2*time.Minute || elapsed > 2*time.Minute+10*time.Second {
 				t.Errorf("wait ended after %s, want the configured 2m bound", elapsed)
 			}
 			if result.CircleCI == nil || result.CircleCI.PipelineID != "p1" || len(result.Unfinished) == 0 {
