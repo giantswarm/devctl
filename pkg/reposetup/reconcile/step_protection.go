@@ -335,7 +335,7 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 		enforcement: github.RulesetEnforcementActive,
 		include:     []string{defaultBranchRef},
 		pullRequest: !split,
-		checks:      ruleChecks(want, actionsGates(b, s.fields.RequiredChecks), from.checks),
+		checks:      ruleChecks(want, r.actionsGates(b, s.fields.RequiredChecks), from.checks),
 		strict:      b.StrictChecks,
 		noDeletion:  true,
 		noForcePush: true,
@@ -424,7 +424,7 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 // strictness. from is have as stateOfRuleset reads it.
 func (r *Runner) stepRulesetChecks(ctx context.Context, s *run, sr *StepResult, have *github.RepositoryRuleset, from rulesetState, want []string) error {
 	desired := from
-	desired.checks = ruleChecks(want, actionsGates(s.baseline, s.fields.RequiredChecks), from.checks)
+	desired.checks = ruleChecks(want, r.actionsGates(s.baseline, s.fields.RequiredChecks), from.checks)
 	if from.checks == nil {
 		desired.strict = s.baseline.StrictChecks
 	}
@@ -1018,7 +1018,10 @@ func ruleChecks(want []string, actions map[string]bool, current []*github.RuleSt
 
 // actionsGates are the contexts known to be GitHub Actions checks: the
 // baseline's gates and the entry's declared requiredChecks.
-func actionsGates(b Baseline, declared []string) map[string]bool {
+func (r *Runner) actionsGates(b Baseline, declared []string) map[string]bool {
+	if r.PreserveCheckSources {
+		return nil
+	}
 	return toSet(slices.Concat(b.RequiredChecks, b.RequiredChecksIfReported, declared))
 }
 

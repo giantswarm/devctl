@@ -94,6 +94,11 @@ type Runner struct {
 	Dispatch *github.Client
 	// Checks answers which check contexts have reported.
 	Checks ReportedChecker
+	// PreserveCheckSources keeps existing required-check integration IDs and
+	// leaves new checks unpinned. Callers accepting generic context names,
+	// such as repo checks, cannot infer a GitHub Actions source from a name.
+	// False pins the baseline's generated Actions gates as before.
+	PreserveCheckSources bool
 	// CircleCI is a person's CircleCI client the circleci step reads the
 	// project's pipeline definitions with; nil reads GitHub's statuses. The
 	// engine writes nothing on CircleCI.
