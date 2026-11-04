@@ -26,11 +26,18 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
 	}
-	return r.run(ctx, cmd, args)
+	if err := ctx.Err(); err != nil {
+		return microerror.Mask(err)
+	}
+	err := r.run(ctx, cmd, args)
+	if ctx.Err() != nil {
+		return microerror.Mask(ctx.Err())
+	}
+	return err
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
@@ -151,7 +158,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			r.printSummary(prStatuses)
 			prStatusesMu.Unlock()
 
-			return nil
+			return microerror.Mask(ctx.Err())
 
 		case <-ticker.C:
 			prStatusesMu.Lock()
@@ -183,8 +190,12 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 	retryDelay := 5 * time.Second
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		if attempt > 0 {
-			time.Sleep(retryDelay)
+		if ctx.Err() != nil {
+			ps.UpdateStatus("Cancelled")
+			return
+		}
+		if attempt > 0 && !waitForPR(ctx, ps, retryDelay) {
+			return
 		}
 
 		// Get PR details
@@ -302,7 +313,9 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 				}
 
 				// Wait a bit for the update to process, then continue to check if it merged
-				time.Sleep(3 * time.Second)
+				if !waitForPR(ctx, ps, 3*time.Second) {
+					return
+				}
 				prCheck, _, err = githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
 				if err == nil && prCheck.GetMerged() {
 					ps.UpdateStatus("Merged (auto-merge)")
@@ -350,7 +363,9 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 		}
 
 		// After approval, check if PR needs to be updated with base branch
-		time.Sleep(2 * time.Second)
+		if !waitForPR(ctx, ps, 2*time.Second) {
+			return
+		}
 		prCheck, _, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
 		if err == nil && prCheck.GetMerged() {
 			ps.UpdateStatus("Merged (auto-merge)")
@@ -367,7 +382,9 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 			}
 
 			// Wait a bit for the update to process, then check if it merged
-			time.Sleep(3 * time.Second)
+			if !waitForPR(ctx, ps, 3*time.Second) {
+				return
+			}
 			prCheck, _, err = githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
 			if err == nil && prCheck.GetMerged() {
 				ps.UpdateStatus("Merged (auto-merge)")
