@@ -64,9 +64,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// flavour writes that file and the other flavours renovate.json5; the
 	// one not written is removed.
 	fork := r.flag.Flavours.Contains(gen.FlavourFork)
-	configFile, staleFile := "renovate.json5", "renovate.json"
+	staleFile := "renovate.json"
 	if fork {
-		configFile, staleFile = staleFile, configFile
+		staleFile = "renovate.json5"
 
 		// A fork line that keeps Renovate off on purpose keeps its opt-out:
 		// the generated config would admit the fork and turn Renovate on.

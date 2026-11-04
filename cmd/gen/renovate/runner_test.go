@@ -132,6 +132,15 @@ func Test_Run_Fork(t *testing.T) {
 			wantErr:  "renovate.json turns Renovate off for this fork line",
 		},
 		{
+			name:     "an enabled root config does not bypass an alternate opt-out",
+			flavours: gen.FlavourSlice{gen.FlavourFork},
+			existing: map[string]string{
+				"renovate.json":         "{\n  \"enabled\": true\n}\n",
+				".github/renovate.json": "{\n  \"enabled\": false\n}\n",
+			},
+			wantErr: ".github/renovate.json turns Renovate off for this fork line",
+		},
+		{
 			name:      "an enabled alternate config does not prevent fork generation",
 			flavours:  gen.FlavourSlice{gen.FlavourFork},
 			existing:  map[string]string{".github/renovate.json": "{\n  \"enabled\": true\n}\n"},
