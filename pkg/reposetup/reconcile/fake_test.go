@@ -30,7 +30,7 @@ import (
 // fakeRepo is one repository's state.
 type fakeRepo struct {
 	owner, name, description string
-	private, archived        bool
+	private, archived, fork  bool
 	topics                   []string
 	hasWiki, hasIssues, hasProjects, allowMerge, allowSquash, allowRebase,
 	allowUpdate, allowAuto, deleteOnMerge bool
@@ -411,6 +411,7 @@ func (r *fakeRepo) toGitHub() *github.Repository {
 		Owner:                  &github.User{Login: new(r.owner)},
 		Description:            new(r.description),
 		Private:                new(r.private),
+		Fork:                   new(r.fork),
 		Topics:                 r.topics,
 		CreatedAt:              &github.Timestamp{Time: r.createdAt},
 		Archived:               new(r.archived),

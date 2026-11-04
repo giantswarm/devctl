@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo reconcile`'s Renovate step names the fork check and `devctl gen renovate --flavour fork` when a GitHub
+  fork's `renovate.json` does not enable fork processing. Explicit opt-outs stay disabled, and configurations are
+  checked in Renovate's precedence order, including JSONC files.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
