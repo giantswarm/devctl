@@ -1994,6 +1994,10 @@ repos:
     rev: "v1.14.2"
     hooks:
       - id: helm-docs
+        # The upstream script hook uses helm-docs from PATH. Build this rev
+        # in pre-commit's isolated Go environment so local and CI runs agree.
+        language: golang
+        entry: helm-docs
         args:
           - --chart-search-root=helm
           - --chart-to-generate=helm/example-go-service
