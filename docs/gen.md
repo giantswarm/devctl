@@ -74,6 +74,15 @@ A stable minor or major release is cut only by running the workflow by hand with
 
 `cliff.toml`'s `[remote.github].repo` is read from the consuming repo's `origin` git remote URL, its `giantswarm/<repo>` path. A checkout with no origin remote, or one outside `giantswarm`, needs `--repo-name <repo>` instead; without either the command fails rather than silently writing `repo = ""`.
 
+After a successful promotion, the workflow fetches the release branch again. If it has commits after the promoted
+candidate, it dispatches `release-type: auto` on that branch, in the same concurrency group, before verifying the
+stable tag's CircleCI build. The queued run uses the new stable as its baseline: features open the next minor
+candidate, fixes take the normal patch path (a candidate with `--patch-candidates`), and skipped commits tag nothing.
+No additional push is needed. A failed stable gate queues nothing. The one-version-per-commit check still applies:
+a branch head already tagged for a different version needs a new commit before another version can be cut.
+`devctl release promote --version` refusing an RC older than the last stable lists commits on the branch after that
+stable in `stranded[]` and gives the auto-release dispatch command; a comparison it cannot read is reported as such.
+
 ### helm-docs regen workflow
 
 `--helm-docs-regen` (app flavour only, off by default) adds `.github/workflows/zz_generated.helm-docs-regen.yaml`. On pull requests from `renovate/**` and `dependabot/**` branches that touch `helm/**` or `.pre-commit-config.yaml`, the workflow regenerates the files the generated pre-commit hooks derive from a chart's `values.yaml` -- the helm-docs README and `values.schema.json` -- and pushes the result back onto the PR branch. Without it, every dependency bump that changes an image tag or a values key fails the `pre-commit` check on files only the hooks can rewrite ("files were modified by this hook"), and the PR waits for a human to run the hooks and push. The Mend-hosted Renovate app cannot run `postUpgradeTasks`, so the regeneration has to happen in the consuming repo.

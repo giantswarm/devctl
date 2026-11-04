@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- The generated auto-release workflow queues another auto run after a successful promotion when the release branch
+  has commits after the promoted candidate, including commits merged while promotion was running. The new run
+  computes its version from the new stable release without waiting for another push. `release promote --version`
+  refusing an RC older than the latest stable names the branch commits that stable left out in `stranded[]` and
+  gives the auto-release command to run; a failed comparison is reported explicitly.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
