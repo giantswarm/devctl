@@ -61,7 +61,10 @@ A deployment that will not get there is reported in the document and a
 warning, and the wait goes on for the others: its source pins another tag
 or a digest, its semver range or the App's spec.version excludes the
 version (a workload cluster's App pinned to an older release), or the
-HelmRelease is suspended; when no deployment follows the version, exit 3.
+HelmRelease is suspended. When no deployment follows the version yet, the
+wait polls until --timeout so GitOps can apply a new selector, then waits
+for the rollout within that same timeout. Still no follower at the deadline
+is exit 3; all HelmReleases suspended is exit 3 at once.
 The wait ends when the version was attempted and failed: the HelmRelease
 Stalled, or not Ready after a failed install, upgrade or test of the
 version once helm-controller settled it (its current generation observed,
