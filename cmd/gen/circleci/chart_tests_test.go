@@ -3,7 +3,6 @@ package circleci
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -38,7 +37,7 @@ func Test_Run_ChartTestRequires(t *testing.T) {
 			t.Chdir(t.TempDir())
 			require.NoError(t, os.MkdirAll(".circleci", 0o750))
 			require.NoError(t, os.WriteFile("Dockerfile", []byte("FROM scratch\n"), 0o600))
-			configPath := filepath.Join(".circleci", "config.custom.yml")
+			const configPath = ".circleci/config.custom.yml"
 			if tc.custom != "" {
 				require.NoError(t, os.WriteFile(configPath, []byte(tc.custom), 0o600))
 			}
@@ -105,6 +104,7 @@ func Test_Run_ChartTestRequiresErrorsLeaveFilesUntouched(t *testing.T) {
 		{name: "case 4: config cannot be read", directory: true, wantErr: "config.custom.yml"},
 		{name: "case 5: empty job name", custom: "chart_tests:\n  requires: ['']", wantErr: "chart_tests.requires"},
 		{name: "case 6: tests are disabled", custom: "chart_tests:\n  requires: [push-image]", skipATS: true, wantErr: "chart_tests.requires"},
+		{name: "case 7: self dependency", custom: "chart_tests:\n  requires: [execute-chart-tests]", wantErr: "chart_tests.requires"},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -131,7 +131,7 @@ func Test_Run_ChartTestRequiresErrorsLeaveFilesUntouched(t *testing.T) {
 			err := (&runner{flag: f}).Run(cmd, nil)
 			require.ErrorContains(t, err, tc.wantErr)
 			for _, path := range []string{".circleci/config.yml", ".circleci/workflows.yml", ".circleci/custom.yml"} {
-				data, err := os.ReadFile(path)
+				data, err := os.ReadFile(path) // #nosec G304 -- fixed fixture paths above, inside t.TempDir
 				require.NoError(t, err)
 				require.Equal(t, original, string(data), "existing %s", path)
 			}
