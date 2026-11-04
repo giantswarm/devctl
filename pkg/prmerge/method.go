@@ -75,6 +75,8 @@ func (m *Merger) resolveMethod(ctx context.Context, owner, repo string, verdict 
 	}
 	reason := fmt.Sprintf("%s/%s does not allow %s merges; its settings allow %s", owner, repo, method, describe(allowed))
 	switch {
+	case m.carryOf > 0:
+		reason += "; --carry-of requires rebase to preserve the colleague's authorship"
 	case method == githubclient.MergeSquash && slices.Contains(allowed, githubclient.MergeRebase):
 		reason += "; --rebase lands a rebase merge"
 	case method == githubclient.MergeRebase && slices.Contains(allowed, githubclient.MergeSquash):

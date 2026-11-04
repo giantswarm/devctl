@@ -2,7 +2,7 @@
 
 ```nohighlight
 devctl pr merge <owner/repo> <number> [--timeout 60m] [--release-timeout 60m] [--no-release-wait]
-                [--rebase | --squash] [--update-branch] [--accept-red <check>]...
+                [--rebase | --squash] [--carry-of <number>] [--update-branch] [--accept-red <check>]...
                 [--dispatch <owner>/<repo>/<workflow file>[@<ref>]]
                 [--progress] [--failed-log [--failed-log-lines 50]] [--detach [--on-done <command>]]
 devctl pr merge status [<handle>]
@@ -48,6 +48,34 @@ Every refusal comes before the first poll and before anything is written.
 A mergeable state GitHub has not computed yet (`unknown`) is read again a few times before the
 refusals are applied, so a pull request just pushed is judged on its state and not on GitHub's
 laziness.
+
+## Carrying a colleague's commits: `--carry-of`
+
+When your own pull request carries a colleague's commits, `--carry-of <number>` names their
+original pull request in the **same repository**. The carrier is merged with **rebase**, preserving
+each commit's original Git author and subject; the caller remains the merger. The existing REST
+merge API provides no squash-author override, so this mode never squashes or rewrites authors.
+The original pull request can be open or closed; it is only read by this option.
+
+Before the CI wait and any branch update, and again immediately before merging, devctl compares
+the carrier's immutable base and head commit SHAs and reads every page of commits. Every commit's
+Git author must be linked to the original author's GitHub account id and have a name and email.
+Mixed authorship (including an extra commit by the carrier), an unlinked or unknown author, and an empty
+comparison are refused with exit 5. An invalid original number or the carrier itself is exit 7. Incomplete or
+unreadable comparisons are tooling failures, never treated as proof of authorship. A head that
+changes after its checks were judged is refused; a head that changes during the wait is checked
+again before merging.
+
+Rebase must be allowed by the repository; otherwise the command ends before waiting with exit 3.
+`--squash` is incompatible (exit 7). A merge queue is refused (exit 5), since its configured merge
+method could squash the commits. No repository setting is changed. The ordinary author check still
+requires the carrier to be the caller's own pull request (or an allowed automation account), and
+the review and `agentMerge` guards still apply. `--update-branch` uses the existing rebase update.
+
+The JSON document includes `carryOf: {"pullRequest": "https://github.com/owner/repo/pull/12",
+"author": "colleague"}`. The field is omitted without `--carry-of`; detached merges forward the
+option and include the same field in their final document. Rebase keeps commit subjects as written,
+so a conventional subject for release notes must already be present in the carried commits.
 
 ## Unanswered reviews
 

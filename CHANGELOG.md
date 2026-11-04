@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr merge --carry-of <number>` preserves a colleague's commit authorship when their commits are
+  carried in the caller's own pull request: it requires rebase, verifies every carried commit's
+  author before the wait and before merging, and names the original pull request in the JSON
+  document. Mixed or unknown authorship and merge queues are refused; repository settings stay intact.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of

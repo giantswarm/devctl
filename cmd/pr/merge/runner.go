@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -79,6 +80,9 @@ func newClients(config githubclient.Config) (clients, error) {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
+	if cmd.Flags().Changed(flagCarryOf) && r.flag.CarryOf == "" {
+		return r.FlagError(cmd, fmt.Errorf("--%s requires a positive original pull request number", flagCarryOf))
+	}
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()
@@ -111,12 +115,12 @@ func (r *runner) newDocument() document {
 	return prmerge.NewDocument(time.Now(), r.documentMethod())
 }
 
-// method is the method asked: --rebase or --squash, empty without either,
+// method is the method asked: --rebase, --carry-of or --squash, empty without any,
 // which leaves the default to the merge (rebase on a fork line, squash
 // elsewhere).
 func (r *runner) method() githubclient.MergeMethod {
 	switch {
-	case r.flag.Rebase:
+	case r.flag.Rebase, r.flag.CarryOf != "":
 		return githubclient.MergeRebase
 	case r.flag.Squash:
 		return githubclient.MergeSquash
@@ -137,6 +141,7 @@ func (r *runner) documentMethod() string {
 type call struct {
 	owner, repo    string
 	number         int
+	carryOf        int
 	failedLogLines int
 	dispatch       *prmerge.Dispatch
 	token          authstore.Token
@@ -161,6 +166,15 @@ func (r *runner) check(ctx context.Context, args []string, repository *string, n
 	}
 	if r.flag.Rebase && r.flag.Squash {
 		return c, fmt.Errorf("--%s and --%s exclude each other", flagRebase, flagSquash)
+	}
+	if r.flag.CarryOf != "" {
+		c.carryOf, err = strconv.Atoi(r.flag.CarryOf)
+		if err != nil || c.carryOf <= 0 || c.carryOf == c.number {
+			return c, fmt.Errorf("--%s must be a positive original pull request number different from the carrier", flagCarryOf)
+		}
+		if r.flag.Squash {
+			return c, fmt.Errorf("--%s requires rebase and excludes --%s", flagCarryOf, flagSquash)
+		}
 	}
 	if r.flag.OnDone != "" && !r.flag.Detach && r.flag.DetachedHandle == "" {
 		return c, fmt.Errorf("--%s needs --%s: a blocking merge reports its outcome itself", flagOnDone, flagDetach)
@@ -286,6 +300,7 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 			AcceptRed:      r.flag.AcceptRed,
 		},
 		Method:       r.method(),
+		CarryOf:      c.carryOf,
 		UpdateBranch: r.flag.UpdateBranch,
 		Login:        token.Login,
 		Policy:       gh.policy,
