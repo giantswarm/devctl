@@ -163,8 +163,11 @@ func executeReleaseCommand(t *testing.T, args ...string) error {
 // create directories even if it leaves the files alone.
 func releaseCheckoutSnapshot(t *testing.T) map[string]string {
 	t.Helper()
+	root, err := os.OpenRoot(".")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, root.Close()) })
 	entries := map[string]string{}
-	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || path == "." {
 			return err
 		}
@@ -173,7 +176,7 @@ func releaseCheckoutSnapshot(t *testing.T) map[string]string {
 			entries[key+"/"] = ""
 			return nil
 		}
-		data, err := os.ReadFile(path) // #nosec G304 -- walking only the test's temporary checkout
+		data, err := root.ReadFile(path)
 		if err != nil {
 			return err
 		}
