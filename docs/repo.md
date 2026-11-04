@@ -4,9 +4,10 @@ Giant Swarm repositories are declared, not clicked together: one entry in the ow
 `repositories/<team>.yaml` of [giantswarm/github](https://github.com/giantswarm/github) is the
 desired state, and the reconciler creates and keeps the repository as declared. The `repo` commands
 are the laptop's client of that engine and of giantswarm-repo-manager -- the same validation, the same
-dry run, the same pull request the Repositories page and the Repo Manager agent produce. `create` runs
-the engine locally with the devctl App login and `reconcile` with your own token; `validate` and the
-other verbs call the manager through muster as you (`validate --local` runs the engine locally).
+dry run, the same pull request the Repositories page and the Repo Manager agent produce. `create --dry-run`,
+`validate` and the other manager verbs call it through muster as you; `create` without `--dry-run` runs
+the engine locally with the devctl App login and `reconcile` with your own token. `create --dry-run --local`
+and `validate --local` run devctl's own engine.
 
 ## `devctl repo create`
 
@@ -18,7 +19,7 @@ devctl repo create --team bumblebee --name my-service \
   --description "What it does" --visibility public
 ```
 
-The command
+Without `--dry-run`, the command
 
 1. reads the team's file from `giantswarm/github` at `main` (an unknown team ends here),
 2. renders the entry and places it alphabetically among the team's entries -- the rest of the file is
@@ -47,7 +48,17 @@ ends on that run, read with your CircleCI login: ready when it is green, failed 
 red pipeline otherwise. Nobody is load-bearing for the pipeline afterwards.
 
 The output names the pull request; `--output json` prints the dry run and the pull request URL as one
-document. `--dry-run` prints the dry run and opens nothing.
+document. `--dry-run` asks giantswarm-repo-manager's `validate_repository` through muster for its
+creation preview and opens nothing. It sends the new declaration and owning team, using the same
+arguments as the manager's `create_repository`: the manager's engine, schema, name check and review
+notices decide the verdict. `--output json` keeps the complete manager answer under `dryRun`, including
+its author, findings and creation plan. A refusal of the planned pull request also exits non-zero.
+Sign in with `devctl auth login --muster-only`; a missing login or failed manager call is returned
+without falling back to local validation.
+
+`--dry-run --local` uses the existing local validation described above, with the devctl GitHub App
+login or the token in `--github-token-envvar`. It needs no muster login. An organisation other than
+`giantswarm` (`--owner`) takes this explicit local mode for a dry run.
 
 ### A refusal, a rerun
 

@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo create --dry-run` reports giantswarm-repo-manager's creation preview through muster, including
+  validation and creation-plan refusals, instead of running devctl's local validator. `--dry-run --local`
+  preserves the previous local validation with the GitHub login; the default dry run needs
+  `devctl auth login --muster-only` and never falls back locally when the manager cannot answer.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
