@@ -20,7 +20,7 @@ func (f outputTransport) RoundTrip(r *http.Request) (*http.Response, error) { re
 
 // outputCommand exercises the public command with a synthetic token and an
 // entirely in-memory GitHub API. No request can reach a network or keychain.
-func outputCommand(t *testing.T, stdout io.Writer, format string, dryRun bool, extraArgs ...string) (error, []string) {
+func outputCommand(t *testing.T, stdout io.Writer, format string, dryRun bool, extraArgs ...string) ([]string, error) {
 	t.Helper()
 	t.Setenv("DEVCTL_CREATE_OUTPUT_TEST_TOKEN", "synthetic-token")
 	t.Setenv("CI", "true")
@@ -77,7 +77,7 @@ func outputCommand(t *testing.T, stdout io.Writer, format string, dryRun bool, e
 	cmd.SetArgs(args)
 	cmd.SilenceErrors, cmd.SilenceUsage = true, true
 	err = cmd.Execute()
-	return err, writes
+	return writes, err
 }
 
 type outputFailure struct {
@@ -108,7 +108,7 @@ func TestCommandOutputFailure(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failure := errors.New("synthetic output failure")
-			err, writes := outputCommand(t, outputFailure{marker: tc.marker, err: failure}, tc.format, tc.dryRun)
+			writes, err := outputCommand(t, outputFailure{marker: tc.marker, err: failure}, tc.format, tc.dryRun)
 			require.ErrorIs(t, err, failure)
 			require.Equal(t, tc.wantWrites, writes, "output failures must not start or repeat remote writes")
 		})
@@ -117,7 +117,7 @@ func TestCommandOutputFailure(t *testing.T) {
 
 func TestCommandRefusalOutputFailure(t *testing.T) {
 	failure := errors.New("synthetic output failure")
-	err, writes := outputCommand(t, outputFailure{marker: `"dryRun"`, err: failure}, outputJSON, false, "--name", "Bad_Name")
+	writes, err := outputCommand(t, outputFailure{marker: `"dryRun"`, err: failure}, outputJSON, false, "--name", "Bad_Name")
 	require.True(t, IsRefused(err), "keep the refusal when its JSON diagnostic cannot be written: %v", err)
 	require.Empty(t, writes)
 }
@@ -126,7 +126,7 @@ func TestCommandOutputSuccess(t *testing.T) {
 	for _, format := range []string{outputText, outputJSON} {
 		t.Run(format, func(t *testing.T) {
 			var stdout bytes.Buffer
-			err, writes := outputCommand(t, &stdout, format, false)
+			writes, err := outputCommand(t, &stdout, format, false)
 			require.NoError(t, err)
 			require.Equal(t, []string{"branch", "commit", "pull request"}, writes)
 			const next = "devctl repo watch giantswarm/fixture-repo --pull-request 6179"
