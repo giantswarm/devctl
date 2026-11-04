@@ -19,7 +19,7 @@ func Test_Render_openValueMaps(t *testing.T) {
 		t.Fatal(err)
 	}
 	values := filepath.Join(templates, "template-app", "helm", "{APP-NAME}", "values.yaml")
-	data, err := os.ReadFile(values)
+	data, err := os.ReadFile(values) // #nosec G304 -- fixed fixture path under t.TempDir()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ headClosed: {}
 typed: {} # @schema additionalProperties: {type: string}
 constrained: {} # @schema maxProperties: 0
 `)...)
-	if err := os.WriteFile(values, data, 0o600); err != nil {
+	if err := os.WriteFile(values, data, 0o600); err != nil { // #nosec G703 -- fixed fixture path under t.TempDir()
 		t.Fatal(err)
 	}
 
@@ -57,7 +57,7 @@ constrained: {} # @schema maxProperties: 0
 			}
 			chart := filepath.Join(dir, "helm", entry.Name)
 			valuesPath := filepath.Join(chart, "values.yaml")
-			before, err := os.ReadFile(valuesPath)
+			before, err := os.ReadFile(valuesPath) // #nosec G304 -- scaffold path under t.TempDir()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -67,14 +67,14 @@ constrained: {} # @schema maxProperties: 0
 			if err := openChartValueMaps(dir); err != nil {
 				t.Fatal(err)
 			}
-			after, err := os.ReadFile(valuesPath)
+			after, err := os.ReadFile(valuesPath) // #nosec G304 -- scaffold path under t.TempDir()
 			if err != nil {
 				t.Fatal(err)
 			}
 			if string(before) != string(after) {
 				t.Fatal("annotating maps twice changed values.yaml")
 			}
-			schemaData, err := os.ReadFile(filepath.Join(chart, "values.schema.json"))
+			schemaData, err := os.ReadFile(filepath.Join(chart, "values.schema.json")) // #nosec G304 -- scaffold path under t.TempDir()
 			if err != nil {
 				t.Fatal(err)
 			}
