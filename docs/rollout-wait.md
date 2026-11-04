@@ -125,8 +125,9 @@ out the way `kubectl rollout status` judges it: the new generation observed, eve
 no old replica left, the updated ones available (a StatefulSet: ready and at the update revision or
 above its partition; a DaemonSet: every scheduled pod updated and available; `OnDelete` counts as
 rolled out; a HelmRelease a meta chart renders: its generation observed, Ready with no reconcile in flight,
-its dependencies included, a suspended one counted, Stalled or a failed install, upgrade or test exit 1). The workloads of a HelmRelease with `spec.kubeConfig` or of an App into a workload cluster
-live elsewhere and are not read; a warning says so.
+its dependencies included, a suspended one counted; while `Reconciling=True` it keeps waiting, then
+Stalled or a failed install, upgrade or test exits 1 once the retry has settled). The workloads of a
+HelmRelease with `spec.kubeConfig` or of an App into a workload cluster live elsewhere and are not read; a warning says so.
 
 ### When a deployment will not get there
 
@@ -153,8 +154,9 @@ older revision is not the version's: the wait goes on.
 ### Polling and `--reconcile`
 
 The cluster is listed after a pause of 5 seconds, doubling to 30, until `--timeout` (30 minutes by
-default) after the release was available. Flux polls an OCIRepository at its own interval, often ten
-minutes; `--reconcile` sets `reconcile.fluxcd.io/requestedAt` once on the source and the HelmRelease
+default) after the release was available. This budget also bounds cluster reads, retry backoff and
+reconcile requests; a timeout retains the last completed poll. Flux polls an OCIRepository at its own
+interval, often ten minutes; `--reconcile` sets `reconcile.fluxcd.io/requestedAt` once on the source and the HelmRelease
 of each deployment still behind, the annotation `flux reconcile` sets, so Flux looks now. It is the
 only write the command makes; without it the command only reads.
 

@@ -62,6 +62,8 @@ type fixture struct {
 	failedLogLines int
 	// clock, when set, is the wait's clock; a virtual clock otherwise.
 	clock *agentcli.Clock
+	// checkGitHub inspects the reads made by a regression scenario.
+	checkGitHub func([]sequence.Request)
 }
 
 type entries struct{ fields *reposetup.Fields }
@@ -122,6 +124,12 @@ func baseGitHub(root, workflows, circleci []string) sequence.Routes {
 	}
 	if slices.Contains(root, "helm") {
 		routes = withChart(routes, testRepo, testRepo)
+	}
+	for _, name := range workflows {
+		if strings.Contains(name, "auto_release") {
+			file := workflowsDir + "/" + name
+			routes[repoRoute("/contents/"+file)] = []sequence.Response{{Body: fileContent(file, "on: push\n")}}
+		}
 	}
 	return routes
 }
@@ -255,6 +263,9 @@ func run(t *testing.T, fx fixture) (Result, error) {
 		ctx = context.Background()
 	}
 	err = w.Wait(ctx, &result)
+	if fx.checkGitHub != nil {
+		fx.checkGitHub(gh.Requests())
+	}
 	if fx.circleci == nil && circleCalls != 0 {
 		t.Errorf("CircleCI was opened %d time(s) for a repository without CircleCI", circleCalls)
 	}
