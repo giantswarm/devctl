@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr merge` refuses the default merge method (exit 3) when the team-file flavours cannot be read or GitHub
+  identifies the repository as a fork without a declared `fork` flavour. It no longer silently squash-merges an
+  unclassified fork line. Repair `gen.flavours` or choose `--rebase` or `--squash` explicitly; declared fork lines
+  keep their rebase default.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
