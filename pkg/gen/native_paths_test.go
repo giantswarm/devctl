@@ -22,7 +22,7 @@ func Test_Execute_NativeNestedPaths(t *testing.T) {
 				if err := Execute(t.Context(), input.Input{Path: destination, TemplateBody: content}); err != nil {
 					t.Fatalf("generate %q: %v", content, err)
 				}
-				data, err := os.ReadFile(destination)
+				data, err := os.ReadFile(destination) // #nosec G304 -- test fixture
 				if err != nil || string(data) != content {
 					t.Fatalf("generated %q, %v; want %q", data, err, content)
 				}
@@ -47,7 +47,7 @@ func Test_Execute_NativeCircleCIPathWithExistingParent(t *testing.T) {
 			if err := Execute(t.Context(), input.Input{Path: destination, TemplateBody: "updated"}); err != nil {
 				t.Fatal(err)
 			}
-			data, err := os.ReadFile(destination)
+			data, err := os.ReadFile(destination) // #nosec G304 -- test fixture
 			if err != nil || string(data) != "updated" {
 				t.Errorf("native CircleCI output was not updated: %q, %v", data, err)
 			}
@@ -69,7 +69,7 @@ func Test_Execute_NativeConfigScaffoldPreserved(t *testing.T) {
 	if err := Execute(t.Context(), input.Input{Path: destination, TemplateBody: "generated"}); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(destination)
+	data, err := os.ReadFile(destination) // #nosec G304 -- test fixture
 	if err != nil || string(data) != "repository config" {
 		t.Errorf("ordinary config was overwritten: %q, %v", data, err)
 	}
