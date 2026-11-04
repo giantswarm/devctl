@@ -313,6 +313,8 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 		return result, err
 	}
 
+	m.mergedPastReview(result)
+
 	// Merged: the branch, the release, then the dispatch, which runs
 	// whatever the release's outcome and changes none of them.
 	err = m.deleteBranch(ctx, owner, repo, pr, result)
