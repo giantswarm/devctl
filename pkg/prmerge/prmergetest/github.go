@@ -116,6 +116,10 @@ func (g *GitHub) BehindBy(context.Context, string, string, string, string) (int,
 	return 0, nil
 }
 
+func (g *GitHub) CommitsBetween(context.Context, string, string, string, string) ([]*github.RepositoryCommit, error) {
+	return nil, nil
+}
+
 func (g *GitHub) PullRequestReviews(context.Context, string, string, int) ([]*github.PullRequestReview, error) {
 	return nil, nil
 }

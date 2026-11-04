@@ -94,7 +94,7 @@ var providerTitleMap = map[string]string{
 	providerCloudDirector: "VMware Cloud Director",
 }
 
-func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, changelogNoisePatterns []string) (string, error) {
+func createReleaseNotes(githubToken string, release, baseRelease v1alpha1.Release, provider string, changelogNoisePatterns []string) (string, error) {
 	templ, err := template.New("release-notes").Parse(releaseNotesTemplate)
 	if err != nil {
 		return "", microerror.Mask(err)
@@ -126,7 +126,7 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, 
 			continue
 		}
 
-		componentChangelog, err := changelog.ParseChangelog(component.Name, component.Version, previousComponentVersion, changelogNoisePatterns...)
+		componentChangelog, err := changelog.ParseChangelog(githubToken, component.Name, component.Version, previousComponentVersion, changelogNoisePatterns...)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
@@ -184,7 +184,7 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, 
 		}
 
 		if currentClusterVer != "" && previousClusterVer != "" && currentClusterVer != previousClusterVer {
-			clusterChangelog, err := changelog.ParseChangelog(clusterComponentName, currentClusterVer, previousClusterVer, changelogNoisePatterns...)
+			clusterChangelog, err := changelog.ParseChangelog(githubToken, clusterComponentName, currentClusterVer, previousClusterVer, changelogNoisePatterns...)
 			if err != nil {
 				logrus.Warnf("Could not parse cluster changelog for %s...%s: %v", previousClusterVer, currentClusterVer, err)
 				continue
@@ -225,7 +225,7 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, 
 			continue
 		}
 
-		componentChangelog, err := changelog.ParseChangelog(app.Name, app.Version, previousAppVersion, changelogNoisePatterns...)
+		componentChangelog, err := changelog.ParseChangelog(githubToken, app.Name, app.Version, previousAppVersion, changelogNoisePatterns...)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
