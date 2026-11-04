@@ -369,7 +369,10 @@ func (s *Server) mcp(w http.ResponseWriter, r *http.Request) {
 		}
 		raw, _ := json.Marshal(msg.Params.Arguments)
 		var inner innerCall
-		_ = json.Unmarshal(raw, &inner)
+		if err := json.Unmarshal(raw, &inner); err != nil || inner.Name == "" {
+			respond(nil, map[string]any{keyCode: -32602, keyMessage: "invalid call_tool name or arguments"})
+			return
+		}
 		answer, ok := s.next(inner.Name)
 		if !ok {
 			respond(map[string]any{keyIsError: true, keyContent: textContent("Tool not found: " + inner.Name)}, nil)
