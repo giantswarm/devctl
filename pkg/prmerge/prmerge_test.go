@@ -463,7 +463,7 @@ func Test_Merge_paths(t *testing.T) {
 				requested: map[string]int{"POST /graphql": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "GET /repos/o/r/commits/def456/check-runs": 1, "PUT /repos/o/r/pulls/42/merge": 1}},
 		},
 		{
-			name: "GitHub refuses the rebase update: an error, nothing merged",
+			name: "GitHub refuses the rebase update: exit 3 with the conflict, nothing merged",
 			routes: routes(pull(map[string]any{"mergeable_state": "behind"}), sequence.Routes{
 				"POST /graphql": {{Body: map[string]any{"data": nil, "errors": []any{map[string]any{"message": "Rebase failed due to conflicts"}}}}},
 			}),
@@ -471,7 +471,7 @@ func Test_Merge_paths(t *testing.T) {
 				c.UpdateBranch = true
 				c.Method = githubclient.MergeRebase
 			},
-			want: want{code: -1, method: "rebase", headSHA: "abc123",
+			want: want{code: 3, reason: "Rebase failed due to conflicts", method: "rebase", headSHA: "abc123",
 				requested: map[string]int{"POST /graphql": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 0}},
 		},
 		{

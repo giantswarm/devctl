@@ -210,8 +210,10 @@ branch is what turns green, and the merge lands it. Behind is GitHub's mergeable
 base, and for every other base the comparison of base and head (`GET .../compare/{base}...{head}`,
 `behind_by`); a head that is not behind is judged as it is. After the wait the head is compared again,
 and a base that moved during it has the head updated and waited for once more, at most three waits in
-all; a base that moves during each of them is exit 3, naming the base to wait for. Without the flag a
-head behind its base, strict or not, before the wait or after it, is exit 3: its checks ran against
+all; a base that moves during each of them is exit 3, naming the base to wait for. A rebase update
+that GitHub refuses due to conflicts is exit 3 (`not_applicable`), with GitHub's conflict reason;
+no merge is attempted. Authentication, rate-limit and other API failures retain their own errors.
+Without the flag a head behind its base, strict or not, before the wait or after it, is exit 3: its checks ran against
 an older base than the one the merge would land it on.
 
 ## The release

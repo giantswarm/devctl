@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -133,6 +134,51 @@ func Test_run_rebaseFlag(t *testing.T) {
 	}
 	if doc := decode(t, stdout); doc["method"] != "rebase" {
 		t.Errorf("--rebase: want method rebase, got %v", doc["method"])
+	}
+}
+
+func Test_run_rebaseUpdateConflict(t *testing.T) {
+	for i, message := range []string{
+		"merge conflict between base and head",
+		"Rebase failed due to conflicts",
+	} {
+		t.Run(fmt.Sprintf("case %d", i), func(t *testing.T) {
+			routes := green()
+			routes["GET /repos/o/r/pulls/42"][0].Body.(map[string]any)["mergeable_state"] = "behind"
+			routes["POST /graphql"] = []sequence.Response{{Body: map[string]any{
+				"data": nil, "errors": []any{map[string]any{"message": message}},
+			}}}
+			r, stdout, _, server := newRunner(t, routes, loggedIn, &flag{
+				Timeout: time.Minute, Rebase: true, UpdateBranch: true, NoReleaseWait: true,
+			})
+			err := r.run(context.Background(), []string{"o/r", "42"})
+			if agentcli.Exit(err) != agentcli.ExitNotApplicable {
+				t.Fatalf("want exit 3, got %v\n%s", err, stdout.String())
+			}
+			doc := decode(t, stdout)
+			for key, want := range map[string]any{
+				"exitCode": 3.0, "verdict": "not_applicable", "method": "rebase", "headSha": "abc123",
+				"mergeCommitSha": "", "branchDeleted": false, "enqueued": false, "release": nil,
+			} {
+				if doc[key] != want {
+					t.Errorf("%s: want %v, got %v", key, want, doc[key])
+				}
+			}
+			if reason, _ := doc["reason"].(string); !strings.Contains(reason, message) {
+				t.Errorf("reason lost GitHub's conflict: %v", doc["reason"])
+			}
+			updates := 0
+			for _, req := range server.Requests() {
+				if req.Method == http.MethodPost && req.Path == "/graphql" {
+					updates++
+				} else if req.Method != http.MethodGet || strings.Contains(req.Path, "/check-runs") {
+					t.Errorf("a conflict must stop before checking or merging the head: %s", req)
+				}
+			}
+			if updates != 1 {
+				t.Errorf("want one rebase update, got %d", updates)
+			}
+		})
 	}
 }
 

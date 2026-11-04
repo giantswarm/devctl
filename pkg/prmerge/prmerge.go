@@ -545,6 +545,9 @@ func (m *Merger) update(ctx context.Context, owner, repo string, number int, pr 
 	} else {
 		err = m.github.UpdatePullRequestBranch(ctx, owner, repo, number, headSHA)
 	}
+	if githubclient.IsBranchUpdateConflict(err) {
+		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "%s", err)
+	}
 	if err != nil {
 		return microerror.Mask(err)
 	}

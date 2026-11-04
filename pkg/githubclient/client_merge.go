@@ -127,7 +127,8 @@ func (c *Client) UpdatePullRequestBranch(ctx context.Context, owner, repo string
 // with updateMethod REBASE, which REST has no call for, so the head stays
 // free of merge commits. expectedHeadSHA guards against updating a head that
 // moved meanwhile; the new head appears on the pull request once GitHub has
-// rebased it.
+// rebased it. An explicit conflict is [IsBranchUpdateConflict]; other failures
+// retain the GraphQL error and rate-limit diagnostics.
 func (c *Client) RebasePullRequestBranch(ctx context.Context, nodeID, expectedHeadSHA string) error {
 	return c.graphQLMutation(ctx, "update-branch",
 		`mutation($id: ID!, $head: GitObjectID!) { updatePullRequestBranch(input: {pullRequestId: $id, expectedHeadOid: $head, updateMethod: REBASE}) { pullRequest { id } } }`,
@@ -188,7 +189,7 @@ func (c *Client) EnqueuePullRequest(ctx context.Context, nodeID string) error {
 // graphQLMutation posts mutation with variables to <REST root>/graphql,
 // api.github.com's layout. A non-200 answer or GraphQL errors are an
 // executionError prefixed with op, a spent rate limit named by
-// [GraphQLRefusal].
+// [GraphQLRefusal]. An update-branch conflict is [IsBranchUpdateConflict].
 func (c *Client) graphQLMutation(ctx context.Context, op, mutation string, variables map[string]any) error {
 	return c.graphQL(ctx, op, mutation, variables, nil)
 }
@@ -231,8 +232,13 @@ func (c *Client) graphQL(ctx context.Context, op, document string, variables map
 	}
 	if len(answer.Errors) > 0 {
 		messages := make([]string, 0, len(answer.Errors))
+		conflict := op == "update-branch" && RateLimitSpent(resp.Header) == ""
 		for _, e := range answer.Errors {
 			messages = append(messages, e.Message)
+			conflict = conflict && isBranchUpdateConflictMessage(e.Message)
+		}
+		if conflict {
+			return microerror.Maskf(branchUpdateConflictError, "%s: %s", op, strings.Join(messages, "; "))
 		}
 		return microerror.Maskf(executionError, "%s: %s", op, GraphQLRefusal(resp.Header, strings.Join(messages, "; ")))
 	}

@@ -11,6 +11,15 @@ func IsExecution(err error) bool {
 	return microerror.Cause(err) == executionError
 }
 
+var branchUpdateConflictError = &microerror.Error{
+	Kind: "branchUpdateConflictError",
+}
+
+// IsBranchUpdateConflict says GitHub refused the branch update due to conflicts.
+func IsBranchUpdateConflict(err error) bool {
+	return microerror.Cause(err) == branchUpdateConflictError
+}
+
 var notFoundError = &microerror.Error{
 	Kind: "notFoundError",
 }

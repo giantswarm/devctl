@@ -60,7 +60,9 @@ check is judged (GitHub's Update branch, which merges the base in; with a
 rebase merge, Update with rebase, which rebases the head onto the base, so no
 merge commit lands on the line), and the new head is what the wait
 judges and the merge lands: behind a strict base by the mergeable state,
-behind any other base by the comparison of base and head. The head is compared
+behind any other base by the comparison of base and head. A rebase update
+that conflicts is exit 3 with GitHub's conflict reason; nothing is merged.
+The head is compared
 with the base again after the wait: a base that moved during it is exit 3
 without --update-branch, and with it the head is updated and waited for again,
 at most three waits in all. A base with a merge queue is not compared without
