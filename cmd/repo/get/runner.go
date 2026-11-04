@@ -1,6 +1,7 @@
 package get
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"time"
@@ -31,7 +32,7 @@ func (r *Runner) Run(cmd *cobra.Command, args []string) error {
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
 	}
-	return microerror.Mask(r.run(context.Background(), args[0]))
+	return microerror.Mask(r.run(cmd.Context(), args[0]))
 }
 
 func (r *Runner) run(ctx context.Context, arg string) error {
@@ -56,6 +57,8 @@ func (r *Runner) run(ctx context.Context, arg string) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	client.PrintRecord(r.stdout, record)
-	return nil
+	// Flush also returns errors the record renderer's helpers do not return.
+	out := bufio.NewWriter(r.stdout)
+	client.PrintRecord(out, record)
+	return microerror.Mask(out.Flush())
 }
