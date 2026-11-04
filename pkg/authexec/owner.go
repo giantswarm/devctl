@@ -19,12 +19,29 @@ var repoCommands = map[string]bool{
 }
 
 // GHOwner is the owner of the repository a gh invocation acts on, "" when it
-// names none: --repo/-R, $GH_REPO, a repository path of `gh api`, the URL or
-// repository argument of a repository command, else the repository of the
+// names none: an explicit API path, URL or repository argument, then
+// --repo/-R, $GH_REPO, else the repository of the
 // working directory, resolved like gh (its default, then the remotes
 // upstream, github and origin). remotes reads the working directory's
 // remote configuration; nil reads none.
 func GHOwner(args []string, environ []string, remotes func() string) string {
+	if len(args) >= 2 && args[0] == "api" {
+		if owner, named := apiOwner(args[1:]); named {
+			if owner != "{owner}" {
+				return owner
+			}
+			return defaultOwner(environ, remotes)
+		}
+		return ""
+	}
+	if len(args) >= 3 && repoCommands[args[0]] && !strings.HasPrefix(args[2], "-") {
+		if owner := urlOwner(args[2]); owner != "" {
+			return owner
+		}
+		if args[0] == "repo" && strings.Count(args[2], "/") == 1 {
+			return repoOwner(args[2])
+		}
+	}
 flags:
 	for i, a := range args {
 		switch {
@@ -38,26 +55,13 @@ flags:
 			return repoOwner(a[2:])
 		}
 	}
+	return defaultOwner(environ, remotes)
+}
+
+func defaultOwner(environ []string, remotes func() string) string {
 	for _, kv := range environ {
 		if v, ok := strings.CutPrefix(kv, "GH_REPO="); ok && v != "" {
 			return repoOwner(v)
-		}
-	}
-	if len(args) >= 2 && args[0] == "api" {
-		if owner, named := apiOwner(args[1:]); named {
-			if owner != "{owner}" {
-				return owner
-			}
-			return remoteOwner(remotes)
-		}
-		return ""
-	}
-	if len(args) >= 3 && repoCommands[args[0]] && !strings.HasPrefix(args[2], "-") {
-		if owner := urlOwner(args[2]); owner != "" {
-			return owner
-		}
-		if args[0] == "repo" && strings.Count(args[2], "/") == 1 {
-			return repoOwner(args[2])
 		}
 	}
 	return remoteOwner(remotes)
