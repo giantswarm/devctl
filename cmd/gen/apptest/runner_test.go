@@ -139,7 +139,7 @@ func fakeGo(t *testing.T, endpoint string) {
 	bin := t.TempDir()
 	quoted := "'" + strings.ReplaceAll(executable, "'", "'\"'\"'") + "'"
 	script := "#!/bin/sh\nexec " + quoted + " -test.run=^TestApptestGoHelper$ -- \"$@\"\n"
-	require.NoError(t, os.WriteFile(filepath.Join(bin, "go"), []byte(script), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "go"), []byte(script), 0o700)) // #nosec G306 -- test executable in t.TempDir needs owner execute permission
 	t.Setenv("PATH", bin)
 	t.Setenv("DEVCTL_TEST_APPTEST_GO", "1")
 	t.Setenv("DEVCTL_TEST_APPTEST_ENDPOINT", endpoint)
@@ -160,7 +160,7 @@ func TestApptestGoHelper(t *testing.T) {
 			}
 		}
 		client := &http.Client{Timeout: 10 * time.Second}
-		response, err := client.Get(endpoint + "/" + stage)
+		response, err := client.Get(endpoint + "/" + stage) // #nosec G704 -- fakeGo supplies only the httptest server's address
 		if err != nil {
 			os.Exit(1)
 		}

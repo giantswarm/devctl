@@ -107,7 +107,7 @@ func goModTidy(ctx context.Context, workingDir string) error {
 }
 
 func runGo(ctx context.Context, workingDir string, args ...string) error {
-	cmd := exec.CommandContext(ctx, "go", args...)
+	cmd := exec.CommandContext(ctx, "go", args...) // #nosec G204 -- callers pass fixed Go subcommands and arguments, without a shell
 	cmd.Dir = workingDir
 	_, err := cmd.Output()
 	// A running process killed by CommandContext otherwise reports only a
