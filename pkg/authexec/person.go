@@ -34,7 +34,7 @@ func withoutGHTokens(environ []string) []string {
 // App is installed, and the person's own gh login (person) for every other
 // owner, which the App cannot reach.
 func RepositoryToken(ctx context.Context, owner string, app, person func(context.Context) (authstore.Token, error)) (authstore.Token, error) {
-	if AppOwners[owner] {
+	if AppOwners[strings.ToLower(owner)] {
 		return app(ctx)
 	}
 	return person(ctx)
