@@ -25,7 +25,11 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
 	}
-	return microerror.Mask(r.run(context.Background(), args[0]))
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return microerror.Mask(r.run(ctx, args[0]))
 }
 
 func (r *runner) run(ctx context.Context, arg string) error {
