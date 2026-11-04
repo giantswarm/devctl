@@ -218,12 +218,27 @@ func (s *FileStore) write(records map[string]Record) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(s.Path, b, 0o600); err != nil {
+	// Build the replacement beside the store: a failed or interrupted write
+	// must not truncate the identities we already have. CreateTemp uses 0600.
+	f, err := os.CreateTemp(filepath.Dir(s.Path), ".devctl-keyring-")
+	if err != nil {
 		return fmt.Errorf("writing the keyring file %s: %w", s.Path, err)
 	}
-	// WriteFile keeps the mode of an existing file; the tokens are ours alone.
-	if err := os.Chmod(s.Path, 0o600); err != nil {
-		return fmt.Errorf("securing the keyring file %s: %w", s.Path, err)
+	defer func() {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+	}()
+	if _, err := f.Write(b); err != nil {
+		return fmt.Errorf("writing the keyring file %s: %w", s.Path, err)
+	}
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("syncing the keyring file %s: %w", s.Path, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("closing the keyring file %s: %w", s.Path, err)
+	}
+	if err := os.Rename(f.Name(), s.Path); err != nil {
+		return fmt.Errorf("replacing the keyring file %s: %w", s.Path, err)
 	}
 	return nil
 }
