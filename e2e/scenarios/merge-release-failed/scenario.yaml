@@ -86,6 +86,8 @@ github:
       - body:
           - {name: Dockerfile, path: Dockerfile, type: file}
           - {name: helm, path: helm, type: dir}
+    "GET /repos/giantswarm/e2e-app/contents/.github/workflows/zz_generated.auto_release.yaml?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body: {type: file, name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, sha: c0ffee, encoding: base64, content: b246IHB1c2gK}
     "GET /repos/giantswarm/e2e-app/contents/.github/workflows?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
       - body:
           - {name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, type: file}

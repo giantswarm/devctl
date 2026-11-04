@@ -86,7 +86,8 @@ func (r *runner) rerun(ctx context.Context, args []string, doc *document) error 
 	}
 	sha := pr.GetHead().GetSHA()
 	doc.HeadSHA = sha
-	branch := circleciclient.PullRequestBranch(pr.GetHead().GetRef(), prwait.IsFork(pr), number)
+	fork := prwait.IsFork(pr)
+	branch := circleciclient.PullRequestBranch(pr.GetHead().GetRef(), fork, number)
 
 	circleci, err := rerun.NewCircleCI(ctx, r.requireCircleCI, endpoints, retrying, doc.Warn)
 	if err != nil {
@@ -101,6 +102,14 @@ func (r *runner) rerun(ctx context.Context, args []string, doc *document) error 
 	}
 	// A pipeline without a workflow gets the push of its revision again, with
 	// the client and identity that read the pull request.
-	redelivery := rerun.Redelivery{Hooks: func(context.Context) (rerun.Hooks, string, error) { return github, doc.Identity, nil }}
+	redelivery := rerun.Redelivery{Hooks: func(context.Context) (rerun.Hooks, string, error) {
+		// A matching revision in the base's deliveries can belong to another
+		// branch. It cannot recover a pipeline built for a fork's pull ref.
+		if fork {
+			return nil, "", agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable,
+				"the head %s was pushed to a fork: %s/%s has no push delivery for it to redeliver", sha, owner, repo)
+		}
+		return github, doc.Identity, nil
+	}}
 	return rerun.FromFailed(ctx, circleci, owner, repo, pipeline, doc.Result, doc.Warn, redelivery, rerun.Wedged{})
 }
