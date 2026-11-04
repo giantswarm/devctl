@@ -24,7 +24,7 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	err := r.flag.Validate()
 	if err != nil {
@@ -40,10 +40,19 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	// One token for every GitHub read of the release: the giantswarm
 	// repositories and the public upstream ones.
 	token, err := authstore.ResolveGitHub(ctx)
 	if err != nil {
+		return err
+	}
+	// The resolver may return a cached token, or finish a refresh just as the
+	// caller cancels. Do not enter release generation in either case.
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	token.WarnOnce(r.stderr)

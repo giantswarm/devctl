@@ -744,6 +744,118 @@ func Test_evaluate(t *testing.T) {
 	}
 }
 
+func Test_evaluate_cancelledCheckSupersession(t *testing.T) {
+	// In the reported incident the cancelled job belonged to the higher-ID
+	// workflow run, but the passing job actually started later.
+	started := time.Date(2026, 11, 2, 6, 52, 4, 0, time.UTC)
+	name := "semantic-pull-request / Validate PR title"
+	cancelled := inSuite(checkRun(125137577525, name, "completed", "cancelled", started), 112198936963)
+	passed := inSuite(checkRun(125137583682, name, "completed", "success", started.Add(3*time.Second)), 112198936353)
+	cancelledWorkflow := ofWorkflow(workflowRun(41402634717, "semantic-pull-request", "completed", "cancelled"), 366354474, 112198936963)
+	passedWorkflow := ofWorkflow(workflowRun(41402634492, "semantic-pull-request", "completed", "success"), 366354474, 112198936353)
+
+	for _, tc := range []struct {
+		name      string
+		checks    []*github.CheckRun
+		workflows []*github.WorkflowRun
+		wantGreen bool
+		wantRed   bool
+		wantIDs   []int64
+	}{
+		{
+			name:      "later passing job in a lower-ID workflow run supersedes cancellation",
+			checks:    []*github.CheckRun{cancelled, passed},
+			workflows: []*github.WorkflowRun{cancelledWorkflow, passedWorkflow},
+			wantGreen: true,
+			wantIDs:   []int64{passed.GetID()},
+		},
+		{
+			name:      "passing job listed first still supersedes cancellation",
+			checks:    []*github.CheckRun{passed, cancelled},
+			workflows: []*github.WorkflowRun{passedWorkflow, cancelledWorkflow},
+			wantGreen: true,
+			wantIDs:   []int64{passed.GetID()},
+		},
+		{
+			name: "later pending job supersedes cancellation but still waits",
+			checks: []*github.CheckRun{
+				cancelled, inSuite(checkRun(passed.GetID(), name, "in_progress", "", started.Add(3*time.Second)), 112198936353),
+			},
+			workflows: []*github.WorkflowRun{
+				cancelledWorkflow, ofWorkflow(workflowRun(passedWorkflow.GetID(), "semantic-pull-request", "in_progress", ""), 366354474, 112198936353),
+			},
+			wantIDs: []int64{passed.GetID()},
+		},
+		{
+			name: "jobs started together use the later check run ID",
+			checks: []*github.CheckRun{
+				cancelled, inSuite(checkRun(passed.GetID(), name, "completed", "success", started), 112198936353),
+			},
+			workflows: []*github.WorkflowRun{cancelledWorkflow, passedWorkflow},
+			wantGreen: true,
+			wantIDs:   []int64{passed.GetID()},
+		},
+		{
+			name:      "only cancelled job remains red",
+			checks:    []*github.CheckRun{cancelled},
+			workflows: []*github.WorkflowRun{cancelledWorkflow},
+			wantRed:   true,
+			wantIDs:   []int64{cancelled.GetID()},
+		},
+		{
+			name: "cancellation started after the passing job remains red",
+			checks: []*github.CheckRun{
+				inSuite(checkRun(cancelled.GetID(), name, "completed", "cancelled", started.Add(time.Minute)), 112198936963), passed,
+			},
+			workflows: []*github.WorkflowRun{cancelledWorkflow, passedWorkflow},
+			wantRed:   true,
+			wantIDs:   []int64{cancelled.GetID()},
+		},
+		{
+			name: "a passing matrix sibling does not supersede cancellation",
+			checks: []*github.CheckRun{
+				cancelled, inSuite(checkRun(passed.GetID(), name, "completed", "success", started.Add(3*time.Second)), 112198936963),
+			},
+			workflows: []*github.WorkflowRun{cancelledWorkflow},
+			wantRed:   true,
+			wantIDs:   []int64{cancelled.GetID(), passed.GetID()},
+		},
+		{
+			name: "a later check in another run does not hide a cancelled matrix job",
+			checks: []*github.CheckRun{
+				cancelled, passed,
+				inSuite(checkRun(passed.GetID()+1, name, "completed", "success", started.Add(time.Minute)), 112198936963),
+			},
+			workflows: []*github.WorkflowRun{cancelledWorkflow, passedWorkflow},
+			wantRed:   true,
+			wantIDs:   []int64{cancelled.GetID(), passed.GetID() + 1},
+		},
+		{
+			name:   "a separate workflow with the same name does not supersede cancellation",
+			checks: []*github.CheckRun{cancelled, passed},
+			workflows: []*github.WorkflowRun{
+				cancelledWorkflow, ofWorkflow(workflowRun(passedWorkflow.GetID(), "semantic-pull-request", "completed", "success"), 2, 112198936353),
+			},
+			wantRed: true,
+			wantIDs: []int64{cancelled.GetID(), passed.GetID()},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := evaluate(snapshot{checkRuns: tc.checks, runs: tc.workflows, required: []string{name}})
+			if e.green() != tc.wantGreen || (len(e.red) > 0) != tc.wantRed {
+				t.Errorf("want green=%v red=%v, got green=%v red=%q unfinished=%q", tc.wantGreen, tc.wantRed, e.green(), e.red, e.unfinished)
+			}
+			var ids []int64
+			for _, check := range e.checks {
+				ids = append(ids, check.ID)
+			}
+			if diff := cmp.Diff(tc.wantIDs, ids); diff != "" {
+				t.Errorf("check run IDs (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func nilToEmpty(s []string) []string {
 	if s == nil {
 		return []string{}
