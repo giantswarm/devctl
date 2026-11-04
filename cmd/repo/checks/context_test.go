@@ -55,6 +55,8 @@ func TestCommandCancellation(t *testing.T) {
 
 func TestCommandDeadline(t *testing.T) {
 	f := newChecksFixture(t)
+	f.protection = nil
+	f.ruleset = fixtureRuleset()
 	deadline := time.Now().Add(time.Minute)
 	ctx, cancel := context.WithDeadline(t.Context(), deadline)
 	defer cancel()
