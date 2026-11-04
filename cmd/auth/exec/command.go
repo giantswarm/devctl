@@ -1,7 +1,6 @@
 package exec
 
 import (
-	"context"
 	"io"
 	"os"
 
@@ -59,7 +58,7 @@ func New(config Config) (*cobra.Command, error) {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ex := authexec.Default()
 			ex.Stderr = config.Stderr
-			if code := authexec.Run(context.Background(), ex, args[0], args[1:]); code != 0 {
+			if code := authexec.Run(cmd.Context(), ex, args[0], args[1:]); code != 0 {
 				return &agentcli.ExitError{Code: code}
 			}
 			return nil
