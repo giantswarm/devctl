@@ -518,7 +518,8 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) (er
 	c.logger.Debugf("circleci: %s %s", method, path)
 
 	defer func() {
-		if err != nil {
+		// A cancelled read is the caller's outcome, not a failed service request.
+		if err != nil && ctx.Err() == nil {
 			err = &agentcli.RemoteError{Err: err}
 		}
 	}()
