@@ -77,7 +77,7 @@ func Test_AutoReleaseCatchUpAfterPromotingEarlierRC(t *testing.T) {
 	_, log, err = runStep(t, tagJobStep(t, "catch-up").Run, dir, path, "DISPATCH_LOG="+calls, "GH_REPO=giantswarm/example", "TARGET="+stable["target"])
 	require.NoError(t, err, log)
 	require.Contains(t, log, "feat: merged after rc.4")
-	raw, err := os.ReadFile(calls)
+	raw, err := os.ReadFile(calls) // #nosec G304 -- dispatch log path built from t.TempDir
 	require.NoError(t, err)
 	require.Equal(t, "giantswarm/example\nworkflow\nrun\nzz_generated.auto_release.yaml\n--ref\nmain\n-f\nrelease-type=auto\n", string(raw))
 
@@ -88,7 +88,7 @@ func Test_AutoReleaseCatchUpAfterPromotingEarlierRC(t *testing.T) {
 	computed, log, err := runStep(t, tagJobStepNamed(t, "Compute next version").Run, nextDir)
 	require.NoError(t, err, log)
 	require.Equal(t, "v0.123.0", computed["version"])
-	context, err := os.ReadFile(filepath.Join(nextDir, "cliff-context.json"))
+	context, err := os.ReadFile(filepath.Join(nextDir, "cliff-context.json")) // #nosec G304 -- context path built from t.TempDir
 	require.NoError(t, err)
 	require.Contains(t, string(context), "feat: later candidate")
 	require.Contains(t, string(context), "feat: merged after rc.4")
@@ -142,7 +142,7 @@ func Test_AutoReleaseCatchUpDispatch(t *testing.T) {
 			}
 			_, log, err := runStep(t, tagJobStep(t, "catch-up").Run, dir, env...)
 			require.Equal(t, tc.wantErr, err != nil, log)
-			raw, readErr := os.ReadFile(calls)
+			raw, readErr := os.ReadFile(calls) // #nosec G304 -- dispatch log path built from t.TempDir
 			if tc.wantCall {
 				require.NoError(t, readErr)
 				require.Contains(t, string(raw), "--ref\n"+tc.branch+"\n")

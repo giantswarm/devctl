@@ -634,6 +634,8 @@ jobs:
       # The stable run reads the commit statuses of the candidate it promotes,
       # and every run with a tag those of the tag's CircleCI build.
       statuses: read
+      # A promotion queues an auto run for commits left on the branch.
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -1072,6 +1074,36 @@ jobs:
             --notes-file release-notes.md \
             --target "$TARGET" \
             ${flags[@]+"${flags[@]}"}
+
+      # The stable tag is on the promoted candidate, not the branch head.
+      # A push already handled before that tag used the previous stable as
+      # its baseline, so its candidate may now be older than the new stable.
+      # Re-run auto against the branch with the new baseline without waiting
+      # for another push. Fetch the branch again: it may have advanced during
+      # promotion. Queue this before the CircleCI check, whose failure must
+      # not strand commits after an already published stable release.
+      - name: Queue releases for commits after the promoted candidate
+        id: catch-up
+        if: inputs.release-type == 'stable' && steps.release.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TARGET: ${{ steps.decide.outputs.target }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "refs/heads/${GITHUB_REF_NAME}"
+          head=$(git rev-parse 'FETCH_HEAD^{commit}')
+          if ! git merge-base --is-ancestor "$TARGET" "$head"; then
+            echo "::error::${GITHUB_REF_NAME} no longer contains the promoted commit ${TARGET}; inspect the branch before releasing it."
+            exit 1
+          fi
+          if [ "$head" = "$TARGET" ]; then
+            echo "${GITHUB_REF_NAME} has no commits after the promoted candidate; nothing to queue."
+            exit 0
+          fi
+          echo "Queuing auto-release for commits on ${GITHUB_REF_NAME} after the promoted candidate:"
+          git log --format='%h %s' "${TARGET}..${head}"
+          gh workflow run zz_generated.auto_release.yaml --ref "$GITHUB_REF_NAME" -f release-type=auto
 
       # A tag that never reaches CircleCI is a silent failure: the GitHub
       # Release above exists and looks finished, but nothing gets built or
