@@ -287,6 +287,11 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 				return
 			}
 
+			if prCheck != nil && prCheck.GetHead().GetSHA() != headSHA {
+				ps.UpdateStatus("Head changed; run again")
+				return
+			}
+
 			// Check if PR needs to be updated with base branch
 			if prCheck != nil && prCheck.GetMergeableState() == "behind" {
 				if r.flag.DryRun {
@@ -295,7 +300,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 				}
 
 				ps.UpdateStatus("Updating branch...")
-				_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, github.UpdatePullRequestBranchRequest{})
+				_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, github.UpdatePullRequestBranchRequest{ExpectedHeadSHA: new(headSHA)})
 				if err != nil {
 					ps.UpdateStatus("Failed to update branch")
 					return
@@ -322,7 +327,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 				return
 			}
 			if r.flag.Team != "" {
-				r.mergeApproved(ctx, githubClient, ps, prCheck, combinedStatus, checkRuns)
+				r.mergeApproved(ctx, githubClient, ps, prCheck, combinedStatus, checkRuns, headSHA)
 				return
 			}
 			ps.UpdateStatus("Already approved")
@@ -341,7 +346,8 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 
 		ps.UpdateStatus("Approving...")
 		reviewRequest := &github.PullRequestReviewRequest{
-			Event: new("APPROVE"),
+			Event:    new("APPROVE"),
+			CommitID: new(headSHA),
 		}
 		_, _, err = githubClient.PullRequests.CreateReview(ctx, ps.Owner, ps.Repo, ps.Number, reviewRequest)
 		if err != nil {
@@ -357,10 +363,15 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 			return
 		}
 
+		if prCheck != nil && prCheck.GetHead().GetSHA() != headSHA {
+			ps.UpdateStatus("Head changed; run again")
+			return
+		}
+
 		// Check if PR branch is behind and needs updating
 		if prCheck != nil && prCheck.GetMergeableState() == "behind" {
 			ps.UpdateStatus("Updating branch...")
-			_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, github.UpdatePullRequestBranchRequest{})
+			_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, github.UpdatePullRequestBranchRequest{ExpectedHeadSHA: new(headSHA)})
 			if err != nil {
 				ps.UpdateStatus("Failed to update branch")
 				return
@@ -397,7 +408,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 
 // mergeApproved merges an approved, green PR that carries no auto-merge, or
 // names the required check that nothing produces when that is what blocks it.
-func (r *runner) mergeApproved(ctx context.Context, githubClient *github.Client, ps *pr.PRStatus, prData *github.PullRequest, combined *github.CombinedStatus, runs *github.ListCheckRunsResults) {
+func (r *runner) mergeApproved(ctx context.Context, githubClient *github.Client, ps *pr.PRStatus, prData *github.PullRequest, combined *github.CombinedStatus, runs *github.ListCheckRunsResults, headSHA string) {
 	if prData == nil {
 		ps.UpdateStatus("Already approved")
 		return
@@ -426,7 +437,7 @@ func (r *runner) mergeApproved(ctx context.Context, githubClient *github.Client,
 	}
 
 	ps.UpdateStatus("Merging...")
-	_, _, err := githubClient.PullRequests.Merge(ctx, ps.Owner, ps.Repo, ps.Number, "", &github.PullRequestOptions{MergeMethod: "squash"})
+	_, _, err := githubClient.PullRequests.Merge(ctx, ps.Owner, ps.Repo, ps.Number, "", &github.PullRequestOptions{MergeMethod: "squash", SHA: headSHA})
 	if err != nil {
 		ps.UpdateStatus("Failed to merge")
 		return
