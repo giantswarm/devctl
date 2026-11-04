@@ -74,9 +74,14 @@ says when the change landed: a pull request that changes no HelmRelease, values 
 the source and the Kustomizations applied it. A Kustomization or Konfiguration whose attempt at the revision
 failed, or an App whose release failed with the new values, is exit 1; once everything else is applied, a
 changed app whose values nothing takes is exit 3, verdict `rollout_unknown`, never `rolled_out`; nothing on the installation fetching the repository keeps the `no_release` verdict, exit
-3, its reason saying so; a GitRepository nothing reads (one included into another) is exit 3. `--reconcile`
-asks the GitRepository, the Kustomizations and, once its values are rendered, each HelmRelease to
-reconcile, once each.
+3, its reason saying so; a GitRepository nothing reads (one included into another) is exit 3.
+
+A failed values attempt is exit 1 once helm-controller has observed the current generation and
+finished reconciling, even when a new history digest or a handled reconcile proves it attempted the
+change. Active retries keep waiting.
+
+With `--reconcile`, the wait asks the GitRepository, the Kustomizations and, once its values are
+rendered, each HelmRelease to reconcile, once each.
 
 ### The installation
 
@@ -106,7 +111,8 @@ A chart is deployed by one of:
 | `App` (`application.giantswarm.io/v1alpha1`) | its `spec.name` is the chart | `status.version` with `status.release.status` `deployed` |
 
 Every match on the cluster is judged; none is exit 3. `--helmrelease <name>` or
-`--helmrelease <namespace>/<name>` (repeatable) adds a HelmRelease whatever chart it deploys; a name no
+`--helmrelease <namespace>/<name>` (repeatable) adds a HelmRelease whatever chart it deploys.
+Malformed selectors return exit 7 before opening clients or waiting for a release; a name no
 HelmRelease on the cluster answers to is exit 3, the reason naming how many HelmReleases it looked through, in
 all namespaces of the context. One of the release's charts is judged the same way against
 the version. One of none of them (a component a meta chart renders, on a version line of its own) is judged

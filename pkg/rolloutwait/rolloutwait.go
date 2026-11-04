@@ -123,11 +123,8 @@ func New(config Config) (*Waiter, error) {
 	if config.Revision != "" && (config.GitHub == nil || config.Repository == "") {
 		return nil, errors.New("rolloutwait: a Revision needs GitHub and Repository")
 	}
-	for _, name := range config.HelmReleases {
-		namespace, n, namespaced := strings.Cut(name, "/")
-		if name == "" || strings.Contains(n, "/") || (namespaced && (namespace == "" || n == "")) {
-			return nil, agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--helmrelease %q: name a HelmRelease as <name> or <namespace>/<name>", name)
-		}
+	if err := ValidateHelmReleases(config.HelmReleases); err != nil {
+		return nil, err
 	}
 	if config.Revision == "" && bare(config.Version) == "" {
 		return nil, errors.New("rolloutwait: Version must not be empty without a Revision")
@@ -173,6 +170,18 @@ func New(config Config) (*Waiter, error) {
 		w.charts[c] = true
 	}
 	return w, nil
+}
+
+// ValidateHelmReleases checks the names before a caller opens clients or
+// waits for a release; New checks them for other callers too.
+func ValidateHelmReleases(names []string) error {
+	for _, name := range names {
+		namespace, n, namespaced := strings.Cut(name, "/")
+		if name == "" || strings.Contains(n, "/") || (namespaced && (namespace == "" || n == "")) {
+			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--helmrelease %q: name a HelmRelease as <name> or <namespace>/<name>", name)
+		}
+	}
+	return nil
 }
 
 // Wait polls the installation until the release runs there, fails, turns out
