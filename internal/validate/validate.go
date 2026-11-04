@@ -32,7 +32,7 @@ func Name(kind, value string) error {
 // versionRegexp matches a semantic version, with or without a leading "v", and
 // admits no character that changes the meaning of a URL path or a shell-free
 // argument list.
-var versionRegexp = regexp.MustCompile(`^v?[0-9]+(\.[0-9]+)*(-[a-zA-Z0-9.]+)?(\+[a-zA-Z0-9.]+)?$`)
+var versionRegexp = regexp.MustCompile(`^v?[0-9]+(\.[0-9]+)*(-[a-zA-Z0-9.-]+)?(\+[a-zA-Z0-9.-]+)?$`)
 
 // Version reports whether value is a well-formed version string.
 func Version(kind, value string) error {
