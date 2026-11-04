@@ -11,7 +11,7 @@ import (
 // provider, chart or cluster identifier. It admits no separator that gives a
 // path segment, a URL segment or a leading dash that a subprocess would read as
 // a flag.
-var nameRegexp = regexp.MustCompile(`^[a-z0-9]([a-z0-9.]|-(?:-*[a-z0-9.]))*$`)
+var nameRegexp = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`)
 
 // Name reports whether value is a well-formed identifier. kind names the input
 // in the error, for example "--team".

@@ -13,7 +13,10 @@ func Test_Name(t *testing.T) {
 		valid bool
 	}{
 		{name: "simple", value: "prometheus", valid: true},
+		{name: "single letter", value: "a", valid: true},
+		{name: "single digit", value: "1", valid: true},
 		{name: "hyphenated", value: "cluster-api-provider-aws", valid: true},
+		{name: "repeated internal hyphens", value: "atlas--dev", valid: true},
 		{name: "digits", value: "coredns2", valid: true},
 		{name: "dotted", value: "cert-manager.io", valid: true},
 		{name: "empty", value: "", valid: false},
@@ -24,6 +27,11 @@ func Test_Name(t *testing.T) {
 		{name: "leading dash reads as a flag", value: "-rf", valid: false},
 		{name: "long flag", value: "--kubeconfig", valid: false},
 		{name: "trailing dash", value: "atlas-", valid: false},
+		{name: "trailing dot", value: "prometheus.", valid: false},
+		{name: "dot after single letter", value: "a.", valid: false},
+		{name: "dot after hyphen", value: "atlas-.", valid: false},
+		{name: "trailing dot in dotted name", value: "cert-manager.io.", valid: false},
+		{name: "repeated trailing dots", value: "atlas..", valid: false},
 		{name: "uppercase", value: "Atlas", valid: false},
 		{name: "space", value: "atlas team", valid: false},
 		{name: "semicolon", value: "atlas;id", valid: false},
