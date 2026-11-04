@@ -45,7 +45,7 @@ func TestReleasePromoteSourcesKeepsTheSelectedIdentity(t *testing.T) {
 			}
 			store := &authstore.FileStore{Path: filepath.Join(t.TempDir(), "keyring.json")}
 			t.Setenv(agentcli.EnvKeyringFile, store.Path)
-			original := authstore.Record{Login: "fixture-person", Token: "test-app-stale", RefreshToken: "test-app-refresh"}
+			original := authstore.Record{Login: "fixture-person", Token: "test-app-stale", RefreshToken: "test-app-refresh"} // #nosec G101 -- fixture value
 			if err := store.Set(authstore.UserGitHub, original); err != nil {
 				t.Fatal(err)
 			}
@@ -60,7 +60,7 @@ func TestReleasePromoteSourcesKeepsTheSelectedIdentity(t *testing.T) {
 				case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/repos/giantswarm/fixture"):
 					token := r.Header.Get("Authorization")
 					tokens = append(tokens, token)
-					if token != "Bearer test-app-fresh" && !(tc.acceptOverride && token == "Bearer test-override") {
+					if token != "Bearer test-app-fresh" && !(tc.acceptOverride && token == "Bearer test-override") { // #nosec G101 -- fixture value
 						w.WriteHeader(http.StatusUnauthorized)
 						_, _ = w.Write([]byte(`{"message":"synthetic token rejection"}`))
 						return
