@@ -8,7 +8,10 @@ import (
 	"golang.org/x/mod/module"
 )
 
-const devctlModule = "github.com/giantswarm/devctl/v8"
+const (
+	devctlModule     = "github.com/giantswarm/devctl/v8"
+	defaultModuleRef = "main"
+)
 
 // TemplateSHA is the provenance link a generated file's header carries for
 // the template name: the content of name.sha next to the template, which
@@ -32,7 +35,7 @@ func TemplateSHA(files fs.FS, name string) string {
 func moduleRef() string {
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
-		return "main"
+		return defaultModuleRef
 	}
 	return moduleRefFromBuildInfo(bi)
 }
@@ -49,7 +52,7 @@ func moduleRefFromBuildInfo(bi *debug.BuildInfo) string {
 		}
 	}
 	if m == nil {
-		return "main"
+		return defaultModuleRef
 	}
 	if m.Replace != nil {
 		m = m.Replace
@@ -57,7 +60,7 @@ func moduleRefFromBuildInfo(bi *debug.BuildInfo) string {
 	// An unversioned replacement is local source. Its original requirement's
 	// version does not identify the code that was actually built.
 	if m.Version == "" || m.Version == "(devel)" {
-		return "main"
+		return defaultModuleRef
 	}
 	if rev, err := module.PseudoVersionRev(m.Version); err == nil {
 		return rev
