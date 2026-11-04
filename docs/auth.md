@@ -14,7 +14,7 @@ own shell and never enters an agent session.
 | Command | GitHub token |
 |---|---|
 | `auth exec` and the `gh` link | the App login; `gh` on a repository of an owner the App is not installed on keeps your own `gh` login |
-| `deploy`, [`pr approve-align-files`](pr-approve-align-files.md), `pr approve-merge-renovate`, `release create`, `release promote`, `repo create` | the App login; a token in the environment overrides it |
+| `deploy`, [`pr approve-align-files`](pr-approve-align-files.md), `pr approve-merge-renovate`, `release create`, `release promote`, `repo create`, `repo owner` | the App login; a token in the environment overrides it |
 | the version check that precedes every command, `version check`, `version update`, `repo validate --local` | the same, optional and looked up only when GitHub is asked (never while the one-hour version cache is fresh): without one a public read is anonymous (`repo validate --local`: the embedded schema, repository names unchecked) |
 | `pr wait`, `pr merge`, `pr rerun` | the App login for giantswarm; your own `gh` login (`gh auth token`) for every other owner; never a token in the environment |
 | `release wait`, `rollout wait` | the App login only (`rollout wait` reads the installation with your kube context) |
@@ -87,6 +87,17 @@ log on every request, which separates an agent's actions from the person's own.
 **Not an agent action:** administration (branch protection, rulesets, settings, creating or editing
 webhooks, deploy keys, repository creation). It stays with giantswarm-repo-manager, its own App reached
 through the `repo` commands, or with a person in their own shell.
+
+For a repository's **declared owning team**, use `devctl repo owner giantswarm/devctl`
+([the team-file lookup](repo.md#devctl-repo-owner)). It reads the declaration in
+`giantswarm/github` with Contents read, which the App already carries. It does not list
+GitHub access grants. `gh api repos/<owner>/<repo>/teams` requires
+[Administration read](https://docs.github.com/en/rest/repos/repos#list-repository-teams);
+under the agent App token it can return `403 Resource not accessible by integration`.
+Do not use that endpoint for agent ownership checks or fall back to a person's token.
+The reconciler's permissions step compares actual grants with its separate administration
+installation token; a team-file declaration cannot replace that check. No agent App
+permission needs widening for the ownership lookup.
 
 The App is installed on the giantswarm organization only. `gh` through devctl therefore acts with the
 App token for giantswarm's repositories and wherever no repository is named, and keeps the person's own
@@ -214,6 +225,8 @@ authorization server, so the flow is discovered, not configured:
    PKCE verifier and reads the login from the userinfo endpoint.
 4. The access token comes with a refresh token (the `offline_access` scope): a `repo` command that
    finds the access token expired refreshes it itself, no human involved, and stores the new pair.
+   Refreshes hold the muster identity's lock and reread the record after acquiring it, so concurrent
+   commands share the renewed pair and spend a rotating refresh token only once.
 
 Then the sign-in to giantswarm-repo-manager, once: the manager is pinned to its own GitHub App, so
 devctl asks muster (`core_auth_login`) for the sign-in, prints and opens the App's consent URL when
@@ -323,7 +336,7 @@ its final repository document. This is the CLI's behavior; `devctl serve` keeps 
 |---|---|---|
 | 0 | `green`, `available` | ok |
 | 1 | `red`, `ci_failed` | a check is red or the tag's CI failed |
-| 2 | `timeout` | the deadline passed; the document names what was unfinished |
+| 2 | `timeout` | the deadline passed or SIGINT/SIGTERM interrupted a CLI wait; the document names what was unfinished. An acknowledged `pr merge` instead exits 9 (`release_unconfirmed`) with its merge commit and the release confirmation command. |
 | 3 | `not_applicable` | draft, closed, conflicting, behind a strict base, version not resolvable |
 | 4 | `required_missing`, `approval_required`, `no_checks` | a required context never reported; Actions runs await a member's approval; the `pull_request` workflows never started |
 | 5 | `refused` | another author, an opt-out |

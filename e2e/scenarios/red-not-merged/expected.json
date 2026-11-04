@@ -28,6 +28,7 @@
     "actions": [
       {"name": "CI", "runId": 7001, "status": "completed", "conclusion": "success", "url": "*"}
     ],
+    "merged": false,
     "mergeCommitSha": "",
     "mergedBy": "",
     "method": "squash",

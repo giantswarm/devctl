@@ -212,5 +212,5 @@ var dirtyWorktreeError = &microerror.Error{
 
 // IsDirtyWorktree asserts dirtyWorktreeError.
 func IsDirtyWorktree(err error) bool {
-	return microerror.Cause(err) == dirtyWorktreeError
+	return errors.Is(err, dirtyWorktreeError)
 }

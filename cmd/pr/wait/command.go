@@ -76,8 +76,9 @@ and CircleCI job once and print its last --failed-log-lines lines (default
 Exit codes:
   0  green
   1  red: a check, status, run or workflow failed; reason names it
-  2  timeout before an outcome; unfinished names what was still open, the
-     reason an outage that left the last poll unanswered
+  2  timeout or SIGINT/SIGTERM; reason identifies an interrupted wait;
+     unfinished names what was still open, reason also names an outage
+     that left the last poll unanswered
   3  not applicable: closed, merged, conflicting, behind a strict base
   4  a required status context never reported, or Actions runs await a
      member's approval and nothing else is pending

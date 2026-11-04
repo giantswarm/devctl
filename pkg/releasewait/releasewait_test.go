@@ -56,6 +56,8 @@ type fixture struct {
 	charts []string
 	// wrapCircleCI, when set, stands in front of the CircleCI client.
 	wrapCircleCI func(CircleCI) CircleCI
+	// circleCIFromStatuses reads CircleCI through GitHub alone.
+	circleCIFromStatuses bool
 	// failedLogLines is --failed-log-lines with --failed-log; 0 without.
 	failedLogLines int
 	// clock, when set, is the wait's clock; a virtual clock otherwise.
@@ -238,6 +240,10 @@ func run(t *testing.T, fx fixture) (Result, error) {
 		Clock:        agentcli.NewVirtualClock(time.Now()),
 		Rate:         sources.Rate,
 		Warn:         fx.warn,
+	}
+	config.CircleCIFromStatuses = fx.circleCIFromStatuses
+	if fx.circleCIFromStatuses {
+		config.CircleCI = nil
 	}
 	if fx.clock != nil {
 		config.Clock = *fx.clock
