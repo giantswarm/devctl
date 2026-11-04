@@ -1,5 +1,9 @@
 # Waiting for a release: `devctl release wait`
 
+SIGINT or SIGTERM interrupts the CLI wait with its JSON document and exit 2, the timeout's code.
+The reason identifies the interruption; the document retains the release, artifacts and pipeline
+state observed so far, including unfinished workflows.
+
 ```nohighlight
 devctl release wait <owner/repo> (<vX.Y.Z | X.Y.Z | image/vX.Y.Z> | --pr <number>) [--timeout 60m] [--catalog] [--image <owner/name>]... [--chart <path>]... [--progress] [--failed-log [--failed-log-lines 50]]
 ```
@@ -26,6 +30,32 @@ GitHub uses the same login as `pr wait`: the devctl App login from the keychain 
 Only the App login renews itself. GitHub is always needed; CircleCI uses the keychain only when the tag
 carries a `.circleci/config.yml`. A missing token is exit 8 with the login command in `reason`, before
 anything is waited for.
+
+The CLI also records a failed, verified CircleCI tag pipeline in the GitHub release's notes with a
+visible **Not published** notice and a link to the pipeline. It preserves the existing notes, title,
+tag, draft and prerelease state. The notice means artifacts may be missing or incomplete; a pipeline
+can fail after publishing some of them. A later wait that confirms availability removes only
+devctl's notice, including when the tag is available but a separate commit status causes exit 12.
+The release wait after `pr merge` records the same notice. Editing notes requires GitHub
+`Contents: write`; a failed edit appears in `warnings` without replacing the wait's outcome.
+
+This records observations from CLI waits, rather than continuously monitoring releases. Timeouts,
+failures before a tag exists and commit statuses without a verified tag pipeline change no notes.
+The server's read-only `release_wait` tool and `rollout wait` change no notes.
+
+List published releases carrying devctl's notice with one read-only command:
+
+```nohighlight
+devctl release failed giantswarm/devctl
+```
+
+It prints the JSON envelope and `repository`, `releases[{tag, url}]`, including marked prereleases.
+An empty list is `[]`. Exit 0 (`listed`) means the listing completed, 7 is usage or a read failure,
+and 8 is missing authentication. It reads up to 1000 releases across all API pages and reports an
+error if more pages remain, rather than silently returning an incomplete list. It reads recorded
+notices only: it neither scans historical pipelines nor infers failure from releases without
+binary assets. Historical failures need a CLI wait to record them; hand-written notices are
+preserved but are not included in this list.
 
 ## What the command reads, and why
 
@@ -181,13 +211,32 @@ fallback.
 **Neither image nor chart** (a CLI that ships binaries as release assets, a repository without
 CircleCI): the release is available when the GitHub Release of the tag is published (not a draft) and
 every workflow of the tag finished green. `artifacts` then lists the release assets with the digests
-GitHub reports.
+GitHub reports. With CircleCI, the pipeline must be verified by the requested tag, including when a
+status link is used to find it; green commit statuses alone cannot distinguish a stable tag from a
+candidate on the same commit. The pipeline's jobs are read even for generated CI. When they include
+`upload-release-assets` (also with an orb prefix), the published release must list at least one
+asset. An empty release keeps waiting even after the pipeline turns green. A pipeline without that
+job may publish an empty release.
+
+The document names the stable pipeline in `pipeline.number`, its upload jobs as `workflow/job` in
+`pipeline.assetUploadJobs`, and the published release's asset count in `releaseAssetCount` (including
+zero while waiting). A timeout for missing assets names the pipeline, upload jobs and zero count.
+A CircleCI wait that reads commit statuses alone, such as the server's, cannot verify a tag pipeline
+for release assets: it times out naming the missing verification. Use the CLI with its CircleCI login
+to obtain that evidence.
 
 ### Availability
 
 A release is available when every artifact resolves to a digest, the tag's CI is green (the next
 section) **and** every commit status of the tag's commit succeeded ([The commit's statuses](#the-commits-statuses)). The artifacts alone are not the release: a repository's own tag jobs push more than the sources
 name, and a job signs what it pushed after the digest resolves.
+
+Artifact presence is read independently of the tag pipeline's verdict. A failed pipeline still
+derives and probes its expected images and charts before returning: pullable artifacts carry
+`state: available` and their digests, absent artifacts remain `missing`, and the document carries
+`verdict: ci_failed`, exit 1, with `pipeline.failedJobs`. If artifact derivation or probing returns
+a terminal error while CI is already known to have failed, a warning names that read failure
+and the CI verdict still decides the exit code.
 
 An artifact is available when its manifest resolves to a digest:
 
@@ -213,6 +262,17 @@ chart at the version; the index is fetched anew every time, so no cached copy an
 orb at 10.12.0 or later, or at a dev version: from 10.12.0 the orb pushes a pre-release tag's chart to
 `app_catalog_test`. An older pin still pushes it to the production catalog, which is then the one read.
 
+When Pages does not list a chart, the wait also checks the catalog repository's `index.yaml` on its
+default branch through GitHub's raw Contents API (which supports indexes larger than 1 MB). A chart
+found there is reported as `in repository index.yaml, Pages not yet serving`, in the heartbeat and in
+the timeout reason. Repository publication is progress; success still requires the Pages index.
+If every chart still missing from Pages has been confirmed in its repository before `--timeout`, the
+wait grants one additional **10 minutes** after that deadline. The bound is `--timeout + 10m`; later
+polls do not renew it. An earlier caller deadline or cancellation still ends the wait. A missing or
+unreadable repository entry grants no extension and is named in the timeout reason. A Pages 404 means
+not yet published; other Pages HTTP or parsing errors remain tooling failures. Registry availability,
+the tag pipeline and commit statuses retain their usual checks during the extension.
+
 ### The tag's CI
 
 Every poll reads the tag pipeline: the newest CircleCI pipeline whose `vcs.tag` is the tag, its
@@ -222,12 +282,13 @@ status for ever). Once a listing named the tag pipeline, a later one that no lon
 repository's newer pipelines push it off the pages read) leaves the wait reading that pipeline. A workflow in `failed`, `error`, `failing`, `canceled` or `unauthorized` ends the
 wait with exit 1 and `pipeline.failedJobs` (`workflow/job`, or the workflow alone when CircleCI does
 not list its jobs). The verdict is the workflows': their jobs are read only where they are needed,
-to name the failed ones and to derive the artifacts of hand-written CI and of a `custom.yml` that
-declares push jobs (one of test and repository-owned jobs alone names no artifact and needs no look
+to name the failed ones, detect release-asset upload jobs, and derive the artifacts of hand-written
+CI and of a `custom.yml` that declares push jobs (one of test and repository-owned jobs alone names no artifact and needs no look
 at them); the setup workflow's one job continues the pipeline and is never read. CircleCI answers 404 on the jobs of a workflow it lists, a finished one
 included, for a while after the workflow exists and for as long as its job data lags behind (half
-an hour and more during an incident), and a green pipeline is green without them; a derivation
-that needs them goes on polling, `pipeline.unfinished` says `build (running, jobs not visible
+an hour and more during an incident), and a green pipeline needs no job data unless artifact
+derivation or release-asset upload detection requires it. A wait that needs them goes on polling,
+`pipeline.unfinished` says `build (running, jobs not visible
 yet)`, and jobs that never appear end the wait at its timeout naming the workflow. A repository without CircleCI is judged
 by the GitHub Actions runs on the tag's commit whose branch is the tag: a `failure`, `cancelled`,
 `timed_out` or `startup_failure` conclusion is exit 1.
@@ -254,6 +315,9 @@ headed `failed job <name> (<url>):`, and into the document under `failedJobs[]`.
 timed-out wait reads no log; a log that cannot be read is named in its job's `logError`, and the
 verdict stays exit 1. Without the flag the document is unchanged.
 
+`--failed-log --failed-log-lines 0` keeps the full Actions log, including post-job cleanup, or all
+failed-step output on CircleCI, with the same control-character filtering and output fields.
+
 ### The commit's statuses
 
 The tag pipeline is not every status of the tag's commit: a late job, the branch pipeline that built
@@ -279,11 +343,16 @@ the rate_limit endpoint is never asked. `DEVCTL_TIME_SCALE` multiplies every sle
 (the end-to-end tests run at 0.001). A GitHub or CircleCI read that fails in transit (a reset
 connection, an EOF, a try over 60 s) or with a 5xx is sent again, up to fifteen tries in a row with a
 pause from 2 s doubling to 60 s, each retried failure a warning with its time, as in
-[`pr wait`](pr-wait.md#polling); a read that fails all fifteen is exit 7 naming the request and the count,
-except a read of the tag's CI (the CircleCI pipeline, or the tag's Actions runs): an API that does not
-answer says nothing about the release, so the next poll reads again until the timeout. A timeout after
+[`pr wait`](pr-wait.md#polling); a read that fails all fifteen is exit 2 with verdict `transient`,
+naming the request, count, elapsed time and last failure, except a read of the tag's CI (the CircleCI
+pipeline, or the tag's Actions runs): an API that does not answer says nothing about the release, so the
+next poll reads again until the timeout. A timeout after
 such reads is exit 2 whose reason ends `the release is unknown, not failed: the last read of the tag's CI
 went unanswered: <request and failure>`.
+A CircleCI read refused with 401 pauses for two seconds, re-reads the keychain and retries once,
+even if the token is unchanged. Later reads keep the replacement token. A second 401 is exit 13
+(`remote_error`), preserving the API failure rather than reporting invalid usage. The pause is
+bounded by the caller's context and uses wall time. CircleCI writes are never retried.
 A read refused for a spent rate limit is sent again after the reset (or `Retry-After`), a warning
 naming the limit and the reset time; a reset after the deadline is exit 2 at once, naming it.
 
@@ -330,16 +399,18 @@ stderr.
 
 | Field | Meaning |
 |---|---|
-| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `available`, `ci_failed`, `timeout`, `not_applicable`, `no_release`, `ambiguous_release`, `status_failed`, `tag_pipeline_empty`, `usage` or `auth_required`. `warnings` carries the CircleCI token's seven-day expiry notice and a team-file declaration that disagrees with the tag's workflows about the release model. |
+| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `available`, `ci_failed`, `timeout`, `not_applicable`, `no_release`, `ambiguous_release`, `status_failed`, `tag_pipeline_empty`, `transient`, `usage`, `remote_error` or `auth_required`. `warnings` carries the CircleCI token's seven-day expiry notice and a team-file declaration that disagrees with the tag's workflows about the release model. |
 | `repository`, `tag`, `sha` | What was waited for. `tag` is empty when it never appeared; `sha` is the tag's commit (with `--pr` the merge commit). |
 | `releaseModel` | `auto-release` or `legacy`. |
 | `ciModel` | `generated`, `hand-written`, `actions` or `none`. |
 | `artifacts[]` | `kind` (`image`, `chart`, `release-asset`), `reference` (the pullable reference, or the asset's download URL), `digest` (empty while missing), `state` (`available`, `missing`), optional `lastProbeError` (the last unresolved probe error). Empty until the artifacts are known (hand-written CI before its pipeline exists). |
+| `releaseAssetCount` | Present after reading a published GitHub release in a release-assets wait. Zero keeps the wait pending when its tag pipeline has an upload job. |
+| `pipeline.assetUploadJobs[]` | Present when the tag pipeline's jobs include `upload-release-assets`, with or without an orb prefix. Each entry is `workflow/job`; `pipeline.number` identifies the pipeline that ran them. |
 | `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status, conclusion}]` (newest run per name; for `ciModel` `actions` one entry per check run of the tag's commit, with its `conclusion`, `id`, `number` empty and `url` the commit's checks page), `failedJobs[]`, `unfinished[]` (the workflows not finished, `name (status)`, with `jobs not visible yet` when CircleCI does not list them yet; what a timeout was waiting for, empty at exit 0). When CircleCI names no pipeline for the tag and its commit's CircleCI statuses are the verdict, `workflows` are those statuses' jobs and `unfinished` the pending ones, with `id`, `number` and `url` empty. `null` for a repository without CircleCI and without check runs on the tag, or while the CircleCI pipeline does not exist. |
 | `actions[]` | The Actions runs the tag triggered, for a repository without CircleCI: `name`, `runId`, `status`, `conclusion`, `url`. |
 | `statuses[]` | The newest commit status of every context of the tag's commit, `context`, `state` (`pending`, `success`, `failure`, `error`) and `url`, read once the artifacts are available and the tag's CI is green; empty before. |
 | `conflictingTags[]` | Present at exit 11: every release tag on the commit the wait resolved to, newest first. Absent otherwise. |
-| `failedJobs[]` | Present at exit 1 with `--failed-log`, as in [`pr wait`](pr-wait.md#the-document): each failed job with `name` (`<workflow>/<job>` on CircleCI, `<run>/<job>` on Actions), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, led by the lines from its first failure when that lies before them, or `logError` when the log could not be read. A failed workflow or run whose jobs cannot be listed is named alone with its `logError`. Absent without the flag. |
+| `failedJobs[]` | Present at exit 1 with `--failed-log`, as in [`pr wait`](pr-wait.md#the-document): each failed job with `name` (`<workflow>/<job>` on CircleCI, `<run>/<job>` on Actions), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, led by the lines from its first failure when that lies before them (zero keeps the full Actions log or all failed-step output on CircleCI), or `logError` when the log could not be read. A failed workflow or run whose jobs cannot be listed is named alone with its `logError`. Absent without the flag. |
 
 An empty CircleCI tag pipeline in state `created` or `errored` ends the wait within that poll
 with exit 14, `tag_pipeline_empty`, when the configuration at the tag admits jobs for it. The
@@ -355,13 +426,14 @@ as the CircleCI commit-status wait. A wait without a CircleCI client cannot esta
 |---|---|---|
 | 0 | `available` | Every artifact resolves to a digest and every workflow of the tag pipeline finished green (and, with `--catalog`, the index lists every chart); or the release of a repository without image and chart is published with its workflows green. |
 | 1 | `ci_failed` | A workflow of the tag pipeline, or an Actions run of the tag, failed or was cancelled; with `--pr`, the merge commit's auto-release run failed before it tagged. `reason` and `pipeline.failedJobs` name the jobs. The release is incomplete until a rerun of the failed workflow succeeds or a fix lands as the next tag; artifacts that did resolve are listed `available`. |
-| 2 | `timeout` | The deadline passed. `reason` names what is missing: the tag, the pipeline, the artifacts by reference, and the pipeline's unfinished workflows (also when every artifact is already available). |
+| 2 | `timeout`, `transient` | The deadline passed, including the single 10-minute Pages extension when repository publication was confirmed with `--catalog`, or a read outside the polling loop exhausted its retry window (`transient`). `reason` names what is missing: the tag, the pipeline, the artifacts by reference, and the pipeline's unfinished workflows (also when every artifact is already available). |
 | 3 | `not_applicable` | The pull request is not merged, or its auto-release run was cancelled before it tagged (superseded by a newer push), so `--pr` cannot resolve a version. |
 | 3 | `no_release` | No release follows the pull request's merge: the repository does not tag merge commits (the legacy release model, or no release workflow at all), or the merge commit's auto-release run finished without a tag and no later tag on the pull request's base branch carries it; the reason names the branch. |
-| 7 | `usage` | A bad argument or flag; a newer devctl released (the reason names `devctl version update`); no source says how the repository releases; the sources disagree about the CI model or the artifacts; a registry answer that is neither a digest nor "manifest unknown"; a tooling error, a GitHub or CircleCI read that failed eight tries in a row among them. |
+| 7 | `usage` | A bad argument or flag; a newer devctl released (the reason names `devctl version update`); no source says how the repository releases; the sources disagree about the CI model or the artifacts; a registry answer that is neither a digest nor "manifest unknown"; a tooling error. An exhausted API read is exit 2 with verdict `transient`, naming its attempts and elapsed time. |
 | 8 | `auth_required` | No usable token in the keychain; `reason` names the `devctl auth login` invocation. |
 | 11 | `ambiguous_release` | With `--pr`, the commit the wait resolves to (the merge commit, or the first tagged commit after it) carries the release tags (`vX.Y.Z`, `vX.Y.Z-rc.N`) of more than one version, or the `<image>/vX.Y.Z` tags of more than one image: the wait does not choose. `reason` and `conflictingTags` name every release tag on the commit, newest first; a wait given the version waits on it. A candidate and its promoted stable on one commit are one version. |
 | 12 | `status_failed` | Every artifact is available and the tag's CI is green, and a commit status of the tag's commit (the branch pipeline's, another CI's) is `failure` or `error`: `devctl release promote` refuses the commit. `reason` and `statuses[]` name the failed contexts. |
+| 13 | `remote_error` | A CircleCI request failed. The command line was valid; the reason preserves the service error. Existing timeout and post-merge outcomes take precedence. |
 | 14 | `tag_pipeline_empty` | The CircleCI tag pipeline is `created` or `errored` with no workflows although the configuration at the tag admits jobs. `pipeline.number`, `pipeline.url` and `reason` identify it. Re-trigger the pipeline for that tag; waiting on this pipeline cannot publish the release. |
 
 ## Environment

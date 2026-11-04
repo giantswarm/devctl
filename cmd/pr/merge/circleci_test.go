@@ -47,7 +47,7 @@ func Test_run_circleCIFromStatuses(t *testing.T) {
 		verdict   string
 		merges    int
 	}{
-		{state: "success", verdict: "green", merges: 1},
+		{state: "success", exit: agentcli.ExitReleaseUnconfirmed, verdict: "release_unconfirmed", merges: 1},
 		{state: "failure", exit: agentcli.ExitRed, verdict: "red"},
 		{state: "success", failedLog: true, exit: agentcli.ExitAuthRequired, verdict: "auth_required"},
 	} {
@@ -119,8 +119,8 @@ func Test_run_circleCIFromStatuses(t *testing.T) {
 			}
 			if tc.merges > 0 {
 				release, _ := doc["release"].(map[string]any)
-				if release["verdict"] != "available" || release["tag"] != "v1.2.3" {
-					t.Errorf("release should wait for its tag job: %v\n%s", release, stderr)
+				if release["verdict"] == "available" || release["tag"] != "v1.2.3" {
+					t.Errorf("statuses alone must not confirm a release-assets release: %v\n%s", release, stderr)
 				}
 				if reads := releaseGitHub.reads; len(reads) < 2 || reads[1].Sub(reads[0]) < releasewait.IntervalFloor {
 					t.Errorf("release did not wait between the missing and successful tag status: %v", reads)

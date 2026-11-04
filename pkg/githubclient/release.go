@@ -147,7 +147,9 @@ type Release struct {
 	Published bool
 	// Prerelease: marked as a pre-release.
 	Prerelease bool
-	Assets     []ReleaseAsset
+	// PublishFailed: devctl recorded a failed tag pipeline in the notes.
+	PublishFailed bool
+	Assets        []ReleaseAsset
 }
 
 // ReleaseAsset is one uploaded asset with the digest GitHub reports for it.
@@ -166,7 +168,7 @@ func (c *Client) GetReleaseByTag(ctx context.Context, owner, repo, tag string) (
 	if err != nil {
 		return Release{}, microerror.Mask(err)
 	}
-	r := Release{Tag: rel.GetTagName(), URL: rel.GetHTMLURL(), Published: !rel.GetDraft(), Prerelease: rel.GetPrerelease(), Assets: []ReleaseAsset{}}
+	r := Release{Tag: rel.GetTagName(), URL: rel.GetHTMLURL(), Published: !rel.GetDraft(), Prerelease: rel.GetPrerelease(), PublishFailed: hasPublishFailure(rel.GetBody()), Assets: []ReleaseAsset{}}
 	for _, a := range rel.Assets {
 		r.Assets = append(r.Assets, ReleaseAsset{Name: a.GetName(), URL: a.GetBrowserDownloadURL(), Digest: a.GetDigest()})
 	}

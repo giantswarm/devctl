@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -125,7 +126,7 @@ func Run(ctx context.Context, c Config, name string, args []string) int {
 func chained(environ []string, path, self string) ([]string, error) {
 	var chain []string
 	for _, kv := range environ {
-		if v, ok := strings.CutPrefix(kv, EnvChain+"="); ok && v != "" {
+		if v, ok := envValue(kv, EnvChain); ok && v != "" {
 			chain = filepath.SplitList(v)
 		}
 	}
@@ -157,11 +158,18 @@ func Environ(environ []string, token string) []string {
 func without(environ []string, name string) []string {
 	out := make([]string, 0, len(environ)+1)
 	for _, kv := range environ {
-		if !strings.HasPrefix(kv, name+"=") {
+		if _, ok := envValue(kv, name); !ok {
 			out = append(out, kv)
 		}
 	}
 	return out
+}
+
+// envValue matches environment names using the host's rules. Windows keeps
+// their spelling but compares names without case sensitivity.
+func envValue(kv, name string) (string, bool) {
+	key, value, ok := strings.Cut(kv, "=")
+	return value, ok && (key == name || runtime.GOOS == "windows" && strings.EqualFold(key, name))
 }
 
 // LookPath is the program name names: a path as given, a bare name the first

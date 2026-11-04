@@ -8,17 +8,17 @@ import (
 	"github.com/google/go-github/v93/github"
 )
 
-func allReviews(ctx context.Context, client *github.Client, owner, repo string, number int) ([]*github.PullRequestReview, error) {
+func allReviews(ctx context.Context, client *github.Client, owner, repo string, number int) ([]*github.PullRequestReview, *github.Response, error) {
 	opts := &github.ListOptions{PerPage: 100}
 	var reviews []*github.PullRequestReview
 	for {
 		page, resp, err := client.PullRequests.ListReviews(ctx, owner, repo, number, opts)
 		if err != nil {
-			return nil, microerror.Mask(err)
+			return nil, resp, microerror.Mask(err)
 		}
 		reviews = append(reviews, page...)
 		if resp.NextPage == 0 {
-			return reviews, nil
+			return reviews, resp, nil
 		}
 		opts.Page = resp.NextPage
 	}

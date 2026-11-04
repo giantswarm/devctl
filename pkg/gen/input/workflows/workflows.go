@@ -109,6 +109,12 @@ func (w *Workflows) ChangelogDeletion() input.Input {
 	return file.NewChangelogDeletionInput(w.params)
 }
 
+// ChangelogPointer freezes a repository's CHANGELOG.md as a pointer at its
+// GitHub Releases.
+func (w *Workflows) ChangelogPointer() input.Input {
+	return file.NewChangelogPointerInput(w.params)
+}
+
 func (w *Workflows) CliffToml() input.Input {
 	return file.NewCliffTomlInput(w.params)
 }

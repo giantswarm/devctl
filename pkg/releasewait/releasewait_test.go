@@ -45,6 +45,8 @@ type fixture struct {
 	timeout         time.Duration
 	catalog         bool
 	catalogLists    bool
+	catalogIndex    CatalogReader
+	ctx             context.Context
 	// catalogChart, when set, is the only chart the catalog index lists.
 	catalogChart string
 	// catalogName, when set, is the only catalog that lists it.
@@ -56,6 +58,8 @@ type fixture struct {
 	charts []string
 	// wrapCircleCI, when set, stands in front of the CircleCI client.
 	wrapCircleCI func(CircleCI) CircleCI
+	// circleCIFromStatuses reads CircleCI through GitHub alone.
+	circleCIFromStatuses bool
 	// failedLogLines is --failed-log-lines with --failed-log; 0 without.
 	failedLogLines int
 	// clock, when set, is the wait's clock; a virtual clock otherwise.
@@ -239,8 +243,15 @@ func run(t *testing.T, fx fixture) (Result, error) {
 		Rate:         sources.Rate,
 		Warn:         fx.warn,
 	}
+	config.CircleCIFromStatuses = fx.circleCIFromStatuses
+	if fx.circleCIFromStatuses {
+		config.CircleCI = nil
+	}
 	if fx.clock != nil {
 		config.Clock = *fx.clock
+	}
+	if fx.catalogIndex != nil {
+		config.CatalogIndex = fx.catalogIndex
 	}
 	if config.Timeout == 0 {
 		config.Timeout = 2 * time.Minute
@@ -253,7 +264,11 @@ func run(t *testing.T, fx fixture) (Result, error) {
 		t.Fatalf("New: %v", err)
 	}
 	var result Result
-	err = w.Wait(context.Background(), &result)
+	ctx := fx.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	err = w.Wait(ctx, &result)
 	if fx.checkGitHub != nil {
 		fx.checkGitHub(gh.Requests())
 	}

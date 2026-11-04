@@ -61,7 +61,20 @@ candidate: a late job, the branch pipeline and other CIs report there too.
 The wait goes on while one is pending; a failed one ends it with exit 12
 naming it. --catalog also waits for the catalog index to list the chart: the
 test catalog for a pre-release when the tag's architect orb (10.12.0 on) sends
-it there.
+it there. A chart in the catalog repository's index but missing from Pages is
+reported distinctly. If every chart missing from Pages is in its repository,
+the wait permits one additional 10 minutes after --timeout for Pages to publish;
+an earlier caller deadline or cancellation still ends the wait.
+
+When a verified CircleCI tag pipeline fails, the CLI adds a visible "Not
+published" notice linking that pipeline to the GitHub release's notes.
+Existing notes and release metadata are preserved. A successful wait removes
+devctl's notice (also when only a later commit-status gate fails, exit 12).
+Editing notes requires Contents: write; an edit failure is a warning and
+preserves the wait's exit code. No notice is written for a timeout, an
+auto-release failure before tagging, or commit statuses that cannot identify
+the tag pipeline. The server's read-only release_wait tool never edits notes.
+List recorded failures with devctl release failed <owner/repo>.
 
 Output: one JSON document on stdout at the end; on stderr a heartbeat naming
 what the wait still waits for, every two minutes and when it changes
@@ -85,7 +98,8 @@ Exit codes:
      is green and every commit status of the tag's commit succeeded
   1  the tag's CI failed, or with --pr the auto-release run failed before
      it tagged; the document names the failed jobs
-  2  timeout; the document shows what is still missing or still running
+  2  timeout or SIGINT/SIGTERM; reason identifies an interrupted wait;
+     the document shows what is still missing or still running
   3  not applicable: the pull request is not merged; no release follows it
      (verdict no_release: the repository does not tag merge commits, or its
      auto-release run finished without a tag and no later tag on the base
@@ -99,6 +113,7 @@ Exit codes:
      green, and a commit status of the tag's commit failed (the branch
      pipeline's, another CI's): devctl release promote refuses the commit;
      the reason names the failed statuses
+ 13  remote_error: a CircleCI request failed; the command line was valid
  14  tag_pipeline_empty: the tag pipeline settled without workflows
      although its configuration admits the tag; re-trigger the pipeline
      for the tag (pipeline.number and pipeline.url name it)

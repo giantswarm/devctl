@@ -12,7 +12,8 @@
 // whose team-file entry opts out of agent merges (exit 5, naming the
 // field). A reviewer's feedback newer than the head that nobody answered
 // refuses it too (exit 5), read before the wait and again right before
-// the merge. Green lands through the merge
+// the merge. A rebase merge carrying amend!, fixup! or squash! subjects is
+// not applicable (exit 3), even with --accept-red. Green lands through the merge
 // API as a squash or a rebase with the judged head as the expected head
 // (a merge commit where the repository allows only that),
 // then the branch goes through the refs API. A base with a merge queue is
@@ -244,6 +245,9 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	if err := m.resolveMethod(ctx, owner, repo, verdict, result); err != nil {
 		return result, err
 	}
+	if err := m.guardCommits(ctx, owner, repo, pr, result); err != nil {
+		return result, err
+	}
 	m.progress.Printf("refusals: none; %s by %s", pr.GetHead().GetSHA(), pr.GetUser().GetLogin())
 
 	queued, err := m.github.MergeQueueRequired(ctx, owner, repo, pr.GetBase().GetRef())
@@ -295,6 +299,9 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 		if err := notApplicable(pr); err != nil {
 			return result, err
 		}
+	}
+	if err := m.guardCommits(ctx, owner, repo, pr, result); err != nil {
+		return result, err
 	}
 	for _, w := range m.closingWarnings(ctx, owner, repo, pr.GetBody()) {
 		m.progress.Printf("warning: %s", w)

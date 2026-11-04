@@ -27,7 +27,9 @@ type runner struct {
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	agentcli.IgnoreHangup()
-	return r.run(cmd.Context(), args)
+	ctx, stop := agentcli.InterruptContext(cmd.Context())
+	defer stop()
+	return r.run(ctx, args)
 }
 
 // FlagError reports a flag cobra could not parse like any other wrong call:
@@ -46,7 +48,7 @@ func (r *runner) run(ctx context.Context, args []string) error {
 		repository = args[0]
 	}
 	doc := newDocument(repository)
-	err := r.wait(ctx, args, &doc)
+	err := agentcli.Interrupted(ctx, r.wait(ctx, args, &doc))
 	return agentcli.Report(r.stdout, &doc, agentcli.VerdictAvailable, err)
 }
 
@@ -123,6 +125,9 @@ func (r *runner) wait(ctx context.Context, args []string, doc *releasewait.Docum
 		return err
 	}
 	err = waiter.Wait(ctx, &doc.Result)
+	if recordErr := releasewait.RecordPublishStatus(ctx, c.Client, doc.Result, err); recordErr != nil {
+		doc.Warn(recordErr.Error())
+	}
 	prwait.PrintFailedJobs(r.stderr, doc.FailedJobs)
 	return err
 }

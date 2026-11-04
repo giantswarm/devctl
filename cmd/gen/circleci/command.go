@@ -28,6 +28,11 @@ block. Jobs are selected by:
                           config, patches, extra nodes; repo-owned like
                           .ats/main.yaml), and --ats-resource-class sizes them.
 
+When ATS jobs are emitted and neither .ats/main.yaml nor .ats/main.yml exists,
+generation creates a repository-owned .ats/main.yaml with smoke, functional and
+upgrade scenarios skipped. Add tests and remove their names from skip-steps to
+enable them. Existing ATS configuration is preserved.
+
 The optional repo-owned .circleci/config.custom.yml adds workflow job names
 from chart_tests.requires to the branch execute-chart-tests dependencies.
 Define and invoke those jobs in .circleci/custom.yml's build workflow on the

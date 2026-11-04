@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The devctl chart's opt-in `networkPolicy.enabled` renders a Cilium egress policy for DNS, GitHub, the registries
+  and catalogs, and the Dex token endpoint and API server of every installation. It uses the same endpoints as
+  `--installations`, including overrides, so adding an installation needs only one values change.
+
 ### Fixed
 
 - Concurrent updates to `DEVCTL_KEYRING_FILE` preserve changes to every identity and readers see complete records.

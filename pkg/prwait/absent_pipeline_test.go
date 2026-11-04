@@ -92,8 +92,8 @@ func Test_Wait_absentPipelineKeepsCircleCIEvidence(t *testing.T) {
 		{name: "filtered base but another branch built", listing: body(map[string]any{"items": []any{map[string]any{"id": "other", "vcs": map[string]any{"revision": "other123", "branch": "other"}}}}), wantCode: agentcli.ExitTimeout},
 		{name: "empty page with a next page", listing: body(map[string]any{"items": []any{}, "next_page_token": "next"}), wantCode: agentcli.ExitTimeout},
 		{name: "head has a CircleCI status", statuses: successStatuses("ci/circleci: setup"), wantCode: agentcli.ExitTimeout},
-		{name: "listing forbidden", listing: sequence.Response{Status: http.StatusForbidden, Body: map[string]any{"message": "forbidden"}}, wantCode: agentcli.ExitUsage},
-		{name: "listing not found", listing: sequence.Response{Status: http.StatusNotFound, Body: map[string]any{"message": "not found"}}, wantCode: agentcli.ExitUsage},
+		{name: "listing forbidden", listing: sequence.Response{Status: http.StatusForbidden, Body: map[string]any{"message": "forbidden"}}, wantCode: agentcli.ExitRemoteError},
+		{name: "listing not found", listing: sequence.Response{Status: http.StatusNotFound, Body: map[string]any{"message": "not found"}}, wantCode: agentcli.ExitRemoteError},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gh := gitHubGreen()
