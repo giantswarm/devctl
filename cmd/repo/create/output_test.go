@@ -2,6 +2,7 @@ package create
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -11,7 +12,11 @@ import (
 	"testing"
 
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+
+	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 )
 
 type outputTransport func(*http.Request) (*http.Response, error)
@@ -71,7 +76,8 @@ func outputCommand(t *testing.T, stdout io.Writer, format string, dryRun bool, e
 		"--flavour", "generic", "--language", "generic", "--output", format,
 	}
 	if dryRun {
-		args = append(args, "--dry-run")
+		// The local engine: the in-memory GitHub API stands in for its reads.
+		args = append(args, "--dry-run", "--local")
 	}
 	args = append(args, extraArgs...)
 	cmd.SetArgs(args)
@@ -136,11 +142,54 @@ func TestCommandOutputSuccess(t *testing.T) {
 				require.Contains(t, stdout.String(), "next: "+next)
 				return
 			}
-			var got output
+			var got struct {
+				DryRun      reposetup.Result `json:"dryRun"`
+				PullRequest string           `json:"pullRequest"`
+				Next        string           `json:"next"`
+			}
 			require.NoError(t, json.Unmarshal(stdout.Bytes(), &got))
 			require.True(t, got.DryRun.Accepted)
 			require.Equal(t, "https://github.com/giantswarm/github/pull/6179", got.PullRequest)
 			require.Equal(t, next, got.Next)
+		})
+	}
+}
+
+func TestDryRunManagerOutputFailure(t *testing.T) {
+	failure := errors.New("synthetic output failure")
+	for _, tc := range []struct {
+		name, format, marker, refusal string
+		accepted, wantRefused         bool
+	}{
+		{name: "text source", format: outputText, marker: "validation:", accepted: true},
+		{name: "text preview", format: outputText, marker: "verdict:", accepted: true},
+		{name: "text creation refusal", format: outputText, marker: "creation refused:", accepted: true, refusal: "declared already"},
+		{name: "text receipt", format: outputText, marker: "dry run:", accepted: true},
+		{name: "JSON accepted", format: outputJSON, marker: `"dryRun"`, accepted: true},
+		{name: "JSON refused keeps the refusal", format: outputJSON, marker: `"dryRun"`, wantRefused: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			payload, err := json.Marshal(map[string]any{
+				"team": "team-e2e", "mode": "create", "accepted": tc.accepted,
+				"entries":  []any{map[string]any{"name": "new-cli", "accepted": tc.accepted, "nameCheck": map[string]any{"verdict": "free"}}},
+				"creation": map[string]any{"refusal": tc.refusal},
+			})
+			require.NoError(t, err)
+			caller := managerCall{call: func(context.Context, string, map[string]any) (json.RawMessage, error) { return payload, nil }}
+			r := &runner{
+				flag:   &flag{Team: "e2e", Name: "new-cli", ComponentType: "cli", Description: "What it does", Flavours: []string{"cli"}, Language: "go", Owner: reposetup.DefaultOwner, DryRun: true, Output: tc.format},
+				logger: logrus.New(), stdout: outputFailure{marker: tc.marker, err: failure}, stderr: io.Discard,
+				open: func(context.Context) (*client.Session, error) { return &client.Session{Caller: caller}, nil },
+			}
+			r.logger.SetOutput(io.Discard)
+			cmd := &cobra.Command{}
+			cmd.SetContext(t.Context())
+			err = r.Run(cmd, nil)
+			if tc.wantRefused {
+				require.True(t, IsRefused(err), "keep the refusal when its JSON diagnostic cannot be written: %v", err)
+				return
+			}
+			require.ErrorIs(t, err, failure)
 		})
 	}
 }
