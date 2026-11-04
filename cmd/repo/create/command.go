@@ -8,6 +8,8 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
 )
 
 const (
@@ -37,13 +39,17 @@ for the pipeline afterwards.
 A refusal of the declaration (a taken name, a wrong flavour, a schema
 violation) ends the command before the pull request; the problems name the
 fields. A rerun reports the pull request already open for the branch.
---dry-run prints the dry run and opens nothing. The notices say what review
-the pull request gets.
+--dry-run asks giantswarm-repo-manager for its creation preview through
+muster (devctl auth login --muster-only), prints its verdict and opens
+nothing. --dry-run --local uses devctl's own engine with the schema on
+giantswarm/github main, as a run without --dry-run does.
+The notices say what review the pull request gets.
 
-The token is the devctl GitHub App login (devctl auth login), or the token
-in --github-token-envvar ($DEVCTL_GITHUB_TOKEN, $GITHUB_TOKEN or
-$OPSCTL_GITHUB_TOKEN) overriding it. It reads the organisation's teams and
-writes the pull request's branch to giantswarm/github.
+Without --dry-run, or with --dry-run --local, the token is the devctl GitHub
+App login (devctl auth login), or the token in --github-token-envvar
+($DEVCTL_GITHUB_TOKEN, $GITHUB_TOKEN or $OPSCTL_GITHUB_TOKEN) overriding it.
+It reads the organisation's teams and, without --dry-run, writes the pull
+request's branch to giantswarm/github.
 
 Examples:
   devctl repo create --team bumblebee --name my-service --component-type service --flavour app --language go --description "What it does"
@@ -75,6 +81,7 @@ func New(config Config) (*cobra.Command, error) {
 		logger: config.Logger,
 		stderr: config.Stderr,
 		stdout: config.Stdout,
+		open:   client.Open,
 	}
 
 	c := &cobra.Command{
