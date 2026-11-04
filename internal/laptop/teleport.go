@@ -67,6 +67,9 @@ func (t Tsh) LoggedIn(ctx context.Context) (bool, string, error) {
 	cmd := exec.CommandContext(ctx, path, "status", "--format=json") // #nosec G204 -- tsh from exec.LookPath, fixed arguments
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
+		if cause := ctx.Err(); cause != nil {
+			return false, "", fmt.Errorf("checking tsh status: %w", cause)
+		}
 		return false, firstLine(stderr.String(), err.Error()), nil
 	}
 	var status struct {
@@ -103,6 +106,9 @@ func (t Tsh) KubeLogin(ctx context.Context, installation, kubeContext, kubeconfi
 	cmd := exec.CommandContext(ctx, path, "kube", "login", installation, "--set-context-name="+kubeContext) // #nosec G204 -- tsh from exec.LookPath; the installation is checked by the caller and passed as its own argument element
 	cmd.Env = append(withoutEnv(os.Environ(), "KUBECONFIG"), "KUBECONFIG="+kubeconfig)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		if cause := ctx.Err(); cause != nil {
+			return fmt.Errorf("tsh kube login %s: %w", installation, cause)
+		}
 		return fmt.Errorf("tsh kube login %s: %s", installation, firstLine(string(out), err.Error()))
 	}
 	return nil
