@@ -27,7 +27,7 @@ var repoCommands = map[string]bool{
 func GHOwner(args []string, environ []string, remotes func() string) string {
 	if len(args) >= 2 && args[0] == "api" {
 		if owner, named := apiOwner(args[1:]); named {
-			if owner != "{owner}" {
+			if owner != "{owner}" && owner != ":owner" {
 				return owner
 			}
 			return defaultOwner(environ, remotes)
@@ -71,7 +71,28 @@ var repositoryValueFlags = map[string]bool{
 	"--add-project": true, "--remove-project": true, "--add-reviewer": true, "--remove-reviewer": true,
 	"--milestone": true, "--type": true, "--name": true, "--pattern": true, "--dir": true, "--output": true,
 	"--exclude": true, "--notes-file": true, "--discussion-category": true, "--notes-start-tag": true, "--target": true,
-	"--notes": true, "--tag": true,
+	"--notes": true, "--tag": true, "--attach": true,
+}
+
+func repositoryValueFlag(args []string, flag string) bool {
+	if repositoryValueFlags[flag] {
+		return true
+	}
+	switch flag {
+	case "-c":
+		return args[1] == "close" || args[1] == "reopen"
+	case "-r":
+		return args[0] == "workflow" || args[0] == "issue" && args[1] == "close"
+	case "-m":
+		return args[1] == "edit"
+	case "-a":
+		return args[0] == "run" && args[1] == "view"
+	case "-n":
+		return args[0] == "issue" && args[1] == "develop"
+	case "-e":
+		return args[0] == "pr" && args[1] == "diff"
+	}
+	return false
 }
 
 func repositoryArgument(args []string) string {
@@ -86,7 +107,7 @@ func repositoryArgument(args []string) string {
 		if !strings.HasPrefix(a, "-") {
 			return a
 		}
-		if repositoryValueFlags[a] || a == "-c" && (args[1] == "close" || args[1] == "reopen") || a == "-r" && args[0] == "workflow" {
+		if repositoryValueFlag(args, a) {
 			i++
 		}
 	}
@@ -139,6 +160,9 @@ func apiOwner(args []string) (string, bool) {
 		}
 		if strings.HasPrefix(a, "-") {
 			continue
+		}
+		if u, err := url.Parse(a); err == nil && u.IsAbs() && u.Host != "" {
+			a = u.Path
 		}
 		parts := strings.Split(strings.TrimPrefix(a, "/"), "/")
 		if len(parts) >= 2 && (parts[0] == "repos" || parts[0] == "orgs") {
