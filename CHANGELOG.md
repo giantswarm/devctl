@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release wait` selects the same GitHub login as `pr wait`: the devctl App login for `giantswarm`,
+  and the person's `gh` login for other owners, so private pull requests outside the App's reach can
+  be found with `--pr`. The shared release sources used by `rollout wait` select the same login.
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
