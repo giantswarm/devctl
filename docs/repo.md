@@ -107,6 +107,11 @@ generated before the field was set, is the finding `renovate-declared-off`: the 
 it or sets `enabled: false` in it. Without the field, or with `true`, the repository gets its generated configuration
 and the step checks that Renovate scans it.
 
+For a GitHub fork, the Renovate step first checks that `renovate.json` itself enables fork processing. Otherwise it
+reports `renovate-not-scanned`, names Renovate's fork check and directs the team to `devctl gen renovate --flavour fork`.
+A configuration with `enabled: false` stays disabled. The step selects the first configuration in Renovate's order:
+`renovate.json`, `renovate.jsonc`, `renovate.json5`, then the `.github/` equivalents and `.renovaterc` variants.
+
 The template is derived, not chosen: `language: go` gives `giantswarm/template`; the `plans` flavour
 with `language: generic` gives `giantswarm/template-plans` and refuses any other language, the same
 way `language: node` is refused until its template ships; `language: generic` with the `app` flavour
@@ -184,6 +189,10 @@ and nothing runs locally in its place.
 | `repo set-lifecycle <repo> deprecated\|archived\|deleted` | `set_lifecycle` | the lifecycle set; `deleted` needs `--confirm <repo>`; the way back from `archived` is `repo update <repo> --unset lifecycle`, whose reconciler run unarchives the repository and sets it up again |
 | `repo approve <pull-request>` | `approve_change` | the approving review as you after the team check, and the merge (or the auto-merge); what the Slack ask's button does |
 | `repo align <repo> [--team T]` | `align_repository` | Align now in the mode the entry decides: `align` (the reconciler dispatched), `opt-in` (the pull request that sets `align: true`), `check` (an undeclared repository checked from the team); `--dry-run` shows the plan first |
+
+`repo watch` ignores SIGHUP and reads no stdin, so it outlives a closed terminal, SSH session or
+harness. It finishes with the same outcome as in the foreground; `--output json` prints the final
+repository document.
 
 `--reason` on the writes goes into the pull request body and the ask. The dry run of a write prints the
 entry before and after, the pull request (title, branch, files, who opens it) and the ask and notice with
@@ -461,6 +470,13 @@ standing beside the ruleset, is the finding `ruleset-pending` for the run that h
 written. A repository without the ruleset yet keeps its classic branch protection, written and verified as
 it always was (administrators bound too, `enforce_admins`), with the advisory finding `rulesets-not-enabled`
 naming the run that writes the ruleset; it does not keep the repository from converging.
+
+In check mode (`repo reconcile --dry-run`), a 403 reading classic branch protection is the advisory
+finding `unchecked`: `cannot read classic protection with this token`. The classic protection check is
+skipped, while an existing ruleset is still compared and any drift reported. Without an existing ruleset,
+the step plans no protection changes from the unknown classic protection. A token with
+`administration: read` can complete that check. Repair mode still fails on the forbidden read, so it
+cannot migrate or remove classic protection it could not inspect.
 
 The `catalog` step dispatches the catalog and mapping workflows of the catalog repository, which needs an
 Actions permission there. `--dispatch-token-envvar` names a second token for those two calls (listing the

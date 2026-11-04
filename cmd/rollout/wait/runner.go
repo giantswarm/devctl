@@ -33,6 +33,7 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
+	agentcli.IgnoreHangup()
 	return r.run(cmd.Context(), args)
 }
 

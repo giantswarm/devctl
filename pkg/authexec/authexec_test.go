@@ -143,6 +143,7 @@ func TestRun(t *testing.T) {
 		{name: "another owner's repository keeps the person's login", program: "gh", args: []string{"pr", "list", "--repo", "teemow/klaus-lab"}, wantExec: true, wantPerson: true},
 		{name: "an upload keeps the person's login", program: "gh", args: []string{"issue", "comment", "12", "--repo", "giantswarm/devctl", "--attach", "proof.png"}, wantExec: true, wantPerson: true},
 		{name: "a comment without an upload acts as the App", program: "gh", args: []string{"pr", "comment", "5", "--repo", "giantswarm/devctl", "--body", "done"}, wantExec: true},
+		{name: "search in a personal checkout stays on the App", program: "gh", args: []string{"search", "prs", "query"}, remotes: "remote.origin.url https://github.com/teemow/devctl.git\n", wantExec: true},
 		{name: "gh default can name a different owner from the remote", program: "gh", args: []string{"pr", "list"}, remotes: "remote.origin.url https://github.com/giantswarm/fork.git\nremote.origin.gh-resolved teemow/parent\n", wantExec: true, wantPerson: true},
 		{name: "gh default can name the App owner from a fork", program: "gh", args: []string{"pr", "list"}, remotes: "remote.origin.url https://github.com/teemow/fork.git\nremote.origin.gh-resolved giantswarm/parent\n", wantExec: true},
 	}

@@ -106,7 +106,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// Initialize PR statuses with mutex protection for concurrent updates
 	var prStatusesMu sync.Mutex
 	prStatuses := make([]*pr.PRStatus, 0, len(searchResults.Issues))
-	prNumbersMap := make(map[int]bool) // Track PR numbers to avoid duplicates
+	type prKey struct {
+		owner, repo string
+		number      int
+	}
+	seenPRs := make(map[prKey]bool)
 
 	addPRs := func(issues []*github.Issue) []*pr.PRStatus {
 		prStatusesMu.Lock()
@@ -116,13 +120,14 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		for _, issue := range issues {
 			prNumber := issue.GetNumber()
 
-			// Skip if we already have this PR
-			if prNumbersMap[prNumber] {
+			owner, repoName, err := pr.ParseRepoFromURL(issue.GetHTMLURL())
+			if err != nil {
 				continue
 			}
 
-			owner, repoName, err := pr.ParseRepoFromURL(issue.GetHTMLURL())
-			if err != nil {
+			// PR numbers are unique only within a repository.
+			key := prKey{owner: strings.ToLower(owner), repo: strings.ToLower(repoName), number: prNumber}
+			if seenPRs[key] {
 				continue
 			}
 
@@ -143,7 +148,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 				LastUpdate:   time.Now(),
 			}
 			prStatuses = append(prStatuses, ps)
-			prNumbersMap[prNumber] = true
+			seenPRs[key] = true
 			newPRs = append(newPRs, ps)
 		}
 		return newPRs
@@ -416,17 +421,41 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 
 		// Checks are passing, proceed with approval
 		// Check if already approved
-		reviews, _, err := githubClient.PullRequests.ListReviews(ctx, ps.Owner, ps.Repo, ps.Number, nil)
-		if err != nil {
-			ps.UpdateStatus("Failed to get reviews")
-			return
+		var reviews []*github.PullRequestReview
+		reviewOpts := &github.ListOptions{PerPage: 100}
+		for {
+			page, resp, err := githubClient.PullRequests.ListReviews(ctx, ps.Owner, ps.Repo, ps.Number, reviewOpts)
+			if err != nil {
+				ps.UpdateStatus("Failed to get reviews")
+				return
+			}
+			reviews = append(reviews, page...)
+			if resp.NextPage == 0 {
+				break
+			}
+			reviewOpts.Page = resp.NextPage
 		}
 
 		alreadyApproved := false
-		for _, review := range reviews {
-			if review.GetState() == "APPROVED" {
-				alreadyApproved = true
-				break
+		if len(reviews) > 0 {
+			user, _, err := githubClient.Users.Get(ctx, "")
+			if err != nil || user.GetLogin() == "" {
+				ps.UpdateStatus("Failed to get reviewer")
+				return
+			}
+			// Reviews are chronological. Only the caller's latest decisive
+			// review state can replace their requested approval; comments do
+			// not change that state.
+			for _, review := range reviews {
+				if !strings.EqualFold(review.GetUser().GetLogin(), user.GetLogin()) {
+					continue
+				}
+				switch review.GetState() {
+				case "APPROVED":
+					alreadyApproved = true
+				case "CHANGES_REQUESTED", "DISMISSED":
+					alreadyApproved = false
+				}
 			}
 		}
 

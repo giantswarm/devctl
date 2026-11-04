@@ -141,6 +141,8 @@ command in sh -c once the detached merge ended, with DEVCTL_MERGE_HANDLE,
 DEVCTL_MERGE_EXIT_CODE, DEVCTL_MERGE_DOCUMENT, DEVCTL_MERGE_REPOSITORY and
 DEVCTL_MERGE_NUMBER set. The blocking call stays the default.
 
+The wait ignores SIGHUP and reads no stdin, so it outlives its terminal.
+
 Exit codes 6 and 9 mean the pull request was merged; never merge it again.
 
 Exit codes:

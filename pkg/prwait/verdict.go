@@ -21,8 +21,9 @@ const (
 
 // The check states the document shares between check runs and statuses.
 const (
-	statusCompleted = "completed"
-	statusPending   = "pending"
+	statusCompleted   = "completed"
+	statusPending     = "pending"
+	conclusionSuccess = "success"
 	// conclusionActionRequired is a completed check run or Actions run
 	// waiting for a human.
 	conclusionActionRequired = "action_required"
@@ -71,6 +72,9 @@ type CircleCI struct {
 	PipelineID     string     `json:"pipelineId"`
 	PipelineNumber int64      `json:"pipelineNumber"`
 	Workflows      []Workflow `json:"workflows"`
+	// SetupHalted: setup succeeded without a continuation for
+	// setupHaltGrace, and its jobs posted their own successful contexts.
+	SetupHalted bool `json:"setupHalted,omitempty"`
 }
 
 // Workflow is one CircleCI workflow of the pipeline.
@@ -127,6 +131,8 @@ type circleSnapshot struct {
 	// pipeline is nil while CircleCI has no pipeline for the head revision.
 	pipeline  *circleciclient.Pipeline
 	workflows []circleciclient.Workflow
+	// setupJobs are read only for a possible halted setup, after its grace.
+	setupJobs map[string][]circleciclient.Job
 }
 
 // evaluation is the verdict of one snapshot with the document fields it
@@ -322,7 +328,7 @@ func evaluate(s snapshot) *evaluation {
 			check.Status = statusPending
 			e.requiredPending = e.requiredPending || check.Required
 			e.unfinished = append(e.unfinished, fmt.Sprintf("status %s (pending)", name))
-		case state == "success":
+		case state == conclusionSuccess:
 			check.Conclusion = state
 		case s.accepts(name):
 			check.Conclusion = state
@@ -357,7 +363,7 @@ func evaluate(s snapshot) *evaluation {
 	}
 
 	if s.circleci != nil {
-		e.evaluateCircleCI(s.headSHA, s.circleci, circleStatuses(s.statuses), s.accepts)
+		e.evaluateCircleCI(s.now, s.headSHA, s.circleci, s.statuses, s.accepts)
 	}
 	for _, job := range s.circleJobs {
 		if !reported[circleStatusPrefix+job] {
@@ -407,11 +413,10 @@ func circleStatuses(statuses []*github.RepoStatus) int {
 	return n
 }
 
-// evaluateCircleCI applies rule 2 to the head's pipeline. circleStatuses is
-// how many CircleCI jobs have posted to GitHub: an empty listing or a setup
-// workflow listed on its own is not the pipeline's last word, and GitHub
-// tells whether its continuation has run.
-func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot, circleStatuses int, accepts func(string) bool) {
+// evaluateCircleCI applies rule 2 to the head's pipeline. An empty listing
+// or a setup workflow listed on its own is not the pipeline's last word,
+// and GitHub tells whether its continuation has run.
+func (e *evaluation) evaluateCircleCI(now time.Time, headSHA string, c *circleSnapshot, statuses []*github.RepoStatus, accepts func(string) bool) {
 	if c.pipeline == nil {
 		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline for %s (absent)", headSHA))
 		return
@@ -427,11 +432,13 @@ func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot, circleS
 	}
 	workflows := latestWorkflows(c.workflows)
 	switch {
+	case c.setupHalted(now, statuses):
+		e.circleci.SetupHalted = true
 	case circleciclient.PipelineContinuing(c.pipeline.State):
 		// A finished setup workflow is not the pipeline's last: the continued
 		// workflows post the build's contexts once they exist.
 		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline %d (%s, continuation not created yet)", c.pipeline.Number, c.pipeline.State))
-	case circleStatuses > 1:
+	case circleStatuses(statuses) > 1:
 		// More than one CircleCI job has posted to the head: the build runs or
 		// ran, whatever the listing reads, and the jobs' contexts are its
 		// verdict (rule 1). The listing is read for what it has: a workflow
@@ -497,7 +504,7 @@ func (e *evaluation) unseen(accepted map[string]bool) []string {
 // a merge.
 func checkRunPassed(conclusion string) bool {
 	switch conclusion {
-	case "success", "neutral", "skipped":
+	case conclusionSuccess, "neutral", "skipped":
 		return true
 	}
 	return false
