@@ -126,7 +126,7 @@ func TestProcessStartFailure(t *testing.T) {
 				getRecord: fixtureRecord,
 				command: func(ctx context.Context, name string, args ...string) *exec.Cmd {
 					if name == missing {
-						return exec.CommandContext(ctx, t.TempDir()+"/missing-tool")
+						return exec.CommandContext(ctx, t.TempDir()+"/missing-tool") //nolint:gosec // G204: deliberately nonexistent executable under the test-owned temporary directory.
 					}
 					return factory(ctx, name, args...)
 				},
@@ -158,7 +158,7 @@ func TestCancellation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer listener.Close()
+		defer func() { _ = listener.Close() }()
 		if err := listener.(*net.TCPListener).SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
 			t.Fatal(err)
 		}
@@ -172,7 +172,7 @@ func TestCancellation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 		}
 		cancel()
 		select {
@@ -193,7 +193,7 @@ func fixtureRecord(string) (authstore.Record, error) {
 func helperCommand(mode, address string) func(context.Context, string, ...string) *exec.Cmd {
 	return func(ctx context.Context, name string, args ...string) *exec.Cmd {
 		argv := append([]string{"-test.run=^TestNancyProcess$", "--", name, mode, address}, args...)
-		return exec.CommandContext(ctx, os.Args[0], argv...)
+		return exec.CommandContext(ctx, os.Args[0], argv...) //nolint:gosec // G204: rerun this test binary with synthetic fixture arguments.
 	}
 }
 
@@ -205,11 +205,11 @@ func TestNancyProcess(t *testing.T) {
 	}
 	name, mode, address, args := os.Args[3], os.Args[4], os.Args[5], os.Args[6:]
 	if mode == "cancel" {
-		conn, err := net.Dial("tcp", address)
+		conn, err := net.Dial("tcp", address) //nolint:gosec // G704: address is the parent test's loopback listener, passed to this fixture subprocess.
 		if err != nil {
 			os.Exit(90)
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		_, _ = io.Copy(io.Discard, conn)
 		os.Exit(91)
 	}
@@ -242,7 +242,7 @@ func TestNancyProcess(t *testing.T) {
 		os.Exit(41)
 	}
 	for _, name := range []string{".nancy-ignore", ".nancy-ignore.generated"} {
-		b, err := os.ReadFile(name)
+		b, err := os.ReadFile(name) //nolint:gosec // G304: name is one of the two literal ignore-file paths above.
 		if err != nil || string(b) != "fixture ignore\n" {
 			os.Exit(96)
 		}

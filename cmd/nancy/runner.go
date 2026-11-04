@@ -66,7 +66,7 @@ func (r runner) run(ctx context.Context) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	defer input.Close()
+	defer func() { _ = input.Close() }()
 
 	// An explicitly empty Guide flag overrides any Guide token in nancy's
 	// own config file. No credential is passed on the command line.
