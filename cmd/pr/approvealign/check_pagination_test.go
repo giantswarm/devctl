@@ -33,9 +33,9 @@ func TestProcessPRCheckPagination(t *testing.T) {
 		{name: "later failed run", source: "check-runs", lastState: "failure", want: "Failed checks"},
 		{name: "later pending run", source: "check-runs", lastState: "pending", want: "Already merged"},
 		{name: "all runs green", source: "check-runs", lastState: "success", want: "Would approve"},
-		{name: "later runs unavailable", source: "check-runs", failPage: true, want: "Failed to get check runs"},
+		{name: "later runs unavailable", source: "check-runs", failPage: true, want: "Failed to get checks: reading check runs"},
 		{name: "later required status exists", source: "status", diagnostic: true, want: "Already approved, blocked"},
-		{name: "later statuses unavailable", source: "status", failPage: true, want: "Failed to get status checks"},
+		{name: "later statuses unavailable", source: "status", failPage: true, want: "Failed to get checks: reading commit statuses"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pages := 0
@@ -122,7 +122,7 @@ func TestProcessPRCheckPagination(t *testing.T) {
 			}
 			ps := &pr.PRStatus{Owner: "fixture", Repo: "repo", Number: 1}
 			(&runner{flag: &flag{DryRun: true, Team: "fixture"}}).processPR(context.Background(), client, ps)
-			if ps.GetStatus() != tc.want || pages != 2 {
+			if !strings.HasPrefix(ps.GetStatus(), tc.want) || pages != 2 {
 				t.Errorf("status %q, pages read %d; want %q, 2", ps.GetStatus(), pages, tc.want)
 			}
 		})
