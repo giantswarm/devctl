@@ -57,14 +57,14 @@ func TestInheritedGitRepositoryEnvironment(t *testing.T) {
 		independentGit(t, outside, "init", "--template=", "-b", "main")
 		independentGit(t, outside, "config", "user.name", "Outside Person")
 		config := filepath.Join(outside, ".git", "config")
-		before, err := os.ReadFile(config)
+		before, err := os.ReadFile(config) // #nosec G304 -- test fixture
 		if err != nil {
 			t.Fatal(err)
 		}
 		t.Setenv("GIT_DIR", filepath.Join(outside, ".git"))
 		t.Setenv("GIT_WORK_TREE", outside)
 		gittest.RunGit(t, dir, "init", "--template=")
-		after, err := os.ReadFile(config)
+		after, err := os.ReadFile(config) // #nosec G304 -- test fixture
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -87,13 +87,13 @@ func TestInheritedGitRepositoryEnvironment(t *testing.T) {
 		}
 		independentGit(t, outside, "add", "file.txt")
 		index := filepath.Join(outside, ".git", "index")
-		before, err := os.ReadFile(index)
+		before, err := os.ReadFile(index) // #nosec G304 -- test fixture
 		if err != nil {
 			t.Fatal(err)
 		}
 		t.Setenv("GIT_INDEX_FILE", index)
 		gittest.RunGit(t, dir, "add", "file.txt")
-		after, err := os.ReadFile(index)
+		after, err := os.ReadFile(index) // #nosec G304 -- test fixture
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -138,7 +138,7 @@ func TestInheritedGitRepositoryEnvironment(t *testing.T) {
 		}
 		t.Setenv("GIT_CONFIG", config)
 		gittest.RunGit(t, dir, "init", "--template=")
-		after, err := os.ReadFile(config)
+		after, err := os.ReadFile(config) // #nosec G304 -- test fixture
 		if err != nil {
 			t.Fatal(err)
 		}
