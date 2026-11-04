@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- `pr approve-align-files` summarizes planned approvals, merges and branch updates separately, excludes blocked PRs from planned approvals, and counts already-approved auto-merge entries as queued.
+- `pr approve-align-files` summarizes planned approvals, merges and branch updates separately and excludes blocked PRs from planned approvals.
 
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
