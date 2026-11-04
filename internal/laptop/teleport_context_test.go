@@ -6,11 +6,34 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 )
+
+func TestTshLaunchFailureIsToolingError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fixture uses Unix executable permissions")
+	}
+	binary := writeFile(t, "tsh", "not an executable format\n")
+	if err := os.Chmod(binary, 0o700); err != nil { // #nosec G302 -- the fixture must pass LookPath's permission check
+		t.Fatal(err)
+	}
+	tsh := Tsh{Binary: binary}
+	if loggedIn, _, err := tsh.LoggedIn(t.Context()); loggedIn || err == nil || errors.Is(err, ErrNoTsh) {
+		t.Errorf("an installed binary that cannot start must return a tooling error, got loggedIn=%t, err=%v", loggedIn, err)
+	}
+	machineKubeconfig(t)
+	client, err := OpenCluster(t.Context(), ClusterConfig{Installation: "myinstallation", Context: teleportContext, Teleport: tsh})
+	if client != nil || agentcli.Exit(err) != agentcli.ExitUsage {
+		t.Fatalf("unstartable tsh must be a tooling failure (exit 7), got client=%T, err=%v", client, err)
+	}
+	if strings.Contains(err.Error(), "tsh is not logged in") {
+		t.Errorf("launch failure must not claim the person is signed out: %v", err)
+	}
+}
 
 func TestTshRunningDeadline(t *testing.T) {
 	if runtime.GOOS == "windows" {

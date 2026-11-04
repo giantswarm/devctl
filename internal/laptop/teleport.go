@@ -55,7 +55,8 @@ func (t Tsh) binary() (string, error) {
 
 // LoggedIn reads tsh status --format=json: no active profile, or one whose
 // certificate has expired, is not logged in. tsh kube login would start an
-// interactive login for either, which the check rules out.
+// interactive login for either, which the check rules out. A command that
+// cannot start, is canceled or times out returns an error, not a login state.
 func (t Tsh) LoggedIn(ctx context.Context) (bool, string, error) {
 	path, err := t.binary()
 	if err != nil {
@@ -69,6 +70,10 @@ func (t Tsh) LoggedIn(ctx context.Context) (bool, string, error) {
 	if err := cmd.Run(); err != nil {
 		if cause := ctx.Err(); cause != nil {
 			return false, "", fmt.Errorf("checking tsh status: %w", cause)
+		}
+		var exited *exec.ExitError
+		if !errors.As(err, &exited) {
+			return false, "", fmt.Errorf("running tsh status: %w", err)
 		}
 		return false, firstLine(stderr.String(), err.Error()), nil
 	}
