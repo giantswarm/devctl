@@ -60,6 +60,9 @@ func (w *Waiter) pullRequestBase(ctx context.Context) (string, error) {
 	return w.baseRef, nil
 }
 
+// pushEvent is the workflow trigger and run event of a pushed commit.
+const pushEvent = "push"
+
 // Path filters do not prove that a branch never releases, so only the ref
 // filters are considered here.
 type pushBranchFilter struct {
@@ -80,14 +83,14 @@ func readPushBranches(content []byte) (pushBranchFilter, error) {
 	var filter pushBranchFilter
 	switch doc.On.Kind {
 	case yaml.ScalarNode:
-		filter.enabled = doc.On.Value == "push"
+		filter.enabled = doc.On.Value == pushEvent
 	case yaml.SequenceNode:
 		for _, event := range doc.On.Content {
-			filter.enabled = filter.enabled || event.Value == "push"
+			filter.enabled = filter.enabled || event.Value == pushEvent
 		}
 	case yaml.MappingNode:
 		for i := 0; i+1 < len(doc.On.Content); i += 2 {
-			if doc.On.Content[i].Value != "push" {
+			if doc.On.Content[i].Value != pushEvent {
 				continue
 			}
 			trigger := doc.On.Content[i+1]
@@ -169,7 +172,7 @@ func pushBranchPattern(pattern string) (*regexp.Regexp, error) {
 			end := i + 1
 			for end < len(runes) && runes[end] != ']' {
 				c := runes[end]
-				if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-') {
+				if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' {
 					return nil, usageErr("invalid auto-release branch pattern %q", pattern)
 				}
 				end++

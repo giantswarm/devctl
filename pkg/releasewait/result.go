@@ -58,6 +58,9 @@ type Artifact struct {
 	Digest string `json:"digest"`
 	// State is available or missing.
 	State string `json:"state"`
+	// LastProbeError is the latest failed probe, cleared once the registry
+	// answers whether the artifact exists.
+	LastProbeError string `json:"lastProbeError,omitempty"`
 
 	// private selects the private registry and its keychain.
 	private bool

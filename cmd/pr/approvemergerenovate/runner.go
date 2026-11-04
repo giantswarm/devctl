@@ -17,6 +17,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/pr/internal/checks"
 	"github.com/giantswarm/devctl/v8/internal/pr"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
@@ -100,7 +101,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// Initialize PR statuses with mutex protection for concurrent updates
 	var prStatusesMu sync.Mutex
 	prStatuses := make([]*pr.PRStatus, 0, len(searchResults.Issues))
-	prNumbersMap := make(map[int]bool) // Track PR numbers to avoid duplicates
+	type prKey struct {
+		owner, repo string
+		number      int
+	}
+	seenPRs := make(map[prKey]bool)
 
 	addPRs := func(issues []*github.Issue) []*pr.PRStatus {
 		prStatusesMu.Lock()
@@ -110,13 +115,14 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		for _, issue := range issues {
 			prNumber := issue.GetNumber()
 
-			// Skip if we already have this PR
-			if prNumbersMap[prNumber] {
+			owner, repoName, err := pr.ParseRepoFromURL(issue.GetHTMLURL())
+			if err != nil {
 				continue
 			}
 
-			owner, repoName, err := pr.ParseRepoFromURL(issue.GetHTMLURL())
-			if err != nil {
+			// PR numbers are unique only within a repository.
+			key := prKey{owner: strings.ToLower(owner), repo: strings.ToLower(repoName), number: prNumber}
+			if seenPRs[key] {
 				continue
 			}
 
@@ -137,7 +143,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 				LastUpdate:   time.Now(),
 			}
 			prStatuses = append(prStatuses, ps)
-			prNumbersMap[prNumber] = true
+			seenPRs[key] = true
 			newPRs = append(newPRs, ps)
 		}
 		return newPRs
@@ -392,76 +398,59 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 		// Check status checks BEFORE checking auto-merge
 		// This way we report failed checks even if auto-merge is enabled
 		headSHA := pr.GetHead().GetSHA()
-		combinedStatus, _, _ := githubClient.Repositories.GetCombinedStatus(ctx, ps.Owner, ps.Repo, headSHA, nil)
-		checkRuns, _, _ := githubClient.Checks.ListCheckRunsForRef(ctx, ps.Owner, ps.Repo, headSHA, nil)
-
-		// Check if any checks are failing or pending
-		hasFailedChecks := false
-		checksPending := false
-
-		// Check combined status first - this is for traditional status checks
-		if combinedStatus != nil {
-			state := combinedStatus.GetState()
-			totalCount := combinedStatus.GetTotalCount()
-
-			if state == "success" {
-				// All required checks passed
-				checksPending = false
-				hasFailedChecks = false
-			} else if state == stateFailure || state == "error" {
-				hasFailedChecks = true
-			} else if state == "pending" && totalCount > 0 {
-				// Only treat as pending if there are actual status checks
-				// pending with totalCount=0 just means no checks exist, not that checks are waiting
-				checksPending = true
-			}
+		checkResult, err := checks.Read(ctx, githubClient, ps.Owner, ps.Repo, headSHA)
+		if err != nil {
+			ps.UpdateStatus("Failed to get checks: " + err.Error())
+			return
 		}
 
-		// Check individual check runs (GitHub Actions checks)
-		if checkRuns != nil && len(checkRuns.CheckRuns) > 0 && !hasFailedChecks {
-			// Only check runs if combinedStatus didn't already give us a definitive answer
-			if combinedStatus == nil || (combinedStatus.GetState() != "success" && combinedStatus.GetState() != stateFailure) {
-				for _, run := range checkRuns.CheckRuns {
-					conclusion := run.GetConclusion()
-					status := run.GetStatus()
-
-					if status == "completed" {
-						if conclusion == stateFailure || conclusion == "cancelled" || conclusion == "timed_out" {
-							hasFailedChecks = true
-							break
-						}
-						// success, neutral, skipped are OK
-					} else {
-						// Check is not completed (queued, in_progress)
-						checksPending = true
-					}
-				}
-			}
-		}
-
-		if hasFailedChecks {
+		if checkResult.Failed {
 			ps.UpdateStatus("Failed checks")
 			return
 		}
 
-		if checksPending {
+		if checkResult.Pending {
 			ps.UpdateStatus(fmt.Sprintf("Waiting for checks (%d/%d)", attempt+1, maxRetries))
 			continue
 		}
 
 		// Checks are passing, proceed with approval
 		// Check if already approved
-		reviews, _, err := githubClient.PullRequests.ListReviews(ctx, ps.Owner, ps.Repo, ps.Number, nil)
-		if err != nil {
-			ps.UpdateStatus("Failed to get reviews")
-			return
+		var reviews []*github.PullRequestReview
+		reviewOpts := &github.ListOptions{PerPage: 100}
+		for {
+			page, resp, err := githubClient.PullRequests.ListReviews(ctx, ps.Owner, ps.Repo, ps.Number, reviewOpts)
+			if err != nil {
+				ps.UpdateStatus("Failed to get reviews")
+				return
+			}
+			reviews = append(reviews, page...)
+			if resp.NextPage == 0 {
+				break
+			}
+			reviewOpts.Page = resp.NextPage
 		}
 
 		alreadyApproved := false
-		for _, review := range reviews {
-			if review.GetState() == "APPROVED" {
-				alreadyApproved = true
-				break
+		if len(reviews) > 0 {
+			user, _, err := githubClient.Users.Get(ctx, "")
+			if err != nil || user.GetLogin() == "" {
+				ps.UpdateStatus("Failed to get reviewer")
+				return
+			}
+			// Reviews are chronological. Only the caller's latest decisive
+			// review state can replace their requested approval; comments do
+			// not change that state.
+			for _, review := range reviews {
+				if !strings.EqualFold(review.GetUser().GetLogin(), user.GetLogin()) {
+					continue
+				}
+				switch review.GetState() {
+				case "APPROVED":
+					alreadyApproved = true
+				case "CHANGES_REQUESTED", "DISMISSED":
+					alreadyApproved = false
+				}
 			}
 		}
 
@@ -477,7 +466,8 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 			} else {
 				ps.UpdateStatus("Approving...")
 				reviewRequest := &github.PullRequestReviewRequest{
-					Event: new("APPROVE"),
+					Event:    new("APPROVE"),
+					CommitID: new(headSHA),
 				}
 				_, _, err = githubClient.PullRequests.CreateReview(ctx, ps.Owner, ps.Repo, ps.Number, reviewRequest)
 				if err != nil {
@@ -553,6 +543,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 		ps.UpdateStatus(fmt.Sprintf("Merging (%s)...", mergeMethod))
 		mergeOpts := &github.PullRequestOptions{
 			MergeMethod: mergeMethod,
+			SHA:         headSHA,
 		}
 
 		mergeResult, _, err := githubClient.PullRequests.Merge(ctx, ps.Owner, ps.Repo, ps.Number, "", mergeOpts)
