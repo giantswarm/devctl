@@ -45,6 +45,8 @@ type fixture struct {
 	timeout         time.Duration
 	catalog         bool
 	catalogLists    bool
+	catalogIndex    CatalogReader
+	ctx             context.Context
 	// catalogChart, when set, is the only chart the catalog index lists.
 	catalogChart string
 	// catalogName, when set, is the only catalog that lists it.
@@ -56,10 +58,14 @@ type fixture struct {
 	charts []string
 	// wrapCircleCI, when set, stands in front of the CircleCI client.
 	wrapCircleCI func(CircleCI) CircleCI
+	// circleCIFromStatuses reads CircleCI through GitHub alone.
+	circleCIFromStatuses bool
 	// failedLogLines is --failed-log-lines with --failed-log; 0 without.
 	failedLogLines int
 	// clock, when set, is the wait's clock; a virtual clock otherwise.
 	clock *agentcli.Clock
+	// checkGitHub inspects the reads made by a regression scenario.
+	checkGitHub func([]sequence.Request)
 }
 
 type entries struct{ fields *reposetup.Fields }
@@ -120,6 +126,12 @@ func baseGitHub(root, workflows, circleci []string) sequence.Routes {
 	}
 	if slices.Contains(root, "helm") {
 		routes = withChart(routes, testRepo, testRepo)
+	}
+	for _, name := range workflows {
+		if strings.Contains(name, "auto_release") {
+			file := workflowsDir + "/" + name
+			routes[repoRoute("/contents/"+file)] = []sequence.Response{{Body: fileContent(file, "on: push\n")}}
+		}
 	}
 	return routes
 }
@@ -231,8 +243,15 @@ func run(t *testing.T, fx fixture) (Result, error) {
 		Rate:         sources.Rate,
 		Warn:         fx.warn,
 	}
+	config.CircleCIFromStatuses = fx.circleCIFromStatuses
+	if fx.circleCIFromStatuses {
+		config.CircleCI = nil
+	}
 	if fx.clock != nil {
 		config.Clock = *fx.clock
+	}
+	if fx.catalogIndex != nil {
+		config.CatalogIndex = fx.catalogIndex
 	}
 	if config.Timeout == 0 {
 		config.Timeout = 2 * time.Minute
@@ -245,7 +264,14 @@ func run(t *testing.T, fx fixture) (Result, error) {
 		t.Fatalf("New: %v", err)
 	}
 	var result Result
-	err = w.Wait(context.Background(), &result)
+	ctx := fx.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	err = w.Wait(ctx, &result)
+	if fx.checkGitHub != nil {
+		fx.checkGitHub(gh.Requests())
+	}
 	if fx.circleci == nil && circleCalls != 0 {
 		t.Errorf("CircleCI was opened %d time(s) for a repository without CircleCI", circleCalls)
 	}
@@ -1066,9 +1092,8 @@ func TestNamedChart(t *testing.T) {
 	assertExit(t, err, agentcli.ExitUsage, "--chart \"giantswarm/kagent/helm/kagent:1.2.3\": name the chart without a tag or digest")
 }
 
-// --image on a generated pipeline: the artifacts are derived from the
-// entry as before, and a warning says the named image is not probed.
-func TestWaitImageOnGeneratedCIWarns(t *testing.T) {
+// --image on a generated pipeline adds to the entry's artifacts.
+func TestWaitImageOnGeneratedCIIsProbed(t *testing.T) {
 	var warnings []string
 	fx := fixture{
 		entry:  generatedEntry(t),
@@ -1080,16 +1105,17 @@ func TestWaitImageOnGeneratedCIWarns(t *testing.T) {
 		registry: sequence.Routes{
 			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
 			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+			"HEAD /v2/giantswarm/other/manifests/v1.2.3":            {{Status: 200}},
 		},
 		images: []string{"giantswarm/other"},
 		warn:   func(w string) { warnings = append(warnings, w) },
 	}
 	result, err := run(t, fx)
 	assertExit(t, err, agentcli.ExitOK, "")
-	if len(result.Artifacts) != 2 {
-		t.Errorf("artifacts: want the entry's two, got %+v", result.Artifacts)
+	if len(result.Artifacts) != 3 || !strings.HasSuffix(result.Artifacts[2].Reference, "/giantswarm/other:v1.2.3") || result.Artifacts[2].State != StateAvailable {
+		t.Errorf("artifacts: want the entry's two and the named image, got %+v", result.Artifacts)
 	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "giantswarm/other is not probed") {
+	if len(warnings) != 0 {
 		t.Errorf("warnings: %q", warnings)
 	}
 }

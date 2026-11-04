@@ -21,7 +21,7 @@ func (f cancellationTransport) RoundTrip(req *http.Request) (*http.Response, err
 
 type cancellationKey struct{}
 
-func TestCommandCancellation(t *testing.T) {
+func TestCommandCancellationBoundary(t *testing.T) {
 	for _, stage := range []string{"before start", "search", "empty search", "failed search", "pending checks", "after approval"} {
 		t.Run(stage, func(t *testing.T) {
 			t.Setenv("DEVCTL_GITHUB_TOKEN", "synthetic-offline-token")
