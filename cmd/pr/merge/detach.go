@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -99,7 +98,13 @@ func (r *runner) detach(ctx context.Context, args []string, doc *startDocument) 
 // stdout (its log) and into the job's directory, then the --on-done command.
 func (r *runner) finishDetached(ctx context.Context, doc *document, mergeErr error) error {
 	var buf bytes.Buffer
-	err := agentcli.Report(io.MultiWriter(r.stdout, &buf), doc, agentcli.VerdictGreen, mergeErr)
+	// Keep the outcome independently of the log: a failed or partial log
+	// write must not leave status with an empty document or replace the
+	// merge's exit code with the log's error.
+	err := agentcli.Report(&buf, doc, agentcli.VerdictGreen, mergeErr)
+	if _, werr := r.stdout.Write(buf.Bytes()); werr != nil {
+		_, _ = fmt.Fprintf(r.stderr, "writing the log of %s: %v\n", r.flag.DetachedHandle, werr)
+	}
 	root, rerr := r.jobRoot()
 	if rerr == nil {
 		rerr = mergejob.WriteDocument(root, r.flag.DetachedHandle, buf.Bytes())
