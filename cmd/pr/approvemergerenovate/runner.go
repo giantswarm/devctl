@@ -87,7 +87,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Maskf(executionFailedError, "failed to search for PRs: %v", err)
 	}
 
-	if searchResults.GetTotal() == 0 {
+	if len(issues) == 0 {
 		if !r.flag.Watch {
 			fmt.Fprintln(r.stdout, "No PRs found.")
 			return nil
@@ -99,7 +99,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	// Initialize PR statuses with mutex protection for concurrent updates
 	var prStatusesMu sync.Mutex
-	prStatuses := make([]*pr.PRStatus, 0, len(searchResults.Issues))
+	prStatuses := make([]*pr.PRStatus, 0, len(issues))
 	prNumbersMap := make(map[int]bool) // Track PR numbers to avoid duplicates
 
 	addPRs := func(issues []*github.Issue) []*pr.PRStatus {
@@ -144,7 +144,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	// Add initial PRs
-	initialPRs := addPRs(searchResults.Issues)
+	initialPRs := addPRs(issues)
 
 	columnHeader := "Repository"
 	if r.flag.Grouping == GroupingRepo {
@@ -185,13 +185,13 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 				return
 			case <-ticker.C:
 				// Re-run the search query
-				newResults, _, err := githubClient.Search.Issues(ctx, searchQuery, searchOpts)
+				newIssues, err := r.searchIssues(ctx, githubClient, searchQuery)
 				if err != nil {
 					continue
 				}
 
 				// Add any new PRs found
-				newPRs := addPRs(newResults.Issues)
+				newPRs := addPRs(newIssues)
 				if len(newPRs) > 0 {
 					// Add empty rows for new PRs
 					prStatusesMu.Lock()
@@ -288,22 +288,18 @@ func (r *runner) selectGroupInteractively(ctx context.Context, githubClient *git
 
 	// Search for all Renovate PRs requesting review from the user
 	searchQuery := "is:pr is:open archived:false review-requested:@me author:app/renovate"
-	searchOpts := &github.SearchOptions{
-		ListOptions: github.ListOptions{PerPage: 100},
-	}
-
-	searchResults, _, err := githubClient.Search.Issues(ctx, searchQuery, searchOpts)
+	issues, err := r.searchIssues(ctx, githubClient, searchQuery)
 	if err != nil {
 		return "", microerror.Maskf(executionFailedError, "failed to search for PRs: %v", err)
 	}
 
-	if searchResults.GetTotal() == 0 {
+	if len(issues) == 0 {
 		return "", microerror.Maskf(executionFailedError, "no Renovate PRs found requesting your review")
 	}
 
 	// Convert GitHub issues to PRInfo
 	var prInfos []*pr.PRInfo
-	for _, issue := range searchResults.Issues {
+	for _, issue := range issues {
 		owner, repoName, err := pr.ParseRepoFromURL(issue.GetHTMLURL())
 		if err != nil {
 			continue

@@ -52,6 +52,9 @@ devctl pr approve-merge-renovate "architect v1.2.3"
    - `review-requested:@me`
    - `author:app/renovate`
 
+   All search pages are read before processing or grouping. If a page fails or GitHub reports
+   incomplete results, the batch is not processed; narrow the query and retry.
+
 2. **Parallel Processing**: All PRs are processed simultaneously using goroutines for maximum speed
 
 3. **Continuous Polling**: Re-runs the search query to discover newly created PRs that match the criteria and automatically processes them
