@@ -521,6 +521,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `reposetup.Remote.Person(ctx, owner, teams...)` checks membership only in the supplied team slugs, replacing
+  the previous listing of all the caller's teams in `owner`. Calls without teams still compile but now return
+  only the login, with empty `Teams` and `Unread`. Guard callers must pass the owning and fallback teams;
+  callers needing all memberships must list them through the GitHub client's `Teams.ListUserTeams`, following
+  pagination and filtering by organisation. Unreadable requested memberships are returned in `Person.Unread`,
+  separately from known non-membership. See the [migration and caller audit](docs/repo.md#reposetup-library-person-memberships).
+
 - `gen circleci`: the generated pipelines pin architect orb 10.14.0, whose `go-test` / `go-build` run `govulncheck`
   next to nancy. It checks the code against the Go vulnerability database, which needs no account or credits, and
   fails closed: a reachable known vulnerability fails the job, and so does a scan that could not run, so a green check
