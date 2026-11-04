@@ -21,6 +21,11 @@ wait), merge it and delete its branch, then wait until the release the merge
 triggers is pullable (the wait of devctl release wait --pr), print one JSON
 document on stdout and exit with a code that says what happened.
 
+--circleci-from-statuses reads CircleCI jobs from the configuration and GitHub
+commit statuses for both waits, without a CircleCI token, as in devctl serve.
+Jobs that have not posted yet keep the wait pending. --failed-log takes
+precedence and uses the CircleCI API for its job logs.
+
 Refused before any wait: a draft, a closed or merged pull request, one
 conflicting with its base, or behind its base, strict or not, since its
 checks ran against an older base than the one the merge lands it on (exit 3,

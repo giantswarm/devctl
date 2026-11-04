@@ -51,7 +51,10 @@ more act with another token:
 
 - `pr wait`, `pr merge` and `release wait` take their GitHub token from the keychain and from nowhere
   else: no environment variable, no `gh auth token`, no file. They exit 8 naming `devctl auth login`
-  before they wait for anything, since they need the CircleCI token too.
+  when a required login is missing. `pr wait` and `pr merge` with `--circleci-from-statuses` judge
+  CircleCI jobs from their configuration and GitHub statuses, as `devctl serve` does, without a CircleCI
+  token. `--failed-log` takes precedence and uses the CircleCI API for job logs; `pr rerun` also still
+  needs the CircleCI login.
 - `repo setup` and its subcommands `ciwebhooks` and `renovate`, and `repo checks` need
   Administration write, which the App does not carry: they act with your own token, as the table says,
   and print no override warning.
@@ -289,7 +292,9 @@ to print once, empty for the App login and in CI; the error is `ErrAuthRequired`
 `authstore.RequireGitHub(ctx)` returns the App login, refreshed when needed, or `ErrAuthRequired`;
 `authstore.RequireCircleCI(ctx)` returns the token or `ErrAuthRequired`, with the seven-day warning
 on the token for the envelope. A CircleCI token is required only when the repository has a CircleCI
-project. `authstore.RequireMuster(ctx)` returns the muster token, refreshed when needed, with the
+project and the command reads its API; `pr wait` and `pr merge` with `--circleci-from-statuses`
+(without `--failed-log`) read neither that token nor the CircleCI API.
+`authstore.RequireMuster(ctx)` returns the muster token, refreshed when needed, with the
 endpoint it is for, or `ErrAuthRequired` naming `--muster-only`. The errors carry exit code 8 and
 the verdict `auth_required` through `agentcli.ExitCoder`, so a command returns them unchanged.
 
