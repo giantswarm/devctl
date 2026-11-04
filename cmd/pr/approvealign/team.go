@@ -28,6 +28,9 @@ func teamRepositories(ctx context.Context, client *github.Client, team string) (
 	if err != nil {
 		return nil, microerror.Maskf(executionFailedError, "failed to read %s of %s/%s: %v", path, teamFileOwner, teamFileRepo, err)
 	}
+	if file == nil || file.GetType() != "file" {
+		return nil, microerror.Maskf(executionFailedError, "expected %s of %s/%s to be a file", path, teamFileOwner, teamFileRepo)
+	}
 	content, err := file.GetContent()
 	if err != nil {
 		return nil, microerror.Mask(err)
