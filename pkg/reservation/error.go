@@ -1,6 +1,10 @@
 package reservation
 
-import "github.com/giantswarm/microerror"
+import (
+	"errors"
+
+	"github.com/giantswarm/microerror"
+)
 
 var invalidConfigError = &microerror.Error{
 	Kind: "invalidConfigError",
@@ -206,5 +210,5 @@ var dirtyWorktreeError = &microerror.Error{
 
 // IsDirtyWorktree asserts dirtyWorktreeError.
 func IsDirtyWorktree(err error) bool {
-	return microerror.Cause(err) == dirtyWorktreeError
+	return errors.Is(err, dirtyWorktreeError)
 }
