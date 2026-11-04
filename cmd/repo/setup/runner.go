@@ -2,6 +2,7 @@ package setup
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 
@@ -104,7 +105,7 @@ func (r *runner) run(ctx context.Context, arg string) error {
 		return microerror.Mask(err)
 	}
 
-	return microerror.Mask(engine.Report(r.stdout, res, r.flag.Output))
+	return r.report(res)
 }
 
 // baseline is the company baseline with the flags applied: the features,
@@ -133,4 +134,26 @@ func (r *runner) baseline() reconcile.Baseline {
 		b.IgnoredChecks = append(b.IgnoredChecks, f.ChecksFilter)
 	}
 	return b
+}
+
+// report gives setup a usable refusal when the shared engine cannot apply a
+// ruleset repair. Check mode still reports drift without failing.
+func (r *runner) report(res *reconcile.Result) error {
+	pending := false
+	for i := range res.Steps {
+		for j := range res.Steps[i].Findings {
+			finding := &res.Steps[i].Findings[j]
+			if finding.Kind == reconcile.FindingRulesetPending {
+				pending = true
+				finding.Fix = "repo setup cannot write rulesets; use the repository reconciler's Align now action with its configured App IDs, or devctl repo reconcile --team-file=<team-file> --steps=protection --devctl-app-id=<numeric-App-id> " + res.Repository + " with the same configured align-files and release App IDs"
+			}
+		}
+	}
+	if err := engine.Report(r.stdout, res, r.flag.Output); err != nil {
+		return microerror.Mask(err)
+	}
+	if pending && res.Mode == reconcile.ModeRepair {
+		return fmt.Errorf("repo setup left ruleset protection pending; use the repository reconciler's Align now action or devctl repo reconcile as described in the result")
+	}
+	return nil
 }
