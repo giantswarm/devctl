@@ -165,6 +165,10 @@ var urlPattern = regexp.MustCompile(`https?://[^\s"'<>]+`)
 // answers, which is when the consent is given. A muster without the manager
 // is a note, not a failure: the login itself stands.
 func (r *runner) signInManager(ctx context.Context, token authstore.Token, progress *agentcli.Progress) (*managerSignIn, error) {
+	// The initial MCP handshake and consent request consume the same budget
+	// as polling: the client relies on this context to bound its HTTP calls.
+	ctx, cancel := r.clock.Timeout(ctx, managerSignInTimeout)
+	defer cancel()
 	client := &manager.Client{Endpoint: token.Endpoint, Token: token.Value, Version: project.Version()}
 	signIn := &managerSignIn{Server: manager.Server}
 
@@ -209,11 +213,9 @@ func (r *runner) browse(url string) error {
 // once the person's consent is filed under them in muster; the manager's
 // refusals meanwhile are the wait, an endpoint that stops answering ends it.
 func (r *runner) awaitManager(ctx context.Context, client *manager.Client, progress *agentcli.Progress) (string, error) {
-	waitCtx, cancel := r.clock.Timeout(ctx, managerSignInTimeout)
-	defer cancel()
 	var last error
 	for {
-		answer, err := client.Call(waitCtx, manager.ToolGetInfo, nil)
+		answer, err := client.Call(ctx, manager.ToolGetInfo, nil)
 		if err == nil {
 			return callerOf(answer), nil
 		}
@@ -222,8 +224,8 @@ func (r *runner) awaitManager(ctx context.Context, client *manager.Client, progr
 		}
 		last = err
 		progress.Printf("%s: not signed in yet (%v)", manager.Server, err)
-		if err := r.clock.Sleep(waitCtx, managerSignInInterval); err != nil {
-			if errors.Is(waitCtx.Err(), context.DeadlineExceeded) {
+		if err := r.clock.Sleep(ctx, managerSignInInterval); err != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				return "", fmt.Errorf("the sign-in to %s was not completed in time; the last answer: %v", manager.Server, last)
 			}
 			return "", err
