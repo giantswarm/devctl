@@ -222,7 +222,7 @@ func Sync(ctx context.Context, dir string, stderr io.Writer) error {
 	}
 
 	// Untracked files are the user's: devctl never stages them, and a
-	// fast-forward that would overwrite one fails on its own.
+	// fast-forward that would overwrite one must fail, including ignored files.
 	status, err := git(ctx, dir, "status", "--porcelain", "--untracked-files=no")
 	if err != nil {
 		return microerror.Maskf(syncError, "%s: %s", dir, err)
@@ -262,7 +262,7 @@ func Sync(ctx context.Context, dir string, stderr io.Writer) error {
 			dir, ahead, branch, resetCommand(dir))
 	}
 
-	if _, err := git(ctx, dir, "merge", "--ff-only", "origin/"+branch); err != nil {
+	if _, err := git(ctx, dir, "merge", "--ff-only", "--no-overwrite-ignore", "origin/"+branch); err != nil {
 		return microerror.Maskf(syncError, "cannot fast-forward %s to origin/%s: %s", dir, branch, err)
 	}
 	short, _ := git(ctx, dir, "rev-parse", "--short", "HEAD")
