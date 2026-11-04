@@ -116,7 +116,8 @@ func WriteArgs(args map[string]any, dryRun bool) map[string]any {
 // PrintJSON writes the answer as it came, indented.
 func PrintJSON(w io.Writer, payload json.RawMessage) error {
 	var buf strings.Builder
-	var v any
+	// Keep numbers as JSON rather than rounding them through float64.
+	var v json.RawMessage
 	if err := json.Unmarshal(payload, &v); err != nil {
 		// Not JSON: a text answer, printed as such.
 		_, err := fmt.Fprintln(w, string(payload))
