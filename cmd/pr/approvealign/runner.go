@@ -110,12 +110,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		prStatuses = append(prStatuses, ps)
 	}
 
-	pr.PrintTableHeader(r.stdout, "Repository")
-
-	// Print initial empty rows for all PRs
-	for range prStatuses {
-		fmt.Fprintln(r.stdout, "")
-	}
+	displayedRows := 0
 
 	// Start processing all PRs in parallel
 	var wg sync.WaitGroup
@@ -142,7 +137,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		case <-done:
 			// Final update
 			prStatusesMu.Lock()
-			pr.UpdateTable(r.stdout, prStatuses)
+			r.updateStatusTable(prStatuses, displayedRows, token.SourceName())
 			prStatusesMu.Unlock()
 
 			fmt.Fprintln(r.stdout, "")
@@ -155,7 +150,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 		case <-ticker.C:
 			prStatusesMu.Lock()
-			pr.UpdateTable(r.stdout, prStatuses)
+			displayedRows = r.updateStatusTable(prStatuses, displayedRows, token.SourceName())
 			prStatusesMu.Unlock()
 		}
 	}
@@ -189,9 +184,9 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 
 		// Get PR details
 		ps.UpdateStatus("Checking...")
-		prData, _, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
+		prData, resp, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
 		if err != nil {
-			ps.UpdateStatus("Failed to get PR")
+			ps.UpdateStatus(readErrorStatus(failedPRRead, resp, err))
 			return
 		}
 
@@ -265,9 +260,9 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 
 		// Checks are passing, proceed with approval
 		// Check if already approved
-		reviews, _, err := githubClient.PullRequests.ListReviews(ctx, ps.Owner, ps.Repo, ps.Number, nil)
+		reviews, resp, err := githubClient.PullRequests.ListReviews(ctx, ps.Owner, ps.Repo, ps.Number, nil)
 		if err != nil {
-			ps.UpdateStatus("Failed to get reviews")
+			ps.UpdateStatus(readErrorStatus(failedReviewRead, resp, err))
 			return
 		}
 
@@ -446,7 +441,11 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 
 	for _, ps := range prStatuses {
 		status := ps.GetStatus()
-		if strings.Contains(status, "Merged") {
+		// Error messages may themselves contain words such as "Merged" or
+		// "Already"; classify the failure before inspecting the rest of the text.
+		if strings.HasPrefix(status, "Failed") {
+			failed++
+		} else if strings.Contains(status, "Merged") {
 			merged++
 		} else if strings.Contains(status, "Updated, queued") {
 			updated++
@@ -462,8 +461,6 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 			blocked++
 		} else if strings.Contains(status, "Already") {
 			skipped++
-		} else if strings.Contains(status, "Failed") {
-			failed++
 		} else if strings.Contains(status, "Waiting") || strings.Contains(status, "Timeout") {
 			waiting++
 		}
@@ -494,5 +491,9 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 	}
 	if blocked > 0 {
 		fmt.Fprintf(r.stdout, "  PRs blocked: %d\n", blocked)
+	}
+	groups, _ := groupReadErrors(prStatuses)
+	for _, group := range groups {
+		fmt.Fprintf(r.stdout, "  %d PR(s): %s\n", group.count, group.status)
 	}
 }
