@@ -8,8 +8,12 @@ import (
 )
 
 // ConfigPaths are the configuration files Renovate reads in a repository,
-// relative to its root, the generated renovate.json5 first.
-var ConfigPaths = []string{"renovate.json5", "renovate.json", ".github/renovate.json5", ".github/renovate.json", ".renovaterc", ".renovaterc.json"}
+// relative to its root, in Renovate's precedence order for GitHub.
+var ConfigPaths = []string{
+	"renovate.json", "renovate.jsonc", "renovate.json5",
+	".github/renovate.json", ".github/renovate.jsonc", ".github/renovate.json5",
+	".renovaterc", ".renovaterc.json", ".renovaterc.jsonc", ".renovaterc.json5",
+}
 
 // HasConfig says whether the repository checked out at dir carries a
 // Renovate configuration at any of [ConfigPaths].

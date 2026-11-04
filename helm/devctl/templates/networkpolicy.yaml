@@ -1,0 +1,73 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "devctl.fullname" . }}-egress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "devctl.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "devctl.selectorLabels" . | nindent 6 }}
+  egress:
+    # Cilium's DNS proxy learns the addresses used by the FQDN rules.
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: coredns
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: k8s-dns-node-cache
+      toPorts:
+        - ports:
+            - port: "1053"
+              protocol: UDP
+            - port: "1053"
+              protocol: TCP
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    # API calls, GitOps clones/pushes, registry manifests and catalog indexes.
+    # The server reads CircleCI through GitHub's commit statuses.
+    - toFQDNs:
+        - matchName: api.github.com
+        - matchName: github.com
+        - matchName: gsoci.azurecr.io
+        - matchName: gsociprivate.azurecr.io
+        - matchName: giantswarm.github.io
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    {{- /* Reuse the file's endpoint derivation, including explicit overrides. */}}
+    {{- range $i := (include "devctl.installations" . | fromJson).installations }}
+    {{- range $endpoint := list $i.dex.tokenEndpoint $i.apiServer }}
+    {{- $url := urlParse $endpoint }}
+    {{- if or (ne $url.scheme "https") (empty $url.host) }}
+    {{- fail (printf "installations.%s: networkPolicy requires https endpoint URLs" $i.name) }}
+    {{- end }}
+    {{- $host := regexReplaceAll ":[0-9]+$" $url.host "" | trimAll "[]" | lower | trimSuffix "." }}
+    {{- $port := regexFind ":[0-9]+$" $url.host | trimPrefix ":" | default "443" }}
+    {{- if or (contains ":" $host) (regexMatch "^([0-9]{1,3}\\.){3}[0-9]{1,3}$" $host) }}
+    # An endpoint given as an IP does not make a DNS lookup.
+    - toCIDR:
+        - {{ printf "%s/%s" $host (ternary "128" "32" (contains ":" $host)) | quote }}
+    {{- else }}
+    - toFQDNs:
+        - matchName: {{ $host | quote }}
+    {{- end }}
+      toPorts:
+        - ports:
+            - port: {{ $port | quote }}
+              protocol: TCP
+    {{- end }}
+    {{- end }}
+{{- end }}
