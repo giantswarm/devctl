@@ -144,7 +144,7 @@ func repo(t *testing.T, history ...string) string {
 // cliffSkippedTypes are the commit_parsers in cliff.toml that carry
 // `skip = true`. git-cliff leaves them out of both the release notes and the
 // bump, so they are not releasable on their own.
-var cliffSkippedTypes = []string{"docs", "style", "test"}
+var cliffSkippedTypes = []string{"ci", "chore", "docs", "style", "test"}
 
 // countedSubject matches a conventional subject as git-cliff parses it
 // (letters, digits, `_` and `-` in the type) and captures its type.
@@ -317,11 +317,10 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			stable:    true,
 		},
 		{
-			name:      "a chore(deps) alone is a patch too",
+			name:      "a chore(deps) alone releases nothing",
 			history:   []string{"v1.2.9", "chore(deps): bump y"},
-			next:      "v1.2.10",
-			expectTag: "v1.2.10",
-			stable:    true,
+			next:      "v1.2.9",
+			expectTag: "",
 		},
 		{
 			// A patch candidate cut before the patch fast path is released by
@@ -339,10 +338,10 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			expectTag: "v1.3.0-rc.2",
 		},
 		{
-			name:      "chore(deps) during a cycle cuts the next candidate",
+			name:      "chore(deps) during a cycle releases nothing",
 			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "chore(deps): bump y"},
 			next:      "v1.3.0",
-			expectTag: "v1.3.0-rc.2",
+			expectTag: "",
 		},
 		{
 			// `docs` is skipped by cliff.toml, so there is nothing new to put
