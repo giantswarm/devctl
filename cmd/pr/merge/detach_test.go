@@ -2,6 +2,8 @@ package merge
 
 import (
 	"bytes"
+	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +29,17 @@ func TestMain(m *testing.M) {
 }
 
 func fakeChild(root string, args []string) int {
+	// Keep a synthetic merge running until its test releases the connection.
+	if addr := os.Getenv(childHoldEnv); addr != "" {
+		conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+		if err != nil {
+			return 7
+		}
+		defer conn.Close() //nolint:errcheck // test process lifetime
+		if _, err := io.Copy(io.Discard, conn); err != nil {
+			return 7
+		}
+	}
 	var handle string
 	for _, a := range args {
 		if v, ok := strings.CutPrefix(a, "--"+flagDetachedHandle+"="); ok {
