@@ -58,6 +58,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- Source-pinned inventory and per-repository bump queue for hand-written CircleCI configs on architect orb < 10,
+  including RC-promotion models, missing build contexts and fork maintenance lines, in `docs/architect-orb-inventory.md`.
+
 - `ci job` takes the URL a CircleCI commit status links, alone, including a GitHub App pipeline's
   `app.circleci.com/workflow/<id>/job/<id>`, which it resolves to the project and job number through the workflow.
 
