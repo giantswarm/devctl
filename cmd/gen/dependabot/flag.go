@@ -38,10 +38,10 @@ func (f *flag) Validate() error {
 		if exists("Dockerfile") {
 			f.Ecosystems = append(f.Ecosystems, gen.EcosystemDocker.String())
 		}
-		if exists(".github/workflows/") {
+		if exists(".github/workflows/") || exists("action.yml") || exists("action.yaml") {
 			f.Ecosystems = append(f.Ecosystems, gen.EcosystemGithubActions.String())
 		}
-		if exists("go.mod") && exists("go.sum") {
+		if exists("go.mod") || exists("go.work") {
 			f.Ecosystems = append(f.Ecosystems, gen.EcosystemGomod.String())
 		}
 		if exists("package.json") {
@@ -57,6 +57,14 @@ func (f *flag) Validate() error {
 
 	if !gen.IsValidEcoSystem(f.Ecosystems) {
 		return microerror.Maskf(invalidFlagError, "--%s must be one of <%s>", flagEcosystems, strings.Join(gen.AllowedEcosystems(), "|"))
+	}
+
+	seen := make(map[string]bool, len(f.Ecosystems))
+	for _, ecosystem := range f.Ecosystems {
+		if seen[ecosystem] {
+			return microerror.Maskf(invalidFlagError, "--%s contains duplicate ecosystem %q", flagEcosystems, ecosystem)
+		}
+		seen[ecosystem] = true
 	}
 
 	return nil

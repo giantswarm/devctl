@@ -2,6 +2,7 @@ package setup
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/engine"
+	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
 )
@@ -54,9 +56,20 @@ func (r *runner) run(ctx context.Context, arg string) error {
 		return microerror.Mask(err)
 	}
 
+	return r.runWithClient(ctx, owner, repo, client)
+}
+
+// runWithClient applies setup with an already constructed client.
+func (r *runner) runWithClient(ctx context.Context, owner, repo string, client *githubclient.Client) error {
 	repository, err := client.GetRepository(ctx, owner, repo)
 	if err != nil {
 		return microerror.Mask(err)
+	}
+
+	if r.flag.DisableBranchProtection {
+		if err := checkRulesetDisable(ctx, client, owner, repo, repository.GetDefaultBranch(), r.flag.DefaultBranch); err != nil {
+			return microerror.Mask(err)
+		}
 	}
 
 	err = client.SetRepositoryDefaultBranch(ctx, repository, r.flag.DefaultBranch)
@@ -104,13 +117,14 @@ func (r *runner) run(ctx context.Context, arg string) error {
 		return microerror.Mask(err)
 	}
 
-	return microerror.Mask(engine.Report(r.stdout, res, r.flag.Output))
+	return r.report(res)
 }
 
 // baseline is the company baseline with the flags applied: the features,
 // merge and pull-request settings, the team permissions (team names as
-// slugs), the default branch, --checks as the unconditional contexts and
-// --checks-filter as one more ignored pattern.
+// slugs), the default branch, --checks as the complete set of unconditional
+// contexts when supplied, and --checks-filter as one more ignored pattern
+// when checks are detected automatically.
 func (r *runner) baseline() reconcile.Baseline {
 	f := r.flag
 	b := reconcile.DefaultBaseline()
@@ -129,8 +143,35 @@ func (r *runner) baseline() reconcile.Baseline {
 		b.TeamPermissions[strings.ToLower(team)] = permission
 	}
 	b.RequiredChecks = f.Checks
-	if f.ChecksFilter != "" {
+	if f.Checks != nil {
+		// An explicit list replaces both the current and detected contexts.
+		// The non-nil empty slice from --checks= therefore requires none.
+		b.RequiredChecksIfReported = nil
+		b.IgnoredChecks = []string{".*"}
+	} else if f.ChecksFilter != "" {
 		b.IgnoredChecks = append(b.IgnoredChecks, f.ChecksFilter)
 	}
 	return b
+}
+
+// report gives setup a usable refusal when the shared engine cannot apply a
+// ruleset repair. Check mode still reports drift without failing.
+func (r *runner) report(res *reconcile.Result) error {
+	pending := false
+	for i := range res.Steps {
+		for j := range res.Steps[i].Findings {
+			finding := &res.Steps[i].Findings[j]
+			if finding.Kind == reconcile.FindingRulesetPending {
+				pending = true
+				finding.Fix = "repo setup cannot write rulesets; use the repository reconciler's Align now action with its configured App IDs, or devctl repo reconcile --team-file=<team-file> --steps=protection --devctl-app-id=<numeric-App-id> " + res.Repository + " with the same configured align-files and release App IDs"
+			}
+		}
+	}
+	if err := engine.Report(r.stdout, res, r.flag.Output); err != nil {
+		return microerror.Mask(err)
+	}
+	if pending && res.Mode == reconcile.ModeRepair {
+		return fmt.Errorf("repo setup left ruleset protection pending; use the repository reconciler's Align now action or devctl repo reconcile as described in the result")
+	}
+	return nil
 }
