@@ -75,6 +75,10 @@ func TestGitHubIdentityIsKeptForRedelivery(t *testing.T) {
 					map[string]any{"id": "p1", "number": 12, "state": "pending",
 						"created_at": time.Now().Add(-time.Hour).UTC().Format(time.RFC3339),
 						"vcs":        map[string]any{"revision": "abc"}},
+				}}}, {Body: map[string]any{"items": []any{
+					map[string]any{"id": "p2", "number": 13, "state": "created",
+						"created_at": time.Now().UTC().Format(time.RFC3339),
+						"vcs":        map[string]any{"revision": "abc"}},
 				}}}},
 				"GET /api/v2/pipeline/p1/workflow": {{Body: map[string]any{"items": []any{}}}},
 			})
