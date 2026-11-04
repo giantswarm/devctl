@@ -35,7 +35,7 @@ func Test_Execute_WriteFailurePreservesFile(t *testing.T) {
 		if !errors.Is(err, syscall.EFBIG) {
 			t.Fatalf("got %v, want EFBIG from the bounded write", err)
 		}
-		data, err := os.ReadFile(destination) // #nosec G304 -- test fixture
+		data, err := os.ReadFile(destination) // #nosec G304 G703 -- test fixture
 		if err != nil || string(data) != original {
 			t.Errorf("failed publication replaced the original: %q, %v", data, err)
 		}
