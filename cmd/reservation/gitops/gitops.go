@@ -7,6 +7,7 @@ package gitops
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -47,7 +48,8 @@ or $` + EnvTargetDir + `/cmc/<repo> when that is empty, where <repo> is the
 name part of --gitops-repo. It never clones. First it fast-forwards the
 checkout to origin/main. It stops when the checkout is not on main, has changes
 to tracked files, or has local commits that are not on origin/main. It leaves
-untracked files alone. Git uses the checkout's own credentials.`
+untracked files alone. Only one reservation command can use a checkout at a time.
+Git uses the checkout's own credentials.`
 
 // Flags select the GitOps repo and where its checkout is, and the flags every
 // reservation command shares: how to print the result and, for a command that
@@ -125,9 +127,11 @@ type Checkout struct {
 	Dir    string
 	source string
 	flags  *Flags
+	lock   *os.File
 }
 
-// Open resolves the checkout and syncs it to origin/main. It runs before any
+// Open resolves the checkout, locks it exclusively, and syncs it to origin/main.
+// Callers must release the lock with Finish or Close. It runs before any
 // command logic, list included. Git uses the checkout's own credentials.
 func (f *Flags) Open(ctx context.Context, stderr io.Writer) (*Checkout, error) {
 	dir, source, err := f.Resolve()
@@ -138,11 +142,16 @@ func (f *Flags) Open(ctx context.Context, stderr io.Writer) (*Checkout, error) {
 		return nil, microerror.Maskf(invalidFlagError, "the GitOps checkout %s (from %s) does not exist or is not a directory", dir, source)
 	}
 
-	if err := Sync(ctx, dir, stderr); err != nil {
+	lock, err := lockCheckout(ctx, dir)
+	if err != nil {
 		return nil, microerror.Mask(err)
 	}
+	checkout := &Checkout{Dir: dir, source: source, flags: f, lock: lock}
+	if err := Sync(ctx, dir, stderr); err != nil {
+		return nil, errors.Join(err, checkout.Close())
+	}
 
-	return &Checkout{Dir: dir, source: source, flags: f}, nil
+	return checkout, nil
 }
 
 // Explain turns the errors the user can act on into messages that say so: a
@@ -178,7 +187,8 @@ func (c *Checkout) Wrote(stderr io.Writer) {
 // set. Open left the checkout clean on origin/main, so the reset drops only
 // what the command wrote. It returns err, or the reset's error when err is
 // nil.
-func (c *Checkout) Finish(ctx context.Context, stderr io.Writer, err error) error {
+func (c *Checkout) Finish(ctx context.Context, stderr io.Writer, err error) (result error) {
+	defer func() { result = errors.Join(result, c.Close()) }()
 	if !c.flags.DryRun {
 		return err
 	}

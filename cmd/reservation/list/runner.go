@@ -2,6 +2,7 @@ package list
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"text/tabwriter"
@@ -38,11 +39,13 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 
 // run reads the GitOps checkout, synced to origin/main first: never the
 // cluster, and no GitHub token, so it works from a laptop exactly like release.
-func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (err error) {
 	checkout, err := r.flag.GitOps.Open(ctx, r.stderr)
 	if err != nil {
 		return microerror.Mask(err)
 	}
+
+	defer func() { err = errors.Join(err, checkout.Close()) }()
 
 	all, err := reservation.List(reservation.ListRequest{
 		RepoDir: checkout.Dir,
