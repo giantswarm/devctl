@@ -118,8 +118,8 @@ func Test_Merge_carryOf(t *testing.T) {
 			if result.Method != "rebase" || result.CarryOf == nil || result.CarryOf.Author != "alice" || result.CarryOf.PullRequest != "https://github.com/o/r/pull/12" || result.MergedBy != "someone" || result.MergeCommitSHA != "m1" || !result.BranchDeleted {
 				t.Errorf("carry outcome: %+v", result)
 			}
-			if n := h.requested("GET /repos/o/r/compare/base123...abc123"); n != 2 {
-				t.Errorf("authorship must be checked before the wait and before merging, got %d reads", n)
+			if n := h.requested("GET /repos/o/r/compare/base123...abc123"); n != 4 {
+				t.Errorf("authorship and the autosquash guard each read before the wait and before merging, got %d reads", n)
 			}
 		})
 	}
