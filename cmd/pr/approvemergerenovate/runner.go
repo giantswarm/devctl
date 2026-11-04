@@ -79,10 +79,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// Build search query
 	searchQuery := fmt.Sprintf("%s is:pr is:open archived:false review-requested:@me author:app/renovate", query)
 
-	searchOpts := &github.SearchOptions{
-		ListOptions: github.ListOptions{PerPage: 100},
-	}
-	searchResults, _, err := githubClient.Search.Issues(ctx, searchQuery, searchOpts)
+	searchResults, err := searchPRs(ctx, githubClient, searchQuery)
 	if err != nil {
 		return microerror.Maskf(executionFailedError, "failed to search for PRs: %v", err)
 	}
@@ -185,8 +182,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 				return
 			case <-ticker.C:
 				// Re-run the search query
-				newResults, _, err := githubClient.Search.Issues(ctx, searchQuery, searchOpts)
+				newResults, err := searchPRs(ctx, githubClient, searchQuery)
 				if err != nil {
+					fmt.Fprintf(r.stderr, "Failed to refresh PR search: %v\n", err)
 					continue
 				}
 
