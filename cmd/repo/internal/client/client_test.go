@@ -175,8 +175,31 @@ func TestRepository(t *testing.T) {
 func TestPrintJSON(t *testing.T) {
 	var out bytes.Buffer
 	require.NoError(t, PrintJSON(&out, json.RawMessage(`{"b":1,"a":[1,2]}`)))
-	require.Equal(t, "{\n  \"a\": [\n    1,\n    2\n  ],\n  \"b\": 1\n}\n", out.String())
+	require.Equal(t, "{\n  \"b\": 1,\n  \"a\": [\n    1,\n    2\n  ]\n}\n", out.String())
 	out.Reset()
 	require.NoError(t, PrintJSON(&out, json.RawMessage("Server 'x' is already authenticated.")))
 	require.True(t, strings.HasPrefix(out.String(), "Server 'x'"))
+}
+
+// JSON output preserves number values and their spelling at every depth,
+// including values that a float64 cannot represent.
+func TestPrintJSONPreservesNumbers(t *testing.T) {
+	for _, payload := range []string{
+		`{"caller":{"id":9007199254740993},"counts":[9223372036854775807,-9223372036854775808]}`,
+		`{"fraction":1.234567890123456789,"scale":1.50,"large":1e400,"small":1e-400}`,
+		`[9007199254740993,1.50,1e400]`,
+		`9007199254740993`,
+	} {
+		t.Run(payload, func(t *testing.T) {
+			var out bytes.Buffer
+			require.NoError(t, PrintJSON(&out, json.RawMessage(payload)))
+			var compact bytes.Buffer
+			require.NoError(t, json.Compact(&compact, out.Bytes()))
+			require.Equal(t, payload, compact.String())
+			if strings.HasPrefix(payload, "{") || strings.HasPrefix(payload, "[") {
+				require.Contains(t, out.String(), "\n  ")
+			}
+			require.True(t, strings.HasSuffix(out.String(), "\n"))
+		})
+	}
 }
