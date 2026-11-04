@@ -102,6 +102,9 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 			return err
 		}
 	}
+	if err := rolloutwait.ValidateHelmReleases(r.flag.HelmReleases); err != nil {
+		return err
+	}
 	failedLogLines, err := r.flag.FailedLog.TailLines()
 	if err != nil {
 		return err
