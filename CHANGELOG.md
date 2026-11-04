@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- New chart scaffolds annotate empty values maps as open, so populated label, annotation,
+  node selector and affinity maps pass the generated schema without a manual annotation.
+  Existing schema annotations and closed structured objects keep their behavior.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of

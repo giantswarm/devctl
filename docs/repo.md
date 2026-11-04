@@ -113,6 +113,12 @@ with the `app` flavour -- gets the chart of `giantswarm/template-app` at `helm/<
 template, with `.abs/main.yaml` pointing at it, the name substituted and the team annotation set, so
 the first release's chart job builds; the dry run names it on the `chart:` line.
 
+During scaffold creation, empty maps in the template's chart values receive
+`# @schema additionalProperties: true`, so labels, annotations and other map values accept
+keys when their schema is generated. Maps with an existing `@schema` annotation keep it.
+Structured objects still reject undeclared fields. This applies to the initial scaffold;
+maps added to an existing chart need their own schema annotation.
+
 The scaffold is the template's tree with its placeholders replaced, in one pass that handles both
 token forms the templates carry. `giantswarm/template`, the Go service template, carries the
 brace-less `REPOSITORY_NAME` (`go.mod`, `CHANGELOG.md`, `docs/development.md`): a Go module path may
