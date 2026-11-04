@@ -58,6 +58,9 @@ type Artifact struct {
 	Digest string `json:"digest"`
 	// State is available or missing.
 	State string `json:"state"`
+	// LastProbeError is the latest failed probe, cleared once the registry
+	// answers whether the artifact exists.
+	LastProbeError string `json:"lastProbeError,omitempty"`
 
 	// private selects the private registry and its keychain.
 	private bool
@@ -87,6 +90,9 @@ type Pipeline struct {
 	// yet". Empty once every workflow has finished: what a timeout was
 	// still waiting for.
 	Unfinished []string `json:"unfinished"`
+	// AssetUploadJobs names the workflow/job entries that upload release
+	// assets, once the tag pipeline's jobs are visible.
+	AssetUploadJobs []string `json:"assetUploadJobs,omitempty"`
 }
 
 // PipelineWorkflow is one workflow of the tag pipeline.
@@ -132,6 +138,9 @@ type Result struct {
 	// Artifacts are the expected images and charts, or the release assets
 	// of a repository that ships neither.
 	Artifacts []Artifact `json:"artifacts"`
+	// ReleaseAssetCount is the asset count of the published GitHub release
+	// in a release-assets wait; absent until that release has been read.
+	ReleaseAssetCount *int `json:"releaseAssetCount,omitempty"`
 	// Pipeline is the tag pipeline, or the check runs of an Actions-only
 	// repository's tag; null for a repository without CircleCI and check runs.
 	Pipeline *Pipeline `json:"pipeline"`
@@ -191,7 +200,8 @@ func notApplicableErr(format string, args ...any) error {
 
 // NoReleaseError says that no release follows a pull request's merge: the
 // repository does not tag merge commits (the legacy release workflow, or no
-// release workflow at all), or its auto-release run finished without a tag
+// release workflow at all, or its auto-release push filters exclude the base),
+// or its auto-release run finished without a tag
 // because the commits since the last release warrant none and no later tag
 // on the pull request's base branch carries the merge. Exit 3 with the
 // no_release verdict; devctl pr merge reports the merge as done with no

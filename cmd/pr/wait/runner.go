@@ -50,10 +50,8 @@ func newGitHub(config githubclient.Config) (prwait.GitHub, prwait.RateSource, pr
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx, stop := agentcli.InterruptContext(cmd.Context())
+	defer stop()
 	agentcli.IgnoreHangup()
 	return r.run(ctx, args)
 }
@@ -67,7 +65,7 @@ func (r *runner) FlagError(_ *cobra.Command, err error) error {
 
 func (r *runner) run(ctx context.Context, args []string) error {
 	doc := newDocument()
-	err := r.wait(ctx, args, &doc)
+	err := agentcli.Interrupted(ctx, r.wait(ctx, args, &doc))
 	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, err)
 }
 
@@ -125,10 +123,10 @@ func (r *runner) wait(ctx context.Context, args []string, doc *prwait.Document) 
 		return err
 	}
 
-	waiter, err := prwait.New(prwait.Config{
-		GitHub: github,
-		Rate:   rate,
-		CircleCI: func(ctx context.Context) (*circleciclient.Client, error) {
+	var openCircleCI func(context.Context) (*circleciclient.Client, error)
+	fromStatuses := r.flag.CircleCIFromStatuses && failedLogLines == 0
+	if !fromStatuses {
+		openCircleCI = func(ctx context.Context) (*circleciclient.Client, error) {
 			token, err := r.requireCircleCI(ctx)
 			if err != nil {
 				return nil, err
@@ -137,16 +135,30 @@ func (r *runner) wait(ctx context.Context, args []string, doc *prwait.Document) 
 			return circleciclient.New(circleciclient.Config{
 				Token:       token.Value,
 				TokenSource: token.SourceName(),
-				BaseURL:     circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
-				HTTPClient:  &http.Client{Transport: retrying},
-				Logger:      logger,
+				Renew: func(ctx context.Context, _ string) (string, error) {
+					token, err := r.requireCircleCI(ctx)
+					if err != nil {
+						return "", err
+					}
+					doc.Warn(token.Warning)
+					return token.Value, nil
+				},
+				BaseURL:    circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
+				HTTPClient: &http.Client{Transport: retrying},
+				Logger:     logger,
 			})
-		},
-		Entries:        entries,
-		Clock:          clock,
-		Progress:       progress,
-		Timeout:        r.flag.Timeout,
-		FailedLogLines: failedLogLines,
+		}
+	}
+	waiter, err := prwait.New(prwait.Config{
+		GitHub:               github,
+		Rate:                 rate,
+		CircleCI:             openCircleCI,
+		CircleCIFromStatuses: fromStatuses,
+		Entries:              entries,
+		Clock:                clock,
+		Progress:             progress,
+		Timeout:              r.flag.Timeout,
+		FailedLogLines:       failedLogLines,
 	})
 	if err != nil {
 		return err
