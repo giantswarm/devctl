@@ -368,15 +368,25 @@ func (c *Client) ListPipelineWorkflows(ctx context.Context, pipelineID string) (
 	return out.Items, nil
 }
 
-// ListWorkflowJobs returns the jobs of a workflow.
+// ListWorkflowJobs returns every page of the jobs of a workflow.
 func (c *Client) ListWorkflowJobs(ctx context.Context, workflowID string) ([]Job, error) {
-	var out struct {
-		Items []Job `json:"items"`
+	var out []Job
+	base := "/api/v2/workflow/" + url.PathEscape(workflowID) + "/job"
+	path := base
+	for {
+		var page struct {
+			Items         []Job  `json:"items"`
+			NextPageToken string `json:"next_page_token"`
+		}
+		if err := c.do(ctx, http.MethodGet, path, nil, &page); err != nil {
+			return nil, microerror.Mask(err)
+		}
+		out = append(out, page.Items...)
+		if page.NextPageToken == "" {
+			return out, nil
+		}
+		path = base + "?page-token=" + url.QueryEscape(page.NextPageToken)
 	}
-	if err := c.do(ctx, http.MethodGet, "/api/v2/workflow/"+url.PathEscape(workflowID)+"/job", nil, &out); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return out.Items, nil
 }
 
 // RerunWorkflowFromFailed reruns the failed jobs of a finished workflow and
