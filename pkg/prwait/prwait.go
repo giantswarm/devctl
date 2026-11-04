@@ -226,6 +226,8 @@ type head struct {
 	workflowsRead bool
 }
 
+var errHeadChanged = errors.New("head changed while reading checks")
+
 // Wait blocks until owner/repo#number is green (nil), red or otherwise
 // decided (an [*agentcli.ExitError] with the code of the table), or the
 // timeout passes (exit 2). A required context absent from a head whose
@@ -253,6 +255,10 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 	var unanswered string
 	for poll := 1; ; poll++ {
 		e, err := w.poll(ctx, owner, repo, number, h, result)
+		if errors.Is(err, errHeadChanged) {
+			last, unanswered = nil, ""
+			continue
+		}
 		if err != nil {
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
 				return result, w.timedOut(result, last, unanswered)
@@ -291,14 +297,14 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 				result.Warnings = append(result.Warnings, fmt.Sprintf("accepted red: %s %s concluded %s (%s), named by --accept-red", a.Source, a.Name, a.Conclusion, a.URL))
 			}
 			w.blocking(ctx, owner, repo, number, h, e, result)
-			w.progress.Printf("poll %d: green", poll)
+			w.progress.Printf("poll %d: green (head %s)", poll, h.sha)
 			return result, nil
 		case e.redDecided():
-			w.progress.Printf("poll %d: red: %s", poll, e.redReason())
+			w.progress.Printf("poll %d: red: head %s: %s", poll, h.sha, e.redReason())
 			if w.failedLogLines > 0 {
 				result.FailedJobs = w.failedJobs(ctx, owner, repo, h, e)
 			}
-			return result, agentcli.NewExitError(agentcli.ExitRed, agentcli.VerdictRed, "%s", e.redReason())
+			return result, agentcli.NewExitError(agentcli.ExitRed, agentcli.VerdictRed, "head %s: %s", h.sha, e.redReason())
 		case e.neverReported():
 			w.progress.Printf("poll %d: required missing: %s", poll, strings.Join(e.requiredMissing, ", "))
 			return result, w.neverReported(result, e)
@@ -399,6 +405,27 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 	if err != nil {
 		return nil, err
 	}
+	// The PR endpoint can lag a push. Settle the head before trusting even
+	// its mergeability, and repeat whenever the reads disagree. The wait's
+	// deadline bounds continuous pushes and unanswered reads.
+	for {
+		if err := w.clock.Sleep(ctx, time.Second); err != nil {
+			return nil, err
+		}
+		current, err := w.github.PullRequest(ctx, owner, repo, number)
+		if err != nil {
+			return nil, err
+		}
+		stable := current.GetHead().GetSHA() == pr.GetHead().GetSHA()
+		if !stable {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("the head changed from %s to %s during the wait", pr.GetHead().GetSHA(), current.GetHead().GetSHA()))
+		}
+		pr = current
+		if stable {
+			break
+		}
+		w.progress.Printf("head changed while settling; reading head %s again", pr.GetHead().GetSHA())
+	}
 	if err := notApplicable(pr); err != nil {
 		result.HeadSHA = pr.GetHead().GetSHA()
 		result.BaseRef = pr.GetBase().GetRef()
@@ -449,6 +476,17 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 		return nil, err
 	}
 	w.awaitRegistration(e)
+	// Checks can take several requests to read. A verdict is only valid if
+	// the PR still names the revision whose checks were evaluated.
+	if e.green() || e.redDecided() || e.neverReported() || e.approvalOnly || w.noChecks(e) {
+		current, err := w.github.PullRequest(ctx, owner, repo, number)
+		if err != nil {
+			return nil, err
+		}
+		if current.GetHead().GetSHA() != sha {
+			return nil, errHeadChanged
+		}
+	}
 	result.Checks, result.Actions, result.CircleCI, result.AcceptedRed = e.checks, e.actions, e.circleci, e.acceptedRed
 	return e, nil
 }

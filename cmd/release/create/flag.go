@@ -13,6 +13,7 @@ const (
 	flagComponents            = "component"
 	flagApps                  = "app"
 	flagOverwrite             = "overwrite"
+	flagOutput                = "output"
 	flagReleases              = "releases"
 	flagBumpAll               = "bumpall"
 	flagYes                   = "yes"
@@ -57,7 +58,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.BumpAll, flagBumpAll, false, "Bump all components to the latest version.")
 	cmd.Flags().BoolVarP(&f.Yes, flagYes, "y", false, "Do not ask for confirmation.")
 	cmd.Flags().BoolVar(&f.UpdateExisting, "update-existing", false, "Update an existing release in the current branch instead of creating from a base release.")
-	cmd.Flags().StringVar(&f.Output, "output", "text", "Output format (text|markdown).")
+	cmd.Flags().StringVar(&f.Output, flagOutput, "text", "Output format (text|markdown).")
 	cmd.Flags().BoolVarP(&f.Verbose, flagVerbose, "v", false, "Print verbose output.")
 	cmd.Flags().BoolVar(&f.ChangesOnly, flagChangesOnly, false, "Only print changed components and apps.")
 	cmd.Flags().BoolVar(&f.RequestedOnly, flagRequestedOnly, false, "Only print components and apps requested by the user.")
@@ -79,6 +80,9 @@ func (f *flag) Validate() error {
 	}
 	if f.Provider == "" {
 		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagProvider)
+	}
+	if f.Output != "text" && f.Output != "markdown" {
+		return microerror.Maskf(invalidFlagError, "--%s must be text or markdown", flagOutput)
 	}
 
 	return nil

@@ -46,7 +46,10 @@ system that will produce it:
    GitHub keeps every run of a check; a workflow that ran twice for the same head has a stale
    first run next to the current one. A pull request retitled after a failed title check has a
    failed run and a passed run of the same workflow, and only the newest workflow run counts, as
-   in the merge box. A failed check of an earlier run of a workflow (a reopened pull request, a rerun) does
+   in the merge box. A cancelled check is ignored when a check of the same name in another run of
+   that workflow started later, even if the later job belongs to a lower-ID workflow run. A
+   cancelled matrix job or a check in another workflow is not superseded this way; a lone
+   cancellation stays red. A failed check of an earlier run of a workflow (a reopened pull request, a rerun) does
    not count while the workflow's newest run is still open: the wait goes on and exits on that run's outcome.
    A completed run whose conclusion is `action_required` (a deployment waiting for a
    reviewer) is unfinished, not red. `neutral` and `skipped` pass.

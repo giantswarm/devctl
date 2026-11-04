@@ -76,10 +76,10 @@ func Test_evaluate_haltedSetup(t *testing.T) {
 		{name: "case 8: running setup stays pending", change: func(s *snapshot) { s.circleci.workflows[0].Status = "running" }},
 		{name: "case 9: failed setup stays red", change: func(s *snapshot) { s.circleci.workflows[0].Status = "failed" }, wantRed: true},
 		{name: "case 10: missing job listing stays pending", change: func(s *snapshot) { s.circleci.setupJobs = nil }},
-		{name: "case 11: a workflow-named status cannot replace the job's context", change: func(s *snapshot) { s.statuses[0].Context = github.Ptr[string]("ci/circleci: pr-retag-setup") }},
+		{name: "case 11: a workflow-named status cannot replace the job's context", change: func(s *snapshot) { s.statuses[0].Context = new("ci/circleci: pr-retag-setup") }},
 		{name: "case 12: the latest job context is still pending", change: func(s *snapshot) {
 			s.statuses[0].UpdatedAt = &github.Timestamp{Time: stopped}
-			s.statuses = append(s.statuses, &github.RepoStatus{Context: github.Ptr[string]("ci/circleci: setup-retag"), State: github.Ptr[string]("pending"), UpdatedAt: &github.Timestamp{Time: stopped.Add(time.Second)}})
+			s.statuses = append(s.statuses, &github.RepoStatus{Context: new("ci/circleci: setup-retag"), State: new("pending"), UpdatedAt: &github.Timestamp{Time: stopped.Add(time.Second)}})
 		}},
 		{name: "case 13: the job listing still runs", change: func(s *snapshot) { s.circleci.setupJobs["w1"][0].Status = "running" }},
 		{name: "case 14: another CircleCI context is evidence of continuation", change: func(s *snapshot) { s.statuses = append(s.statuses, status("ci/circleci: build", "success")) }},
