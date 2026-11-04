@@ -55,7 +55,7 @@ devctl pr approve-merge-renovate "architect v1.2.3"
 2. **Parallel Processing**: All PRs are processed simultaneously using goroutines for maximum speed
 
 3. **Continuous Polling**: Re-runs the search query to discover newly created PRs that match the criteria and automatically processes them
-   - Normal mode: Polls every 10 seconds until all PRs are processed
+   - Normal mode: Polls every 10 seconds until all PRs are processed; a discovery read already in flight and any workers it adds finish before the command returns
    - Watch mode (`--watch`): Polls every minute and runs indefinitely
 
 4. **Live Table UI**: Displays a real-time updating table showing:

@@ -91,6 +91,9 @@ devctl ci rerun giantswarm/devctl f1290c29-9a4b-4e0e-8c6a-0b7d3e5f2a11 --from-fa
 
 `devctl release wait <owner/repo> (<vX.Y.Z> | --pr <n>)`, the wait `pr merge` runs after its merge, blocks until every image and chart of the tag is pullable and the tag pipeline is green (a repository's own tag jobs included), and prints one JSON document with the digests. The artifact names come from the sources that define them (the team-file entry for generated CI, the tag pipeline's push jobs for hand-written CI), never from the repository name; the public registry is probed anonymously, the private one with the docker keychain; a failed tag pipeline ends the wait as exit 1 with the failed jobs, a timeout as exit 2 naming what is missing. See [docs/release-wait.md](docs/release-wait.md) for the model, the JSON and the exit codes.
 
+Repository-owned publishing jobs in a generated pipeline's `custom.yml` warn about unchecked images;
+`--image` explicitly adds image repositories to probe at the git tag, for generated CI too.
+
 ```bash
 devctl release wait giantswarm/devctl v8.9.0
 devctl release wait giantswarm/devctl --pr 2289 --progress
@@ -131,7 +134,7 @@ devctl pr merge giantswarm/devctl 2278 --timeout 45m --progress
 
 ### Repository set-up (`devctl repo`)
 
-Giant Swarm repositories are declared in the team files of [giantswarm/github](https://github.com/giantswarm/github); the reconciler keeps them as declared. `devctl repo create` creates a repository as you, pushes its scaffold and opens the team-file pull request; the other verbs are giantswarm-repo-manager's tools called through muster as you (`devctl auth login --muster-only` first): `list`, `get`, `refresh`, `status`, `sweep`, `watch`, `adopt`, `update`, `transfer`, `set-lifecycle`, `approve`, `align`, each with `--dry-run` where it writes and `-o json` for the manager's answer. See [docs/repo.md](docs/repo.md).
+Giant Swarm repositories are declared in the team files of [giantswarm/github](https://github.com/giantswarm/github); the reconciler keeps them as declared. `devctl repo create` opens the team-file pull request the reconciler creates the repository from; `--dry-run` previews it through giantswarm-repo-manager and `--dry-run --local` validates with devctl's own engine. The other verbs are giantswarm-repo-manager's tools called through muster as you (`devctl auth login --muster-only` first): `list`, `get`, `refresh`, `status`, `sweep`, `watch`, `adopt`, `update`, `transfer`, `set-lifecycle`, `approve`, `align`, each with `--dry-run` where it writes and `-o json` for the manager's answer. See [docs/repo.md](docs/repo.md).
 
 ```bash
 devctl repo create --team bumblebee --name my-service --component-type service --flavour app --language go --description "What it does"

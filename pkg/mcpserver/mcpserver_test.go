@@ -448,14 +448,14 @@ func TestLaptopOnlyBehaviourIsOff(t *testing.T) {
 	s := &sources{pr: &prwaittest.GitHub{Heads: []prwaittest.Head{pending}}}
 	c, _ := connect(t, mcpserver.Config{Credentials: person("ghu_person"), Sources: s})
 	start := time.Now()
-	_, doc := call(t, c, mcpserver.ToolPRWait, map[string]any{"repository": "giantswarm/devctl", "number": 7, "timeout": "1s"}, "wait-1")
+	_, doc := call(t, c, mcpserver.ToolPRWait, map[string]any{"repository": "giantswarm/devctl", "number": 7, "timeout": "3s"}, "wait-1")
 	took := time.Since(start)
 	assertVerdict(t, doc, agentcli.VerdictTimeout, agentcli.ExitTimeout)
-	if took < time.Second {
-		t.Errorf("a 1 s wait took %s with %s set", took, agentcli.EnvTimeScale)
+	if took < 3*time.Second {
+		t.Errorf("a 3 s wait took %s with %s set", took, agentcli.EnvTimeScale)
 	}
 	if polls := s.pr.Polls(); polls != 1 {
-		t.Errorf("%d polls in 1 s: the poll interval was scaled", polls)
+		t.Errorf("%d polls in 3 s: the poll interval was scaled", polls)
 	}
 	_, doc = call(t, c, mcpserver.ToolPRMergeStatus, map[string]any{}, nil)
 	assertVerdict(t, doc, agentcli.VerdictGreen, agentcli.ExitOK)

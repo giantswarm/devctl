@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -182,7 +183,7 @@ type Result struct {
 	ChecksVia string `json:"checksVia,omitempty"`
 	// CircleCI is absent when the head carries no CircleCI configuration, the
 	// repository is a template whose entry declares that configuration as
-	// template content, or CircleCI has no project for it.
+	// template content, or CircleCI has no project or listed pipeline for it.
 	CircleCI *CircleCI `json:"circleci,omitempty"`
 	// Actions are the head's GitHub Actions runs, the latest per workflow.
 	Actions []ActionRun `json:"actions"`
@@ -201,7 +202,7 @@ type Result struct {
 	// requires that is missing or asks for changes.
 	Blocking []string `json:"blocking,omitempty"`
 	// Warnings are for the envelope: a head that changed under the wait, a
-	// template repository, a CircleCI project that does not exist.
+	// template repository, a CircleCI project that does not exist or lists no pipeline.
 	Warnings []string `json:"-"`
 }
 
@@ -264,7 +265,13 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 		}
 		if err != nil {
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
-				return result, w.timedOut(result, last, unanswered)
+				// The deadline interrupted this poll: the preceding complete
+				// poll cannot establish that the continuation is still absent.
+				reason := unanswered
+				if last != nil && last.missingContinuation != "" {
+					reason = err.Error()
+				}
+				return result, w.timedOut(result, last, reason)
 			}
 			// A rate limit resetting after the deadline is a timeout ahead
 			// of it: the document names what was unfinished all the same.
@@ -377,6 +384,9 @@ func (w *Waiter) timedOut(result *Result, last *evaluation, unanswered string) e
 	if last == nil {
 		return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout, "timeout after %s before the first poll completed%s", w.timeout, suffix)
 	}
+	if unanswered == "" && last.headSHA == result.HeadSHA && last.missingContinuation != "" {
+		suffix = "; " + last.missingContinuation
+	}
 	if len(last.red) > 0 {
 		suffix = "; red already, besides the required contexts it waited for: " + last.redReason() + suffix
 	}
@@ -472,6 +482,23 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 		if s.circleci, err = w.readCircleCI(ctx, owner, repo, h, s.statuses); err != nil {
 			return nil, err
 		}
+		if s.circleci.pipeline == nil && circleStatuses(s.statuses) == 0 {
+			// A project lookup also succeeds for repositories never set up
+			// on CircleCI. Any listed pipeline, even on another branch, is
+			// enough evidence to keep waiting for this head's pipeline.
+			page, err := h.circleci.ListPipelines(ctx, owner, repo, "")
+			if err != nil {
+				return nil, err
+			}
+			if len(page.Items) == 0 && page.NextPageToken == "" {
+				s.circleci = nil
+				warning := fmt.Sprintf("circleci pipeline for %s is absent; %s/%s has %s but no listed CircleCI pipelines: GitHub alone", sha, owner, repo, CircleCIConfigPath)
+				if !slices.Contains(result.Warnings, warning) {
+					result.Warnings = append(result.Warnings, warning)
+					w.progress.Printf("%s", warning)
+				}
+			}
+		}
 	}
 
 	e := evaluate(s)
@@ -543,11 +570,11 @@ func (w *Waiter) readChecksREST(ctx context.Context, owner, repo, sha string, s 
 // declares gen.ci.templateContent: that configuration is for the
 // repositories created from it, and the template is never built itself. A
 // template without the declaration carries its own pipeline and is judged
-// like any repository, as the reconciler judges it. Whether the project has
-// run a pipeline before does not decide it: the head's own may be the
-// project's first, and judging the head from GitHub alone until it appeared
-// would call a head green whose pipeline has not started. The token is required only past the first
-// condition, so a repository without CircleCI needs GitHub alone.
+// like any repository, as the reconciler judges it. A successful project
+// lookup alone does not establish that CircleCI builds the repository:
+// the poll also checks the project-wide pipeline listing when the head
+// has no pipeline or CircleCI status. The token is required only past the
+// first condition, so a repository without CircleCI needs GitHub alone.
 func (w *Waiter) decideCircleCI(ctx context.Context, owner, repo string, number int, headRef string, fork, template bool, h *head, result *Result) error {
 	h.decided = true
 	if w.circleci == nil && !w.fromStatuses {

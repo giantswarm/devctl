@@ -42,6 +42,11 @@ installation and the read access your `gh` login lacks.
 The merge outside giantswarm is made as your `gh` login, through whatever that repository's protection grants
 you.
 
+The CI wait uses [the same CircleCI applicability rules as `pr wait`](pr-wait.md#github-alone-or-github-and-circleci).
+An absent head pipeline with no CircleCI status and an empty project-wide pipeline listing is judged
+from GitHub alone with a warning. Green GitHub checks can then permit the merge; any listed pipeline
+keeps a delayed head pipeline pending.
+
 ## What is refused before the wait
 
 Every refusal comes before the first poll and before anything is written.
@@ -371,6 +376,10 @@ devctl pr merge status
 The blocking call stays the default. A wrapper that already runs the merge outside its caller and
 reads the blocking call's document keeps calling it without `--detach`: a detached start's document
 carries no `mergeCommitSha`, and its outcome is only in the handle.
+
+A detached merge saves its complete outcome even when writing to its log fails. A failure to
+save the outcome is reported as a tooling error when the merge otherwise succeeded; an existing
+nonzero merge exit code is preserved. The completion hook runs only after the outcome is saved.
 
 ## The document
 

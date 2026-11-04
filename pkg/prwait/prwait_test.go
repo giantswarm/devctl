@@ -432,16 +432,16 @@ func Test_Wait_templateEntryReadFailureIsAToolingFailure(t *testing.T) {
 	}
 }
 
-func Test_Wait_firstPipelineOfTheProject(t *testing.T) {
-	// A new repository's first pull request: CircleCI has the project and
-	// no pipeline when the wait starts, GitHub reads green. The head is not
-	// green from GitHub alone; its pipeline, the project's first, is waited
-	// for, read once it exists and judged like any other.
+func Test_Wait_delayedPipelineOfBuiltProject(t *testing.T) {
+	// The base has a pipeline, but the pull request's first pipeline has not
+	// started when the wait begins. GitHub reads green; the head still waits
+	// for its own pipeline and judges it once it exists.
 	gh := gitHubGreen()
 	gh[confPath] = []sequence.Response{config}
 	none := body(map[string]any{"items": []any{}, "next_page_token": nil})
 	cc := sequence.Routes{
 		projPath: {project},
+		listPath: {body(map[string]any{"items": []any{map[string]any{"id": "base", "vcs": map[string]any{"revision": "base123", "branch": "main"}}}})},
 		pipePath: {none, pipelines, pipelines},
 		wfPath: {
 			body(map[string]any{"items": []any{map[string]any{"id": "w1", "name": "build", "status": "running"}}}),
