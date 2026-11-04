@@ -122,10 +122,11 @@ func TestCommandRemovalOfLastIncludeKeepsHelp(t *testing.T) {
 	require.NoError(t, runMakefileTransitionCommand(t, "app", "generic"))
 	require.NoError(t, runMakefileTransitionCommand(t, "generic", "generic"))
 	require.NoFileExists(t, "Makefile.gen.app.mk")
-	// There are no recipes for tools or services in this help-only repository.
-	out, err := exec.CommandContext(t.Context(), makeBin, "help").CombinedOutput() // #nosec G204 -- make from PATH runs only the generated help target in t.TempDir.
+	// Resolve the help target without executing its AWK formatter: some AWK
+	// implementations do not support the template's dynamic printf width.
+	out, err := exec.CommandContext(t.Context(), makeBin, "--dry-run", "help").CombinedOutput() // #nosec G204 -- make from PATH only resolves the generated help target in t.TempDir.
 	require.NoError(t, err, string(out))
-	require.Contains(t, string(out), "Display this help.")
+	require.Contains(t, string(out), "awk '")
 }
 
 func TestCommandKeepsObsoleteIncludesWhenGenerationFails(t *testing.T) {
