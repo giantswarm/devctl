@@ -212,6 +212,14 @@ and the Dex (`https://dex.<baseDomain>`), and the exchange client is the hub mus
 `<name>-token-exchange-credentials` in the release namespace, mounted into the pod. With installations, the
 `MCPServer`'s `requiredAudiences` carry `dex-k8s-authenticator`, the audience the installations' Dex connectors accept.
 
+On Cilium clusters, `networkPolicy.enabled: true` renders the server's egress policy: DNS through Cilium's DNS
+proxy, HTTPS to GitHub, the public and private registries and the catalog host, and each installation's Dex token
+endpoint and management API. The installation endpoints come from the same helper as the installations file,
+including `apiServer` and `dex.tokenEndpoint` overrides and their ports; IP endpoints use CIDR rules. Adding an
+installation then updates both the server and its egress in one values change. The policy selects only this
+release's pods and controls egress; ingress remains the deployment's responsibility. It covers the server's default
+GitHub, registry and catalog endpoints; deployments overriding those with `extraEnv` need matching egress rules.
+
 An installation's muster configuration adds the toolset presets `devctl` (`server: devctl`, every tool, the write
 tools included) and `devctl-read-only` (`pr_wait`, `release_wait`, `rollout_wait`, `pr_merge_status` and
 `reservation_list` by name), which resolves to the same devctl tools as muster's built-in `read-only`. A preset names
