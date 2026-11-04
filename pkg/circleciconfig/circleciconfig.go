@@ -187,6 +187,12 @@ func (j *Jobs) add(names map[string]bool, config map[string]any, run Run) {
 			continue
 		}
 		entries, _ := workflow["jobs"].([]any)
+		occurrences := map[string]int{}
+		for _, entry := range entries {
+			ref, params := jobEntry(entry)
+			occurrences[jobName(ref, params)]++
+		}
+		warnedNames := map[string]bool{}
 		var listed []job
 		for _, entry := range entries {
 			ref, params := jobEntry(entry)
@@ -194,9 +200,13 @@ func (j *Jobs) add(names map[string]bool, config map[string]any, run Run) {
 				continue
 			}
 			definition, _ := definitions[ref].(map[string]any)
-			name := ref
-			if n, ok := params["name"].(string); ok && n != "" {
-				name = n
+			name := jobName(ref, params)
+			if occurrences[name] > 1 {
+				if !warnedNames[name] {
+					j.Warnings = append(j.Warnings, fmt.Sprintf("workflow %s invokes %s more than once: CircleCI assigns job name suffixes, so its jobs count once they post a status", key, name))
+					warnedNames[name] = true
+				}
+				continue
 			}
 			if _, matrix := params["matrix"]; matrix {
 				j.Warnings = append(j.Warnings, fmt.Sprintf("workflow %s runs %s as a matrix: its jobs count once they post a status", key, name))
@@ -213,6 +223,13 @@ func (j *Jobs) add(names map[string]bool, config map[string]any, run Run) {
 			names[job] = true
 		}
 	}
+}
+
+func jobName(ref string, params map[string]any) string {
+	if name, ok := params["name"].(string); ok && name != "" {
+		return name
+	}
+	return ref
 }
 
 // jobEntry is a workflow job list's entry: the job it runs and its
