@@ -143,7 +143,11 @@ func (r *Retrying) try(base http.RoundTripper, req *http.Request) (*http.Respons
 		return nil, limit, nil
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(body))
-	resp.ContentLength = int64(len(body))
+	// HEAD's length describes the representation a GET would return, not
+	// the empty body we just read.
+	if req.Method != http.MethodHead {
+		resp.ContentLength = int64(len(body))
+	}
 	return resp, nil, nil
 }
 
