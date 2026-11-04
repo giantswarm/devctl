@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Concurrent updates to `DEVCTL_KEYRING_FILE` preserve changes to every identity and readers see complete records.
 - CircleCI waits read every workflow page, so a failed or running workflow on a later page is no longer missed.
 
 - Bulk PR approval targets the checked commit, and direct merges and Align branch updates
