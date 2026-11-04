@@ -34,6 +34,14 @@ func ReleaseWaitSources(ctx context.Context, endpoints agentcli.Endpoints, trans
 			warn(token.Warning)
 			return token.Value, token.SourceName(), nil
 		},
+		RenewCircleCI: func(ctx context.Context, _ string) (string, error) {
+			token, err := authstore.RequireCircleCI(ctx)
+			if err != nil {
+				return "", err
+			}
+			warn(token.Warning)
+			return token.Value, nil
+		},
 		Registry: authn.DefaultKeychain,
 	})
 }

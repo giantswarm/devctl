@@ -137,9 +137,17 @@ func (r *runner) wait(ctx context.Context, args []string, doc *prwait.Document) 
 			return circleciclient.New(circleciclient.Config{
 				Token:       token.Value,
 				TokenSource: token.SourceName(),
-				BaseURL:     circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
-				HTTPClient:  &http.Client{Transport: retrying},
-				Logger:      logger,
+				Renew: func(ctx context.Context, _ string) (string, error) {
+					token, err := r.requireCircleCI(ctx)
+					if err != nil {
+						return "", err
+					}
+					doc.Warn(token.Warning)
+					return token.Value, nil
+				},
+				BaseURL:    circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL),
+				HTTPClient: &http.Client{Transport: retrying},
+				Logger:     logger,
 			})
 		},
 		Entries:        entries,

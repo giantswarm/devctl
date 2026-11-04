@@ -150,3 +150,4 @@ API triggered; no second one) or `refused` (CircleCI refused it; 403 is exit 8).
 | 5 | `refused` | nothing finished failed and a workflow is still running (for `release rerun`: within `--wedged-after`); a pipeline without a workflow younger than five minutes; a pull request's delivery sent again before; a tag pipeline the API triggered itself |
 | 7 | `usage` | wrong usage or a tooling failure |
 | 8 | `auth_required` | no CircleCI login, or one without Write access (`devctl auth login --circleci-only`); a GitHub identity without webhook access (the App's repository permission Webhooks: read and write) |
+| 13 | `remote_error` | A CircleCI request failed. The command line was valid; the reason preserves the service error. Existing timeout and post-merge outcomes take precedence. |

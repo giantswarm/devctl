@@ -41,6 +41,7 @@ const (
 	VerdictReleaseUnconfirmed Verdict = "release_unconfirmed"
 	VerdictAuthRequired       Verdict = "auth_required"
 	VerdictUsage              Verdict = "usage"
+	VerdictRemoteError        Verdict = "remote_error"
 	// VerdictAmbiguousRelease: the commit carries the release tags of more
 	// than one version; the caller names the version.
 	VerdictAmbiguousRelease Verdict = "ambiguous_release"
@@ -99,6 +100,9 @@ const (
 	// pipeline's, another CI's) failed: devctl release promote refuses the
 	// commit. The reason names the failed statuses.
 	ExitStatusFailed = 12
+	// ExitRemoteError: a CircleCI request failed; retrying the command may
+	// succeed. The command line itself was valid.
+	ExitRemoteError = 13
 )
 
 // Envelope is the head of every command's JSON document. A command's document
@@ -134,7 +138,8 @@ func (e *Envelope) Warn(message string) {
 
 // Finish completes the envelope at now from the command's error: nil is exit
 // 0 with the ok verdict, an [ExitCoder] carries its own code and verdict, and
-// anything else is a tooling failure ([ExitUsage]).
+// a [RemoteError] is [ExitRemoteError], and anything else is a tooling
+// failure ([ExitUsage]).
 func (e *Envelope) Finish(now time.Time, ok Verdict, err error) {
 	e.FinishedAt = now.UTC()
 	if err == nil {
@@ -237,7 +242,8 @@ func (e *ExitError) ExitCode() int { return e.Code }
 func (e *ExitError) ExitVerdict() Verdict { return e.Verdict }
 
 // Exit maps err to the process exit code: 0 for nil, the code of an
-// [ExitCoder] anywhere in the chain, [ExitUsage] for any other error.
+// [ExitCoder] anywhere in the chain, [ExitRemoteError] for a [RemoteError],
+// and [ExitUsage] for any other error.
 func Exit(err error) int {
 	if err == nil {
 		return ExitOK
@@ -247,12 +253,17 @@ func Exit(err error) int {
 }
 
 // Outcome is err's place in the exit-code table: the code and verdict of an
-// [ExitCoder] anywhere in the chain, [ExitUsage] for any other error. err
+// [ExitCoder] anywhere in the chain, [ExitRemoteError] for a [RemoteError],
+// and [ExitUsage] for any other error. err
 // must not be nil.
 func Outcome(err error) (int, Verdict) {
 	var coder ExitCoder
 	if errors.As(err, &coder) {
 		return coder.ExitCode(), coder.ExitVerdict()
+	}
+	var remote *RemoteError
+	if errors.As(err, &remote) {
+		return ExitRemoteError, VerdictRemoteError
 	}
 	return ExitUsage, VerdictUsage
 }

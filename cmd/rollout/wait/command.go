@@ -100,6 +100,7 @@ Exit codes:
      a request the cluster refused
   8  authentication required: devctl auth login for GitHub, tsh kube login
      <installation> for the cluster, tsh login for a missing context
+ 13  remote_error: a CircleCI request failed; the command line was valid
 
 Examples:
   devctl rollout wait myinstallation giantswarm/app-operator v7.5.4

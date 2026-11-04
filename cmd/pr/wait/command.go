@@ -71,7 +71,8 @@ Exit codes:
      member's approval and nothing else is pending
   7  usage or a tooling failure
   8  authentication required; reason names the devctl auth login (or gh auth
-     login, for an owner outside giantswarm) to run`
+     login, for an owner outside giantswarm) to run
+ 13  remote_error: a CircleCI request failed; the command line was valid`
 	example = `  devctl pr wait giantswarm/devctl 2277
   devctl pr wait giantswarm/devctl 2277 --timeout 45m --progress`
 )

@@ -157,7 +157,8 @@ Exit codes:
      login, for an owner outside giantswarm) to run
   9  merged, and the release was not confirmed: --release-timeout passed
      first, or the release wait could not judge it (release.verdict and the
-     reason say which; devctl release wait <owner/repo> --pr <n> resumes it)`
+     reason say which; devctl release wait <owner/repo> --pr <n> resumes it)
+ 13  remote_error: a CircleCI request failed before the merge`
 	example = `  devctl pr merge giantswarm/devctl 2278
   devctl pr merge giantswarm/devctl 2278 --timeout 45m --release-timeout 30m --progress
   devctl pr merge giantswarm/devctl 2278 --no-release-wait

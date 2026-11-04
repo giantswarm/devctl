@@ -98,6 +98,8 @@ Exit codes:
      pipeline's, another CI's): devctl release promote refuses the commit;
      the reason names the failed statuses
 
+ 13  remote_error: a CircleCI request failed; the command line was valid
+
 Tokens come from the keychain (devctl auth login). GitHub is always needed;
 CircleCI only when the tag carries a .circleci/config.yml.
 

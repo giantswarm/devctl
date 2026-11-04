@@ -40,6 +40,9 @@ type Credentials struct {
 	// only when the tag turns out to carry a CircleCI configuration; nil is
 	// exit 8 then.
 	CircleCI func(ctx context.Context) (token, source string, err error)
+	// RenewCircleCI re-reads the caller's selected credential after a 401;
+	// nil never opens a credential store or retries a refused token.
+	RenewCircleCI func(ctx context.Context, rejected string) (string, error)
 	// Registry answers the private registry; nil reads it anonymously.
 	Registry authn.Keychain
 }
@@ -66,7 +69,7 @@ func NewSources(endpoints agentcli.Endpoints, transport http.RoundTripper, crede
 			if err != nil {
 				return nil, err
 			}
-			client, err := circleciclient.New(circleciclient.Config{Token: token, TokenSource: source, BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL), HTTPClient: &http.Client{Transport: transport}})
+			client, err := circleciclient.New(circleciclient.Config{Token: token, TokenSource: source, Renew: credentials.RenewCircleCI, BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL), HTTPClient: &http.Client{Transport: transport}})
 			if err != nil {
 				return nil, err
 			}

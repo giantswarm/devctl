@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait`, `pr merge` and `release wait` re-read their CircleCI login and retry a refused read
+  once after a short pause, recovering when another process renewed the keychain login or a 401
+  was transient. Subsequent reads keep the replacement token. Remote CircleCI failures use exit 13
+  (`remote_error`) instead of the usage code; existing wait timeouts and post-merge outcomes remain.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
