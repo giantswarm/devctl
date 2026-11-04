@@ -11,12 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	githubmock "github.com/giantswarm/devctl/v8/e2e/mock/github"
 	"github.com/giantswarm/devctl/v8/e2e/mock/sequence"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/authexec"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
-	"github.com/giantswarm/devctl/v8/pkg/prwait"
 )
 
 func newRunner(t *testing.T, routes sequence.Routes, github func(context.Context) (authstore.Token, error)) (*runner, *bytes.Buffer, *bytes.Buffer, *githubmock.Server) {
@@ -263,7 +264,7 @@ func Test_run_tokenExpiresMidWait(t *testing.T) {
 			sent = append(sent, req.Header.Get("Authorization"))
 		}
 	}
-	if want := "Bearer ghu_test,Bearer ghu_test,Bearer ghu_renewed"; strings.Join(sent, ",") != want {
+	if want := "Bearer ghu_test,Bearer ghu_test,Bearer ghu_renewed,Bearer ghu_renewed,Bearer ghu_renewed,Bearer ghu_renewed"; strings.Join(sent, ",") != want {
 		t.Fatalf("pull request reads sent %v, want %s", sent, want)
 	}
 }
@@ -302,38 +303,71 @@ func Test_run_renewedTokenRefused(t *testing.T) {
 	}
 }
 
-// Test_run_failedLog: a red wait with --failed-log prints the failed job's
-// log tail to stderr and carries it in the document under failedJobs.
+// A red wait reads the log through the App token, follows its empty 302
+// response without forwarding that token, and prints the requested tail or
+// full log to stderr and failedJobs. Full mode includes setup and cleanup.
 func Test_run_failedLog(t *testing.T) {
-	blob := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("setup\nerror: lint failed\n"))
+	log := "setup\n" + strings.Repeat("passed\n", 120) + "\x1b[31m##[error]lint failed\x1b[0m\r\nPost job cleanup.\n"
+	full := "setup\n" + strings.Repeat("passed\n", 120) + "##[error]lint failed\nPost job cleanup."
+	blob := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Header.Get("Authorization") != "" {
+			t.Error("the signed log URL received an authorization header")
+		}
+		_, _ = w.Write([]byte(log))
 	}))
 	t.Cleanup(blob.Close)
 	routes := sequence.Routes{
-		"GET /repos/o/r/pulls/42": {{Body: map[string]any{
+		"GET /repos/giantswarm/r/pulls/42": {{Body: map[string]any{
 			"number": 42, "state": "open", "draft": false, "mergeable_state": "clean",
 			"head": map[string]any{"sha": "abc123", "ref": "feature"}, "base": map[string]any{"ref": "main"},
 		}}},
-		"GET /repos/o/r/commits/abc123/check-runs": {{Body: map[string]any{"total_count": 1, "check_runs": []any{
-			map[string]any{"id": 7, "name": "lint", "status": "completed", "conclusion": "failure", "html_url": "https://github.com/o/r/actions/runs/1/job/7", "app": map[string]any{"slug": "github-actions"}},
+		"GET /repos/giantswarm/r/commits/abc123/check-runs": {{Body: map[string]any{"total_count": 1, "check_runs": []any{
+			map[string]any{"id": 7, "name": "lint", "status": "completed", "conclusion": "failure", "html_url": "https://github.com/giantswarm/r/actions/runs/1/job/7", "app": map[string]any{"slug": "github-actions"}},
 		}}}},
-		"GET /repos/o/r/commits/abc123/status":        {{Body: map[string]any{"state": "success", "total_count": 0, "statuses": []any{}}}},
-		"GET /repos/o/r/actions/runs?head_sha=abc123": {{Body: map[string]any{"total_count": 0, "workflow_runs": []any{}}}},
-		"GET /repos/o/r/actions/jobs/7/logs":          {{Status: http.StatusFound, Headers: map[string]string{"Location": blob.URL + "/log"}}},
+		"GET /repos/giantswarm/r/commits/abc123/status":        {{Body: map[string]any{"state": "success", "total_count": 0, "statuses": []any{}}}},
+		"GET /repos/giantswarm/r/actions/runs?head_sha=abc123": {{Body: map[string]any{"total_count": 0, "workflow_runs": []any{}}}},
+		"GET /repos/giantswarm/r/actions/jobs/7/logs":          {{Status: http.StatusFound, Headers: map[string]string{"Location": blob.URL + "/log"}}},
 	}
-	r, stdout, stderr, _ := newRunner(t, routes, loggedIn)
-	r.flag.FailedLog = prwait.FailedLog{Enabled: true, Lines: 1}
-
-	err := r.run(context.Background(), []string{"o/r", "42"})
-	if agentcli.Exit(err) != agentcli.ExitRed {
-		t.Fatalf("want exit 1, got %v", err)
-	}
-	if !strings.Contains(stderr.String(), "failed job lint (https://github.com/o/r/actions/runs/1/job/7):\nerror: lint failed\n") {
-		t.Errorf("stderr carries the tail:\n%s", stderr.String())
-	}
-	jobs, _ := decode(t, stdout)["failedJobs"].([]any)
-	if len(jobs) != 1 || jobs[0].(map[string]any)["logTail"] != "error: lint failed" {
-		t.Errorf("want failedJobs[0].logTail, got %v", jobs)
+	for _, tc := range []struct{ name, lines, want string }{
+		{name: "case 0: tail", lines: "1", want: "##[error]lint failed"},
+		{name: "case 1: full", lines: "0", want: full},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, stdout, stderr, server := newRunner(t, routes, loggedInFromKeychain)
+			r.personGitHub = func(context.Context) (authstore.Token, error) {
+				t.Fatal("the App log path must not ask for the personal gh login")
+				return authstore.Token{}, nil
+			}
+			cmd := &cobra.Command{}
+			r.flag.Init(cmd)
+			if err := cmd.ParseFlags([]string{"--failed-log", "--failed-log-lines", tc.lines}); err != nil {
+				t.Fatal(err)
+			}
+			err := r.run(context.Background(), []string{"giantswarm/r", "42"})
+			if agentcli.Exit(err) != agentcli.ExitRed {
+				t.Fatalf("want exit 1, got %v", err)
+			}
+			if !strings.Contains(stderr.String(), "failed job lint (https://github.com/giantswarm/r/actions/runs/1/job/7):\n"+tc.want+"\n") {
+				t.Errorf("stderr does not carry the requested log:\n%s", stderr.String())
+			}
+			doc := decode(t, stdout)
+			jobs, _ := doc["failedJobs"].([]any)
+			if doc["identity"] != "app" || len(jobs) != 1 || jobs[0].(map[string]any)["logTail"] != tc.want {
+				t.Errorf("want App identity and requested log, got %v", doc)
+			}
+			reads := 0
+			for _, req := range server.Requests() {
+				if strings.HasSuffix(req.Path, "/logs") {
+					reads++
+					if req.Header.Get("Authorization") != "Bearer ghu_test" {
+						t.Error("the log request did not carry the synthetic App token")
+					}
+				}
+			}
+			if reads != 1 {
+				t.Errorf("want one log API request, got %d", reads)
+			}
+		})
 	}
 }
 
