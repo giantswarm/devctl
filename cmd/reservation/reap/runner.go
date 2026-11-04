@@ -64,7 +64,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (er
 
 	token, err := authstore.ResolveGitHub(ctx)
 	switch {
-	case errors.Is(err, authstore.ErrAuthRequired):
+	case errors.Is(err, authstore.ErrAuthRequired), errors.Is(err, authstore.ErrKeychainUnreachable):
 		_, _ = fmt.Fprintf(r.stderr, "%s: no GitHub token found, so reap skips the rename check and releases only expired reservations. Set one of %s or run devctl auth login --github-only.\n",
 			termout.Warning(r.stderr), strings.Join(authstore.GitHubEnvVars, ", "))
 	case err != nil:
