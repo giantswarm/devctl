@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
@@ -41,10 +40,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	token.WarnOnce(r.Stderr)
 	notFoundHint := authstore.GitHubNotFoundHint(token)
 
-	githubClient, err := githubclient.New(githubclient.Config{
-		Logger:      logrus.StandardLogger(),
-		AccessToken: token.Value,
-	})
+	githubClient, err := newGitHubClient(token)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -111,13 +107,6 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	}
 
 	r.Logger.Infof("PR created: %s. Please approve to continue.", pr.GetHTMLURL())
-	// Wait for PR merge
-	err = githubClient.WaitForPRMerge(ctx, owner, repo, pr.GetNumber(), time.Duration(r.Flag.Timeout)*time.Second)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	// Check app status
 	appStatusClient, err := appstatus.New(appstatus.Config{
 		Logger: r.Logger,
 		Stderr: r.Stderr,
@@ -126,14 +115,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		return microerror.Mask(err)
 	}
 
-	orgNamespace := "org-" + r.Flag.Organization
-	appName := r.Flag.WorkloadCluster + "-" + r.Flag.AppName
-	err = appStatusClient.WaitForAppDeployment(ctx, appName, orgNamespace, r.Flag.ManagementCluster, time.Duration(r.Flag.Timeout)*time.Second)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	return nil
+	return r.waitForDeployment(ctx, owner, repo, pr.GetNumber(), githubClient, appStatusClient)
 }
 
 func parseGitOpsRepo(repo string) (string, string, error) {

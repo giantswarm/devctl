@@ -597,7 +597,9 @@ type checkRunGroup struct {
 // twice, while the jobs of a matrix, or of several workflows calling one
 // reusable workflow, each count. A check run outside a listed workflow run
 // keeps one run per name: the one started last, and of two started together
-// the one created later.
+// the one created later. A cancellation superseded by a later-started check
+// in another run of the same workflow is ignored even when that workflow
+// run has a lower id; jobs need not start in workflow creation order.
 func currentCheckRuns(runs []*github.CheckRun, workflowRuns []*github.WorkflowRun) []headCheckRun {
 	bySuite := map[int64]*github.WorkflowRun{}
 	for _, run := range workflowRuns {
@@ -609,7 +611,7 @@ func currentCheckRuns(runs []*github.CheckRun, workflowRuns []*github.WorkflowRu
 	groups := map[string]*checkRunGroup{}
 	for _, run := range runs {
 		workflow := bySuite[run.GetCheckSuite().GetID()]
-		if supersededCheckRun(run, workflow, openRuns) {
+		if supersededCheckRun(run, workflow, openRuns) || supersededCancelledCheckRun(run, workflow, runs, bySuite) {
 			continue
 		}
 		key := run.GetName() + "\x00" + workflowKey(workflow)
@@ -641,6 +643,33 @@ func currentCheckRuns(runs []*github.CheckRun, workflowRuns []*github.WorkflowRu
 		return a.GetID() < b.GetID()
 	})
 	return current
+}
+
+// supersededCancelledCheckRun compares job start order across runs of the
+// same workflow. A cancelled matrix job still counts even if another run
+// started later: a same-name check cannot identify which sibling it replaces.
+func supersededCancelledCheckRun(run *github.CheckRun, workflow *github.WorkflowRun, runs []*github.CheckRun, bySuite map[int64]*github.WorkflowRun) bool {
+	if run.GetConclusion() != "cancelled" || workflow == nil {
+		return false
+	}
+	superseded := false
+	for _, other := range runs {
+		if other.GetName() != run.GetName() {
+			continue
+		}
+		otherWorkflow := bySuite[other.GetCheckSuite().GetID()]
+		if otherWorkflow == nil || workflowKey(otherWorkflow) != workflowKey(workflow) {
+			continue
+		}
+		if otherWorkflow.GetID() == workflow.GetID() {
+			if other.GetID() != run.GetID() {
+				return false
+			}
+			continue
+		}
+		superseded = superseded || newerCheckRun(other, run)
+	}
+	return superseded
 }
 
 // newestOpenWorkflowRuns maps each workflow to its newest run for the head
