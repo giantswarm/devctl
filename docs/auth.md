@@ -214,6 +214,8 @@ authorization server, so the flow is discovered, not configured:
    PKCE verifier and reads the login from the userinfo endpoint.
 4. The access token comes with a refresh token (the `offline_access` scope): a `repo` command that
    finds the access token expired refreshes it itself, no human involved, and stores the new pair.
+   Refreshes hold the muster identity's lock and reread the record after acquiring it, so concurrent
+   commands share the renewed pair and spend a rotating refresh token only once.
 
 Then the sign-in to giantswarm-repo-manager, once: the manager is pinned to its own GitHub App, so
 devctl asks muster (`core_auth_login`) for the sign-in, prints and opens the App's consent URL when

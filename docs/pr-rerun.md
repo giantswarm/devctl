@@ -146,6 +146,7 @@ API triggered; no second one) or `refused` (CircleCI refused it; 403 is exit 8).
 | Code | Verdict | |
 |---|---|---|
 | 0 | `green` | at least one workflow is rerun from failed, a wedged one canceled and rerun, the push webhook delivery was sent again, or a fresh tag pipeline was triggered (`release rerun`) |
+| 2 | `transient` | a read exhausted its bounded retry window; the reason names the attempts, elapsed time and last API or network failure |
 | 3 | `not_applicable` | no pipeline for the head or tag, no workflow with a failed job, or no push delivery to send again for a pull request (no CircleCI webhook, a fork's head): nothing to rerun |
 | 5 | `refused` | nothing finished failed and a workflow is still running (for `release rerun`: within `--wedged-after`); a pipeline without a workflow younger than five minutes; a pull request's delivery sent again before; a tag pipeline the API triggered itself |
 | 7 | `usage` | wrong usage or a tooling failure |
