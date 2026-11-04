@@ -294,6 +294,8 @@ func allowsSuccess(value any) bool {
 
 // runnable are the names of the jobs that post a status and whose required
 // jobs all run: a job behind one the run filters out never starts.
+// runnable are the names of jobs that can post a status. CircleCI ignores
+// filtered dependencies, but skips a job when all its dependencies are filtered.
 func runnable(jobs []job) []string {
 	listed := map[string]job{}
 	for _, job := range jobs {
@@ -310,9 +312,9 @@ func runnable(jobs []job) []string {
 			return false
 		}
 		seen[name] = true
-		ok = true
+		ok = len(job.requires) == 0
 		for _, r := range job.requires {
-			ok = ok && runs(r, seen)
+			ok = ok || runs(r, seen)
 		}
 		memo[name] = ok
 		return ok
@@ -480,7 +482,7 @@ func evaluate(statement any, config map[string]any, run Run) (bool, bool) {
 			if !known {
 				return false, false
 			}
-			re, err := regexp.Compile(pattern)
+			re, err := regexp.Compile("^(?:" + pattern + ")$")
 			if err != nil {
 				return false, false
 			}
