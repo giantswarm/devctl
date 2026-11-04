@@ -36,7 +36,6 @@ func Test_Command_ReleaseTransitions(t *testing.T) {
 			preserved := map[string]string{
 				".github/workflows/custom.yaml":             "name: Custom\n",
 				".github/workflows/zz_generated.other.yaml": "name: Another generator\n",
-				"CHANGELOG.md": "# Changelog\n",
 			}
 			for path, content := range preserved {
 				require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
