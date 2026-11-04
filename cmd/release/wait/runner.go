@@ -26,7 +26,9 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	return r.run(cmd.Context(), args)
+	ctx, stop := agentcli.InterruptContext(cmd.Context())
+	defer stop()
+	return r.run(ctx, args)
 }
 
 // FlagError reports a flag cobra could not parse like any other wrong call:
@@ -45,7 +47,7 @@ func (r *runner) run(ctx context.Context, args []string) error {
 		repository = args[0]
 	}
 	doc := newDocument(repository)
-	err := r.wait(ctx, args, &doc)
+	err := agentcli.Interrupted(ctx, r.wait(ctx, args, &doc))
 	return agentcli.Report(r.stdout, &doc, agentcli.VerdictAvailable, err)
 }
 

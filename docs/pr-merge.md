@@ -248,6 +248,12 @@ eat into the release's time.
   `devctl release wait` command that re-checks the release.
 
 Exit codes 6 and 9 say that the pull request was merged: the caller never merges it again.
+SIGINT or SIGTERM interrupts the CLI wait and still prints its document. Before the merge it exits 2
+with `merged: false`, an interrupted reason and the last unfinished checks. After an acknowledged
+merge it exits 9 with `merged: true`, `mergeCommitSha`, the release's partial state and
+`devctl release wait <owner/repo> --pr <number>` to confirm the release. A completed outcome retains
+its verdict if cancellation arrives as it finishes. An interrupted merge API call whose answer was
+lost retains the existing unknown-outcome tooling error: interruption alone cannot prove whether GitHub merged it.
 `--no-release-wait` ends the command at the merge and leaves `release` null. `devctl release wait`
 remains the command for a release on its own: by version, or with `--catalog`.
 
@@ -411,6 +417,7 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 |---|---|
 | `acceptedRed` | With `--accept-red`: each failed check the flag let through, with `name`, `source` (`check_run`, `status`, `circleci_workflow`), `conclusion` and `url`. Absent when nothing was accepted. |
 | `mergeCommitSha` | The commit the merge produced (the squash commit, the merge commit, the rebased head, or the queue's merge commit); empty when nothing merged. |
+| `merged` | Whether a merge was acknowledged, derived from `mergeCommitSha`; an unknown merge API outcome is explained in `reason`. |
 | `mergedBy` | The login the merge was made as: the account the token acts as, or for a merge queue the account GitHub records as the merger. Empty when nothing merged. |
 | `method` | `squash` or `rebase`, as asked, `rebase` by default on a fork line, or `merge` (or `rebase`) where the repository does not allow squash merges and allows only that method. |
 | `branchDeleted` | The head branch was deleted after the merge, or was gone already. `false` when nothing merged and for a head in a fork. |

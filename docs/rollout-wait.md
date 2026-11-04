@@ -1,5 +1,9 @@
 # Waiting for a rollout: `devctl rollout wait`
 
+SIGINT or SIGTERM interrupts either CLI wait phase with its JSON document and exit 2, the timeout's
+code. The reason identifies the interruption; the document retains the release and the last
+observed deployments, including what still has to roll out.
+
 ```nohighlight
 devctl rollout wait <installation> <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--context <kube-context>] [--kubeconfig <file>]
     [--timeout 30m] [--release-timeout 60m] [--image <owner/name>]... [--chart <path>]... [--helmrelease [<namespace>/]<name>]...

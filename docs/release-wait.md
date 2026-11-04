@@ -1,5 +1,9 @@
 # Waiting for a release: `devctl release wait`
 
+SIGINT or SIGTERM interrupts the CLI wait with its JSON document and exit 2, the timeout's code.
+The reason identifies the interruption; the document retains the release, artifacts and pipeline
+state observed so far, including unfinished workflows.
+
 ```nohighlight
 devctl release wait <owner/repo> (<vX.Y.Z | X.Y.Z | image/vX.Y.Z> | --pr <number>) [--timeout 60m] [--catalog] [--image <owner/name>]... [--chart <path>]... [--progress] [--failed-log [--failed-log-lines 50]]
 ```

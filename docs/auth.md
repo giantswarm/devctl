@@ -303,7 +303,7 @@ Every agent-facing command prints one JSON document on stdout when it finishes a
 |---|---|---|
 | 0 | `green`, `available` | ok |
 | 1 | `red`, `ci_failed` | a check is red or the tag's CI failed |
-| 2 | `timeout` | the deadline passed; the document names what was unfinished |
+| 2 | `timeout` | the deadline passed or SIGINT/SIGTERM interrupted a CLI wait; the document names what was unfinished. An acknowledged `pr merge` instead exits 9 (`release_unconfirmed`) with its merge commit and the release confirmation command. |
 | 3 | `not_applicable` | draft, closed, conflicting, behind a strict base, version not resolvable |
 | 4 | `required_missing`, `approval_required`, `no_checks` | a required context never reported; Actions runs await a member's approval; the `pull_request` workflows never started |
 | 5 | `refused` | another author, an opt-out |

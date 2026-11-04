@@ -90,7 +90,8 @@ Exit codes:
   1  the release's CI failed, or the rollout failed; the reason names the
      deployment and its condition
   2  timeout, of the release (--release-timeout) or of the rollout
-     (--timeout); the document shows what is still missing
+     (--timeout), or SIGINT/SIGTERM; reason identifies an interrupted
+     wait, the document shows what is still missing
   3  not applicable: no release follows the pull request, the release
      ships no chart, nothing on the installation deploys its charts, or
      no deployment follows the version; rollout_unknown: a configuration

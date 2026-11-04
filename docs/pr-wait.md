@@ -9,6 +9,9 @@ state no CI can turn green. It prints one JSON document on stdout at the end and
 exit code says what happened, so a script or an agent branches on it without parsing. `--progress`
 writes one line per poll to stderr for a person watching.
 
+SIGINT or SIGTERM interrupts the CLI wait with the same document and exit 2 as a timeout.
+The reason identifies the interruption; `unfinished[]` and the checks retain the last observed state.
+
 `--failed-log` answers why a red wait is red without a second tool: on a red verdict it reads the
 log of each failed job once, a GitHub Actions job (`GET /repos/{owner}/{repo}/actions/jobs/{id}/logs`)
 and a CircleCI job (the output of its failed steps), and keeps the last `--failed-log-lines` lines

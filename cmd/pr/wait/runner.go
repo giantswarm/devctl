@@ -50,10 +50,8 @@ func newGitHub(config githubclient.Config) (prwait.GitHub, prwait.RateSource, pr
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx, stop := agentcli.InterruptContext(cmd.Context())
+	defer stop()
 	agentcli.IgnoreHangup()
 	return r.run(ctx, args)
 }
@@ -67,7 +65,7 @@ func (r *runner) FlagError(_ *cobra.Command, err error) error {
 
 func (r *runner) run(ctx context.Context, args []string) error {
 	doc := newDocument()
-	err := r.wait(ctx, args, &doc)
+	err := agentcli.Interrupted(ctx, r.wait(ctx, args, &doc))
 	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, err)
 }
 
