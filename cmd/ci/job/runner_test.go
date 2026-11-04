@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -102,5 +104,45 @@ func TestUsage(t *testing.T) {
 	}
 	if len(cc.Requests()) != 0 {
 		t.Errorf("CircleCI was called: %v", cc.Requests())
+	}
+}
+
+// A malformed number is a usage error even when version discovery or the
+// CircleCI login is unavailable. Neither dependency is needed to reject it.
+func TestInvalidJobNumberBeforeDependencies(t *testing.T) {
+	for _, number := range []string{"seven", "0", "-1", "1.5", "9223372036854775808"} {
+		for _, gateFails := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/gateFails=%t", number, gateFails), func(t *testing.T) {
+				r, cc := start(t, sequence.Routes{})
+				var gateCalls, clockCalls, loginCalls, endpointCalls int
+				r.gate = func(bool) error {
+					gateCalls++
+					if gateFails {
+						return fmt.Errorf("version lookup unavailable")
+					}
+					return nil
+				}
+				r.clock = func() (agentcli.Clock, error) {
+					clockCalls++
+					return agentcli.Clock{}, nil
+				}
+				r.requireCircleCI = func(context.Context) (authstore.Token, error) {
+					loginCalls++
+					return authstore.Token{}, &authstore.AuthRequiredError{Identity: "CircleCI", Cause: "no test login"}
+				}
+				endpoints := r.endpoints
+				r.endpoints = func() agentcli.Endpoints {
+					endpointCalls++
+					return endpoints()
+				}
+				doc, code := execute(t, r, "o/r", number)
+				if code != agentcli.ExitUsage || doc["verdict"] != "usage" || !strings.Contains(doc["reason"].(string), "positive integer") {
+					t.Errorf("invalid job number %q: exit %d: %v", number, code, doc)
+				}
+				if gateCalls != 0 || clockCalls != 0 || loginCalls != 0 || endpointCalls != 0 || len(cc.Requests()) != 0 {
+					t.Errorf("dependencies called: version=%d clock=%d login=%d endpoints=%d requests=%d", gateCalls, clockCalls, loginCalls, endpointCalls, len(cc.Requests()))
+				}
+			})
+		}
 	}
 }

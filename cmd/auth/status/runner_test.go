@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -35,9 +36,16 @@ func newRunner(t *testing.T, records map[string]authstore.Record) (*runner, *byt
 		stderr: &stderr,
 		open: func(w io.Writer) (*authstore.Auth, error) {
 			return authstore.New(authstore.Config{
-				Store:  store,
-				Clock:  agentcli.NewClock(1, func() time.Time { return now }),
-				Stderr: w,
+				Store:     store,
+				Clock:     agentcli.NewClock(1, func() time.Time { return now }),
+				Stderr:    w,
+				Endpoints: agentcli.Endpoints{CircleCIAPIURL: "https://circleci.invalid/api/v2"},
+				HTTPClient: &http.Client{Transport: statusTransport(func(req *http.Request) (*http.Response, error) {
+					if req.Method != http.MethodGet || req.URL.String() != "https://circleci.invalid/api/v2/me" {
+						t.Error("unexpected status request")
+					}
+					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"login":"octocat"}`)), Header: http.Header{}}, nil
+				})},
 			})
 		},
 		githubOverride: authstore.GitHubOverrideWarning,
