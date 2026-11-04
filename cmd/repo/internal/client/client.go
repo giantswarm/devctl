@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
@@ -66,15 +67,60 @@ type Opener func(ctx context.Context) (*Session, error)
 // and returns the session; without a usable token it is the auth store's
 // error naming `devctl auth login --muster-only`.
 func Open(ctx context.Context) (*Session, error) {
-	token, err := authstore.RequireMuster(ctx)
+	return openMuster(ctx, authstore.RequireMuster, func(token authstore.Token) manager.Caller {
+		return &manager.Client{Endpoint: token.Endpoint, Token: token.Value, Version: project.Version()}
+	})
+}
+
+func openMuster(ctx context.Context, require func(context.Context) (authstore.Token, error), newCaller func(authstore.Token) manager.Caller) (*Session, error) {
+	token, err := require(ctx)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 	return &Session{
-		Caller:   &manager.Client{Endpoint: token.Endpoint, Token: token.Value, Version: project.Version()},
+		Caller: &musterCaller{
+			require: require, newCaller: newCaller, token: token, caller: newCaller(token),
+		},
 		Endpoint: token.Endpoint,
 		Login:    token.Login,
 	}, nil
+}
+
+// musterCaller checks the stored token before each call. Rotation starts a
+// new MCP session; calls already in flight keep their original client.
+type musterCaller struct {
+	mu        sync.Mutex
+	require   func(context.Context) (authstore.Token, error)
+	newCaller func(authstore.Token) manager.Caller
+	token     authstore.Token
+	caller    manager.Caller
+}
+
+func (c *musterCaller) current(ctx context.Context) (manager.Caller, string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	token, err := c.require(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if token.Value != c.token.Value || token.Endpoint != c.token.Endpoint {
+		c.caller = c.newCaller(token)
+		c.token = token
+	}
+	return c.caller, c.token.Endpoint, nil
+}
+
+func (c *musterCaller) Call(ctx context.Context, tool string, args map[string]any) (json.RawMessage, error) {
+	caller, endpoint, err := c.current(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// A refused call may already have written something: never replay it.
+	payload, err := caller.Call(ctx, tool, args)
+	if manager.IsAuthRequired(err) {
+		return nil, refusedToken(endpoint)
+	}
+	return payload, err
 }
 
 // Call calls one tool of the manager and returns its answer; a bearer
@@ -83,12 +129,16 @@ func Open(ctx context.Context) (*Session, error) {
 func (s *Session) Call(ctx context.Context, tool string, args map[string]any) (json.RawMessage, error) {
 	payload, err := s.Caller.Call(ctx, tool, args)
 	if manager.IsAuthRequired(err) {
-		return nil, &authstore.AuthRequiredError{Identity: "muster", Cause: "muster at " + s.Endpoint + " refused the token", Hint: "devctl auth login --muster-only"}
+		return nil, refusedToken(s.Endpoint)
 	}
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 	return payload, nil
+}
+
+func refusedToken(endpoint string) error {
+	return &authstore.AuthRequiredError{Identity: "muster", Cause: "muster at " + endpoint + " refused the token", Hint: "devctl auth login --muster-only"}
 }
 
 // Decode reads a tool's answer into the manager's type.
@@ -116,7 +166,8 @@ func WriteArgs(args map[string]any, dryRun bool) map[string]any {
 // PrintJSON writes the answer as it came, indented.
 func PrintJSON(w io.Writer, payload json.RawMessage) error {
 	var buf strings.Builder
-	var v any
+	// Keep numbers as JSON rather than rounding them through float64.
+	var v json.RawMessage
 	if err := json.Unmarshal(payload, &v); err != nil {
 		// Not JSON: a text answer, printed as such.
 		_, err := fmt.Fprintln(w, string(payload))

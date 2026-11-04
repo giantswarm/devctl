@@ -3,7 +3,6 @@ package completion
 import (
 	"context"
 	"io"
-	"os"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -31,22 +30,22 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	var err error
 	switch args[0] {
 	case "bash":
-		err = cmd.Root().GenBashCompletion(os.Stdout)
+		err = cmd.Root().GenBashCompletion(r.stdout)
 		if err != nil {
 			return microerror.Mask(err)
 		}
 	case "zsh":
-		err = cmd.Root().GenZshCompletion(os.Stdout)
+		err = cmd.Root().GenZshCompletion(r.stdout)
 		if err != nil {
 			return microerror.Mask(err)
 		}
 	case "fish":
-		err = cmd.Root().GenFishCompletion(os.Stdout, true)
+		err = cmd.Root().GenFishCompletion(r.stdout, true)
 		if err != nil {
 			return microerror.Mask(err)
 		}
 	case "powershell":
-		err = cmd.Root().GenPowerShellCompletion(os.Stdout)
+		err = cmd.Root().GenPowerShellCompletion(r.stdout)
 		if err != nil {
 			return microerror.Mask(err)
 		}

@@ -3,6 +3,7 @@ package file
 import (
 	"embed"
 	"path/filepath"
+	"strings"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/precommit/internal/params"
@@ -73,8 +74,35 @@ func NewCreatePreCommitConfigInput(p params.Params) input.Input {
 			"NodeDevLintHook":             p.NodeDevLintHook,
 			"HelmValuesSchemaJSONVersion": p.HelmValuesSchemaJSONVersion,
 			"SchemalintVersion":           p.SchemalintVersion,
+			"RegenerateCommand":           shellQuote(regenerateCommand(p)),
 		},
 	}
 
 	return i
+}
+
+// regenerateCommand retains the options needed to regenerate both the schema and
+// its hooks. A bare `devctl gen precommit` has no language or helmchart flavor.
+func regenerateCommand(p params.Params) string {
+	args := []string{"devctl", "gen", "precommit"}
+	for _, option := range []struct{ name, value string }{
+		{"language", p.Language},
+		{"repo-name", p.RepoName},
+		{"flavors", strings.Join(p.Flavors, ",")},
+		{"k8s-schema-version", p.K8sSchemaVersion},
+	} {
+		if option.value != "" {
+			args = append(args, "--"+option.name+"="+shellQuote(option.value))
+		}
+	}
+	if p.GoGenerate {
+		args = append(args, "--go-generate")
+	}
+	return strings.Join(args, " ")
+}
+
+// shellQuote protects both the suggested command's arguments and the command
+// itself when the hook prints it. Neither shell may expand repository options.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
