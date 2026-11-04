@@ -211,7 +211,7 @@ This is useful when you expect multiple Renovate PRs to be created over time.
   as you in the giantswarm organization; the search finds pull requests there and in public repositories). A
   token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` overrides it, with a warning. See
   [auth.md](auth.md).
-- Terminal with ANSI escape code support for live table updates
+- Terminal with at least 80 columns and ANSI escape code support for live table updates
 - Terminal with OSC 8 support for clickable hyperlinks (optional, but recommended)
 
 ## UI Features
@@ -240,6 +240,7 @@ PR      Repository                               Status
 ```
 
 PR numbers are clickable hyperlinks (in supported terminals) that open the PR in your browser.
+Long dependency names and statuses are shortened with an ellipsis to keep each PR on one terminal row.
 
 ## Performance
 
