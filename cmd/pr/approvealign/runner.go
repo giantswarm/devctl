@@ -454,7 +454,7 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 		} else if strings.Contains(status, "Branch updated") {
 			updated++
 			approved++
-		} else if strings.Contains(status, "queued to merge") {
+		} else if strings.Contains(status, "queued to merge") || status == "Already approved, queued" {
 			queued++
 		} else if strings.Contains(status, "Approved") && !strings.Contains(status, "Would") && !strings.Contains(status, "Already") {
 			approved++
