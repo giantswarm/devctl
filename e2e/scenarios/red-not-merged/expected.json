@@ -5,7 +5,7 @@
     "schemaVersion": 1,
     "exitCode": 1,
     "verdict": "red",
-    "reason": "circleci workflow build failed",
+    "reason": "head abc123: circleci workflow build failed",
     "warnings": [],
     "startedAt": "*",
     "finishedAt": "*",
@@ -28,6 +28,7 @@
     "actions": [
       {"name": "CI", "runId": 7001, "status": "completed", "conclusion": "success", "url": "*"}
     ],
+    "merged": false,
     "mergeCommitSha": "",
     "mergedBy": "",
     "method": "squash",

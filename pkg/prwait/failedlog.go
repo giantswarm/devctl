@@ -20,6 +20,10 @@ import (
 // DefaultFailedLogLines is how much of a failed job's log --failed-log keeps.
 const DefaultFailedLogLines = 50
 
+// FullFailedLogLines keeps the full log, including Actions post-job cleanup.
+// Zero remains the disabled value in wait configurations.
+const FullFailedLogLines = -1
+
 // The sources of a failed job.
 const (
 	SourceActions  = "actions"
@@ -36,9 +40,9 @@ type FailedJob struct {
 	// Source is actions or circleci.
 	Source string `json:"source"`
 	URL    string `json:"url"`
-	// LogTail is the last lines of the job's log; on CircleCI, of the output
-	// of its failed steps. The lines from the log's first failure lead them
-	// when that failure lies before them.
+	// LogTail is the requested tail or full log; on CircleCI, the output of
+	// failed steps only. A tail starts with the lines from the log's first
+	// failure when that failure lies before it.
 	LogTail string `json:"logTail,omitempty"`
 	// LogError says why the log could not be read; the verdict stands.
 	LogError string `json:"logError,omitempty"`
@@ -79,23 +83,26 @@ type FailedLog struct {
 
 // Init registers --failed-log and --failed-log-lines on cmd.
 func (f *FailedLog) Init(cmd *cobra.Command) {
-	cmd.Flags().BoolVar(&f.Enabled, "failed-log", false, "On a red verdict, read the log of each failed GitHub Actions and CircleCI job once: its tail goes to stderr and into failedJobs[].logTail")
-	cmd.Flags().IntVar(&f.Lines, "failed-log-lines", DefaultFailedLogLines, "How many lines of each failed job's log --failed-log keeps")
+	cmd.Flags().BoolVar(&f.Enabled, "failed-log", false, "On a red verdict, read the log of each failed GitHub Actions and CircleCI job once: the requested lines go to stderr and into failedJobs[].logTail")
+	cmd.Flags().IntVar(&f.Lines, "failed-log-lines", DefaultFailedLogLines, "How many lines of each failed job's log --failed-log keeps; 0 keeps the full Actions log or all failed-step output on CircleCI")
 }
 
 // TailLines is the Config.FailedLogLines the flags ask for: 0 without
-// --failed-log.
+// --failed-log, FullFailedLogLines for --failed-log-lines 0.
 func (f FailedLog) TailLines() (int, error) {
 	if !f.Enabled {
 		return 0, nil
 	}
-	if f.Lines <= 0 {
-		return 0, fmt.Errorf("--failed-log-lines must be positive, got %d", f.Lines)
+	if f.Lines < 0 {
+		return 0, fmt.Errorf("--failed-log-lines must be non-negative, got %d", f.Lines)
+	}
+	if f.Lines == 0 {
+		return FullFailedLogLines, nil
 	}
 	return f.Lines, nil
 }
 
-// PrintFailedJobs writes the tail of each failed job's log to w.
+// PrintFailedJobs writes the requested log of each failed job to w.
 func PrintFailedJobs(w io.Writer, jobs []FailedJob) {
 	for _, job := range jobs {
 		job = job.clean()
@@ -133,18 +140,19 @@ type CircleCIJobs interface {
 	FailedStepsOutput(ctx context.Context, org, repo string, number int64) (string, error)
 }
 
-// LogReader reads the tails of failed jobs' logs for the commands that wait
+// LogReader reads the requested lines of failed jobs' logs for the commands that wait
 // with --failed-log: GitHub Actions job logs and the output of CircleCI's
 // failed steps, without terminal control sequences or control characters but tab. A log that cannot be read is named
 // in the job's LogError.
 type LogReader struct {
 	GitHub JobLogs
-	// Lines is how many of a log's last lines a job keeps.
+	// Lines is how many of a log's last lines a job keeps, or
+	// FullFailedLogLines to keep the full log.
 	Lines int
 }
 
-// ActionsJob is the failed GitHub Actions job id with the tail of its log; a
-// log that ends with a failed step's error ends at that error.
+// ActionsJob is the failed GitHub Actions job id with the requested log; a
+// tail ends at the last failed step's error; a full log includes cleanup.
 func (r LogReader) ActionsJob(ctx context.Context, owner, repo string, id int64, name, url string) FailedJob {
 	job := FailedJob{Name: name, Source: SourceActions, URL: url}
 	log, err := r.GitHub.JobLog(ctx, owner, repo, id)
@@ -211,6 +219,7 @@ var failureMarker = regexp.MustCompile(`##\[error\]` +
 // before those lines, up to n lines from just before it lead the tail: the
 // first failing step's output, which green steps after it would otherwise
 // push out.
+// FullFailedLogLines keeps every line, including those after until.
 func tailLines(r io.Reader, n int, until string) (string, error) {
 	var tail, untilTail, lead, first []string
 	count, untilEnd, firstStart := 0, 0, -1
@@ -220,25 +229,29 @@ func tailLines(r io.Reader, n int, until string) (string, error) {
 		if line != "" {
 			line = stripControls(line)
 			count++
-			switch {
-			case firstStart < 0 && failureMarker.MatchString(line):
-				first = append(lead, line)
-				firstStart = count - len(first)
-			case firstStart < 0:
-				lead = append(lead, line)
-				if len(lead) > n/5 {
-					lead = lead[1:]
+			if n == FullFailedLogLines {
+				tail = append(tail, line)
+			} else {
+				switch {
+				case firstStart < 0 && failureMarker.MatchString(line):
+					first = append(lead, line)
+					firstStart = count - len(first)
+				case firstStart < 0:
+					lead = append(lead, line)
+					if len(lead) > n/5 {
+						lead = lead[1:]
+					}
+				case len(first) < n:
+					first = append(first, line)
 				}
-			case len(first) < n:
-				first = append(first, line)
-			}
-			tail = append(tail, line)
-			if len(tail) > n {
-				tail = tail[1:]
-			}
-			if until != "" && strings.Contains(line, until) {
-				untilTail = slices.Clone(tail)
-				untilEnd = count
+				tail = append(tail, line)
+				if len(tail) > n {
+					tail = tail[1:]
+				}
+				if until != "" && strings.Contains(line, until) {
+					untilTail = slices.Clone(tail)
+					untilEnd = count
+				}
 			}
 		}
 		if errors.Is(err, io.EOF) {
