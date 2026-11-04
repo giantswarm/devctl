@@ -71,7 +71,7 @@ func TestProcessPRChecks(t *testing.T) {
 						body = map[string]any{"total_count": 1, "check_runs": []any{map[string]any{"name": "test", "status": tc.runStatus, "conclusion": conclusion}}}
 					case "/repos/o/r/pulls/7/reviews":
 						decisions++
-						body = []any{map[string]any{"state": "APPROVED"}}
+						body = []any{map[string]any{"state": "APPROVED", "user": map[string]any{"login": "reviewer"}}}
 					case "/repos/o/r":
 						body = map[string]any{"allow_squash_merge": true}
 					default:
