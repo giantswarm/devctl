@@ -6,6 +6,7 @@ import (
 	"maps"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/giantswarm/devctl/v8/e2e/mock/sequence"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
@@ -39,6 +40,12 @@ func Test_Merge_release(t *testing.T) {
 		wantReason  string
 	}{
 		{name: "available", tag: "v1.2.3", wantCode: 0, wantRelease: agentcli.VerdictAvailable},
+		{
+			name:     "a transient read after merging",
+			err:      &agentcli.RetriesExhaustedError{Attempts: 15, Last: "context deadline exceeded", Elapsed: 10 * time.Minute},
+			wantCode: agentcli.ExitReleaseUnconfirmed, wantVerdict: agentcli.VerdictReleaseUnconfirmed, wantRelease: agentcli.VerdictTransient,
+			wantReason: "merged as m1, and the release is not confirmed: failed 15 times in a row: context deadline exceeded; transient API or network failure after 10m0s",
+		},
 		{name: "no release follows", err: &releasewait.NoReleaseError{Reason: "the Auto-release run finished without a tag"}, wantCode: 0, wantRelease: agentcli.VerdictNoRelease, wantReason: "finished without a tag"},
 		{
 			name: "the tag pipeline failed", tag: "v1.2.3",

@@ -29,6 +29,7 @@ const (
 	VerdictGreen              Verdict = "green"
 	VerdictRed                Verdict = "red"
 	VerdictTimeout            Verdict = "timeout"
+	VerdictTransient          Verdict = "transient"
 	VerdictNotApplicable      Verdict = "not_applicable"
 	VerdictRequiredMissing    Verdict = "required_missing"
 	VerdictApprovalRequired   Verdict = "approval_required"
@@ -65,7 +66,8 @@ const (
 	ExitOK = 0
 	// ExitRed: a check is red or the tag's CI failed.
 	ExitRed = 1
-	// ExitTimeout: the deadline passed; the document names what was unfinished.
+	// ExitTimeout: the deadline or a read's retry window passed; the
+	// document names what was unfinished or the transient read failure.
 	ExitTimeout = 2
 	// ExitNotApplicable: draft, closed, conflicting, behind a strict base, a
 	// version that does not resolve.
@@ -133,8 +135,7 @@ func (e *Envelope) Warn(message string) {
 }
 
 // Finish completes the envelope at now from the command's error: nil is exit
-// 0 with the ok verdict, an [ExitCoder] carries its own code and verdict, and
-// anything else is a tooling failure ([ExitUsage]).
+// 0 with the ok verdict, otherwise the code and verdict of [Outcome].
 func (e *Envelope) Finish(now time.Time, ok Verdict, err error) {
 	e.FinishedAt = now.UTC()
 	if err == nil {
@@ -237,7 +238,8 @@ func (e *ExitError) ExitCode() int { return e.Code }
 func (e *ExitError) ExitVerdict() Verdict { return e.Verdict }
 
 // Exit maps err to the process exit code: 0 for nil, the code of an
-// [ExitCoder] anywhere in the chain, [ExitUsage] for any other error.
+// [ExitCoder] anywhere in the chain, [ExitTimeout] for an exhausted read,
+// [ExitUsage] for any other error.
 func Exit(err error) int {
 	if err == nil {
 		return ExitOK
@@ -247,12 +249,17 @@ func Exit(err error) int {
 }
 
 // Outcome is err's place in the exit-code table: the code and verdict of an
-// [ExitCoder] anywhere in the chain, [ExitUsage] for any other error. err
-// must not be nil.
+// [ExitCoder] anywhere in the chain, or a transient outcome for an exhausted
+// read not handled by its wait. Any other error is [ExitUsage]. err must not
+// be nil.
 func Outcome(err error) (int, Verdict) {
 	var coder ExitCoder
 	if errors.As(err, &coder) {
 		return coder.ExitCode(), coder.ExitVerdict()
+	}
+	var exhausted *RetriesExhaustedError
+	if errors.As(err, &exhausted) {
+		return ExitTimeout, VerdictTransient
 	}
 	return ExitUsage, VerdictUsage
 }

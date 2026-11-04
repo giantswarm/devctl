@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- An API read that exhausts its retry window outside a wait's polling loop now reports exit 2 with
+  verdict `transient`, instead of exit 7 (`usage`), so callers can re-queue it. Exhausted reads name
+  their attempt count, elapsed time and last failure. The existing fifteen-attempt backoff remains
+  bounded to about ten minutes of pauses; PR waits continue polling within their timeout, and a
+  transient release read after a merge preserves the merge commit and `release_unconfirmed` outcome.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
