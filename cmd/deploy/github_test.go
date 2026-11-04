@@ -131,7 +131,7 @@ func TestDeployGitHubRenewal(t *testing.T) {
 			require.Equal(t, tc.wantReads, reads)
 			require.Equal(t, tc.wantRefreshes, refreshes)
 			if tc.override {
-				data, err := os.ReadFile(path)
+				data, err := os.ReadFile(path) // #nosec G304 -- path is the fixed fixture name inside t.TempDir, never user input
 				require.NoError(t, err)
 				require.Equal(t, "fixture store must not be read", string(data))
 				return
