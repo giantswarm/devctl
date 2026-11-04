@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr wait` and `pr merge` settle a CircleCI pipeline still in `setup` five minutes after all its setup workflows
+  succeeded when its jobs posted their own successful contexts and no continuation is visible. A setup job that
+  halts without continuing no longer consumes the full timeout. Submitted continuations remain waited for.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of

@@ -63,7 +63,7 @@ system that will produce it:
    failed workflow is a new workflow of the same name in the same pipeline, and the newest run is
    the one that counts. `not_run` is a skipped workflow. An `errored` pipeline (a configuration
    error, which produces no workflows) is red. A setup pipeline (`setup: true` with
-   `continuation/continue`) is unfinished while its state is `setup-pending`, `setup` or `pending`:
+   `continuation/continue`) normally stays unfinished while its state is `setup-pending`, `setup` or `pending`:
    its `setup` workflow may have finished, but the continued workflows that post the build's
    contexts do not exist yet. It settles at `created`, and reads `created` with the setup workflow
    alone for a minute or two after the setup job continued it, longer when CircleCI's listing lags
@@ -73,6 +73,18 @@ system that will produce it:
    workflow alone (`setup finished, the continuation's workflows not created yet`) or with none
    (`no workflows yet`) is unfinished while the head carries one CircleCI context at most, and is
    judged by the contexts once more have posted, whatever the listing reads.
+
+   A setup job can also finish successfully with `circleci-agent step halt`, skipping
+   `continuation/continue` and leaving the pipeline in `setup`. Five minutes after every newest
+   setup-tagged workflow succeeded, the wait reads their jobs. If each job succeeded and posted
+   its own successful `ci/circleci: <job>` context, and the head has no other CircleCI context,
+   the pipeline is judged by those workflows and the head's checks. The document marks
+   `circleci.setupHalted: true`; progress says `setup halted, no continuation`. The grace starts
+   at the last setup workflow's completion, including for a wait started later. This is a bounded
+   inference from the API evidence: an empty workflow or job listing, a missing completion time,
+   or an additional CircleCI context cannot establish a halted setup. A pipeline in `pending`
+   or `created` still waits for its submitted continuation under the rules above. Required
+   contexts must still report and every other check must still finish under its usual rule.
 3. **No GitHub Actions run of the head is open**: `queued`, `in_progress`, `waiting`, `pending`,
    `requested`, or completed with the conclusion `action_required`. The last one is a workflow
    run awaiting a repository member's approval (a fork's or a bot's pull request in a repository
