@@ -89,6 +89,12 @@ type musterDiscovery struct {
 // metadata, and refuses a server without S256 PKCE or without client ID
 // metadata documents.
 func (a *Auth) discoverMuster(ctx context.Context, endpoint string) (musterDiscovery, error) {
+	return a.discoverMusterIssuer(ctx, endpoint, "")
+}
+
+// discoverMusterIssuer selects the issuer that owns an existing refresh
+// token. An empty issuer selects a server for a new, interactive login.
+func (a *Auth) discoverMusterIssuer(ctx context.Context, endpoint, expectedIssuer string) (musterDiscovery, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return musterDiscovery{}, fmt.Errorf("the muster endpoint %q is not a URL", endpoint)
@@ -116,13 +122,23 @@ func (a *Auth) discoverMuster(ctx context.Context, endpoint string) (musterDisco
 	if !found {
 		return musterDiscovery{}, fmt.Errorf("discovering the authorization server of %s: %w", endpoint, lastErr)
 	}
-	issuer := strings.TrimRight(resource.AuthorizationServers[0], "/")
+	issuer := resource.AuthorizationServers[0]
+	if expectedIssuer != "" {
+		if !slices.Contains(resource.AuthorizationServers, expectedIssuer) {
+			return musterDiscovery{}, &AuthRequiredError{Identity: identityMuster, Cause: "the authorization server changed since login", Hint: hintLoginMuster}
+		}
+		issuer = expectedIssuer
+	}
 
 	var server authorizationServer
-	if err := a.getJSON(ctx, issuer+authorizationServerPath, nil, &server); err != nil {
-		if err2 := a.getJSON(ctx, issuer+openIDConfigurationPath, nil, &server); err2 != nil {
+	if err := a.getJSON(ctx, strings.TrimRight(issuer, "/")+authorizationServerPath, nil, &server); err != nil {
+		server = authorizationServer{}
+		if err2 := a.getJSON(ctx, strings.TrimRight(issuer, "/")+openIDConfigurationPath, nil, &server); err2 != nil {
 			return musterDiscovery{}, fmt.Errorf("reading the metadata of the authorization server %s: %w", issuer, err)
 		}
+	}
+	if server.Issuer != issuer {
+		return musterDiscovery{}, fmt.Errorf("the authorization server %s returned metadata for a different issuer", issuer)
 	}
 	if server.AuthorizationEndpoint == "" || server.TokenEndpoint == "" {
 		return musterDiscovery{}, fmt.Errorf("the authorization server %s names no authorization or token endpoint", issuer)
@@ -133,10 +149,6 @@ func (a *Auth) discoverMuster(ctx context.Context, endpoint string) (musterDisco
 	if !server.ClientIDMetadataDocumentSupported {
 		return musterDiscovery{}, fmt.Errorf("the authorization server %s does not support client ID metadata documents, which is how devctl identifies itself (%s)", issuer, MusterClientID)
 	}
-	if server.Issuer == "" {
-		server.Issuer = issuer
-	}
-
 	d := musterDiscovery{Resource: resource.Resource, Scopes: resource.ScopesSupported, Server: server}
 	if d.Resource == "" {
 		d.Resource = endpoint
@@ -274,7 +286,10 @@ func (a *Auth) musterLogin(ctx context.Context, userinfo, token string) (string,
 // token endpoint and stores it; a refresh token the answer does not rotate
 // stays.
 func (a *Auth) refreshMuster(ctx context.Context, record Record) (Record, error) {
-	discovered, err := a.discoverMuster(ctx, record.Endpoint)
+	if record.Issuer == "" {
+		return Record{}, &AuthRequiredError{Identity: identityMuster, Cause: "the stored refresh token has no issuer", Hint: hintLoginMuster}
+	}
+	discovered, err := a.discoverMusterIssuer(ctx, record.Endpoint, record.Issuer)
 	if err != nil {
 		return Record{}, fmt.Errorf("refreshing the muster token: %w", err)
 	}
