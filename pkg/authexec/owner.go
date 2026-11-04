@@ -12,10 +12,11 @@ import (
 // keeps the person's own login for it.
 var AppOwners = map[string]bool{"giantswarm": true}
 
-// repoCommands are gh's commands whose first argument may be a repository
-// or a URL of one (`gh pr view <url>`, `gh repo view <owner/repo>`).
+// ghIssue is gh's issue command.
 const ghIssue = "issue"
 
+// repoCommands are gh's commands whose first argument may be a repository
+// or a URL of one (`gh pr view <url>`, `gh repo view <owner/repo>`).
 var repoCommands = map[string]bool{
 	ghIssue: true, "pr": true, "release": true, "repo": true, "run": true, "workflow": true,
 }
