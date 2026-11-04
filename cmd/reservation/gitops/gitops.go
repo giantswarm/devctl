@@ -7,6 +7,7 @@ package gitops
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -175,9 +176,8 @@ func (c *Checkout) Wrote(stderr io.Writer) {
 
 // Finish ends the command. After a dry run it shows the commits the command
 // made on stderr and resets the checkout to origin/main, even when err is
-// set. Open left the checkout clean on origin/main, so the reset drops only
-// what the command wrote. It returns err, or the reset's error when err is
-// nil.
+// set. If tracked files changed since the command committed, it refuses the
+// reset to preserve that work. A cleanup failure is reported alongside err.
 func (c *Checkout) Finish(ctx context.Context, stderr io.Writer, err error) error {
 	if !c.flags.DryRun {
 		return err
@@ -190,11 +190,25 @@ func (c *Checkout) Finish(ctx context.Context, stderr io.Writer, err error) erro
 	case log == "":
 		_, _ = fmt.Fprintln(stderr, "Dry run: no commit to push.")
 	default:
-		_, _ = fmt.Fprintf(stderr, "%s\n\nDry run: nothing was pushed. devctl drops these commits from %s.\n", log, c.Dir)
+		_, _ = fmt.Fprintf(stderr, "%s\n\nDry run: nothing was pushed.\n", log)
 	}
 
-	if _, resetErr := git(ctx, c.Dir, "reset", "--hard", "origin/"+branch); resetErr != nil && err == nil {
-		return microerror.Maskf(syncError, "dry run: cannot drop the commits: %s. To drop them, run:\n\n  %s", resetErr, resetCommand(c.Dir))
+	status, statusErr := git(ctx, c.Dir, "status", "--porcelain", "--untracked-files=no")
+	if statusErr != nil {
+		return errors.Join(err, microerror.Maskf(syncError, "dry run: cannot check whether it is safe to drop the commits: %s. The checkout was left untouched", statusErr))
+	}
+	if status != "" {
+		return errors.Join(err, microerror.Maskf(syncError,
+			"dry run: refusing to drop the commits in %s because tracked files have changed; a reset could destroy this work. Preserve these changes before dropping the dry-run commits:\n%s", c.Dir, status))
+	}
+
+	// --keep also protects edits to paths being restored if they arrive after
+	// the status check.
+	if _, resetErr := git(ctx, c.Dir, "reset", "--keep", "origin/"+branch); resetErr != nil {
+		return errors.Join(err, microerror.Maskf(syncError, "dry run: cannot drop the commits: %s. After preserving any local changes, drop them with:\n\n  %s", resetErr, resetCommand(c.Dir)))
+	}
+	if log != "" {
+		_, _ = fmt.Fprintf(stderr, "Dry run: dropped these commits from %s.\n", c.Dir)
 	}
 
 	return err
