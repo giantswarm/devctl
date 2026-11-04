@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen precommit --language go` and `gen makefile --language go` create new golangci-lint configurations with
+  `goconst.ignore-tests: true`, keeping repeated test fixtures out of goconst's counts while checking production
+  literals. Existing configurations keep their settings; `docs/gen.md` documents the override for those repositories
+  after Align files, including configurations created by earlier runs.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of

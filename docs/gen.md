@@ -131,6 +131,17 @@ A Go repository's config also refuses a `require` line in any `go.mod` (single o
 
 A Go repository's `golangci-lint` hook, like `make lint` of `devctl gen makefile --language go`, passes no linter flags: the linters live in the repository's golangci-lint configuration, so a bare `golangci-lint run` lints with the same set. Both commands write `.golangci.yaml` (gosec and goconst on top of the standard set) when the repository has no configuration. A repository's own `.golangci.yml` or `.golangci.yaml` is kept as it is, except that gosec and goconst are added to `linters.enable` when it neither enables nor disables them (and govet too when `linters.default` replaces the standard set); a TOML or JSON configuration, or one whose `linters.enable` is a flow sequence, fails generation naming the linters to enable.
 
+New configurations set `linters.settings.goconst.ignore-tests: true`: repeated test-fixture strings do not count toward goconst violations, while repeated production strings are still checked. This avoids the test-fixture noise introduced by the goconst update in golangci-lint 2.12. Existing configurations, including ones created by an earlier Align files run, keep their settings. To apply the same tuning there, merge this setting into the repository's existing `.golangci.yml` or `.golangci.yaml`:
+
+```yaml
+linters:
+  settings:
+    goconst:
+      ignore-tests: true
+```
+
+Repositories can set `ignore-tests: false` to check test literals too, or tune `min-occurrences` and `min-len` under the same `goconst` mapping. To opt out, remove `goconst` from `linters.enable` if present and add it to `linters.disable`. Generation preserves these choices. A repository with production goconst debt still needs to address it or choose one of these overrides.
+
 No hook reads protobuf-generated code: the config's top-level `exclude` skips `*_pb.*` (protoc-gen-es, grpc-tools), `*_pb2.py`, `*_pb2.pyi`, `*_pb2_grpc.py` and `*.pb.go` with its `_grpc`, `.gw`, `.validate` and `_vtproto` variants. Their generator is the source of truth, so a hook that rewrote them (`end-of-file-fixer` on buf's TypeScript output, `go-imports -local`, `ruff --fix`) would be undone by the next generation. Hand-written files next to them, a `gen/` directory's `README.md` or `buf.gen.yaml` included, are still checked. The fixer hooks also skip `testdata/`, `.yarn/` and the vendored subcharts under `helm/<chart>/charts/`.
 
 Examples:
