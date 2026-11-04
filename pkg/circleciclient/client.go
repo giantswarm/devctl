@@ -359,13 +359,23 @@ func (c *Client) TriggerTagPipeline(ctx context.Context, org, repo, tag string) 
 
 // ListPipelineWorkflows returns the workflows of a pipeline.
 func (c *Client) ListPipelineWorkflows(ctx context.Context, pipelineID string) ([]Workflow, error) {
-	var out struct {
-		Items []Workflow `json:"items"`
+	var out []Workflow
+	base := "/api/v2/pipeline/" + url.PathEscape(pipelineID) + "/workflow"
+	path := base
+	for {
+		var page struct {
+			Items         []Workflow `json:"items"`
+			NextPageToken string     `json:"next_page_token"`
+		}
+		if err := c.do(ctx, http.MethodGet, path, nil, &page); err != nil {
+			return nil, microerror.Mask(err)
+		}
+		out = append(out, page.Items...)
+		if page.NextPageToken == "" {
+			return out, nil
+		}
+		path = base + "?page-token=" + url.QueryEscape(page.NextPageToken)
 	}
-	if err := c.do(ctx, http.MethodGet, "/api/v2/pipeline/"+url.PathEscape(pipelineID)+"/workflow", nil, &out); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return out.Items, nil
 }
 
 // ListWorkflowJobs returns the jobs of a workflow.
