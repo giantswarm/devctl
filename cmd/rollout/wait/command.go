@@ -16,6 +16,8 @@ const (
 	description = "Block until a release's charts run on an installation; one JSON document, exit codes for the outcome."
 	long        = `Wait until a release runs on an installation.
 
+The wait ignores SIGHUP and reads no stdin, so it outlives its terminal.
+
 The wait has two parts. The release first, exactly as devctl release wait
 does it (a version, as the argument or --version, or --pr for the release
 that carries the merge commit on the pull request's base branch, a release

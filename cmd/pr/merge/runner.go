@@ -79,6 +79,7 @@ func newClients(config githubclient.Config) (clients, error) {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
+	agentcli.IgnoreHangup()
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()

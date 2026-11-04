@@ -15,6 +15,10 @@ pullable (the wait of [`devctl release wait --pr`](release-wait.md)). It prints 
 stdout at the end; the exit code says what happened. On stderr a heartbeat names what the wait still
 waits for, every two minutes and when it changes; `--progress` writes one line per step instead.
 
+The wait ignores SIGHUP and reads no stdin, so it outlives its terminal and finishes with its JSON
+document and exit code, including the release wait after the merge. See the
+[shared CLI contract](auth.md#exit-codes-and-the-json-envelope).
+
 An agent that merges its own pull request makes this one call and is done when it exits 0: CI was
 green, the pull request is merged, and the release is pullable or none follows the merge. Nothing
 before a consumer bump or a rollout needs a second wait. A caller that cannot be held that long starts
