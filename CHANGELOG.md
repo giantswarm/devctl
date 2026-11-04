@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `repo follow-circleci` checks the checkout tag of GitHub App workflows before treating a multi-image release as already built. Tags on the same commit no longer hide an image that was never started; unreadable or ambiguous build evidence stops dispatch rather than risking republishing.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
