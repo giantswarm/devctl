@@ -31,7 +31,7 @@ func TestMain(m *testing.M) {
 func fakeChild(root string, args []string) int {
 	// Keep a synthetic merge running until its test releases the connection.
 	if addr := os.Getenv(childHoldEnv); addr != "" {
-		conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+		conn, err := net.DialTimeout("tcp", addr, 5*time.Second) //nolint:gosec // G704: address is the parent test's loopback listener, passed to this synthetic child
 		if err != nil {
 			return 7
 		}
