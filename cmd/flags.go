@@ -17,7 +17,24 @@ type flag struct {
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.NoCache, flagNoCache, false, "Disable version cache.")
-	cmd.PersistentFlags().StringVar(&f.LogLevel, flagLogLevel, logrus.InfoLevel.String(), "Logging level; debug also prints the stack trace of an error.")
+	f.LogLevel = logrus.InfoLevel.String()
+	cmd.PersistentFlags().Var((*logLevelValue)(&f.LogLevel), flagLogLevel, "Logging level; debug also prints the stack trace of an error.")
+}
+
+// logLevelValue validates during flag parsing so a bad level reaches the
+// command's flag-error handler, including an agent command's JSON document.
+type logLevelValue string
+
+func (v *logLevelValue) String() string { return string(*v) }
+
+func (v *logLevelValue) Type() string { return "string" }
+
+func (v *logLevelValue) Set(value string) error {
+	if _, err := logrus.ParseLevel(value); err != nil {
+		return err
+	}
+	*v = logLevelValue(value)
+	return nil
 }
 
 func (f *flag) Validate() error {

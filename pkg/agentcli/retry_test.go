@@ -153,7 +153,7 @@ func TestRetryingGivesUp(t *testing.T) {
 
 	_, err := get(t, context.Background(), client, http.MethodGet, server.URL+"/repos/o/r/pulls/1")
 	want := fmt.Sprintf(`Get "%s/repos/o/r/pulls/1": failed %d times in a row: 500 Internal Server Error`, server.URL, RetryAttempts)
-	if err == nil || err.Error() != want {
+	if err == nil || !strings.HasPrefix(err.Error(), want+"; transient API or network failure after ") {
 		t.Fatalf("error: want %q, got %v", want, err)
 	}
 	var exhausted *RetriesExhaustedError
