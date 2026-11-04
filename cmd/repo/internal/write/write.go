@@ -5,6 +5,7 @@
 package write
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"time"
@@ -54,18 +55,19 @@ func Run(ctx context.Context, session *client.Session, w io.Writer, f *Flags, to
 	if f.JSON() {
 		return microerror.Mask(client.PrintJSON(w, payload))
 	}
+	output := bufio.NewWriter(w)
 	if f.DryRun {
 		plan, err := client.Decode[manager.Plan](tool, payload)
 		if err != nil {
 			return microerror.Mask(err)
 		}
-		client.PrintPlan(w, plan)
-		return nil
+		client.PrintPlan(output, plan)
+		return microerror.Mask(output.Flush())
 	}
 	committed, err := client.Decode[manager.Committed](tool, payload)
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	client.PrintCommitted(w, committed)
-	return nil
+	client.PrintCommitted(output, committed)
+	return microerror.Mask(output.Flush())
 }

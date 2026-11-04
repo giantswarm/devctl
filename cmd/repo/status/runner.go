@@ -1,6 +1,7 @@
 package status
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -179,6 +180,7 @@ func alignLine(optedIn bool) string {
 const timeFormat = "2006-01-02T15:04:05Z"
 
 func (r *runner) print(out *output) error {
+	w := bufio.NewWriter(r.stdout)
 	res := out.Result
 	from := manager.Server
 	if out.Endpoint != "" {
@@ -188,18 +190,18 @@ func (r *runner) print(out *output) error {
 	if !out.CheckedAt.IsZero() {
 		checked = ", checked " + out.CheckedAt.UTC().Format(timeFormat)
 	}
-	fmt.Fprintf(r.stdout, "%s declared in %s (%s mode, from %s%s)\n", res.Repository, res.Team, res.Mode, from, checked)
+	fmt.Fprintf(w, "%s declared in %s (%s mode, from %s%s)\n", res.Repository, res.Team, res.Mode, from, checked)
 	if res.Declared != res.Repository {
-		fmt.Fprintf(r.stdout, "declared as %s: renamed on GitHub\n", res.Declared)
+		fmt.Fprintf(w, "declared as %s: renamed on GitHub\n", res.Declared)
 	}
 	if out.Align != nil {
-		fmt.Fprintln(r.stdout, alignLine(*out.Align))
+		fmt.Fprintln(w, alignLine(*out.Align))
 	}
 	if out.DefaultBranch != "" {
-		fmt.Fprintln(r.stdout, declarationLine(out.DefaultBranch, out.Flavours))
+		fmt.Fprintln(w, declarationLine(out.DefaultBranch, out.Flavours))
 	}
-	client.PrintSteps(r.stdout, res)
-	fmt.Fprintln(r.stdout, client.Verdict(res))
+	client.PrintSteps(w, res)
+	fmt.Fprintln(w, client.Verdict(res))
 	if run := out.LastRun; run != nil {
 		line := fmt.Sprintf("last run: %s at %s", run.RunURL, run.Timestamp.UTC().Format(timeFormat))
 		if c := run.Change; c != nil {
@@ -212,16 +214,16 @@ func (r *runner) print(out *output) error {
 			}
 			line += ")"
 		}
-		fmt.Fprintln(r.stdout, line)
+		fmt.Fprintln(w, line)
 	}
-	client.PrintPendingRun(r.stdout, out.PendingRun)
+	client.PrintPendingRun(w, out.PendingRun)
 	if m := out.MissingRun; m != nil {
 		where := m.RunsURL
 		if m.RunURL != "" {
 			where = m.RunURL + " (" + m.Conclusion + ")"
 		}
-		fmt.Fprintf(r.stdout, "missing run: the run expected since %s by %s never reported: %s\n", m.DispatchedAt.UTC().Format(timeFormat), m.By, where)
+		fmt.Fprintf(w, "missing run: the run expected since %s by %s never reported: %s\n", m.DispatchedAt.UTC().Format(timeFormat), m.By, where)
 	}
-	client.PrintFindings(r.stdout, out.Findings)
-	return nil
+	client.PrintFindings(w, out.Findings)
+	return w.Flush()
 }
