@@ -17,10 +17,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Response is one scripted answer of a route.
 type Response struct {
+	// Delay is real request latency, independent of the command's clock.
+	Delay time.Duration `yaml:"delay"`
 	// Status is the HTTP status; 0 reads as 200.
 	Status int `yaml:"status"`
 	// Headers are set on the response. A mock adds its own defaults for the
@@ -202,6 +205,15 @@ func (s *Script) Requests() []Request {
 // then the body (no body on a HEAD request, as the protocol demands). A Reset
 // response resets the connection instead.
 func Write(w http.ResponseWriter, r *http.Request, resp Response) error {
+	if resp.Delay > 0 {
+		timer := time.NewTimer(resp.Delay)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-r.Context().Done():
+			return r.Context().Err()
+		}
+	}
 	if resp.Reset {
 		return reset(w)
 	}
