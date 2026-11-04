@@ -2,6 +2,7 @@ package circleci
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -28,7 +29,13 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return microerror.Mask(err)
+	}
 
 	err := r.flag.Validate()
 	if err != nil {
@@ -216,16 +223,24 @@ func detectCustomImages() ([]string, error) {
 	}
 
 	var custom struct {
-		Workflows map[string]struct {
-			Jobs []any `json:"jobs"`
-		} `json:"workflows"`
+		Workflows map[string]json.RawMessage `json:"workflows"`
 	}
 	if err := yaml.Unmarshal(data, &custom); err != nil {
 		return nil, microerror.Maskf(invalidConfigError, "parse %s: %v", circleci.CustomConfigPath, err)
 	}
 
 	var images []string
-	for _, workflow := range custom.Workflows {
+	for name, data := range custom.Workflows {
+		// CircleCI allows version metadata alongside the named workflows.
+		if name == "version" {
+			continue
+		}
+		var workflow struct {
+			Jobs []any `json:"jobs"`
+		}
+		if err := json.Unmarshal(data, &workflow); err != nil {
+			return nil, microerror.Maskf(invalidConfigError, "parse %s workflow %q: %v", circleci.CustomConfigPath, name, err)
+		}
 		for _, job := range workflow.Jobs {
 			entry, ok := job.(map[string]any)
 			if !ok {

@@ -20,6 +20,15 @@ func IsInvalidArg(err error) bool {
 	return microerror.Cause(err) == invalidArgError
 }
 
+var invalidFlagError = &microerror.Error{
+	Kind: "invalidFlagError",
+}
+
+// IsInvalidFlag asserts invalidFlagError.
+func IsInvalidFlag(err error) bool {
+	return microerror.Cause(err) == invalidFlagError
+}
+
 var envVarNotFoundError = &microerror.Error{
 	Kind: "envVarNotFoundError",
 }
