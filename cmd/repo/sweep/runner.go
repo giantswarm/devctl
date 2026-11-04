@@ -50,8 +50,10 @@ func (r *runner) run(ctx context.Context) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	print(r.stdout, sweep)
-	return nil
+	var output strings.Builder
+	print(&output, sweep)
+	_, err = io.WriteString(r.stdout, output.String())
+	return microerror.Mask(err)
 }
 
 func print(w io.Writer, s *manager.Sweep) {
