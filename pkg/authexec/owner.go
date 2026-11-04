@@ -15,6 +15,9 @@ var AppOwners = map[string]bool{"giantswarm": true}
 // ghIssue is gh's issue command.
 const ghIssue = "issue"
 
+// ghClose is the close subcommand of gh issue and gh pr.
+const ghClose = "close"
+
 // repoCommands are gh's commands whose first argument may be a repository
 // or a URL of one (`gh pr view <url>`, `gh repo view <owner/repo>`).
 var repoCommands = map[string]bool{
@@ -93,9 +96,9 @@ func repositoryValueFlag(args []string, flag string) bool {
 	}
 	switch flag {
 	case "-c":
-		return args[1] == "close" || args[1] == "reopen"
+		return args[1] == ghClose || args[1] == "reopen"
 	case "-r":
-		return args[0] == "workflow" || args[0] == ghIssue && args[1] == "close"
+		return args[0] == "workflow" || args[0] == ghIssue && args[1] == ghClose
 	case "-m":
 		return args[1] == "edit"
 	case "-a":
@@ -170,7 +173,7 @@ func ghTextValueFlag(args []string, flag string) bool {
 	case "--body", "-b", "--body-file", "-F", "--title", "-t", "--subject", "--comment":
 		return true
 	case "-c":
-		return args[1] == "close" || args[1] == "reopen"
+		return args[1] == ghClose || args[1] == "reopen"
 	}
 	return false
 }
