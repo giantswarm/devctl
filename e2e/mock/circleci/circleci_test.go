@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -66,4 +67,25 @@ func TestUnscriptedRouteIsNotFound(t *testing.T) {
 	resp, body := do(t, http.MethodGet, s.APIURL()+"/project/gh/o/r")
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	assert.JSONEq(t, `{"message":"Not Found"}`, body)
+}
+
+func TestScriptedTruncatedResponse(t *testing.T) {
+	s, err := Start(sequence.Routes{
+		"GET /api/v2/pipeline/p1/workflow": {{
+			Headers: map[string]string{"Content-Length": "64"},
+			Body:    map[string]any{"items": []any{}},
+		}},
+	})
+	require.NoError(t, err)
+	defer s.Close()
+
+	client := s.Client()
+	client.Timeout = 5 * time.Second
+	resp, err := client.Get(s.APIURL() + "/pipeline/p1/workflow")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	assert.Equal(t, int64(64), resp.ContentLength)
+	body, err := io.ReadAll(resp.Body)
+	require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	assert.JSONEq(t, `{"items":[]}`, string(body))
 }

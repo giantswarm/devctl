@@ -129,6 +129,22 @@ func TestWrite(t *testing.T) {
 	assert.Equal(t, "hi", rec.Body.String())
 }
 
+func TestWritePreservesContentLength(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		t.Run(method, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			resp := Response{Headers: map[string]string{"content-length": "64"}, Body: "short"}
+			require.NoError(t, Write(rec, httptest.NewRequest(method, "/", nil), resp))
+			assert.Equal(t, "64", rec.Header().Get("Content-Length"))
+			if method == http.MethodHead {
+				assert.Empty(t, rec.Body.String())
+			} else {
+				assert.Equal(t, "short", rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestRequestString(t *testing.T) {
 	s, err := New(Routes{})
 	require.NoError(t, err)

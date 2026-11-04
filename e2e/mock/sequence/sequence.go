@@ -217,7 +217,9 @@ func Write(w http.ResponseWriter, r *http.Request, resp Response) error {
 	if _, isString := resp.Body.(string); !isString && len(body) > 0 && h.Get("Content-Type") == "" {
 		h.Set("Content-Type", "application/json; charset=utf-8")
 	}
-	h.Set("Content-Length", strconv.Itoa(len(body)))
+	if _, ok := h["Content-Length"]; !ok {
+		h.Set("Content-Length", strconv.Itoa(len(body)))
+	}
 	w.WriteHeader(resp.StatusCode())
 	if r.Method == http.MethodHead || len(body) == 0 {
 		return nil
