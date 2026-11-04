@@ -109,3 +109,26 @@ func TestLinkRefusesLoopBack(t *testing.T) {
 		t.Fatalf("gh --version looping back to the link = %d %q, want a refusal naming the shim", code, out)
 	}
 }
+
+func TestPersonGitHubPastForwardingShim(t *testing.T) {
+	agentBin, shimBin, realBin := linkFixture(t)
+	// A real gh would prefer GH_TOKEN over its stored login. Model both
+	// choices without reading any actual gh configuration or credentials.
+	if err := os.WriteFile(filepath.Join(realBin, "gh"), []byte("#!/bin/sh\nprintf '%s\\n' \"${GH_TOKEN:-person-token}\"\n"), 0o700); err != nil { // nolint:gosec // an executable fixture
+		t.Fatal(err)
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := strings.Join([]string{shimBin, agentBin, realBin}, string(os.PathListSeparator))
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	token, err := personGitHub(ctx, path, self, []string{"PATH=" + path, "HOME=" + t.TempDir(), "GH_TOKEN=inherited-app-token"}, commandOutput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token.Value != "person-token" || token.Source != SourceGHLogin {
+		t.Fatalf("a forwarding shim selected the wrong login: %+v", token)
+	}
+}
