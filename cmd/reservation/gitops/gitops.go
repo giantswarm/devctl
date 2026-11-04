@@ -201,6 +201,10 @@ func (c *Checkout) Finish(ctx context.Context, stderr io.Writer, err error) erro
 }
 
 func resetCommand(dir string) string {
+	// Leave simple paths readable, and quote the rest as one POSIX shell word.
+	if strings.ContainsAny(dir, " \t\r\n'\"\\`$;&|<>()*?[]{}!~#") {
+		dir = "'" + strings.ReplaceAll(dir, "'", "'\"'\"'") + "'"
+	}
 	return "git -C " + dir + " reset --hard origin/" + branch
 }
 
