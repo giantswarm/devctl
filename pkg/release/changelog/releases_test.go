@@ -146,3 +146,43 @@ func TestParseChangelog_ChangelogSectionReadsNoReleases(t *testing.T) {
 		t.Errorf("API calls = %d, want none", *apiCalls)
 	}
 }
+
+func TestParseChangelog_GitHubReleasesNewComponent(t *testing.T) {
+	// A component new in a release has no previous version: the release
+	// notes pass an empty endVersion, and the range is the version alone.
+	component, _ := serveComponent(t, pointer, autoReleaseReleases)
+
+	v, err := ParseChangelog("token", component, "1.2.1", "")
+	if err != nil {
+		t.Fatalf("ParseChangelog: %v", err)
+	}
+	if v.Content != "#### Fixed\n\n- Crash on start" {
+		t.Errorf("content:\n%s", v.Content)
+	}
+	if v.Name != "v1.2.1" || v.Link != "https://github.com/giantswarm/fixture/releases/tag/v1.2.1" {
+		t.Errorf("name %q, link %q", v.Name, v.Link)
+	}
+}
+
+func TestParseChangelog_ChangelogUnreadable(t *testing.T) {
+	// Only a missing CHANGELOG.md falls back to the GitHub Releases: a
+	// rate limit or a server error is an error, not quietly other notes.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/CHANGELOG.md" {
+			t.Errorf("unexpected request %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+	name := "test-fixture-" + t.Name()
+	KnownComponents[name] = ParseParams{
+		Tag:       "https://github.com/giantswarm/fixture/releases/tag/v{{.Version}}",
+		Changelog: srv.URL + "/CHANGELOG.md",
+	}
+	t.Cleanup(func() { delete(KnownComponents, name) })
+
+	_, err := ParseChangelog("token", name, "1.3.0", "1.2.0")
+	if err == nil || !strings.Contains(err.Error(), "429") {
+		t.Fatalf("err = %v, want the 429", err)
+	}
+}
