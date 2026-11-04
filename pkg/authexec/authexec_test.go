@@ -182,6 +182,10 @@ func TestRun(t *testing.T) {
 				}
 				return
 			}
+			wantArgv := append([]string{"gh"}, args...)
+			if execPath != filepath.Join(realBin, "gh") || !slices.Equal(execArgv, wantArgv) {
+				t.Fatalf("exec %s %v", execPath, execArgv)
+			}
 			if tc.wantPerson {
 				if gotValid != 0 || slices.ContainsFunc(execEnv, func(kv string) bool {
 					return strings.HasPrefix(kv, "GH_TOKEN=") || strings.HasPrefix(kv, "GITHUB_TOKEN=")
@@ -190,12 +194,8 @@ func TestRun(t *testing.T) {
 				}
 				return
 			}
-			wantArgv := append([]string{"gh"}, args...)
 			if gotValid != MinValidity {
 				t.Fatalf("token valid for %s, want %s", gotValid, MinValidity)
-			}
-			if execPath != filepath.Join(realBin, "gh") || !slices.Equal(execArgv, wantArgv) {
-				t.Fatalf("exec %s %v", execPath, execArgv)
 			}
 			if !slices.Contains(execEnv, "GH_TOKEN=app-token") || slices.Contains(execEnv, "GH_TOKEN=person-token") {
 				t.Fatalf("env = %v", execEnv)
