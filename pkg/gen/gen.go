@@ -73,11 +73,10 @@ func execute(ctx context.Context, file input.Input) error {
 		permissions = file.Permissions
 	}
 
-	// Render into a buffer first and only then open (and truncate) the destination. A
-	// File.Generate callback can fail for reasons entirely outside devctl -- e.g. a network
-	// fetch, see values_schema.go -- and opening with O_TRUNC up front would already have
-	// wiped a previously-committed file by the time that failure surfaces, leaving the repo
-	// worse off than before the run. See giantswarm/devctl#2195.
+	// Render completely before starting publication. A Generate callback can
+	// fail outside devctl (for example while fetching schema references), and
+	// previously committed output must survive that failure too.
+	// See https://github.com/giantswarm/devctl/issues/2195.
 	var buf bytes.Buffer
 	if err := internal.Execute(ctx, &buf, file); err != nil {
 		return microerror.Mask(err)
@@ -97,18 +96,7 @@ func execute(ctx context.Context, file input.Input) error {
 			return nil
 		}
 	}
-
-	w, err := os.OpenFile(file.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, permissions)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	defer func() { _ = w.Close() }()
-
-	if _, err := w.Write(buf.Bytes()); err != nil {
-		return microerror.Mask(err)
-	}
-
-	return nil
+	return writeGeneratedFile(file.Path, buf.Bytes(), permissions)
 }
 
 // A build without generated .sha files has only a module tree link. Keep the
