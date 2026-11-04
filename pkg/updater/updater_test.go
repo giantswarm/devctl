@@ -351,6 +351,68 @@ func TestInstallLatestDoesNothingWhenAlreadyCurrent(t *testing.T) {
 	assertUnchanged(t, exe, installed)
 }
 
+func TestInstallLatestWithResultAfterReleaseChanges(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		selected  string
+		installed bool
+	}{
+		{"withdrawn release", currentVersion, false},
+		{"older release", "0.9.0", false},
+		{"different newer release", cachedVersion, true},
+		{"earlier newer release", "1.5.0", true},
+	} {
+		for _, useCache := range []bool{true, false} {
+			name := tc.name + "/without cache"
+			var dir string
+			if useCache {
+				name = tc.name + "/with cache"
+				dir = t.TempDir()
+			}
+			t.Run(name, func(t *testing.T) {
+				acceptEveryDownload(t)
+				src := &fakeSource{releases: []selfupdate.SourceRelease{signedRelease("v" + newerVersion)}}
+				u := newUpdater(t, src, dir)
+				exe, original := installFixture(t)
+				version, err := u.GetLatestFromSource()
+				if !IsHasNewVersion(err) || version != newerVersion {
+					t.Fatalf("discovery = %q, %v; want %s", version, err, newerVersion)
+				}
+
+				// The release changes between the command's discovery and install.
+				src.releases = []selfupdate.SourceRelease{signedRelease("v" + tc.selected)}
+				src.assets = map[int64][]byte{binaryAssetID: []byte("devctl " + tc.selected), bundleAssetID: []byte("bundle")}
+				result, err := u.InstallLatestWithResult()
+				if err != nil || result.Version != tc.selected || result.Installed != tc.installed {
+					t.Fatalf("install = %+v, %v; want version %s, installed %t", result, err, tc.selected, tc.installed)
+				}
+				wantBytes := original
+				if tc.installed {
+					wantBytes = src.assets[binaryAssetID]
+				}
+				got, err := os.ReadFile(exe) //nolint:gosec // the test's disposable executable
+				if err != nil || !bytes.Equal(got, wantBytes) {
+					t.Fatalf("executable = %q, %v; want %q", got, err, wantBytes)
+				}
+				if src.listReleases != 2 {
+					t.Fatalf("source reads = %d, want discovery and installation", src.listReleases)
+				}
+				if useCache {
+					version, err = newUpdater(t, src, dir).GetLatest()
+					if version != tc.selected || IsHasNewVersion(err) != tc.installed || (!tc.installed && err != nil) {
+						t.Fatalf("restored cache = %q, %v; want %s", version, err, tc.selected)
+					}
+					if src.listReleases != 2 {
+						t.Fatal("restoring the refreshed cache asked the source")
+					}
+				} else if u.cache.LatestVersion != "" {
+					t.Fatalf("disabled cache was updated: %+v", u.cache)
+				}
+			})
+		}
+	}
+}
+
 func TestInstallLatestRefusesAReleaseWithoutASignatureBundle(t *testing.T) {
 	src := &fakeSource{
 		releases: []selfupdate.SourceRelease{unsignedRelease("v" + newerVersion)},
