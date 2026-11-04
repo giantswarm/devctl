@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `deploy --timeout` preserves the requested duration for each merge and deployment wait instead of multiplying it
+  by a second again, which could overflow to an immediate failure or a wait of years. Nonpositive timeouts are
+  rejected before authentication or publication.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
