@@ -32,7 +32,7 @@ func TestPrefixesTerminalStderr(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
-			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestPrefixesTerminalHelper$") // #nosec G204 -- test fixture
+			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestPrefixesTerminalHelper$") // #nosec G204 G702 -- test fixture
 			cmd.Env = []string{
 				"DEVCTL_TERMOUT_TEST_HELPER=1", "TERM=xterm-256color",
 				"NO_COLOR=" + tc.noColor, "GOMAXPROCS=2", "GOFLAGS=-p=2",
