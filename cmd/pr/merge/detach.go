@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rogpeppe/go-internal/lockedfile"
+
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/mergejob"
 )
@@ -54,6 +56,18 @@ func (r *runner) detach(ctx context.Context, args []string, doc *startDocument) 
 	if err != nil {
 		return err
 	}
+	// A separate CLI process can be starting the same merge. Hold the
+	// startup lock until the child PID is saved, so the next caller sees
+	// that running job before deciding whether to launch another one.
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return err
+	}
+	unlock, err := lockedfile.MutexAt(filepath.Join(root, ".start.lock")).Lock()
+	if err != nil {
+		return fmt.Errorf("locking detached merge startup: %w", err)
+	}
+	defer unlock()
+
 	running, ok, err := mergejob.Running(root, doc.Repository, c.number)
 	if err != nil {
 		return err
