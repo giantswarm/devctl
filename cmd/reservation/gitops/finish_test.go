@@ -10,8 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/giantswarm/devctl/v8/internal/gittest"
 	"github.com/giantswarm/microerror"
+
+	"github.com/giantswarm/devctl/v8/internal/gittest"
 )
 
 func openDryRun(t *testing.T) *Checkout {
@@ -70,7 +71,7 @@ func TestFinishPreservesTrackedEditsMadeDuringADryRun(t *testing.T) {
 			if got := gittest.GitOutput(t, checkout.Dir, "rev-parse", "HEAD"); got != head {
 				t.Errorf("HEAD moved from %s to %s", head, got)
 			}
-			got, readErr := os.ReadFile(file)
+			got, readErr := os.ReadFile(file) //nolint:gosec // file is a fixed path inside this test's temporary checkout
 			if readErr != nil || string(got) != work {
 				t.Errorf("tracked edit: got %q, %v; want %q", got, readErr, work)
 			}
@@ -99,5 +100,25 @@ func TestFinishReportsResetFailureAlongsideTheOperationError(t *testing.T) {
 	}
 	if got := gittest.GitOutput(t, checkout.Dir, "rev-parse", "HEAD"); got != head {
 		t.Errorf("failed reset moved HEAD from %s to %s", head, got)
+	}
+}
+
+func TestFinishRefusesCleanupWhenStatusCannotBeRead(t *testing.T) {
+	checkout := openDryRun(t)
+	commit(t, checkout.Dir, "dry-run")
+	head := gittest.GitOutput(t, checkout.Dir, "rev-parse", "HEAD")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	original := microerror.Maskf(invalidFlagError, "the operation also failed")
+	var stderr bytes.Buffer
+	err := checkout.Finish(ctx, &stderr, original)
+	if !errors.Is(err, original) || !IsSync(err) || !strings.Contains(err.Error(), "cannot check whether it is safe") {
+		t.Fatalf("got %v, want the operation error and a status-check failure", err)
+	}
+	if strings.Contains(stderr.String(), "dropped these commits") {
+		t.Errorf("stderr claims cleanup succeeded: %s", stderr.String())
+	}
+	if got := gittest.GitOutput(t, checkout.Dir, "rev-parse", "HEAD"); got != head {
+		t.Errorf("unreadable status moved HEAD from %s to %s", head, got)
 	}
 }
