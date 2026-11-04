@@ -32,7 +32,7 @@ You are an AI assistant acting as an expert software developer and platform engi
 - Write comprehensive tests and documentation.
 - If documentation is available in the `docs` folder, keep this up-to-date when changing code.
 - Maintain the main README.md file for correctness.
-- If a changelog is available as CHANGELOG.md, add your changes to it.
+- If a changelog is available as CHANGELOG.md, add your changes to it, unless the repository has `.github/workflows/zz_generated.auto_release.yaml`: that release writes CHANGELOG.md from the pull request titles, so a pull request does not edit it.
 
 ## Release Management
 
@@ -1080,7 +1080,7 @@ $(APPLICATION)-v$(VERSION)-windows-amd64.exe: $(SOURCES)
 install: ## Install the application.
 	$(REQUIRE_VERSION)
 	@echo "====> $@"
-	go build -ldflags "$(LDFLAGS)" -o "$(shell go env GOPATH)/bin/$(APPLICATION)" "$(MAIN_SOURCE)"
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o "$(shell go env GOPATH)/bin/$(APPLICATION)" "$(MAIN_SOURCE)"
 
 .PHONY: run
 run: ## Runs go run main.go.
