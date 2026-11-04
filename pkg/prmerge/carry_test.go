@@ -89,7 +89,7 @@ func Test_Merge_carryOf(t *testing.T) {
 				"base": map[string]any{"sha": "base123", "ref": "main", "repo": map[string]any{"full_name": "o/r"}},
 				"head": map[string]any{"sha": "def456", "ref": "feature", "repo": map[string]any{"full_name": "o/r"}},
 			})
-			r["GET /repos/o/r/pulls/42"] = []sequence.Response{first, first, {Body: next}}
+			r["GET /repos/o/r/pulls/42"] = []sequence.Response{first, first, first, first, {Body: next}}
 		}},
 	}
 	for _, tc := range tests {

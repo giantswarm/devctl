@@ -15,43 +15,46 @@ import (
 )
 
 const (
-	flagTimeout        = "timeout"
-	flagReleaseTimeout = "release-timeout"
-	flagNoReleaseWait  = "no-release-wait"
-	flagRebase         = "rebase"
-	flagSquash         = "squash"
-	flagCarryOf        = "carry-of"
-	flagUpdateBranch   = "update-branch"
-	flagDispatch       = "dispatch"
-	flagAcceptRed      = "accept-red"
-	flagDetach         = "detach"
-	flagOnDone         = "on-done"
+	flagTimeout              = "timeout"
+	flagReleaseTimeout       = "release-timeout"
+	flagNoReleaseWait        = "no-release-wait"
+	flagRebase               = "rebase"
+	flagSquash               = "squash"
+	flagCarryOf              = "carry-of"
+	flagUpdateBranch         = "update-branch"
+	flagDispatch             = "dispatch"
+	flagAcceptRed            = "accept-red"
+	flagDetach               = "detach"
+	flagOnDone               = "on-done"
+	flagCircleCIFromStatuses = "circleci-from-statuses"
 	// flagDetachedHandle is the hidden flag --detach gives the merge's own
 	// process: the handle whose directory takes its document.
 	flagDetachedHandle = "detached-handle"
 )
 
 type flag struct {
-	Timeout        time.Duration
-	ReleaseTimeout time.Duration
-	NoReleaseWait  bool
-	Rebase         bool
-	Squash         bool
-	CarryOf        string
-	UpdateBranch   bool
-	Dispatch       string
-	AcceptRed      []string
-	Detach         bool
-	OnDone         string
-	DetachedHandle string
-	Progress       bool
-	FailedLog      prwait.FailedLog
+	Timeout              time.Duration
+	ReleaseTimeout       time.Duration
+	NoReleaseWait        bool
+	Rebase               bool
+	Squash               bool
+	CarryOf              string
+	UpdateBranch         bool
+	Dispatch             string
+	AcceptRed            []string
+	Detach               bool
+	OnDone               string
+	DetachedHandle       string
+	Progress             bool
+	FailedLog            prwait.FailedLog
+	CircleCIFromStatuses bool
 	// getenv reads DEVCTL_MERGE_DISPATCH; tests replace it.
 	getenv func(string) string
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().DurationVar(&f.Timeout, flagTimeout, prwait.DefaultTimeout, "How long to wait for the CI outcome (and a merge queue) before exit 2; scaled by DEVCTL_TIME_SCALE")
+	cmd.Flags().BoolVar(&f.CircleCIFromStatuses, flagCircleCIFromStatuses, false, "Read CircleCI jobs from the configuration and GitHub commit statuses for both waits without a CircleCI token; --failed-log uses the CircleCI API instead")
 	cmd.Flags().DurationVar(&f.ReleaseTimeout, flagReleaseTimeout, releasewait.DefaultTimeout, "How long to wait after the merge for its release to be pullable before exit 9; scaled by DEVCTL_TIME_SCALE")
 	cmd.Flags().BoolVar(&f.NoReleaseWait, flagNoReleaseWait, false, "End at the merge instead of waiting for the release it triggers (devctl release wait --pr does that wait on its own)")
 	cmd.Flags().BoolVar(&f.Rebase, flagRebase, false, "Rebase-merge instead of squash-merging (repositories whose convention is one commit per patch); the default on a fork line")
@@ -82,7 +85,7 @@ func (f *flag) childArgs(repository string, number int, handle string) []string 
 	for _, b := range []struct {
 		name string
 		on   bool
-	}{{flagNoReleaseWait, f.NoReleaseWait}, {flagRebase, f.Rebase}, {flagSquash, f.Squash}, {flagUpdateBranch, f.UpdateBranch}} {
+	}{{flagNoReleaseWait, f.NoReleaseWait}, {flagRebase, f.Rebase}, {flagSquash, f.Squash}, {flagUpdateBranch, f.UpdateBranch}, {flagCircleCIFromStatuses, f.CircleCIFromStatuses}} {
 		if b.on {
 			argv = append(argv, "--"+b.name)
 		}

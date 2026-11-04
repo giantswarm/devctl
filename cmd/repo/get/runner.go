@@ -31,7 +31,7 @@ func (r *Runner) Run(cmd *cobra.Command, args []string) error {
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
 	}
-	return microerror.Mask(r.run(context.Background(), args[0]))
+	return microerror.Mask(r.run(cmd.Context(), args[0]))
 }
 
 func (r *Runner) run(ctx context.Context, arg string) error {
