@@ -9,6 +9,9 @@ state no CI can turn green. It prints one JSON document on stdout at the end and
 exit code says what happened, so a script or an agent branches on it without parsing. `--progress`
 writes one line per poll to stderr for a person watching.
 
+Draft pull requests wait for their checks like other open pull requests and return the same
+green (exit 0) or red (exit 1) verdict. The document's `draft` field is true while it is a draft
+and absent otherwise. Green describes CI; `pr merge` still refuses a draft with exit 3.
 `--circleci-from-statuses` waits without a CircleCI token, using the same logic as `devctl serve`:
 it reads the head's CircleCI configuration from GitHub, lists the jobs that run on the head's branch,
 and waits for every one to post a commit status and finish successfully. A downstream job behind
@@ -173,7 +176,7 @@ message skips CI (`[skip ci]`, `[ci skip]`, `[no ci]`, `[skip actions]`, `[actio
 
 ## What ends the wait before it starts
 
-Exit 3, `not_applicable`, for a pull request that cannot become green as it is: it is a **draft**;
+Exit 3, `not_applicable`, for a pull request that cannot become green as it is:
 it is **closed** or **merged**; it **conflicts** with its base (GitHub's `mergeable_state` is
 `dirty`), which is why no `pull_request` workflow runs for it and a check-list loop waits until it
 gives up; it is **behind** a base whose protection requires branches to be up to date (`behind`).
@@ -292,6 +295,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
   "number": 2277,
   "headSha": "6a2df08b…",
   "baseRef": "main",
+  "draft": false,
   "checks": [
     {"name": "go-build", "source": "check_run", "status": "completed", "conclusion": "success",
      "url": "https://github.com/giantswarm/devctl/runs/…", "required": true},
@@ -314,6 +318,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 | `repository`, `number` | The pull request as given. |
 | `identity` | Who read GitHub: `app`, the devctl App login (giantswarm), or `gh`, your own `gh` login (every other owner); empty when the run ended before choosing. |
 | `headSha`, `baseRef` | The head commit judged and the base branch whose protection was read. |
+| `draft` | The draft state at the latest pull request read, refreshed on each poll. A green draft still cannot be merged by `pr merge`. |
 | `checks[]` | The head's check runs, every run of a name that counts, and its statuses, the latest per context, sorted by name and id. A check run carries its `id` and, when its job belongs to a GitHub Actions run of the head, its `workflow`. `source` is `check_run` or `status`; `status` is `queued`, `in_progress` or `completed` for a check run and `pending` or `completed` for a status; `conclusion` is the check run's conclusion or the status's state, empty while unfinished; `required` says whether the base requires this context. |
 | `checksVia` | `graphql` when the last poll read `checks[]` through GraphQL's `statusCheckRollup` because REST's check endpoints went unanswered (Polling); absent when REST answered. |
 | `circleci` | Present only when CircleCI was consulted: the newest pipeline of the head revision and its workflows, the newest run per name, sorted by name. |
@@ -329,7 +334,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 | 0 | `green` | Every rule above holds. |
 | 1 | `red` | Something failed; `reason` names every failed check, status, run and workflow. |
 | 2 | `timeout` | The timeout passed before an outcome, or a spent rate limit resets only after it; `unfinished` names what was still open, a required context still absent among it. |
-| 3 | `not_applicable` | Draft, closed, merged, conflicting or behind a strict base; `reason` says which. |
+| 3 | `not_applicable` | Closed, merged, conflicting or behind a strict base; `reason` says which. |
 | 4 | `required_missing` | Every check, run and workflow of the head has finished, the pull request's last update is more than a minute old (registration grace), and a required status context never reported; `reason` names it. Known at the poll that saw it, before the timeout; with anything still pending, another app's pending check included, the outcome is 2, not 4. |
 | 4 | `approval_required` | Nothing is red and the head waits only for GitHub Actions runs awaiting a repository member's approval (and the required contexts they may report); `reason` names each run with its URL. Known at the poll that saw it; approve the runs and wait again. |
 | 4 | `no_checks` | The head has no check run, status or Actions run two minutes after the pull request's last update, and the repository has workflows that run on `pull_request`: GitHub did not deliver the event. `reason` names the workflows; close and reopen the pull request to trigger them, and wait again. |
