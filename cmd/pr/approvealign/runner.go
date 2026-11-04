@@ -240,7 +240,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 					status := run.GetStatus()
 
 					if status == "completed" {
-						if conclusion == stateFailure || conclusion == "cancelled" || conclusion == "timed_out" {
+						if conclusion != "success" && conclusion != "neutral" && conclusion != "skipped" {
 							hasFailedChecks = true
 							break
 						}
