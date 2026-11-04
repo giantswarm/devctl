@@ -17,6 +17,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   workflows ignore the default branch (`branches: ignore: main`, as on envoy-gateway-app and ingress-nginx-app) was
   reported `circleci-pipeline-missing`, and so non-converged, although CircleCI builds its pull requests and tags.
 
+- `auth login` passes its Cobra command context to authorization flows so caller cancellation
+  and deadlines stop pending authorization.
+
 ### Changed
 
 - CircleCI without a shared identity: new repositories build on a CircleCI GitHub App pipeline created by the person

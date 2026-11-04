@@ -65,7 +65,7 @@ type managerSignIn struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	return r.run(context.Background(), args)
+	return r.run(cmd.Context(), args)
 }
 
 // FlagError reports a flag cobra could not parse like any other wrong call:
