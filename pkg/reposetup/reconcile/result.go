@@ -236,8 +236,9 @@ type Finding struct {
 	Kind    FindingKind `json:"kind"`
 	Message string      `json:"message"`
 	Fix     string      `json:"fix"`
-	// Advisory mirrors [FindingKind.Advisory] in the artifact, so a reader
-	// knows the weight of the finding without knowing the kinds.
+	// Advisory says this finding does not prevent convergence. It defaults
+	// to [FindingKind.Advisory]; a skipped classic protection read in check
+	// mode is advisory too. The artifact carries the weight for its readers.
 	Advisory bool `json:"advisory,omitempty"`
 }
 

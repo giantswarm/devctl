@@ -2,6 +2,7 @@ package workflows
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -299,5 +300,70 @@ func Test_Run_MultiImage(t *testing.T) {
 			PatchCandidates: true,
 		}
 		require.ErrorContains(t, f.Validate(), "no candidates")
+	})
+}
+
+// Test_Run_PullRequestTemplate pins that a repository whose release writes
+// CHANGELOG.md stops being asked for an edit by its pull request template, the
+// rest of the template kept, and that a repository still on the hand-kept file
+// is left alone.
+func Test_Run_PullRequestTemplate(t *testing.T) {
+	const asks = "### Why?\n\nBecause.\n\n### Checklist\n\n- [ ] CHANGELOG.md has been updated (if it exists)\n- [ ] Tests\n"
+	const path = ".github/pull_request_template.md"
+
+	setup := func(t *testing.T, template string) {
+		t.Helper()
+		dir := t.TempDir()
+		git(t, "init", "--quiet", dir)
+		t.Chdir(dir)
+		require.NoError(t, os.MkdirAll(".github/workflows", 0o750))
+		if template != "" {
+			require.NoError(t, os.WriteFile(path, []byte(template), 0o600))
+		}
+	}
+	run := func(t *testing.T, workflow string) {
+		t.Helper()
+		r := &runner{flag: &flag{
+			Flavours:        gen.FlavourSlice{gen.FlavourCLI},
+			Language:        "generic",
+			ReleaseWorkflow: workflow,
+			RepoName:        "x",
+		}, stderr: io.Discard}
+		require.NoError(t, r.Run(&cobra.Command{}, nil))
+	}
+
+	t.Run("auto-release drops the item and keeps the rest", func(t *testing.T) {
+		setup(t, asks)
+		run(t, releaseWorkflowAutoRelease)
+
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, "### Why?\n\nBecause.\n\n### Checklist\n\nThe pull request title is the release note: the release writes CHANGELOG.md, so do not edit it.\n- [ ] Tests\n", string(got))
+	})
+
+	t.Run("a second run changes nothing", func(t *testing.T) {
+		setup(t, asks)
+		run(t, releaseWorkflowAutoRelease)
+		first, err := os.ReadFile(path)
+		require.NoError(t, err)
+		run(t, releaseWorkflowAutoRelease)
+		second, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, string(first), string(second))
+	})
+
+	t.Run("a repository without a template gets none", func(t *testing.T) {
+		setup(t, "")
+		run(t, releaseWorkflowAutoRelease)
+		require.NoFileExists(t, path)
+	})
+
+	t.Run("legacy keeps the item", func(t *testing.T) {
+		setup(t, asks)
+		run(t, releaseWorkflowLegacy)
+
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, asks, string(got))
 	})
 }
