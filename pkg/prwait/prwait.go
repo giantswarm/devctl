@@ -255,7 +255,9 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 		e, err := w.poll(ctx, owner, repo, number, h, result)
 		if err != nil {
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
-				return result, w.timedOut(result, last, unanswered)
+				// The deadline interrupted this poll: the preceding complete
+				// poll cannot establish that the continuation is still absent.
+				return result, w.timedOut(result, last, err.Error())
 			}
 			// A rate limit resetting after the deadline is a timeout ahead
 			// of it: the document names what was unfinished all the same.

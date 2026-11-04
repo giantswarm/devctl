@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-github/v93/github"
+
 	"github.com/giantswarm/devctl/v8/e2e/mock/sequence"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
@@ -151,5 +153,46 @@ func TestContinuationTimeoutNeedsCurrentEvidence(t *testing.T) {
 				t.Errorf("unanswered poll was lost: %v", err)
 			}
 		})
+	}
+}
+
+// deadlinePollGitHub interrupts the second poll after its checks were read,
+// leaving the first poll's successful setup as the last complete evidence.
+type deadlinePollGitHub struct {
+	GitHub
+	clock agentcli.Clock
+	calls int
+}
+
+func (g *deadlinePollGitHub) WorkflowRunsForSHA(ctx context.Context, owner, repo, sha string) ([]*github.WorkflowRun, error) {
+	g.calls++
+	if g.calls == 2 {
+		return nil, g.clock.Sleep(ctx, 2*time.Minute)
+	}
+	return g.GitHub.WorkflowRunsForSHA(ctx, owner, repo, sha)
+}
+
+func Test_Wait_deadlineDuringPollDoesNotDiagnoseContinuation(t *testing.T) {
+	gh := gitHubGreen()
+	gh[confPath] = []sequence.Response{config}
+	gh[statPath] = []sequence.Response{successStatuses("ci/circleci: setup")}
+	cc := sequence.Routes{
+		projPath: {project},
+		pipePath: {pipelines},
+		wfPath:   {body(map[string]any{"items": []any{setupWorkflow("success")}})},
+	}
+	h := start(t, gh, cc, true, 2*time.Minute)
+	h.waiter.rate = nil
+	reader := &deadlinePollGitHub{GitHub: h.waiter.github, clock: h.waiter.clock}
+	h.waiter.github = reader
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if reader.calls != 2 || exitCode(err) != agentcli.ExitTimeout {
+		t.Fatalf("want second poll interrupted with exit 2, got %d calls: %v", reader.calls, err)
+	}
+	if strings.Contains(err.Error(), "CircleCI continuation missing") || !strings.Contains(err.Error(), "last poll went unanswered") {
+		t.Errorf("want unknown head rather than stale continuation diagnosis: %v", err)
+	}
+	if result.CircleCI == nil || result.CircleCI.PipelineID != "p1" || len(result.Unfinished) == 0 {
+		t.Errorf("last complete pipeline and unfinished evidence lost: %+v", result)
 	}
 }
