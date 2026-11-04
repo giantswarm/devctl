@@ -61,7 +61,13 @@ system that will produce it:
    behind `requires:` posts no status to GitHub until it starts, so a multi-stage pipeline reads
    green on GitHub between its stages; CircleCI knows the workflow is `running`. A rerun of a
    failed workflow is a new workflow of the same name in the same pipeline, and the newest run is
-   the one that counts. `not_run` is a skipped workflow. An `errored` pipeline (a configuration
+   the one that counts. Until its jobs post new statuses, a failed or errored GitHub status older
+   than the rerun's creation is pending (`awaiting rerun status`) when the previous run's job
+   listing identifies that context. This covers reruns started by `pr rerun` or in CircleCI.
+   Successful job statuses are kept: rerunning from failed reuses the successful jobs. A failure
+   without a newer run, or one posted at or after the rerun started, is still red. Without the
+   workflow and status timestamps or job-context evidence, the existing status is judged as usual.
+   `not_run` is a skipped workflow. An `errored` pipeline (a configuration
    error, which produces no workflows) is red. A setup pipeline (`setup: true` with
    `continuation/continue`) is unfinished while its state is `setup-pending`, `setup` or `pending`:
    its `setup` workflow may have finished, but the continued workflows that post the build's

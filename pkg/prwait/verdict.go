@@ -127,6 +127,9 @@ type circleSnapshot struct {
 	// pipeline is nil while CircleCI has no pipeline for the head revision.
 	pipeline  *circleciclient.Pipeline
 	workflows []circleciclient.Workflow
+	// rerunStatuses are failed job contexts older than a rerun of their
+	// workflow: pending until GitHub receives the rerun's status.
+	rerunStatuses map[string]bool
 }
 
 // evaluation is the verdict of one snapshot with the document fields it
@@ -315,6 +318,10 @@ func evaluate(s snapshot) *evaluation {
 			Required: required[name],
 		}
 		switch state := status.GetState(); {
+		case s.circleci != nil && s.circleci.rerunStatuses[name]:
+			check.Status = statusPending
+			e.requiredPending = e.requiredPending || check.Required
+			e.unfinished = append(e.unfinished, fmt.Sprintf("status %s (awaiting rerun status)", name))
 		case state == statusPending && !check.Required && !strings.HasPrefix(name, circleStatusPrefix):
 			check.Status = statusPending
 			e.notRequired = append(e.notRequired, fmt.Sprintf("status %s (pending, not required, not waited for)", name))

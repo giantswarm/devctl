@@ -438,7 +438,7 @@ func (w *Waiter) poll(ctx context.Context, owner, repo string, number int, h *he
 		return nil, err
 	}
 	if h.circleci != nil {
-		if s.circleci, err = w.readCircleCI(ctx, owner, repo, h); err != nil {
+		if s.circleci, err = w.readCircleCI(ctx, owner, repo, h, s.statuses); err != nil {
 			return nil, err
 		}
 	}
@@ -584,7 +584,7 @@ func (w *Waiter) templateContent(ctx context.Context, owner, repo string) (bool,
 
 // readCircleCI finds the newest pipeline of the head revision on the head's
 // branch and reads its workflows.
-func (w *Waiter) readCircleCI(ctx context.Context, owner, repo string, h *head) (*circleSnapshot, error) {
+func (w *Waiter) readCircleCI(ctx context.Context, owner, repo string, h *head, statuses []*github.RepoStatus) (*circleSnapshot, error) {
 	s := &circleSnapshot{project: h.project}
 	pipeline, err := h.circleci.FindPipelineByRevision(ctx, owner, repo, h.branch, h.sha)
 	if err != nil {
@@ -599,6 +599,9 @@ func (w *Waiter) readCircleCI(ctx context.Context, owner, repo string, h *head) 
 		return nil, err
 	}
 	s.workflows = workflows
+	if err := s.readRerunStatuses(ctx, h.circleci, statuses); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
