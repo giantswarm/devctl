@@ -93,7 +93,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 // withManifestDefaults fills in what a manifest route's fixture left out.
 func withManifestDefaults(resp sequence.Response, name, reference string) sequence.Response {
-	if resp.Body != nil {
+	if resp.Reset || resp.Body != nil {
 		return resp
 	}
 	switch resp.StatusCode() {
