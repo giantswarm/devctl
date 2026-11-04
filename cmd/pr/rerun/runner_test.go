@@ -60,6 +60,7 @@ func start(t *testing.T, gh, cc sequence.Routes) (*runner, *githubmock.Server, *
 	endpoints.CircleCIAPIURL = ccServer.APIURL()
 	return &runner{
 		gate:            func(bool) error { return nil },
+		clock:           func() (agentcli.Clock, error) { return agentcli.NewVirtualClock(time.Now()), nil },
 		stdout:          &bytes.Buffer{},
 		requireGitHub:   loggedIn,
 		personGitHub:    loggedIn,
@@ -132,9 +133,12 @@ func TestStalledHeadPipelineRedeliversThePush(t *testing.T) {
 			"POST /repos/o/r/hooks/1/deliveries/42/attempts": {{Status: http.StatusAccepted}},
 		},
 		sequence.Routes{
-			"GET /api/v2/project/gh/o/r/pipeline?branch=feature": {{Body: map[string]any{"items": []any{
-				map[string]any{"id": "p1", "number": 12, "state": "pending", "created_at": created, "vcs": map[string]any{"revision": "abc"}},
-			}}}},
+			"GET /api/v2/project/gh/o/r/pipeline?branch=feature": {
+				{Body: map[string]any{"items": []any{
+					map[string]any{"id": "p1", "number": 12, "state": "pending", "created_at": created, "vcs": map[string]any{"revision": "abc"}},
+				}}},
+				pipelineListing(headPipeline("p2", 13, "abc")),
+			},
 			"GET /api/v2/pipeline/p1/workflow": {{Body: map[string]any{"items": []any{}}}},
 		})
 	doc, code := execute(t, r, "o/r", "7")
