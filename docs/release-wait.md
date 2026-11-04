@@ -181,7 +181,19 @@ fallback.
 **Neither image nor chart** (a CLI that ships binaries as release assets, a repository without
 CircleCI): the release is available when the GitHub Release of the tag is published (not a draft) and
 every workflow of the tag finished green. `artifacts` then lists the release assets with the digests
-GitHub reports.
+GitHub reports. With CircleCI, the pipeline must be verified by the requested tag, including when a
+status link is used to find it; green commit statuses alone cannot distinguish a stable tag from a
+candidate on the same commit. The pipeline's jobs are read even for generated CI. When they include
+`upload-release-assets` (also with an orb prefix), the published release must list at least one
+asset. An empty release keeps waiting even after the pipeline turns green. A pipeline without that
+job may publish an empty release.
+
+The document names the stable pipeline in `pipeline.number`, its upload jobs as `workflow/job` in
+`pipeline.assetUploadJobs`, and the published release's asset count in `releaseAssetCount` (including
+zero while waiting). A timeout for missing assets names the pipeline, upload jobs and zero count.
+A CircleCI wait that reads commit statuses alone, such as the server's, cannot verify a tag pipeline
+for release assets: it times out naming the missing verification. Use the CLI with its CircleCI login
+to obtain that evidence.
 
 ### Availability
 
@@ -229,12 +241,13 @@ status for ever). Once a listing named the tag pipeline, a later one that no lon
 repository's newer pipelines push it off the pages read) leaves the wait reading that pipeline. A workflow in `failed`, `error`, `failing`, `canceled` or `unauthorized` ends the
 wait with exit 1 and `pipeline.failedJobs` (`workflow/job`, or the workflow alone when CircleCI does
 not list its jobs). The verdict is the workflows': their jobs are read only where they are needed,
-to name the failed ones and to derive the artifacts of hand-written CI and of a `custom.yml` that
-declares push jobs (one of test and repository-owned jobs alone names no artifact and needs no look
+to name the failed ones, detect release-asset upload jobs, and derive the artifacts of hand-written
+CI and of a `custom.yml` that declares push jobs (one of test and repository-owned jobs alone names no artifact and needs no look
 at them); the setup workflow's one job continues the pipeline and is never read. CircleCI answers 404 on the jobs of a workflow it lists, a finished one
 included, for a while after the workflow exists and for as long as its job data lags behind (half
-an hour and more during an incident), and a green pipeline is green without them; a derivation
-that needs them goes on polling, `pipeline.unfinished` says `build (running, jobs not visible
+an hour and more during an incident), and a green pipeline needs no job data unless artifact
+derivation or release-asset upload detection requires it. A wait that needs them goes on polling,
+`pipeline.unfinished` says `build (running, jobs not visible
 yet)`, and jobs that never appear end the wait at its timeout naming the workflow. A repository without CircleCI is judged
 by the GitHub Actions runs on the tag's commit whose branch is the tag: a `failure`, `cancelled`,
 `timed_out` or `startup_failure` conclusion is exit 1.
@@ -343,6 +356,8 @@ stderr.
 | `releaseModel` | `auto-release` or `legacy`. |
 | `ciModel` | `generated`, `hand-written`, `actions` or `none`. |
 | `artifacts[]` | `kind` (`image`, `chart`, `release-asset`), `reference` (the pullable reference, or the asset's download URL), `digest` (empty while missing), `state` (`available`, `missing`), optional `lastProbeError` (the last unresolved probe error). Empty until the artifacts are known (hand-written CI before its pipeline exists). |
+| `releaseAssetCount` | Present after reading a published GitHub release in a release-assets wait. Zero keeps the wait pending when its tag pipeline has an upload job. |
+| `pipeline.assetUploadJobs[]` | Present when the tag pipeline's jobs include `upload-release-assets`, with or without an orb prefix. Each entry is `workflow/job`; `pipeline.number` identifies the pipeline that ran them. |
 | `pipeline` | The tag pipeline on CircleCI: `id`, `number`, `url`, `workflows[{name, status, conclusion}]` (newest run per name; for `ciModel` `actions` one entry per check run of the tag's commit, with its `conclusion`, `id`, `number` empty and `url` the commit's checks page), `failedJobs[]`, `unfinished[]` (the workflows not finished, `name (status)`, with `jobs not visible yet` when CircleCI does not list them yet; what a timeout was waiting for, empty at exit 0). When CircleCI names no pipeline for the tag and its commit's CircleCI statuses are the verdict, `workflows` are those statuses' jobs and `unfinished` the pending ones, with `id`, `number` and `url` empty. `null` for a repository without CircleCI and without check runs on the tag, or while the CircleCI pipeline does not exist. |
 | `actions[]` | The Actions runs the tag triggered, for a repository without CircleCI: `name`, `runId`, `status`, `conclusion`, `url`. |
 | `statuses[]` | The newest commit status of every context of the tag's commit, `context`, `state` (`pending`, `success`, `failure`, `error`) and `url`, read once the artifacts are available and the tag's CI is green; empty before. |
