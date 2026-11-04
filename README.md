@@ -72,6 +72,8 @@ devctl pr wait giantswarm/devctl 2277 --timeout 45m --progress
 
 `devctl pr rerun <owner/repo> <number>` reruns every failed CircleCI workflow of the pull request head's pipeline from failed, `devctl release rerun <owner/repo> <tag>` those of a tag's pipeline: the fix for a job that failed on a transient cause, without an empty commit or a new tag. A workflow still running is not rerun (exit 5), a pipeline without a failed job is exit 3. The rerun is started, not waited for (`pr wait`, `release wait` wait for it), and takes the `devctl auth login` CircleCI login granted Write access. See [docs/pr-rerun.md](docs/pr-rerun.md).
 
+For a head pipeline stalled without a workflow, `pr rerun` redelivers its push once and checks for a newer pipeline for at most one minute. If none appears, it exits 5 with `redelivery deduplicated; push a new head`: push an empty commit to the PR branch or merge its base, then `pr wait` follows the new head. GitHub accepting a redelivery alone does not confirm recovery.
+
 ```nohighlight
 devctl pr rerun giantswarm/devctl 2277
 devctl release rerun giantswarm/devctl v8.123.0

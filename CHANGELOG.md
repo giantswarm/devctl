@@ -9,6 +9,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `pr rerun` checks for a newer pipeline on the same branch and head for one minute after
+  redelivering a stalled pipeline's push. If none appears, it exits 5 naming
+  `redelivery deduplicated; push a new head` and the empty-commit or base-merge recovery,
+  instead of claiming GitHub's acceptance created a pipeline. Confirmed pipelines appear
+  in `redelivery.pipeline`; failed observations report unconfirmed recovery.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
