@@ -1853,6 +1853,10 @@ lint: ## Checks import formatting and runs golangci-lint (requires goimports).
 	fi
 	golangci-lint run --timeout=15m ./...
 
+# Extend lint from Makefile.custom.mk without replacing its generated recipe.
+.PHONY: lint-custom
+lint: lint-custom
+
 .PHONY: fmt
 fmt: ## Run go fmt against code.
 	go fmt ./...

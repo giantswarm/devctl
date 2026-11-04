@@ -143,6 +143,27 @@ Example:
 devctl gen makefile --flavour cli --language go
 ```
 
+### Custom Makefiles
+
+Put repository-specific targets in `Makefile.custom.mk`. The generated root Makefile includes
+`Makefile.*.mk` in lexical order, so `Makefile.gen.go.mk` is read after `Makefile.custom.mk`.
+A same-named recipe in `Makefile.custom.mk` is ignored when a generated include supplies that
+target's recipe.
+
+For Go repositories, add extra lint checks by defining `lint-custom` in `Makefile.custom.mk`:
+
+```makefile
+# Makefile.custom.mk
+lint-custom:
+	./hack/lint-extra.sh
+```
+
+The generated `lint` target depends on this phony hook, which has no generated recipe. Custom
+checks run before the Go lint recipe, including with `make -j lint`, and a failing custom check
+fails `make lint`. Repositories without custom checks keep the existing lint behavior. Move
+extra commands from a custom `lint` recipe into `lint-custom`, then regenerate the Makefiles
+with the repository's usual `devctl gen makefile` options to get the hook.
+
 ## Generating pre-commit configuration
 
 Creates a `.pre-commit-config.yaml` file in the repo root with hooks appropriate for the repository's language and content.
