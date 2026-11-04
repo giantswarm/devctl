@@ -9,6 +9,8 @@ state no CI can turn green. It prints one JSON document on stdout at the end and
 exit code says what happened, so a script or an agent branches on it without parsing. `--progress`
 writes one line per poll to stderr for a person watching.
 
+SIGINT or SIGTERM interrupts the CLI wait with the same document and exit 2 as a timeout.
+The reason identifies the interruption; `unfinished[]` and the checks retain the last observed state.
 Draft pull requests wait for their checks like other open pull requests and return the same
 green (exit 0) or red (exit 1) verdict. The document's `draft` field is true while it is a draft
 and absent otherwise. Green describes CI; `pr merge` still refuses a draft with exit 3.

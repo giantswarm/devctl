@@ -119,6 +119,10 @@ devctl rollout wait myinstallation giantswarm/app-operator v7.5.4 --progress
 
 ### Merging a pull request (`devctl pr merge`)
 
+SIGINT or SIGTERM during `pr merge`, `pr wait`, `release wait` or `rollout wait` still produces the JSON document,
+with an interrupted reason and the last observed state. The wait exits 2; after an acknowledged merge,
+`pr merge` exits 9 with `merged: true`, the merge commit and the `devctl release wait` confirmation command.
+
 Without an explicit method, an unreadable `gen.flavours` or a GitHub fork whose team-file entry does not declare
 `fork` is refused before waiting or writing (exit 3). Repair the declaration or choose `--rebase` or `--squash`.
 

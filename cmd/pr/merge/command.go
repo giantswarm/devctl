@@ -120,7 +120,7 @@ The document (schemaVersion 1) is devctl pr wait's (command, exitCode,
 verdict, reason, warnings, startedAt, finishedAt, repository, number, headSha,
 baseRef, checks[], circleci{}, actions[], unfinished[], failedJobs[] on red
 with --failed-log, whose tails also go to stderr, acceptedRed[] with
---accept-red) plus mergeCommitSha
+--accept-red) plus merged (whether a merge was acknowledged), mergeCommitSha
 (the merge commit, empty when nothing merged), mergedBy (the login the merge
 was made as, empty when nothing merged), method (squash|rebase|merge),
 branchDeleted, enqueued, release: null with --no-release-wait or when
@@ -149,7 +149,8 @@ Exit codes:
   0  merged (or enqueued and merged by the queue), branch deleted, and the
      release is pullable or no release follows the merge
   1  red: a check, status, run or workflow failed, or the queue dropped it
-  2  timeout before an outcome; unfinished names what was still open
+  2  timeout or SIGINT/SIGTERM before the merge; unfinished names what
+     was still open, reason identifies an interrupted wait
   3  not applicable: draft, closed, merged, conflicting, behind its base
      (without --update-branch), GitHub declined the merge as it stands, or
      --accept-red names a required check, a security scan or no check of
@@ -163,7 +164,8 @@ Exit codes:
   8  authentication required; reason names the devctl auth login (or gh auth
      login, for an owner outside giantswarm) to run
   9  merged, and the release was not confirmed: --release-timeout passed
-     first, or the release wait could not judge it (release.verdict and the
+     first, SIGINT/SIGTERM interrupted the wait, or the release wait could
+     not judge it (release.verdict and the
      reason say which; devctl release wait <owner/repo> --pr <n> resumes it)
  14  tag_pipeline_empty: merged, and the tag pipeline settled without
      workflows although its configuration admits the tag; re-trigger the
