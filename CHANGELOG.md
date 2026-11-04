@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release promote` checks `UPGRADE.md` at the selected candidate before dispatch, including with `--dry-run`.
+  A line starting with `## Next` refuses promotion and names the versioned heading to land in a new candidate;
+  a missing file is allowed and a failed read stops promotion.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
