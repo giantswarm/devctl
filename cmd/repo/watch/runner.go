@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
+	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/circleciapp"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup/manager"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
@@ -33,6 +34,7 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
+	agentcli.IgnoreHangup()
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
 	}

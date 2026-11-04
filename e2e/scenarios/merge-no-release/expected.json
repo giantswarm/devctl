@@ -42,6 +42,7 @@
         "url": "*"
       }
     ],
+    "merged": true,
     "mergeCommitSha": "aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44",
     "mergedBy": "e2e-engineer",
     "method": "squash",

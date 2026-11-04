@@ -51,7 +51,11 @@ are its own series'):
      lands on that candidate's commit whatever was cut after it. The
      candidates cut after it on the default branch are named in later[]
      and in the message, as not in the release.
-  3. The combined commit status of the candidate's commit: with at least one
+  3. UPGRADE.md at the candidate's commit must have no line starting with
+     "## Next", including an empty section (else failed). Land the rename
+     to "## vX.Y.Z" first, then promote a new candidate containing it.
+     A missing UPGRADE.md is allowed; an unreadable one is failed.
+  4. The combined commit status of the candidate's commit: with at least one
      status and a state other than success, not_built. No status at all
      counts as built, as in the workflow. A failed CircleCI status of a job
      the release does not require (sync-china-registry) is judged as
@@ -60,10 +64,10 @@ are its own series'):
      A not_built entry names in newestBuilt, and in its message, the
      highest other candidate since the stable release that is built:
      promote it with --version, or wait for the refused one.
-  4. The workflow is dispatched on the default branch with
+  5. The workflow is dispatched on the default branch with
      release-type: stable, and with --version also version: the candidate
      (dispatched; would_dispatch with --dry-run).
-  5. Once every repository is dispatched, the run each dispatch started is
+  6. Once every repository is dispatched, the run each dispatch started is
      followed until it concludes, at most --follow-timeout (20m). The
      workflow resolves the candidate again, checks it, runs the
      repository's stable gate (.github/release-gate.custom.sh) and tags the
@@ -77,6 +81,10 @@ are its own series'):
      --no-follow returns right after the dispatch.
 
 Repeated repositories are promoted once.
+
+With --dry-run, a network or 5xx failure is retried once after one second.
+Each attempt is limited to two seconds, including reading the response body.
+A failed repository read names the request URL and last cause in its message.
 
 A dispatched repository's release is built from its tag by CircleCI; follow
 it with
