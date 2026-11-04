@@ -145,7 +145,7 @@ func cancellationFixture(t *testing.T) (*cobra.Command, func()) {
 	return cmd, func() {
 		t.Helper()
 		for name, want := range files {
-			got, err := os.ReadFile(filepath.Join(provider, name))
+			got, err := os.ReadFile(filepath.Join(provider, name)) // #nosec G304 -- fixed fixture names inside t.TempDir().
 			if err != nil || string(got) != want {
 				t.Errorf("canceled create changed %s (read error: %v)", name, err)
 			}
