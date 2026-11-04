@@ -49,7 +49,7 @@ func Test_Run_RepoName(t *testing.T) {
 		{
 			name:            "origin remote outside giantswarm",
 			releaseWorkflow: releaseWorkflowAutoRelease,
-			remote:          "git@github.com:teemow/valkey-app.git",
+			remote:          "git@github.com:fixture-person/valkey-app.git",
 			wantErr:         "pass --repo-name <name>",
 		},
 		{

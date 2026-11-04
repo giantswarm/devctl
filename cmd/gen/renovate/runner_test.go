@@ -57,7 +57,7 @@ func Test_Run_RepoName(t *testing.T) {
 		},
 		{
 			name:         "origin remote outside giantswarm",
-			remote:       "git@github.com:teemow/valkey-app.git",
+			remote:       "git@github.com:fixture-person/valkey-app.git",
 			customConfig: true,
 			wantErr:      "pass --repo-name <name>",
 		},
@@ -134,7 +134,7 @@ func Test_Run_Fork(t *testing.T) {
 		{
 			name:     "a fork line's opt-out in renovate.json5 stays",
 			flavours: gen.FlavourSlice{gen.FlavourFork},
-			existing: map[string]string{"renovate.json5": "{\n  reviewers: ['teemow'],\n  enabled: false,\n}\n"},
+			existing: map[string]string{"renovate.json5": "{\n  reviewers: ['fixture-person'],\n  enabled: false,\n}\n"},
 			wantErr:  "renovate.json5 turns Renovate off for this fork line",
 		},
 		{

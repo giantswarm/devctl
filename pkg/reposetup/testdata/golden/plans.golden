@@ -413,8 +413,6 @@ Please visit <https://www.giantswarm.io/responsible-disclosure> for information 
     '342014845+giantswarm-release[bot]@users.noreply.github.com',
     'dev@giantswarm.io',
     '329428426+giantswarm-marge[bot]@users.noreply.github.com',
-    // devctl pr merge --update-branch under the machine identity (teemow).
-    'teemow@gmail.com',
   ],
   packageRules: [
     {

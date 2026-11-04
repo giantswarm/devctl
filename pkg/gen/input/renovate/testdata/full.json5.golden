@@ -43,8 +43,6 @@
     '342014845+giantswarm-release[bot]@users.noreply.github.com',
     'dev@giantswarm.io',
     '329428426+giantswarm-marge[bot]@users.noreply.github.com',
-    // devctl pr merge --update-branch under the machine identity (teemow).
-    'teemow@gmail.com',
   ],
   reviewers: [
     'team:team-rocket',

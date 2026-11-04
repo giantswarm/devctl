@@ -35,12 +35,10 @@
   "gitIgnoredAuthors": [
     "342014845+giantswarm-release[bot]@users.noreply.github.com",
     "dev@giantswarm.io",
-    "329428426+giantswarm-marge[bot]@users.noreply.github.com",
-    // devctl pr merge --update-branch under the machine identity (teemow).
-    "teemow@gmail.com"
+    "329428426+giantswarm-marge[bot]@users.noreply.github.com"
   ],
   "reviewers": [
-    "teemow"
+    "fixture-person"
   ],
   // Assign the configured reviewers even to PRs Renovate auto-merges, so they
   // are still requested for review. Without this Renovate skips review
