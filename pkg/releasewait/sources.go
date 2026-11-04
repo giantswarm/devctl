@@ -15,7 +15,7 @@ import (
 
 // EnvTeamGitHubToken is an optional read token for private organisation team
 // files when the main GitHub token is scoped to the repository being checked.
-const EnvTeamGitHubToken = "DEVCTL_TEAM_GITHUB_TOKEN"
+const EnvTeamGitHubToken = "DEVCTL_TEAM_GITHUB_TOKEN" // #nosec G101 -- environment variable name, not a credential
 
 // Sources are what one wait reads, opened after the version gate: the
 // fields of [Config] that are not the wait's own parameters.
