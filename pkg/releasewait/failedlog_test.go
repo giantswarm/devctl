@@ -60,19 +60,29 @@ func TestWaitFailedLogReadsTheFailedJobsOfTheTagPipeline(t *testing.T) {
 	blob := logBlobs(t, map[string]string{
 		"/circleci/push": `[{"message":"pushing gsoci.azurecr.io/giantswarm/kserve-controller:1.2.3\r\n"},{"message":"\u001b[31m503 Service Unavailable\u001b[0m\r\nexit status 1\r\n"}]`,
 	})
-	fx := failedTagPipeline(t, blob.URL)
-	fx.failedLogLines = 2
-
-	result, err := run(t, fx)
-	assertExit(t, err, agentcli.ExitRed, "build/push-to-registries-release")
-	want := []prwait.FailedJob{{
-		Name:    "build/push-to-registries-release",
-		Source:  prwait.SourceCircleCI,
-		URL:     "https://app.circleci.com/pipelines/github/giantswarm/kserve/12/workflows/w1/jobs/99",
-		LogTail: "503 Service Unavailable\nexit status 1",
-	}}
-	if diff := cmp.Diff(want, result.FailedJobs); diff != "" {
-		t.Errorf("failedJobs:\n%s", diff)
+	for _, tc := range []struct {
+		name  string
+		lines int
+		want  string
+	}{
+		{name: "case 0: tail", lines: 2, want: "503 Service Unavailable\nexit status 1"},
+		{name: "case 1: full", lines: prwait.FullFailedLogLines, want: "pushing gsoci.azurecr.io/giantswarm/kserve-controller:1.2.3\n503 Service Unavailable\nexit status 1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := failedTagPipeline(t, blob.URL)
+			fx.failedLogLines = tc.lines
+			result, err := run(t, fx)
+			assertExit(t, err, agentcli.ExitRed, "build/push-to-registries-release")
+			want := []prwait.FailedJob{{
+				Name:    "build/push-to-registries-release",
+				Source:  prwait.SourceCircleCI,
+				URL:     "https://app.circleci.com/pipelines/github/giantswarm/kserve/12/workflows/w1/jobs/99",
+				LogTail: tc.want,
+			}}
+			if diff := cmp.Diff(want, result.FailedJobs); diff != "" {
+				t.Errorf("failedJobs:\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -113,16 +123,27 @@ func TestWaitFailedLogReadsTheFailedJobsOfTheTagActionsRuns(t *testing.T) {
 	}}}}
 	github[repoRoute("/actions/jobs/7/logs")] = []sequence.Response{{Status: http.StatusFound, Headers: map[string]string{"Location": blob.URL + "/actions/7"}}}
 
-	result, err := run(t, fixture{github: github, failedLogLines: 2})
-	assertExit(t, err, agentcli.ExitRed, "Release binaries")
-	want := []prwait.FailedJob{{
-		Name:    "Release binaries/upload",
-		Source:  prwait.SourceActions,
-		URL:     "https://example/runs/2/job/7",
-		LogTail: "2026-10-01T10:00:01Z upload failed: 502\n2026-10-01T10:00:02Z ##[error]Process completed with exit code 1.",
-	}}
-	if diff := cmp.Diff(want, result.FailedJobs); diff != "" {
-		t.Errorf("failedJobs:\n%s", diff)
+	for _, tc := range []struct {
+		name  string
+		lines int
+		want  string
+	}{
+		{name: "case 0: tail", lines: 2, want: "2026-10-01T10:00:01Z upload failed: 502\n2026-10-01T10:00:02Z ##[error]Process completed with exit code 1."},
+		{name: "case 1: full", lines: prwait.FullFailedLogLines, want: "2026-10-01T10:00:00Z building\n2026-10-01T10:00:01Z upload failed: 502\n2026-10-01T10:00:02Z ##[error]Process completed with exit code 1.\n2026-10-01T10:00:03Z Post job cleanup."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := run(t, fixture{github: github, failedLogLines: tc.lines})
+			assertExit(t, err, agentcli.ExitRed, "Release binaries")
+			want := []prwait.FailedJob{{
+				Name:    "Release binaries/upload",
+				Source:  prwait.SourceActions,
+				URL:     "https://example/runs/2/job/7",
+				LogTail: tc.want,
+			}}
+			if diff := cmp.Diff(want, result.FailedJobs); diff != "" {
+				t.Errorf("failedJobs:\n%s", diff)
+			}
+		})
 	}
 }
 
