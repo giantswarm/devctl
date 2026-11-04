@@ -42,6 +42,11 @@ installation and the read access your `gh` login lacks.
 The merge outside giantswarm is made as your `gh` login, through whatever that repository's protection grants
 you.
 
+The CI wait uses [the same CircleCI applicability rules as `pr wait`](pr-wait.md#github-alone-or-github-and-circleci).
+An absent head pipeline with no CircleCI status and an empty project-wide pipeline listing is judged
+from GitHub alone with a warning. Green GitHub checks can then permit the merge; any listed pipeline
+keeps a delayed head pipeline pending.
+
 ## What is refused before the wait
 
 Every refusal comes before the first poll and before anything is written.
