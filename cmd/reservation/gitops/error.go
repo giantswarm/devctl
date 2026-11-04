@@ -1,6 +1,10 @@
 package gitops
 
-import "github.com/giantswarm/microerror"
+import (
+	"errors"
+
+	"github.com/giantswarm/microerror"
+)
 
 var invalidFlagError = &microerror.Error{
 	Kind: "invalidFlagError",
@@ -19,7 +23,7 @@ var syncError = &microerror.Error{
 
 // IsSync asserts syncError.
 func IsSync(err error) bool {
-	return microerror.Cause(err) == syncError
+	return errors.Is(err, syncError)
 }
 
 // pushFailedError indicates that a reservation change could not be pushed.

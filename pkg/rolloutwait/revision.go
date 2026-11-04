@@ -354,7 +354,7 @@ func (w *Waiter) judgeApplier(ctx context.Context, d Deployment, u *unstructured
 	if done && current && ready.status == conditionTrue {
 		return d.set(StateRolledOut, ""), nil
 	}
-	if !done && ready.status == conditionFalse && failure(ready) {
+	if ready.status == conditionFalse && failure(ready) {
 		tried, err := w.applied(ctx, attempted)
 		if err != nil {
 			return d, err
@@ -488,10 +488,16 @@ func (w *Waiter) judgeNewValues(ctx context.Context, d Deployment, hr *unstructu
 	self := object{resource: helmReleases, kind: KindHelmRelease, namespace: hr.GetNamespace(), name: hr.GetName()}
 	ready := condition(hr, "Ready")
 	current := num(hr, "status", "observedGeneration") >= hr.GetGeneration()
+	if !current || condition(hr, "Reconciling").status == conditionTrue {
+		return d.set(StateProgressing, "waiting for helm-controller to settle with the values of %s (the HelmRelease: %s)", short(w.revision), orUnknown(ready)), nil
+	}
+	if ready.status == conditionFalse && helmReleaseFailures[ready.reason] && !ready.since.Before(changedAt) {
+		return d.set(StateFailed, "%s with the values of %s: %s", ready.reason, short(w.revision), ready.message), nil
+	}
 	requestedAt, requested := w.requested[self.String()]
 	handled := requested && str(hr, "status", "lastHandledReconcileAt") == requestedAt
 	if !last.at.Before(changedAt) || handled || tookNew {
-		if !current || ready.status != conditionTrue {
+		if ready.status != conditionTrue {
 			return d.set(StateProgressing, "upgraded with the values of %s, the HelmRelease not ready: %s", short(w.revision), orUnknown(ready)), nil
 		}
 		if _, remote, _ := unstructured.NestedMap(hr.Object, "spec", "kubeConfig"); remote {
@@ -499,9 +505,6 @@ func (w *Waiter) judgeNewValues(ctx context.Context, d Deployment, hr *unstructu
 			return d.set(StateRolledOut, ""), nil
 		}
 		return w.judgeWorkloads(ctx, d, last.namespace, last.release)
-	}
-	if ready.status == conditionFalse && helmReleaseFailures[ready.reason] && !ready.since.Before(changedAt) {
-		return d.set(StateFailed, "%s with the values of %s: %s", ready.reason, short(w.revision), ready.message), nil
 	}
 	// Only now does a reconcile request read the values of the revision.
 	d.self = &self
