@@ -1,7 +1,7 @@
 # The GitHub access token is past its expiry, its refresh token is not, and
 # the CircleCI token is valid: the commands refresh the GitHub token
 # themselves, so no human is needed. The status reports the GitHub identity
-# as expired and refreshable and exits 0 without contacting anything; the
+# as expired and refreshable and exits 0 after validating CircleCI; the
 # refresh exchange itself (`POST /login/oauth/access_token` with
 # `grant_type=refresh_token`) runs in the commands that require the token
 # and is scripted on the GitHub mock in their scenarios.
@@ -18,3 +18,7 @@ keyring:
     login: e2e-engineer
     token: CCIPAT_e2e_live
     expiresAt: "2099-01-01T00:00:00Z"
+circleci:
+  routes:
+    "GET /api/v2/me":
+      - body: {login: e2e-engineer}

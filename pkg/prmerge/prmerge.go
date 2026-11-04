@@ -12,7 +12,8 @@
 // whose team-file entry opts out of agent merges (exit 5, naming the
 // field). A reviewer's feedback newer than the head that nobody answered
 // refuses it too (exit 5), read before the wait and again right before
-// the merge. Green lands through the merge
+// the merge. A rebase merge carrying amend!, fixup! or squash! subjects is
+// not applicable (exit 3), even with --accept-red. Green lands through the merge
 // API as a squash or a rebase with the judged head as the expected head
 // (a merge commit where the repository allows only that),
 // then the branch goes through the refs API. A base with a merge queue is
@@ -226,6 +227,7 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 		return result, err
 	}
 	result.HeadSHA, result.BaseRef = pr.GetHead().GetSHA(), pr.GetBase().GetRef()
+	result.Draft = pr.GetDraft()
 	if m.idempotent && pr.GetMerged() {
 		return result, m.mergedAlready(ctx, owner, repo, number, pr, result)
 	}
@@ -241,6 +243,9 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 		return result, err
 	}
 	if err := m.resolveMethod(ctx, owner, repo, verdict, result); err != nil {
+		return result, err
+	}
+	if err := m.guardCommits(ctx, owner, repo, pr, result); err != nil {
 		return result, err
 	}
 	m.progress.Printf("refusals: none; %s by %s", pr.GetHead().GetSHA(), pr.GetUser().GetLogin())
@@ -290,9 +295,13 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 		if err != nil {
 			return result, microerror.Mask(err)
 		}
+		result.Draft = pr.GetDraft()
 		if err := notApplicable(pr); err != nil {
 			return result, err
 		}
+	}
+	if err := m.guardCommits(ctx, owner, repo, pr, result); err != nil {
+		return result, err
 	}
 	for _, w := range m.closingWarnings(ctx, owner, repo, pr.GetBody()) {
 		m.progress.Printf("warning: %s", w)
@@ -313,6 +322,8 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 		return result, err
 	}
 
+	m.mergedPastReview(result)
+
 	// Merged: the branch, the release, then the dispatch, which runs
 	// whatever the release's outcome and changes none of them.
 	err = m.deleteBranch(ctx, owner, repo, pr, result)
@@ -325,7 +336,7 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 
 // mergedAlready is the outcome of a pull request merged before the call:
 // the merge commit and its merger as GitHub records them, a warning saying
-// so, and the release wait on that commit, whose exits 6 and 9 stay the
+// so, and the release wait on that commit, whose exits 6, 9 and 14 stay the
 // merge's. Nothing is written: the branch, the dispatch and the merge were
 // the first merge's.
 func (m *Merger) mergedAlready(ctx context.Context, owner, repo string, number int, pr *github.PullRequest, result *Result) error {
