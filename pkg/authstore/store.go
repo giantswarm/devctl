@@ -227,6 +227,9 @@ func (s *FileStore) read() (map[string]Record, error) {
 	if err := json.Unmarshal(b, &records); err != nil {
 		return nil, fmt.Errorf("the keyring file %s is not devctl's: %w", s.Path, err)
 	}
+	if records == nil {
+		return nil, fmt.Errorf("the keyring file %s is not devctl's: expected a records object, got null", s.Path)
+	}
 	return records, nil
 }
 
