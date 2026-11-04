@@ -41,7 +41,7 @@ func TestLoginCircleCIFlows(t *testing.T) {
 				"POST /login/device/code": {{Body: map[string]any{
 					"device_code": "fixture-device", "user_code": "ABCD-1234", "verification_uri": deviceURL, "expires_in": 900, "interval": 1,
 				}}},
-				"POST /login/oauth/access_token": {{Body: map[string]any{
+				"POST /login/oauth/access_token": {{Body: map[string]any{ //nolint:gosec // G101: synthetic tokens issued only by the local OAuth mock
 					"access_token": "fixture-github-access", "refresh_token": "fixture-github-refresh", "expires_in": 28800, "refresh_token_expires_in": 15897600,
 				}}},
 				"GET /user": {{Body: map[string]any{"login": "github-engineer"}}},
