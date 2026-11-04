@@ -125,6 +125,12 @@ devctl gen workflows --flavour app --language generic --check-readme-links=false
 
 Creates common `Makefile` and includes in the root directory.
 
+The Go Makefile copies built binaries to a unique temporary file beside the destination, then renames it
+into place. Rebuilding while the previous binary is running succeeds, and the destination only exposes
+a complete binary. Copy or rename failures keep the previous binary and remove the temporary file.
+Versioned artifacts, executable permissions and timestamps are preserved. Consumers receive the updated
+Makefile through align after adopting a devctl release containing this template.
+
 For Go repositories, `make install` sets `CGO_ENABLED=0`, like the release build targets,
 and writes the binary to `$(go env GOPATH)/bin`. On Linux this keeps the statically linked
 binary from calling glibc's hostname resolver through cgo. Regenerate existing repositories'
