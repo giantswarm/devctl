@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -101,5 +102,23 @@ func TestUsage(t *testing.T) {
 	}
 	if doc, code := execute(t, r, "o", "12"); code != agentcli.ExitUsage || doc["verdict"] != "usage" {
 		t.Fatalf("exit %d: %v", code, doc)
+	}
+}
+
+// An outdated build must still finish through this command's JSON boundary,
+// before opening the login or calling CircleCI.
+func TestVersionGateFailureIsDocument(t *testing.T) {
+	r, cc := start(t, sequence.Routes{})
+	r.gate = func(bool) error { return errors.New("a newer devctl is required") }
+	r.requireCircleCI = func(context.Context) (authstore.Token, error) {
+		t.Fatal("a rejected version must not open the login")
+		return authstore.Token{}, nil
+	}
+	doc, code := execute(t, r, "o/r", "12")
+	if code != agentcli.ExitUsage || doc["verdict"] != "usage" || doc["reason"] != "a newer devctl is required" {
+		t.Fatalf("exit %d: %v", code, doc)
+	}
+	if len(cc.Requests()) != 0 {
+		t.Errorf("CircleCI was called: %v", cc.Requests())
 	}
 }

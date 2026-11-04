@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/ats"
 )
 
 // Test_writeChartTests pins when the scaffold gets the chart tests: after
@@ -42,6 +44,15 @@ func Test_writeChartTests(t *testing.T) {
 			wantConfig: ownConfig,
 			wantSmoke:  true,
 		},
+		"template carries main.yml: kept without shadowing": {
+			files:     map[string]string{atsDependenciesPath: pyproject, ".ats/main.yml": ownConfig},
+			wantSmoke: true,
+		},
+		"template deliberately skips all scenarios: kept": {
+			files:      map[string]string{atsDependenciesPath: pyproject, atsConfigPath: "skip-steps: [smoke, functional, upgrade]\n"},
+			wantConfig: "skip-steps: [smoke, functional, upgrade]\n",
+			wantSmoke:  true,
+		},
 		"template carries a test: no smoke": {
 			files:      map[string]string{atsDependenciesPath: pyproject, "tests/ats/test_basic.py": ownTest},
 			wantConfig: scaffoldATSConfig(t),
@@ -61,8 +72,18 @@ func Test_writeChartTests(t *testing.T) {
 				}
 			}
 
-			if err := writeChartTests(dir, name); err != nil {
+			hadConfig, err := ats.HasConfig(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := writeChartTests(dir, name, hadConfig); err != nil {
 				t.Fatalf("writeChartTests: %v", err)
+			}
+			if ownYML, ok := tc.files[".ats/main.yml"]; ok {
+				data, err := os.ReadFile(filepath.Join(dir, ".ats/main.yml")) // #nosec G304 -- fixed path under t.TempDir()
+				if err != nil || string(data) != ownYML {
+					t.Errorf("template main.yml changed: %q, %v", data, err)
+				}
 			}
 
 			config, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(atsConfigPath))) // #nosec G304 -- a fixed path under t.TempDir()
