@@ -45,6 +45,8 @@ type fixture struct {
 	timeout         time.Duration
 	catalog         bool
 	catalogLists    bool
+	catalogIndex    CatalogReader
+	ctx             context.Context
 	// catalogChart, when set, is the only chart the catalog index lists.
 	catalogChart string
 	// catalogName, when set, is the only catalog that lists it.
@@ -234,6 +236,9 @@ func run(t *testing.T, fx fixture) (Result, error) {
 	if fx.clock != nil {
 		config.Clock = *fx.clock
 	}
+	if fx.catalogIndex != nil {
+		config.CatalogIndex = fx.catalogIndex
+	}
 	if config.Timeout == 0 {
 		config.Timeout = 2 * time.Minute
 	}
@@ -245,7 +250,11 @@ func run(t *testing.T, fx fixture) (Result, error) {
 		t.Fatalf("New: %v", err)
 	}
 	var result Result
-	err = w.Wait(context.Background(), &result)
+	ctx := fx.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	err = w.Wait(ctx, &result)
 	if fx.circleci == nil && circleCalls != 0 {
 		t.Errorf("CircleCI was opened %d time(s) for a repository without CircleCI", circleCalls)
 	}

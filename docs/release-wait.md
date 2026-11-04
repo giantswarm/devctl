@@ -191,6 +191,17 @@ chart at the version; the index is fetched anew every time, so no cached copy an
 orb at 10.12.0 or later, or at a dev version: from 10.12.0 the orb pushes a pre-release tag's chart to
 `app_catalog_test`. An older pin still pushes it to the production catalog, which is then the one read.
 
+When Pages does not list a chart, the wait also checks the catalog repository's `index.yaml` on its
+default branch through GitHub's raw Contents API (which supports indexes larger than 1 MB). A chart
+found there is reported as `in repository index.yaml, Pages not yet serving`, in the heartbeat and in
+the timeout reason. Repository publication is progress; success still requires the Pages index.
+If every chart still missing from Pages has been confirmed in its repository before `--timeout`, the
+wait grants one additional **10 minutes** after that deadline. The bound is `--timeout + 10m`; later
+polls do not renew it. An earlier caller deadline or cancellation still ends the wait. A missing or
+unreadable repository entry grants no extension and is named in the timeout reason. A Pages 404 means
+not yet published; other Pages HTTP or parsing errors remain tooling failures. Registry availability,
+the tag pipeline and commit statuses retain their usual checks during the extension.
+
 ### The tag's CI
 
 Every poll reads the tag pipeline: the newest CircleCI pipeline whose `vcs.tag` is the tag, its
@@ -325,7 +336,7 @@ stderr.
 |---|---|---|
 | 0 | `available` | Every artifact resolves to a digest and every workflow of the tag pipeline finished green (and, with `--catalog`, the index lists every chart); or the release of a repository without image and chart is published with its workflows green. |
 | 1 | `ci_failed` | A workflow of the tag pipeline, or an Actions run of the tag, failed or was cancelled; with `--pr`, the merge commit's auto-release run failed before it tagged. `reason` and `pipeline.failedJobs` name the jobs. The release is incomplete until a rerun of the failed workflow succeeds or a fix lands as the next tag; artifacts that did resolve are listed `available`. |
-| 2 | `timeout` | The deadline passed. `reason` names what is missing: the tag, the pipeline, the artifacts by reference, and the pipeline's unfinished workflows (also when every artifact is already available). |
+| 2 | `timeout` | The deadline passed, including the single 10-minute Pages extension when repository publication was confirmed with `--catalog`. `reason` names what is missing: the tag, the pipeline, the artifacts by reference, the pipeline's unfinished workflows (also when every artifact is already available), or the charts Pages still lacks and their repository publication evidence. |
 | 3 | `not_applicable` | The pull request is not merged, or its auto-release run was cancelled before it tagged (superseded by a newer push), so `--pr` cannot resolve a version. |
 | 3 | `no_release` | No release follows the pull request's merge: the repository does not tag merge commits (the legacy release model, or no release workflow at all), or the merge commit's auto-release run finished without a tag and no later tag on the pull request's base branch carries it; the reason names the branch. |
 | 7 | `usage` | A bad argument or flag; a newer devctl released (the reason names `devctl version update`); no source says how the repository releases; the sources disagree about the CI model or the artifacts; a registry answer that is neither a digest nor "manifest unknown"; a tooling error, a GitHub or CircleCI read that failed eight tries in a row among them. |
