@@ -16,10 +16,16 @@ import (
 )
 
 type runner struct {
-	flag   *flag
-	logger micrologger.Logger
-	stdout io.Writer
-	stderr io.Writer
+	flag       *flag
+	logger     micrologger.Logger
+	stdout     io.Writer
+	stderr     io.Writer
+	newUpdater func(bool, io.Writer) (updateService, error)
+}
+
+type updateService interface {
+	GetLatestFromSource() (string, error)
+	InstallLatestWithResult() (updater.InstallResult, error)
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -39,7 +45,13 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
-	updaterService, err := versiongate.NewUpdater(r.flag.NoCache, r.stderr)
+	newUpdater := r.newUpdater
+	if newUpdater == nil {
+		newUpdater = func(noCache bool, warnings io.Writer) (updateService, error) {
+			return versiongate.NewUpdater(noCache, warnings)
+		}
+	}
+	updaterService, err := newUpdater(r.flag.NoCache, r.stderr)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -51,12 +63,16 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		fmt.Fprintf(r.stdout, "Fetching latest built binary...\n")
 
 		// Install the latest available version.
-		err = updaterService.InstallLatest()
+		result, err := updaterService.InstallLatestWithResult()
 		if err != nil {
 			return microerror.Mask(err)
 		}
 
-		_, _ = color.New(color.FgGreen).Fprintf(r.stdout, "Updated successfully.\n")
+		if !result.Installed {
+			fmt.Fprintf(r.stdout, "No newer version remains available; the installed binary is unchanged.\n")
+			return nil
+		}
+		_, _ = color.New(color.FgGreen).Fprintf(r.stdout, "Updated successfully to %s.\n", result.Version)
 
 		return nil
 	} else if updater.IsVersionNotFound(err) {

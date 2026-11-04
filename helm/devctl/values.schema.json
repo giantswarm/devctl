@@ -200,6 +200,16 @@
             "type": "string",
             "description": "Override the chart name."
         },
+        "networkPolicy": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Render a CiliumNetworkPolicy allowing DNS, GitHub, the registries and catalogs, and each installation's Dex token endpoint and API server from the server's installations file. Requires Cilium; egress only."
+                }
+            }
+        },
         "noProgressTimeout": {
             "type": "string",
             "description": "How long a wait called without a progressToken runs before it answers, a Go duration: below muster.mcpServer.timeout, as nothing keeps the call alive."
