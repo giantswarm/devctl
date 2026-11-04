@@ -85,6 +85,11 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		h.Set("ETag", etag)
 		if r.Header.Get("If-None-Match") == etag {
+			// sequence.Write normally copies the fixture's headers. A 304
+			// skips it, but still carries the fixture's current budget.
+			for key, values := range fixture {
+				h[key] = values
+			}
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}

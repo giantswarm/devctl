@@ -109,8 +109,9 @@ func (r *runner) run(ctx context.Context, arg string) error {
 
 // baseline is the company baseline with the flags applied: the features,
 // merge and pull-request settings, the team permissions (team names as
-// slugs), the default branch, --checks as the unconditional contexts and
-// --checks-filter as one more ignored pattern.
+// slugs), the default branch, --checks as the complete set of unconditional
+// contexts when supplied, and --checks-filter as one more ignored pattern
+// when checks are detected automatically.
 func (r *runner) baseline() reconcile.Baseline {
 	f := r.flag
 	b := reconcile.DefaultBaseline()
@@ -129,7 +130,12 @@ func (r *runner) baseline() reconcile.Baseline {
 		b.TeamPermissions[strings.ToLower(team)] = permission
 	}
 	b.RequiredChecks = f.Checks
-	if f.ChecksFilter != "" {
+	if f.Checks != nil {
+		// An explicit list replaces both the current and detected contexts.
+		// The non-nil empty slice from --checks= therefore requires none.
+		b.RequiredChecksIfReported = nil
+		b.IgnoredChecks = []string{".*"}
+	} else if f.ChecksFilter != "" {
 		b.IgnoredChecks = append(b.IgnoredChecks, f.ChecksFilter)
 	}
 	return b

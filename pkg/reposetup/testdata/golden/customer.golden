@@ -604,7 +604,7 @@ Please visit <https://www.giantswarm.io/responsible-disclosure> for information 
     // Base config - https://github.com/giantswarm/renovate-presets/blob/main/default.json5
     'github>giantswarm/renovate-presets:default.json5',
   ],
-  // Our own bots commit onto Renovate branches. The giantswarm-release
+  // Our automation commits onto Renovate branches. The giantswarm-release
   // GitHub App pushes what the generated workflows produce
   // (zz_generated.helm-docs-regen.yaml, the update-chart and
   // sync-from-upstream flows); taylorbot <dev@giantswarm.io> did so before
@@ -620,6 +620,8 @@ Please visit <https://www.giantswarm.io/responsible-disclosure> for information 
     '342014845+giantswarm-release[bot]@users.noreply.github.com',
     'dev@giantswarm.io',
     '329428426+giantswarm-marge[bot]@users.noreply.github.com',
+    // devctl pr merge --update-branch under the machine identity (teemow).
+    'teemow@gmail.com',
   ],
   packageRules: [
     {
