@@ -85,7 +85,8 @@ Exit codes:
      is green and every commit status of the tag's commit succeeded
   1  the tag's CI failed, or with --pr the auto-release run failed before
      it tagged; the document names the failed jobs
-  2  timeout; the document shows what is still missing or still running
+  2  timeout or SIGINT/SIGTERM; reason identifies an interrupted wait;
+     the document shows what is still missing or still running
   3  not applicable: the pull request is not merged; no release follows it
      (verdict no_release: the repository does not tag merge commits, or its
      auto-release run finished without a tag and no later tag on the base

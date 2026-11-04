@@ -90,6 +90,9 @@ type Pipeline struct {
 	// yet". Empty once every workflow has finished: what a timeout was
 	// still waiting for.
 	Unfinished []string `json:"unfinished"`
+	// AssetUploadJobs names the workflow/job entries that upload release
+	// assets, once the tag pipeline's jobs are visible.
+	AssetUploadJobs []string `json:"assetUploadJobs,omitempty"`
 }
 
 // PipelineWorkflow is one workflow of the tag pipeline.
@@ -135,6 +138,9 @@ type Result struct {
 	// Artifacts are the expected images and charts, or the release assets
 	// of a repository that ships neither.
 	Artifacts []Artifact `json:"artifacts"`
+	// ReleaseAssetCount is the asset count of the published GitHub release
+	// in a release-assets wait; absent until that release has been read.
+	ReleaseAssetCount *int `json:"releaseAssetCount,omitempty"`
 	// Pipeline is the tag pipeline, or the check runs of an Actions-only
 	// repository's tag; null for a repository without CircleCI and check runs.
 	Pipeline *Pipeline `json:"pipeline"`

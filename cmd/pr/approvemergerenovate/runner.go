@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/pr/internal/checks"
+	"github.com/giantswarm/devctl/v8/cmd/pr/internal/prcontext"
 	"github.com/giantswarm/devctl/v8/internal/pr"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
@@ -31,7 +32,15 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
 	}
@@ -39,6 +48,9 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	token, err := authstore.ResolveGitHub(ctx)
 	if err != nil {
 		return err
@@ -234,10 +246,6 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 	}()
 
-	// Setup signal handling for graceful shutdown (Ctrl+C)
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
 	// Update display periodically until all PRs are done (or forever in watch mode)
 	done := work.done
 
@@ -251,12 +259,14 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	for {
 		select {
-		case <-sigChan:
-			// User pressed Ctrl+C
+		case <-ctx.Done():
+			// End API calls and workers before the caller reuses its writers.
 			fmt.Fprintln(r.stdout, "\n\n⏹️  Interrupted by user")
 
 			// Stop polling
 			close(stopPolling)
+			<-pollingDone
+			wg.Wait()
 
 			// Final update
 			prStatusesMu.Lock()
@@ -269,7 +279,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			r.printSummary(prStatuses)
 			prStatusesMu.Unlock()
 
-			return nil
+			return ctx.Err()
 
 		case <-done:
 			// All current PRs processed (only happens in non-watch mode)
@@ -289,7 +299,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			r.printSummary(prStatuses)
 			prStatusesMu.Unlock()
 
-			return nil
+			return ctx.Err()
 
 		case <-ticker.C:
 			prStatusesMu.Lock()
@@ -387,8 +397,15 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 	retryDelay := 5 * time.Second
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
+		if ctx.Err() != nil {
+			ps.UpdateStatus("Cancelled")
+			return
+		}
 		if attempt > 0 {
-			time.Sleep(retryDelay)
+			if err := prcontext.Sleep(ctx, retryDelay); err != nil {
+				ps.UpdateStatus("Cancelled")
+				return
+			}
 		}
 
 		// Get PR details
@@ -488,7 +505,10 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 				if hasAutoMerge {
 					// Approve and let auto-merge/merge queue handle it
 					ps.UpdateStatus("Approved, checking merge status...")
-					time.Sleep(5 * time.Second)
+					if err := prcontext.Sleep(ctx, 5*time.Second); err != nil {
+						ps.UpdateStatus("Cancelled")
+						return
+					}
 
 					// Check once if it merged immediately
 					prCheck, _, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
