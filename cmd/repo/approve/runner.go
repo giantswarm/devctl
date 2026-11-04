@@ -58,13 +58,13 @@ func (r *runner) run(ctx context.Context, arg string) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	print(r.stdout, approval, r.flag.DryRun)
-	return nil
+	return microerror.Mask(print(r.stdout, approval, r.flag.DryRun))
 }
 
-func print(w io.Writer, a *manager.Approval, dryRun bool) {
+func print(w io.Writer, a *manager.Approval, dryRun bool) error {
+	var out strings.Builder
 	if dryRun {
-		fmt.Fprintln(w, "dry run: nothing written")
+		fmt.Fprintln(&out, "dry run: nothing written")
 	}
 	member := "not a member"
 	if a.Member {
@@ -81,24 +81,25 @@ func print(w io.Writer, a *manager.Approval, dryRun bool) {
 	if a.Author != "" {
 		line += "; opened by " + a.Author
 	}
-	fmt.Fprintln(w, line)
+	fmt.Fprintln(&out, line)
 	if a.Rerendered != nil {
-		fmt.Fprintf(w, "re-rendered on %s first: %s in %s\n", a.Rerendered.Base, strings.Join(a.Rerendered.Entries, ", "), strings.Join(a.Rerendered.Files, ", "))
+		fmt.Fprintf(&out, "re-rendered on %s first: %s in %s\n", a.Rerendered.Base, strings.Join(a.Rerendered.Entries, ", "), strings.Join(a.Rerendered.Files, ", "))
 	}
 	if a.RerenderError != "" {
-		fmt.Fprintf(w, "the pull request conflicts with its base and could not be re-rendered: %s\n", a.RerenderError)
+		fmt.Fprintf(&out, "the pull request conflicts with its base and could not be re-rendered: %s\n", a.RerenderError)
 	}
 	if a.ReviewURL != "" {
-		fmt.Fprintf(w, "review: %s\n", a.ReviewURL)
-	}
-	if a.Message != "" {
-		fmt.Fprintln(w, a.Message)
-		return
+		fmt.Fprintf(&out, "review: %s\n", a.ReviewURL)
 	}
 	switch {
+	case a.Message != "":
+		fmt.Fprintln(&out, a.Message)
 	case a.Merged:
-		fmt.Fprintln(w, "merged")
+		fmt.Fprintln(&out, "merged")
 	case a.AutoMerge:
-		fmt.Fprintln(w, "merges by itself once its checks pass (auto-merge)")
+		fmt.Fprintln(&out, "merges by itself once its checks pass (auto-merge)")
 	}
+
+	_, err := io.WriteString(w, out.String())
+	return err
 }
