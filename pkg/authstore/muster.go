@@ -334,6 +334,24 @@ func (a *Auth) RequireMuster(ctx context.Context) (Token, error) {
 	}
 	now := a.clock.Now()
 	if expired(record.ExpiresAt, now) {
+		unlock, err := a.store.Lock(UserMuster)
+		if err != nil {
+			return Token{}, err
+		}
+		defer unlock()
+		// A refresh token may rotate only once. Read again after waiting:
+		// another command may already have persisted the replacement pair.
+		record, err = a.store.Get(UserMuster)
+		if errors.Is(err, ErrNotFound) {
+			return Token{}, &AuthRequiredError{Identity: identityMuster, Cause: causeNoToken, Hint: hintLoginMuster}
+		}
+		if err != nil {
+			return Token{}, err
+		}
+		now = a.clock.Now()
+		if !expired(record.ExpiresAt, now) {
+			return musterToken(record), nil
+		}
 		if record.RefreshToken == "" || expired(record.RefreshExpiresAt, now) {
 			return Token{}, &AuthRequiredError{Identity: identityMuster, Cause: "the token expired and cannot be refreshed", Hint: hintLoginMuster}
 		}
@@ -342,7 +360,11 @@ func (a *Auth) RequireMuster(ctx context.Context) (Token, error) {
 			return Token{}, err
 		}
 	}
-	return Token{Value: record.Token, Login: record.Login, ExpiresAt: record.ExpiresAt, Endpoint: record.Endpoint}, nil
+	return musterToken(record), nil
+}
+
+func musterToken(record Record) Token {
+	return Token{Value: record.Token, Login: record.Login, ExpiresAt: record.ExpiresAt, Endpoint: record.Endpoint}
 }
 
 // withQuery adds values to a URL that may carry a query already.
