@@ -55,7 +55,7 @@ linters:
 				require.NoError(t, os.WriteFile(path, []byte(tc.existing), 0o600))
 			}
 			require.NoError(t, gen.Execute(t.Context(), NewInput(dir)))
-			content, err := os.ReadFile(path)
+			content, err := os.ReadFile(path) // #nosec G304 -- test fixture
 			require.NoError(t, err)
 			var config map[string]any
 			require.NoError(t, yaml.Unmarshal(content, &config))
@@ -68,7 +68,7 @@ linters:
 			}
 
 			require.NoError(t, gen.Execute(t.Context(), NewInput(dir)))
-			again, err := os.ReadFile(path)
+			again, err := os.ReadFile(path) // #nosec G304 -- test fixture
 			require.NoError(t, err)
 			require.Equal(t, string(content), string(again))
 		})
