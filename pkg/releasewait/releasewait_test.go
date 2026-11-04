@@ -1075,9 +1075,8 @@ func TestNamedChart(t *testing.T) {
 	assertExit(t, err, agentcli.ExitUsage, "--chart \"giantswarm/kagent/helm/kagent:1.2.3\": name the chart without a tag or digest")
 }
 
-// --image on a generated pipeline: the artifacts are derived from the
-// entry as before, and a warning says the named image is not probed.
-func TestWaitImageOnGeneratedCIWarns(t *testing.T) {
+// --image on a generated pipeline adds to the entry's artifacts.
+func TestWaitImageOnGeneratedCIIsProbed(t *testing.T) {
 	var warnings []string
 	fx := fixture{
 		entry:  generatedEntry(t),
@@ -1089,16 +1088,17 @@ func TestWaitImageOnGeneratedCIWarns(t *testing.T) {
 		registry: sequence.Routes{
 			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
 			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+			"HEAD /v2/giantswarm/other/manifests/v1.2.3":            {{Status: 200}},
 		},
 		images: []string{"giantswarm/other"},
 		warn:   func(w string) { warnings = append(warnings, w) },
 	}
 	result, err := run(t, fx)
 	assertExit(t, err, agentcli.ExitOK, "")
-	if len(result.Artifacts) != 2 {
-		t.Errorf("artifacts: want the entry's two, got %+v", result.Artifacts)
+	if len(result.Artifacts) != 3 || !strings.HasSuffix(result.Artifacts[2].Reference, "/giantswarm/other:v1.2.3") || result.Artifacts[2].State != StateAvailable {
+		t.Errorf("artifacts: want the entry's two and the named image, got %+v", result.Artifacts)
 	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "giantswarm/other is not probed") {
+	if len(warnings) != 0 {
 		t.Errorf("warnings: %q", warnings)
 	}
 }

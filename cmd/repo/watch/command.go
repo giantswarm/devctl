@@ -42,6 +42,8 @@ after its own timeout; the command calls again until the repository is ready,
 a phase fails, or --timeout runs out. The exit is 0 when ready, otherwise an
 error naming the phase.
 
+The watch ignores SIGHUP and reads no stdin, so it outlives its terminal.
+
 Examples:
   devctl repo watch my-service --pull-request 4711
   devctl repo watch giantswarm/my-service --pull-request 4711 --timeout 20m --output json`
