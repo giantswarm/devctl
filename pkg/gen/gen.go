@@ -5,7 +5,6 @@ import (
 	"context"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -42,7 +41,7 @@ func execute(ctx context.Context, file input.Input) error {
 	// itself is a directory. Error if it is.
 	var fileExists bool
 	{
-		dir := path.Dir(file.Path)
+		dir := filepath.Dir(file.Path)
 		err := os.MkdirAll(dir, 0750)
 		if err != nil {
 			return microerror.Mask(err)
