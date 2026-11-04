@@ -189,8 +189,8 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 	b := s.baseline
 	branch := s.branch()
 
-	protection, err := r.classicProtection(ctx, s, branch)
-	if err != nil {
+	protection, known, err := r.classicProtection(ctx, s, sr, branch)
+	if err != nil || !known {
 		return err
 	}
 
@@ -291,8 +291,8 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 	b := s.baseline
 	branch := s.branch()
 
-	classic, err := r.classicProtection(ctx, s, branch)
-	if err != nil {
+	classic, known, err := r.classicProtection(ctx, s, sr, branch)
+	if err != nil || (!known && have == nil) {
 		return err
 	}
 
@@ -566,16 +566,27 @@ func (r *Runner) writeRulesetTeamRefused(ctx context.Context, s *run, sr *StepRe
 }
 
 // classicProtection reads the classic branch protection of branch, nil when
-// the branch has none.
-func (r *Runner) classicProtection(ctx context.Context, s *run, branch string) (*github.Protection, error) {
+// the branch has none. In check mode a forbidden read is reported unchecked
+// and known is false, so an unreadable protection is never taken for absent.
+// Repair mode requires the read to succeed before planning any migration.
+func (r *Runner) classicProtection(ctx context.Context, s *run, sr *StepResult, branch string) (protection *github.Protection, known bool, err error) {
 	protection, resp, err := r.GitHub.Repositories.GetBranchProtection(ctx, s.owner, s.name, branch)
 	switch {
 	case errors.Is(err, github.ErrBranchNotProtected) || isNotFound(resp, err):
-		return nil, nil
+		return nil, true, nil
+	case s.req.Mode == ModeCheck && isForbidden(err):
+		sr.Findings = append(sr.Findings, Finding{
+			Kind:     FindingUnchecked,
+			Message:  fmt.Sprintf("cannot read classic protection with this token on %s; classic protection check skipped", branch),
+			Fix:      "run with a token that has administration: read permission to check classic protection and any pending migration to rulesets",
+			Advisory: true,
+		})
+		sr.Summary = "classic protection check skipped"
+		return nil, false, nil
 	case err != nil:
-		return nil, err
+		return nil, false, err
 	}
-	return protection, nil
+	return protection, true, nil
 }
 
 // engineRulesets are the engine's rulesets of a repository, read in full,

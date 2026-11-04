@@ -12,6 +12,9 @@ that says what happened. It is the last step after [`devctl pr merge`](pr-merge.
 installation's management cluster has to pick it up, deploy it and roll its workloads out. An agent
 runs this one command instead of polling `kubectl get helmrelease` in a loop.
 
+The wait ignores SIGHUP and reads no stdin, so it outlives its terminal and finishes with its JSON
+document and exit code. See the [shared CLI contract](auth.md#exit-codes-and-the-json-envelope).
+
 ```nohighlight
 devctl rollout wait myinstallation giantswarm/app-operator v7.5.4
 devctl rollout wait myinstallation giantswarm/app-operator --pr 1234 --reconcile --progress
@@ -41,7 +44,7 @@ follows stable releases (`semver: ">=0.0.0"`) never deploys the candidate, so `-
 the lowest published stable release above the candidate whose tag contains the merge commit (GitHub's
 comparison) is waited for, `release.tag` names it and `release.candidate` the candidate it was promoted
 from. Before the promote the candidate is waited for, with `release.promotePending` true; when nothing on
-the installation follows a pre-release the command ends with exit 3 and a reason that names the candidate
+the installation follows a pre-release the command ends with exit 3 after `--timeout`, naming the candidate
 and the pending promote. Run it again after the promote.
 
 ### A pull request that releases nothing: a configuration change
@@ -131,8 +134,13 @@ A deployment whose source does not admit the version is reported with the state 
 warning, and the wait goes on for the others: an OCIRepository pinned to another tag or to a digest,
 a semver range (the OCIRepository's `spec.ref.semver`, the HelmChart's or `spec.chart.spec.version`)
 that excludes it, an App whose `spec.version` is older (a workload cluster's App pinned to an older
-release). A suspended HelmRelease is `suspended`, likewise. When no deployment follows the version,
-the wait is exit 3.
+release). A suspended HelmRelease is `suspended`, likewise. When no deployment follows the version
+yet, the wait keeps polling until `--timeout`: Flux may still need to apply the merged GitOps change
+to the version selector, including through a Kustomization's dependency chain. Once a deployment
+follows, its rollout uses what remains of that same timeout. If no deployment follows by the
+deadline, the wait is exit 3 with the last poll's `not_following` messages. A version wait has no
+GitOps merge revision to compare, so even a selector that never changes gets this grace period. An
+installation whose matching HelmReleases are all suspended is still exit 3 at once.
 
 ### When a rollout failed
 
@@ -171,8 +179,8 @@ shown as progress) and:
 |---|---|---|
 | 0 | `rolled_out` | Every deployment of the charts that follows the version runs it or a newer one, ready and rolled out; for a configuration change, everything above applied the merge commit. |
 | 1 | `rollout_failed`, `ci_failed` | The rollout failed (the reason names the deployment and its condition), or the release's CI did. |
-| 2 | `timeout` | `--release-timeout` or `--timeout` passed; `deployments[].message` says what is missing. |
-| 3 | `not_applicable`, `no_release`, `rollout_unknown` | No release follows the pull request and nothing on the installation fetches its repository, nothing reads the GitRepository that does, the release ships no chart, nothing on the installation deploys its charts, no deployment follows the version, or no HelmRelease answers to a `--helmrelease` name; `rollout_unknown`: a configuration change is applied and no HelmRelease or App takes the values of an app it changed, so whether it runs cannot be told. |
+| 2 | `timeout` | `--release-timeout` passed, or `--timeout` passed while a deployment following the version or a configuration change was still progressing; `deployments[].message` says what is missing. |
+| 3 | `not_applicable`, `no_release`, `rollout_unknown` | No release follows the pull request and nothing on the installation fetches its repository, nothing reads the GitRepository that does, the release ships no chart, nothing on the installation deploys its charts, no deployment follows the version by `--timeout` (all suspended: at once), or no HelmRelease answers to a `--helmrelease` name; `rollout_unknown`: a configuration change is applied and no HelmRelease or App takes the values of an app it changed, so whether it runs cannot be told. |
 | 7 | `usage` | A bad argument, a kube context that does not exist and `tsh` could not log in to, a `--kubeconfig` that cannot be read, a request the cluster refused. |
 | 8 | `auth_required` | No GitHub token (`devctl auth login`), the kube context is not signed in (`tsh kube login <installation>`), or it is missing and `tsh` is not logged in (`tsh login`). |
 | 11 | `ambiguous_release` | With `--pr`, the release's commit carries the release tags of more than one version, as in [`release wait`](release-wait.md#exit-codes); `release.conflictingTags` names them, and the wait given the version follows it. |

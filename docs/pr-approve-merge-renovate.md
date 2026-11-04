@@ -65,10 +65,12 @@ devctl pr approve-merge-renovate "architect v1.2.3"
 
 5. **For Each PR**:
    - Checks if already merged (skip if yes)
-   - Verifies status checks are passing (reports "Failed checks" if failing)
+   - Reads every page of commit statuses and check runs; both sources must be readable
+   - Verifies both sources are passing (reports "Failed checks" if failing); a green status cannot hide a failed or pending check run
    - **Polls and waits** if checks are pending (retries up to 60 times over 5 minutes)
    - Checks if auto-merge is enabled after checks pass
-   - Approves the PR when checks pass (if not already approved)
+   - Approves the checked commit when checks pass (if not already approved)
+   - Direct merges require that same head; a concurrent push is refused so its checks can be judged on a new run
    - **If auto-merge enabled**: Waits up to 1 minute for auto-merge to complete
    - **If no auto-merge**: Determines merge method from repository settings and merges directly
 
