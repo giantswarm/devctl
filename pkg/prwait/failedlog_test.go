@@ -3,12 +3,15 @@ package prwait
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
@@ -151,7 +154,7 @@ func Test_Wait_failedLogUnreadableKeepsTheVerdict(t *testing.T) {
 }
 
 func Test_Wait_failedLogReadsNothingUnlessRed(t *testing.T) {
-	for name, enabled := range map[string]int{"green with --failed-log": 50, "red without": 0} {
+	for name, enabled := range map[string]int{"green with --failed-log": 50, "green with full log": FullFailedLogLines, "red without": 0} {
 		t.Run(name, func(t *testing.T) {
 			gh := gitHubGreen()
 			if enabled == 0 {
@@ -179,23 +182,26 @@ func Test_tailLines(t *testing.T) {
 		until string
 		want  string
 	}{
-		"fewer lines than n":     {in: "a\nb\n", n: 5, want: "a\nb"},
-		"exactly n":              {in: "a\nb\nc", n: 3, want: "a\nb\nc"},
-		"more lines than n":      {in: "a\nb\nc\nd\ne\n", n: 2, want: "d\ne"},
-		"empty":                  {in: "", n: 3, want: ""},
-		"escapes and CRs gone":   {in: "\x1b[1;32mok\x1b[0m\r\n", n: 1, want: "ok"},
-		"OSC 52 gone whole":      {in: "a\x1b]52;c;ZWNobyBwd25lZA==\x07b\n", n: 1, want: "ab"},
-		"OSC 8 keeps its text":   {in: "\x1b]8;;https://evil.example\x1b\\docs\x1b]8;;\x1b\\\n", n: 1, want: "docs"},
-		"DCS gone whole":         {in: "a\x1bP1$r0m\x1b\\b\n", n: 1, want: "ab"},
-		"unterminated OSC":       {in: "a\x1b]0;title\nb\n", n: 2, want: "a\nb"},
-		"bare ESC":               {in: "a\x1bb\x1b\n", n: 1, want: "a"},
-		"charset designation":    {in: "a\x1b(Bb\n", n: 1, want: "ab"},
-		"C0 controls":            {in: "a\x07\x08\x00b\rc\x7f\n", n: 1, want: "abc"},
-		"C1 controls":            {in: "a\u009b31mb\u009d0;t\u009cc\u0090q\u009cd\u0085e\n", n: 1, want: "abcde"},
-		"bidi controls":          {in: "a\u202eb\u2066c\u2069\u200fd\n", n: 1, want: "abcd"},
-		"tab and UTF-8 survive":  {in: "ok\tgrüße ✓ 日本 🐝 👩\u200d💻\n", n: 1, want: "ok\tgrüße ✓ 日本 🐝 👩\u200d💻"},
-		"ends at the last until": {in: "a\n##[error]x\nb\n##[error]exit 1\ncleanup\n", n: 2, until: "##[error]", want: "##[error]x\nb\n##[error]exit 1"},
-		"until absent":           {in: "a\nb\nc\n", n: 2, until: "##[error]", want: "b\nc"},
+		"fewer lines than n":        {in: "a\nb\n", n: 5, want: "a\nb"},
+		"exactly n":                 {in: "a\nb\nc", n: 3, want: "a\nb\nc"},
+		"more lines than n":         {in: "a\nb\nc\nd\ne\n", n: 2, want: "d\ne"},
+		"empty":                     {in: "", n: 3, want: ""},
+		"escapes and CRs gone":      {in: "\x1b[1;32mok\x1b[0m\r\n", n: 1, want: "ok"},
+		"OSC 52 gone whole":         {in: "a\x1b]52;c;ZWNobyBwd25lZA==\x07b\n", n: 1, want: "ab"},
+		"OSC 8 keeps its text":      {in: "\x1b]8;;https://evil.example\x1b\\docs\x1b]8;;\x1b\\\n", n: 1, want: "docs"},
+		"DCS gone whole":            {in: "a\x1bP1$r0m\x1b\\b\n", n: 1, want: "ab"},
+		"unterminated OSC":          {in: "a\x1b]0;title\nb\n", n: 2, want: "a\nb"},
+		"bare ESC":                  {in: "a\x1bb\x1b\n", n: 1, want: "a"},
+		"charset designation":       {in: "a\x1b(Bb\n", n: 1, want: "ab"},
+		"C0 controls":               {in: "a\x07\x08\x00b\rc\x7f\n", n: 1, want: "abc"},
+		"C1 controls":               {in: "a\u009b31mb\u009d0;t\u009cc\u0090q\u009cd\u0085e\n", n: 1, want: "abcde"},
+		"bidi controls":             {in: "a\u202eb\u2066c\u2069\u200fd\n", n: 1, want: "abcd"},
+		"tab and UTF-8 survive":     {in: "ok\tgrüße ✓ 日本 🐝 👩\u200d💻\n", n: 1, want: "ok\tgrüße ✓ 日本 🐝 👩\u200d💻"},
+		"ends at the last until":    {in: "a\n##[error]x\nb\n##[error]exit 1\ncleanup\n", n: 2, until: "##[error]", want: "##[error]x\nb\n##[error]exit 1"},
+		"until absent":              {in: "a\nb\nc\n", n: 2, until: "##[error]", want: "b\nc"},
+		"full log includes cleanup": {in: "setup\n##[error]failed\ncleanup\n", n: FullFailedLogLines, until: "##[error]", want: "setup\n##[error]failed\ncleanup"},
+		"full log strips controls":  {in: "\x1b[31ma\x1b[0m\r\n\n\tb\u202ec", n: FullFailedLogLines, want: "a\n\n\tbc"},
+		"full empty log":            {in: "", n: FullFailedLogLines, want: ""},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -205,6 +211,24 @@ func Test_tailLines(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func Test_tailLines_readError(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		lines int
+	}{
+		{name: "case 0: tail", lines: 2},
+		{name: "case 1: full", lines: FullFailedLogLines},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reader := io.MultiReader(strings.NewReader("setup\npartial log"), iotest.ErrReader(io.ErrUnexpectedEOF))
+			got, err := tailLines(reader, tc.lines, actionsError)
+			if got != "" || !errors.Is(err, io.ErrUnexpectedEOF) {
+				t.Errorf("got %q, %v; want no log and the read error", got, err)
 			}
 		})
 	}
@@ -330,8 +354,11 @@ func Test_FailedLog_TailLines(t *testing.T) {
 	if n, err := (FailedLog{Enabled: true, Lines: 20}).TailLines(); n != 20 || err != nil {
 		t.Errorf("got %d %v, want 20", n, err)
 	}
-	if _, err := (FailedLog{Enabled: true}).TailLines(); err == nil {
-		t.Error("want an error for --failed-log-lines 0")
+	if n, err := (FailedLog{Enabled: true}).TailLines(); n != FullFailedLogLines || err != nil {
+		t.Errorf("full log: got %d %v, want -1", n, err)
+	}
+	if _, err := (FailedLog{Enabled: true, Lines: -1}).TailLines(); err == nil {
+		t.Error("want an error for negative --failed-log-lines")
 	}
 }
 
