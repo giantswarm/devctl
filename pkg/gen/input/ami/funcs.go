@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"strings"
 
@@ -31,12 +30,8 @@ func getAMIInfoString(config Config) (string, error) {
 	{
 		url := fmt.Sprintf("https://%s.release.%s/%s/", config.Channel, config.PrimaryDomain, config.Arch)
 		fmt.Println("getting list of releases from", url)
-		response, err := http.Get(url) //nolint:gosec
-		if err != nil {
-			return "", microerror.Mask(err)
-		}
-
-		versions, err = scrapeVersions(response.Body)
+		var err error
+		versions, err = fetchReleaseVersions(url)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
@@ -56,16 +51,12 @@ func getAMIInfoString(config Config) (string, error) {
 
 		url := fmt.Sprintf("https://%s.release.%s/%s/%s/flatcar_production_ami_all.json", config.Channel, config.PrimaryDomain, config.Arch, version)
 		fmt.Println("scraping release", version)
-		response, err := http.Get(url) //nolint:gosec
+		versionAMI, err := fetchReleaseAMI(url)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
-		if response.StatusCode == 403 {
+		if versionAMI == nil {
 			continue // not found, keep going
-		}
-		versionAMI, err := scrapeVersionAMI(response.Body)
-		if err != nil {
-			return "", microerror.Mask(err)
 		}
 
 		chinaVersionAMI, err := getChinaFlatcarRelease(config, version)
