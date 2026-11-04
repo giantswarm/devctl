@@ -314,6 +314,11 @@ Every agent-facing command prints one JSON document on stdout when it finishes a
 `--progress` writes one line per step to stderr. The envelope is `command`, `schemaVersion`,
 `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt`, then the command's fields.
 
+The CLI waits (`pr wait`, `release wait`, `rollout wait` and `pr merge`) ignore SIGHUP and read
+nothing from stdin, so they outlive a closed terminal, SSH session or harness and finish with their
+document and exit code. `repo watch` also ignores SIGHUP and reads no stdin; `--output json` prints
+its final repository document. This is the CLI's behavior; `devctl serve` keeps its server signal handling.
+
 | Code | Verdict | Meaning |
 |---|---|---|
 | 0 | `green`, `available` | ok |

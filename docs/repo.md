@@ -190,6 +190,10 @@ and nothing runs locally in its place.
 | `repo approve <pull-request>` | `approve_change` | the approving review as you after the team check, and the merge (or the auto-merge); what the Slack ask's button does |
 | `repo align <repo> [--team T]` | `align_repository` | Align now in the mode the entry decides: `align` (the reconciler dispatched), `opt-in` (the pull request that sets `align: true`), `check` (an undeclared repository checked from the team); `--dry-run` shows the plan first |
 
+`repo watch` ignores SIGHUP and reads no stdin, so it outlives a closed terminal, SSH session or
+harness. It finishes with the same outcome as in the foreground; `--output json` prints the final
+repository document.
+
 `--reason` on the writes goes into the pull request body and the ask. The dry run of a write prints the
 entry before and after, the pull request (title, branch, files, who opens it) and the ask and notice with
 the channel they reach or why they cannot; a commit prints the pull request's URL, whether the ask was

@@ -11,6 +11,9 @@ artifacts come from the CircleCI pipeline the **tag** triggers, minutes later, u
 repository's CI decides. Nothing here is guessed from the repository name, `helm search` or the merge
 commit's Actions run.
 
+The wait ignores SIGHUP and reads no stdin, so it outlives its terminal and finishes with its JSON
+document and exit code. See the [shared CLI contract](auth.md#exit-codes-and-the-json-envelope).
+
 ```nohighlight
 devctl release wait giantswarm/devctl v8.9.0
 devctl release wait giantswarm/devctl --pr 2289 --timeout 20m --progress

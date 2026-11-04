@@ -12,6 +12,9 @@ that says what happened. It is the last step after [`devctl pr merge`](pr-merge.
 installation's management cluster has to pick it up, deploy it and roll its workloads out. An agent
 runs this one command instead of polling `kubectl get helmrelease` in a loop.
 
+The wait ignores SIGHUP and reads no stdin, so it outlives its terminal and finishes with its JSON
+document and exit code. See the [shared CLI contract](auth.md#exit-codes-and-the-json-envelope).
+
 ```nohighlight
 devctl rollout wait myinstallation giantswarm/app-operator v7.5.4
 devctl rollout wait myinstallation giantswarm/app-operator --pr 1234 --reconcile --progress
