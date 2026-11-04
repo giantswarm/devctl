@@ -107,6 +107,11 @@ generated before the field was set, is the finding `renovate-declared-off`: the 
 it or sets `enabled: false` in it. Without the field, or with `true`, the repository gets its generated configuration
 and the step checks that Renovate scans it.
 
+For a GitHub fork, the Renovate step first checks that `renovate.json` itself enables fork processing. Otherwise it
+reports `renovate-not-scanned`, names Renovate's fork check and directs the team to `devctl gen renovate --flavour fork`.
+A configuration with `enabled: false` stays disabled. The step selects the first configuration in Renovate's order:
+`renovate.json`, `renovate.jsonc`, `renovate.json5`, then the `.github/` equivalents and `.renovaterc` variants.
+
 The template is derived, not chosen: `language: go` gives `giantswarm/template`; the `plans` flavour
 with `language: generic` gives `giantswarm/template-plans` and refuses any other language, the same
 way `language: node` is refused until its template ships; `language: generic` with the `app` flavour
