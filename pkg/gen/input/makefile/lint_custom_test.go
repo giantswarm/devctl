@@ -119,7 +119,7 @@ func TestGoLintCustomHook(t *testing.T) {
 				if (err != nil) != tc.wantError {
 					t.Fatalf("make lint error = %v, want error %t\n%s", err, tc.wantError, out)
 				}
-				got, err := os.ReadFile(filepath.Join(dir, "calls"))
+				got, err := os.ReadFile(filepath.Join(dir, "calls")) // #nosec G304 -- test fixture
 				if err != nil {
 					t.Fatal(err)
 				}

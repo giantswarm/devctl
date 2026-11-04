@@ -5,6 +5,7 @@
 package write
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"time"
@@ -54,18 +55,20 @@ func Run(ctx context.Context, session *client.Session, w io.Writer, f *Flags, to
 	if f.JSON() {
 		return microerror.Mask(client.PrintJSON(w, payload))
 	}
+	var text bytes.Buffer
 	if f.DryRun {
 		plan, err := client.Decode[manager.Plan](tool, payload)
 		if err != nil {
 			return microerror.Mask(err)
 		}
-		client.PrintPlan(w, plan)
-		return nil
+		client.PrintPlan(&text, plan)
+	} else {
+		committed, err := client.Decode[manager.Committed](tool, payload)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		client.PrintCommitted(&text, committed)
 	}
-	committed, err := client.Decode[manager.Committed](tool, payload)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	client.PrintCommitted(w, committed)
-	return nil
+	_, err = text.WriteTo(w)
+	return microerror.Mask(err)
 }
