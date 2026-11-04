@@ -99,11 +99,12 @@ func (r *runner) run(ctx context.Context, arg string) error {
 		mode = reconcile.ModeRepair
 	}
 	engineRunner := reconcile.Runner{
-		GitHub:             gh,
-		Checks:             client,
-		WriteClassicChecks: (classicChecksWriter{github: gh}).Write,
-		Baseline:           &baseline,
-		Log:                engine.LogWriter(r.logger),
+		GitHub:               gh,
+		Checks:               client,
+		WriteClassicChecks:   (classicChecksWriter{github: gh}).Write,
+		PreserveCheckSources: true,
+		Baseline:             &baseline,
+		Log:                  engine.LogWriter(r.logger),
 	}
 	res, err := engineRunner.Run(ctx, reconcile.Request{
 		Owner:    owner,
