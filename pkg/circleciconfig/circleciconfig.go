@@ -202,6 +202,10 @@ func (j *Jobs) add(names map[string]bool, config map[string]any, run Run) {
 				j.Warnings = append(j.Warnings, fmt.Sprintf("workflow %s runs %s as a matrix: its jobs count once they post a status", key, name))
 				continue
 			}
+			if _, expression := params["filters"].(string); expression {
+				j.Warnings = append(j.Warnings, fmt.Sprintf("workflow %s filters %s with an expression devctl cannot evaluate: its jobs count once they post a status", key, name))
+				continue
+			}
 			if !filtered(params["filters"], run) {
 				continue
 			}
@@ -344,9 +348,15 @@ func matches(patterns any, value string) bool {
 // pipeline knows.
 func condition(workflow, config map[string]any, run Run) (runs, known bool) {
 	if when, ok := workflow["when"]; ok {
+		if isExpression(when) {
+			return false, false
+		}
 		return evaluate(when, config, run)
 	}
 	if unless, ok := workflow["unless"]; ok {
+		if isExpression(unless) {
+			return false, false
+		}
 		v, known := evaluate(unless, config, run)
 		return !v, known
 	}
@@ -355,6 +365,16 @@ func condition(workflow, config map[string]any, run Run) (runs, known bool) {
 
 // pipelineValue matches a << pipeline.… >> value as a whole.
 var pipelineValue = regexp.MustCompile(`^<<\s*pipeline\.([A-Za-z0-9_.-]+)\s*>>$`)
+
+// Direct expressions are distinct from legacy logic statements and their
+// literal strings. Do not turn their source text into a truthy value. Unknown
+// expressions use the same warning fallback as unknown pipeline values.
+var expressionSyntax = regexp.MustCompile(`\bpipeline\.|==|!=|>=|<=|[<>]|\b(?:and|or|not|starts-with|matches)\b`)
+
+func isExpression(v any) bool {
+	s, ok := v.(string)
+	return ok && !pipelineValue.MatchString(strings.TrimSpace(s)) && expressionSyntax.MatchString(s)
+}
 
 // value is what a logic statement's operand is for a pipeline the push of
 // run triggers.
