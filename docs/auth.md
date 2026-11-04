@@ -51,7 +51,10 @@ more act with another token:
 
 - `pr wait`, `pr merge` and `release wait` take their GitHub token from the keychain and from nowhere
   else: no environment variable, no `gh auth token`, no file. They exit 8 naming `devctl auth login`
-  before they wait for anything, since they need the CircleCI token too.
+  when a required login is missing. `pr wait` and `pr merge` with `--circleci-from-statuses` judge
+  CircleCI jobs from their configuration and GitHub statuses, as `devctl serve` does, without a CircleCI
+  token. `--failed-log` takes precedence and uses the CircleCI API for job logs; `pr rerun` also still
+  needs the CircleCI login.
 - `repo setup` and its subcommands `ciwebhooks` and `renovate`, and `repo checks` need
   Administration write, which the App does not carry: they act with your own token, as the table says,
   and print no override warning.
@@ -235,7 +238,10 @@ completed. A refused or timed-out authorization is exit 7 with the reason in the
 devctl auth status
 ```
 
-Reads the records, contacts nothing and prints:
+Reads the records and validates an unexpired CircleCI token with one authenticated
+[`GET /me`](https://circleci.com/docs/api/v2/index.html#operation/getCurrentUser).
+Missing, empty or expired CircleCI tokens make no request. GitHub and muster are
+described from the stored metadata; no token is refreshed or changed. Prints:
 
 ```json
 {
@@ -268,11 +274,18 @@ Reads the records, contacts nothing and prints:
 ```
 
 A GitHub token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` adds the override warning to
-`warnings` and `github.warnings`, never the token and never with `CI` set; the exit code stays the keychain's.
+`warnings` and `github.warnings`, never the token and never with `CI` set; the warning does not change the exit code.
 
 Exit 0 when the GitHub and CircleCI identities are usable without a human (valid, or expired with
 a valid refresh token); exit 8 with the `devctl auth login` invocation that fixes it when one is
-missing or expired for good. An agent runs `devctl auth status || devctl auth login`. The `muster`
+missing, empty, expired for good or rejected. HTTP 401 or 403 from CircleCI adds
+`"invalid": true` and `"httpStatus": 401` (or 403) under `circleci`, preserves its
+stored expiry, and names `devctl auth login --circleci-only` in the reason when
+GitHub is usable. A successful validation reports CircleCI's current login.
+Service errors (including rate limiting), network failures and malformed responses
+are exit 7: validation could not be completed, rather than proof of invalid credentials.
+Failed HTTP responses include `circleci.httpStatus`; their bodies are never printed.
+The `muster`
 identity is the third block of the document, with its `endpoint`, and is reported, not required:
 only the `repo` commands need it, and they exit 8 naming `devctl auth login --muster-only`
 themselves.
@@ -289,7 +302,9 @@ to print once, empty for the App login and in CI; the error is `ErrAuthRequired`
 `authstore.RequireGitHub(ctx)` returns the App login, refreshed when needed, or `ErrAuthRequired`;
 `authstore.RequireCircleCI(ctx)` returns the token or `ErrAuthRequired`, with the seven-day warning
 on the token for the envelope. A CircleCI token is required only when the repository has a CircleCI
-project. `authstore.RequireMuster(ctx)` returns the muster token, refreshed when needed, with the
+project and the command reads its API; `pr wait` and `pr merge` with `--circleci-from-statuses`
+(without `--failed-log`) read neither that token nor the CircleCI API.
+`authstore.RequireMuster(ctx)` returns the muster token, refreshed when needed, with the
 endpoint it is for, or `ErrAuthRequired` naming `--muster-only`. The errors carry exit code 8 and
 the verdict `auth_required` through `agentcli.ExitCoder`, so a command returns them unchanged.
 
