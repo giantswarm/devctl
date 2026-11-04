@@ -36,8 +36,10 @@ func TestProcessPRBindsWritesToCheckedHead(t *testing.T) {
 					case "GET /repos/o/r/pulls/7/reviews":
 						body = []any{}
 						if approved {
-							body = []any{map[string]any{"state": "APPROVED"}}
+							body = []any{map[string]any{"state": "APPROVED", "user": map[string]any{"login": "reviewer"}}}
 						}
+					case "GET /user":
+						body = map[string]any{"login": "reviewer"}
 					case "POST /repos/o/r/pulls/7/reviews":
 						reviews++
 						var review map[string]any
