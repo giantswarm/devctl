@@ -1,7 +1,6 @@
 package status
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -39,8 +38,8 @@ type output struct {
 	// Align is the repository's opt-in to alignment as its entry declares
 	// it; nil when the record carries no entry.
 	Align *bool
-	// DefaultBranch is the entry's default branch, the baseline's when it
-	// declares none, the repository's own on GitHub when the entry keeps it;
+	// DefaultBranch is the repository's own on GitHub when the entry keeps
+	// it, otherwise the entry's default branch or the baseline's;
 	// Flavours the entry's gen.flavours.
 	DefaultBranch string
 	Flavours      []string
@@ -54,7 +53,7 @@ type output struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
@@ -128,7 +127,7 @@ func fromRecord(record *manager.Record, endpoint string) (*output, error) {
 		align := fields.Align
 		out.Align = &align
 		out.DefaultBranch = fields.DefaultBranch
-		if out.DefaultBranch == "" && fields.KeepsDefaultBranch() && record.Reality != nil {
+		if fields.KeepsDefaultBranch() && record.Reality != nil && record.Reality.DefaultBranch != "" {
 			out.DefaultBranch = record.Reality.DefaultBranch
 		}
 		if out.DefaultBranch == "" {
@@ -180,7 +179,9 @@ func alignLine(optedIn bool) string {
 const timeFormat = "2006-01-02T15:04:05Z"
 
 func (r *runner) print(out *output) error {
-	w := bufio.NewWriter(r.stdout)
+	// The shared renderers do not return write errors. Render into a builder
+	// first, then return the error from writing the complete text to stdout.
+	w := &strings.Builder{}
 	res := out.Result
 	from := manager.Server
 	if out.Endpoint != "" {
@@ -225,5 +226,6 @@ func (r *runner) print(out *output) error {
 		fmt.Fprintf(w, "missing run: the run expected since %s by %s never reported: %s\n", m.DispatchedAt.UTC().Format(timeFormat), m.By, where)
 	}
 	client.PrintFindings(w, out.Findings)
-	return w.Flush()
+	_, err := io.WriteString(r.stdout, w.String())
+	return err
 }

@@ -2,10 +2,7 @@ package status
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -13,49 +10,39 @@ import (
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
 )
 
-type outputCaller struct {
-	payload json.RawMessage
-	calls   int
-}
-
-func (c *outputCaller) Call(context.Context, string, map[string]any) (json.RawMessage, error) {
-	c.calls++
-	return c.payload, nil
-}
-
-type failingOutput struct {
+type statusFailingWriter struct {
 	remaining int
 	err       error
 }
 
-func (w *failingOutput) Write(p []byte) (int, error) {
-	if len(p) <= w.remaining {
-		w.remaining -= len(p)
-		return len(p), nil
+func (w *statusFailingWriter) Write(p []byte) (int, error) {
+	n := min(len(p), w.remaining)
+	w.remaining -= n
+	if n < len(p) {
+		return n, w.err
 	}
-	n := w.remaining
-	w.remaining = 0
-	return n, w.err
+	return n, nil
 }
 
-func TestRunOutputErrors(t *testing.T) {
-	sentinel := errors.New("synthetic output full")
-	for _, output := range []string{client.OutputText, client.OutputJSON} {
-		for _, large := range []bool{false, true} {
-			for _, remaining := range []int{0, 70} {
-				t.Run(fmt.Sprintf("%s/large=%t/after=%d", output, large, remaining), func(t *testing.T) {
-					payload := record
-					if large {
-						payload = strings.ReplaceAll(payload, "the run never reported", strings.Repeat("synthetic finding ", 800))
-					}
-					r, _, _ := newRunner(payload, output)
-					caller := &outputCaller{payload: json.RawMessage(payload)}
-					r.open = func(context.Context) (*client.Session, error) { return &client.Session{Caller: caller}, nil }
-					r.stdout = &failingOutput{remaining: remaining, err: sentinel}
-					require.ErrorIs(t, r.run(context.Background(), "my-service"), sentinel)
-					require.Equal(t, 1, caller.calls)
-				})
-			}
+// Failed and partial output writes must fail the command in either format.
+func TestRunOutputError(t *testing.T) {
+	writeErr := errors.New("output unavailable")
+	for _, format := range []string{client.OutputText, client.OutputJSON} {
+		for _, tc := range []struct {
+			name      string
+			remaining int
+		}{
+			{name: "first write"},
+			{name: "partial write", remaining: 32},
+		} {
+			t.Run(format+"/"+tc.name, func(t *testing.T) {
+				r, caller, _ := newRunner(record, format)
+				w := &statusFailingWriter{remaining: tc.remaining, err: writeErr}
+				r.stdout = w
+				require.ErrorIs(t, r.run(context.Background(), "my-service"), writeErr)
+				require.NotEmpty(t, caller.tool)
+				require.Zero(t, w.remaining)
+			})
 		}
 	}
 }

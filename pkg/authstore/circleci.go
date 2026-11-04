@@ -196,6 +196,42 @@ func (a *Auth) circleCILogin(ctx context.Context, token string) (string, error) 
 	return user.Login, nil
 }
 
+// CircleCIStatus reads the CircleCI identity and validates an unexpired token
+// with GET /me. Rejection (401 or 403) sets Invalid and HTTPStatus; other
+// verification failures return the identity with an error. Missing, empty or
+// expired tokens make no request. No record is changed.
+func (a *Auth) CircleCIStatus(ctx context.Context) (Identity, error) {
+	record, err := a.store.Get(UserCircleCI)
+	if errors.Is(err, ErrNotFound) {
+		return Identity{Warnings: []string{}}, nil
+	}
+	if err != nil {
+		return Identity{Warnings: []string{}}, err
+	}
+	id := describe(UserCircleCI, record, a.clock.Now())
+	if id.Expired {
+		return id, nil
+	}
+	if record.Token == "" {
+		id.Invalid = true
+		return id, nil
+	}
+	login, err := a.circleCILogin(ctx, record.Token)
+	if err == nil {
+		id.Login = login
+		return id, nil
+	}
+	var statusErr *httpStatusError
+	if errors.As(err, &statusErr) {
+		id.HTTPStatus = statusErr.code
+		if statusErr.code == http.StatusUnauthorized || statusErr.code == http.StatusForbidden {
+			id.Invalid = true
+			return id, nil
+		}
+	}
+	return id, fmt.Errorf("validating the CircleCI token: %w", err)
+}
+
 // RequireCircleCI is the CircleCI token while it is valid and
 // [ErrAuthRequired] when missing or expired; there is no refresh. The
 // token's Warning is set within [CircleCIExpiryWarning] of the expiry.
