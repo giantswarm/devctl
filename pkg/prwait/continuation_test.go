@@ -196,3 +196,21 @@ func Test_Wait_deadlineDuringPollDoesNotDiagnoseContinuation(t *testing.T) {
 		t.Errorf("last complete pipeline and unfinished evidence lost: %+v", result)
 	}
 }
+
+// A deadline interrupting an ordinary queued-check poll retains the existing
+// timeout reason. Only a previous continuation diagnosis needs invalidation.
+func Test_Wait_deadlineDuringOrdinaryPollPreservesReason(t *testing.T) {
+	gh := gitHubGreen()
+	gh[runsPath] = []sequence.Response{checkRuns(run("go-lint", "queued", ""))}
+	h := start(t, gh, nil, false, 2*time.Minute)
+	h.waiter.rate = nil
+	reader := &deadlinePollGitHub{GitHub: h.waiter.github, clock: h.waiter.clock}
+	h.waiter.github = reader
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if reader.calls != 2 || exitCode(err) != agentcli.ExitTimeout {
+		t.Fatalf("want second poll interrupted with exit 2, got %d calls: %v", reader.calls, err)
+	}
+	if err.Error() != "timeout after 2m0s; unfinished: check go-lint (queued)" || len(result.Unfinished) != 1 || result.Unfinished[0] != "check go-lint (queued)" {
+		t.Errorf("ordinary timeout reason changed or unfinished evidence lost: %v, %+v", err, result.Unfinished)
+	}
+}

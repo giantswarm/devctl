@@ -248,16 +248,17 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 
 	h := &head{}
 	var last *evaluation
-	// unanswered is the last poll's read that went unanswered, empty once a
-	// poll completes again.
-	var unanswered string
 	for poll := 1; ; poll++ {
 		e, err := w.poll(ctx, owner, repo, number, h, result)
 		if err != nil {
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
 				// The deadline interrupted this poll: the preceding complete
 				// poll cannot establish that the continuation is still absent.
-				return result, w.timedOut(result, last, err.Error())
+				unanswered := ""
+				if last != nil && last.missingContinuation != "" {
+					unanswered = err.Error()
+				}
+				return result, w.timedOut(result, last, unanswered)
 			}
 			// A rate limit resetting after the deadline is a timeout ahead
 			// of it: the document names what was unfinished all the same.
@@ -272,7 +273,7 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 			if !errors.As(err, &exhausted) {
 				return result, err
 			}
-			unanswered = err.Error()
+			unanswered := err.Error()
 			result.Warnings = append(result.Warnings, fmt.Sprintf("poll %d went unanswered: %s", poll, unanswered))
 			interval := w.interval()
 			w.progress.Printf("poll %d: unanswered (%s); next poll in %s", poll, unanswered, interval)
@@ -281,7 +282,7 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 			}
 			continue
 		}
-		last, unanswered = e, ""
+		last = e
 		switch {
 		case e.green():
 			if unseen := e.unseen(w.acceptRed); len(unseen) > 0 {
