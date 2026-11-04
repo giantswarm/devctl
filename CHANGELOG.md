@@ -9,10 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- `gen makefile`: Go builds and installs fall back to local version tags with `git describe` when
-  `gitsemver get` fails or returns no version, including older gitsemver releases in linked worktrees.
-  Tagged worktrees stamp the release version without a `VERSION` override; unsuccessful lookups still refuse
-  to ship an unversioned binary, while lint no longer prints the handled gitsemver error.
+- `gen dependabot` detects root Python requirements, Pipfile, setup.cfg and pyproject manifests.
 
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
@@ -62,6 +59,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `.github/workflows/zz_generated.*`, which align-files regenerates.
 
 ### Added
+
+- `ci job --step-output` includes the first and last lines of every step's output, including
+  successful steps, so a soft-passed nancy scanner outage is visible without the CircleCI UI.
+  `--lines` bounds each excerpt (200 by default); unreadable output is reported per step.
 
 - `ci job` takes the URL a CircleCI commit status links, alone, including a GitHub App pipeline's
   `app.circleci.com/workflow/<id>/job/<id>`, which it resolves to the project and job number through the workflow.
