@@ -1,6 +1,8 @@
 package setup
 
 import (
+	"regexp"
+
 	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
 
@@ -81,5 +83,13 @@ func (f *flag) Init(cmd *cobra.Command) {
 }
 
 func (f *flag) Validate() error {
-	return microerror.Mask(engine.ValidateOutput(f.Output))
+	if err := engine.ValidateOutput(f.Output); err != nil {
+		return microerror.Mask(err)
+	}
+	if f.Checks == nil && f.ChecksFilter != "" {
+		if _, err := regexp.Compile(f.ChecksFilter); err != nil {
+			return microerror.Maskf(invalidFlagError, "--checks-filter %q: %v", f.ChecksFilter, err)
+		}
+	}
+	return nil
 }
