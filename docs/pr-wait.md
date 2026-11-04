@@ -150,9 +150,19 @@ a template repository (`is_template` on GitHub) whose team-file entry in giantsw
 `gen.ci.templateContent: true`, which carries the configuration for the repositories created from it
 and is never built itself, and a repository CircleCI knows no project for. A template without that
 declaration carries its own pipeline and is judged like any repository, as the reconciler judges it;
-the entry is read only for a template whose head carries `.circleci/config.yml`. Whether the project has run a pipeline before does not decide it: the head's own pipeline may
-be the project's first (a new repository's first pull request), and until it appears the head is
-unfinished (`circleci pipeline for <sha> (absent)`), not green from GitHub alone. A pull request
+the entry is read only for a template whose head carries `.circleci/config.yml`.
+
+The project lookup can also succeed for a repository never set up on CircleCI. When the head has
+neither a pipeline nor a CircleCI commit status, the wait reads the project-wide pipeline listing.
+An empty listing with no next page judges that poll from GitHub alone, with a warning naming the
+absent head pipeline and the configuration file. GitHub checks, Actions runs and required contexts
+still decide the verdict. Any listed pipeline, including one on the base or another branch when
+the configuration excludes the base, keeps the head unfinished (`circleci pipeline for <sha>
+(absent)`) until its own pipeline appears. An unreadable listing does not skip CircleCI.
+The listing is checked again while GitHub is unfinished, so a pipeline that appears during the
+wait is judged. A project's first-ever pipeline that has not registered in either source yet is
+indistinguishable from an unused configuration and is skipped with the same warning; required
+CircleCI contexts still have to report. A pull request
 from a fork of a CircleCI-built repository is looked up under the branch CircleCI gives it,
 `pull/<number>`.
 
