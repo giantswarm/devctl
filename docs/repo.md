@@ -335,9 +335,10 @@ merges on and its merge commits as they are: its carried patches land one upstre
 re-pin merges upstream's history; the rest of the baseline applies to it as everywhere. A customer
 repository (flavour `customer`) and an app catalog (`componentType: appcatalog`, whose index GitHub Pages
 serves from the default branch, `master` on the older catalogs) keep their own default branch: it is never
-renamed, the protection step protects it, and `devctl repo status` names it. The six merge settings and the squash title
-reach `GET /repos/{owner}/{repo}` for an admin identity only; a read identity reads them through GraphQL
-and, when that fails too, reports them as the finding `unchecked` rather than as drift.
+renamed, the protection step protects it when enabled, and `devctl repo status` names it. The six merge
+settings and the squash title reach `GET /repos/{owner}/{repo}` for an admin identity only; a read
+identity reads them through GraphQL and, when that fails too, reports them as the finding `unchecked`
+rather than as drift.
 
 ### The protection step
 
@@ -355,7 +356,26 @@ that pull request, and the generated jobs are required once they have reported a
 either, the hand-kept `.circleci/config.yml` names the repository's own jobs: candidates on the same
 reported-only rule, but a hand-kept pipeline removes no CircleCI context. A scheduled or conditional workflow
 and an approval job are never candidates. A customer repository (flavour `customer`) keeps its own
-protection.
+protection unless its entry declares `protection: baseline`. With that declaration the protection step
+applies the same baseline and rulesets as for other flavours, on the customer's own default branch;
+CircleCI, CODEOWNERS and release steps stay skipped. `align: true` is still needed for automatic repair;
+without it the reconciler only checks. For example:
+
+```yaml
+- name: customer-gitops
+  componentType: customer
+  align: true
+  protection: baseline
+  gen:
+    flavours: [customer]
+    language: generic
+    ci:
+      generate: false
+```
+
+The live schema in giantswarm/github must admit `protection` before a team file can use it; the schema
+shipped here defines the field. A repair run with the devctl App id writes the ruleset and removes
+classic protection; a subsequent check reports `protection ok` once the repository converges.
 
 The protection is one repository ruleset, `devctl: default branch`, active on
 `~DEFAULT_BRANCH` so a rename or a fork line's declared branch needs no change: the same rules, a GitHub

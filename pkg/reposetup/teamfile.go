@@ -171,6 +171,10 @@ type Fields struct {
 	// the repository's own GitHub Actions gate that runs on every pull
 	// request. A declared context is never removed as a ghost.
 	RequiredChecks []string `yaml:"requiredChecks"`
+	// Protection opts a customer repository into the protection step with
+	// "baseline". Empty keeps the customer's own protection; other flavours
+	// always get the baseline.
+	Protection string `yaml:"protection"`
 	// AgentMerge is the repository's opt-out from agent merges: with false
 	// the default branch's ruleset has no bypass actor, so nothing merges
 	// past the required review. Nil is the default, true.

@@ -34,8 +34,8 @@ func lifecycleOver(lifecycle string) bool {
 // branch protection and default branch are the customer's own flow and it
 // has no CircleCI pipeline of ours. The protection, circleci, codeowners and
 // release steps are skipped on it and its default branch is never renamed;
-// settings, permissions, renovate, metadata, lifecycle and catalog run as
-// declared.
+// protection: baseline opts it into the protection step. Settings,
+// permissions, renovate, metadata, lifecycle and catalog run as declared.
 const flavourCustomer = reposetup.FlavourCustomer
 
 // flavourFork is the gen.flavours value of a fork line: the repository
@@ -454,7 +454,11 @@ func (r *Runner) skipReason(ctx context.Context, s *run, step Step) (string, err
 	}
 	if s.hasFlavour(flavourCustomer) {
 		switch step {
-		case StepProtection, StepCircleCI, StepCodeowners, StepRelease:
+		case StepProtection:
+			if s.fields.Protection != "baseline" {
+				return "flavour " + flavourCustomer, nil
+			}
+		case StepCircleCI, StepCodeowners, StepRelease:
 			return "flavour " + flavourCustomer, nil
 		}
 	}
