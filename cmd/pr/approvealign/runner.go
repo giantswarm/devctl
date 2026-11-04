@@ -13,6 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/pr/internal/checks"
 	"github.com/giantswarm/devctl/v8/internal/pr"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
@@ -62,11 +63,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// Search for align-files PRs
 	// Note: We don't filter by status:success here because we want to find all PRs
 	// and then check/wait for their status in processPR (similar to approve-merge-renovate)
-	searchQuery := `is:pr is:open archived:false org:giantswarm review-requested:@me "` + alignTitle + `"`
+	searchQuery := `is:pr is:open archived:false org:giantswarm review-requested:@me in:title "` + alignTitle + `"`
 	if r.flag.Team != "" {
 		// Team scope: a repository that requests no reviewer never puts its
 		// Align files PR into anyone's queue, so search without the review filter.
-		searchQuery = `is:pr is:open archived:false org:giantswarm "` + alignTitle + `"`
+		searchQuery = `is:pr is:open archived:false org:giantswarm in:title "` + alignTitle + `"`
 	}
 
 	issues, err := r.searchIssues(ctx, githubClient, searchQuery)
@@ -170,7 +171,11 @@ func (r *runner) searchIssues(ctx context.Context, githubClient *github.Client, 
 		if err != nil {
 			return nil, microerror.Maskf(executionFailedError, "failed to search for PRs: %v", err)
 		}
-		issues = append(issues, results.Issues...)
+		for _, issue := range results.Issues {
+			if strings.HasPrefix(issue.GetTitle(), alignTitle) {
+				issues = append(issues, issue)
+			}
+		}
 		if resp.NextPage == 0 {
 			return issues, nil
 		}
@@ -201,89 +206,54 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 			return
 		}
 
+		// Search results can be stale when a PR has been renamed.
+		if !strings.HasPrefix(prData.GetTitle(), alignTitle) {
+			ps.UpdateStatus("Skipped: not an Align files PR")
+			return
+		}
+
 		// Check if auto-merge is enabled (for status display later)
 		hasAutoMerge := prData.GetAutoMerge() != nil
 
 		// Check status checks BEFORE checking if already approved
 		headSHA := prData.GetHead().GetSHA()
-		combinedStatus, _, _ := githubClient.Repositories.GetCombinedStatus(ctx, ps.Owner, ps.Repo, headSHA, nil)
-		checkRuns, _, _ := githubClient.Checks.ListCheckRunsForRef(ctx, ps.Owner, ps.Repo, headSHA, nil)
-
-		// Check if any checks are failing or pending
-		hasFailedChecks := false
-		checksPending := false
-
-		// Check combined status first - this is for traditional status checks
-		if combinedStatus != nil {
-			state := combinedStatus.GetState()
-			totalCount := combinedStatus.GetTotalCount()
-
-			if state == "success" {
-				// All required checks passed
-				checksPending = false
-				hasFailedChecks = false
-			} else if state == stateFailure || state == "error" {
-				hasFailedChecks = true
-			} else if state == "pending" && totalCount > 0 {
-				// Only treat as pending if there are actual status checks
-				// pending with totalCount=0 just means no checks exist, not that checks are waiting
-				checksPending = true
-			}
+		checkResult, err := checks.Read(ctx, githubClient, ps.Owner, ps.Repo, headSHA)
+		if err != nil {
+			ps.UpdateStatus("Failed to get checks: " + err.Error())
+			return
 		}
+		combinedStatus, checkRuns := checkResult.Combined, checkResult.Runs
 
-		// Check individual check runs (GitHub Actions checks)
-		if checkRuns != nil && len(checkRuns.CheckRuns) > 0 && !hasFailedChecks {
-			// Only check runs if combinedStatus didn't already give us a definitive answer
-			if combinedStatus == nil || (combinedStatus.GetState() != "success" && combinedStatus.GetState() != stateFailure) {
-				for _, run := range checkRuns.CheckRuns {
-					conclusion := run.GetConclusion()
-					status := run.GetStatus()
-
-					if status == "completed" {
-						if conclusion == stateFailure || conclusion == "cancelled" || conclusion == "timed_out" {
-							hasFailedChecks = true
-							break
-						}
-						// success, neutral, skipped are OK
-					} else {
-						// Check is not completed (queued, in_progress)
-						checksPending = true
-					}
-				}
-			}
-		}
-
-		if hasFailedChecks {
+		if checkResult.Failed {
 			ps.UpdateStatus("Failed checks")
 			return
 		}
 
-		if checksPending {
+		if checkResult.Pending {
 			ps.UpdateStatus(fmt.Sprintf("Waiting for checks (%d/%d)", attempt+1, maxRetries))
 			continue
 		}
 
 		// Checks are passing, proceed with approval
 		// Check if already approved
-		reviews, _, err := githubClient.PullRequests.ListReviews(ctx, ps.Owner, ps.Repo, ps.Number, nil)
+		reviews, err := allReviews(ctx, githubClient, ps.Owner, ps.Repo, ps.Number)
 		if err != nil {
 			ps.UpdateStatus("Failed to get reviews")
 			return
 		}
 
-		alreadyApproved := false
-		for _, review := range reviews {
-			if review.GetState() == "APPROVED" {
-				alreadyApproved = true
-				break
-			}
-		}
+		alreadyApproved := hasCurrentApproval(reviews)
 
 		if alreadyApproved {
 			// Check if it merged after being approved
 			prCheck, _, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
 			if err == nil && prCheck.GetMerged() {
 				ps.UpdateStatus("Merged (auto-merge)")
+				return
+			}
+
+			if prCheck != nil && prCheck.GetHead().GetSHA() != headSHA {
+				ps.UpdateStatus("Head changed; run again")
 				return
 			}
 
@@ -295,7 +265,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 				}
 
 				ps.UpdateStatus("Updating branch...")
-				_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, github.UpdatePullRequestBranchRequest{})
+				_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, github.UpdatePullRequestBranchRequest{ExpectedHeadSHA: new(headSHA)})
 				if err != nil && !isGitHubAccepted(err) {
 					ps.UpdateStatus("Failed to update branch")
 					return
@@ -327,7 +297,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 				return
 			}
 			if r.flag.Team != "" {
-				r.mergeApproved(ctx, githubClient, ps, prCheck, combinedStatus, checkRuns)
+				r.mergeApproved(ctx, githubClient, ps, prCheck, combinedStatus, checkRuns, headSHA)
 				return
 			}
 			ps.UpdateStatus("Already approved")
@@ -346,7 +316,8 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 
 		ps.UpdateStatus("Approving...")
 		reviewRequest := &github.PullRequestReviewRequest{
-			Event: new("APPROVE"),
+			Event:    new("APPROVE"),
+			CommitID: new(headSHA),
 		}
 		_, _, err = githubClient.PullRequests.CreateReview(ctx, ps.Owner, ps.Repo, ps.Number, reviewRequest)
 		if err != nil {
@@ -362,10 +333,15 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 			return
 		}
 
+		if prCheck != nil && prCheck.GetHead().GetSHA() != headSHA {
+			ps.UpdateStatus("Head changed; run again")
+			return
+		}
+
 		// Check if PR branch is behind and needs updating
 		if prCheck != nil && prCheck.GetMergeableState() == "behind" {
 			ps.UpdateStatus("Updating branch...")
-			_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, github.UpdatePullRequestBranchRequest{})
+			_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, github.UpdatePullRequestBranchRequest{ExpectedHeadSHA: new(headSHA)})
 			if err != nil && !isGitHubAccepted(err) {
 				ps.UpdateStatus("Failed to update branch")
 				return
@@ -407,7 +383,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 
 // mergeApproved merges an approved, green PR that carries no auto-merge, or
 // names the required check that nothing produces when that is what blocks it.
-func (r *runner) mergeApproved(ctx context.Context, githubClient *github.Client, ps *pr.PRStatus, prData *github.PullRequest, combined *github.CombinedStatus, runs *github.ListCheckRunsResults) {
+func (r *runner) mergeApproved(ctx context.Context, githubClient *github.Client, ps *pr.PRStatus, prData *github.PullRequest, combined *github.CombinedStatus, runs *github.ListCheckRunsResults, headSHA string) {
 	if prData == nil {
 		ps.UpdateStatus("Already approved")
 		return
@@ -436,7 +412,7 @@ func (r *runner) mergeApproved(ctx context.Context, githubClient *github.Client,
 	}
 
 	ps.UpdateStatus("Merging...")
-	_, _, err := githubClient.PullRequests.Merge(ctx, ps.Owner, ps.Repo, ps.Number, "", &github.PullRequestOptions{MergeMethod: "squash"})
+	_, _, err := githubClient.PullRequests.Merge(ctx, ps.Owner, ps.Repo, ps.Number, "", &github.PullRequestOptions{MergeMethod: "squash", SHA: headSHA})
 	if err != nil {
 		ps.UpdateStatus("Failed to merge")
 		return
@@ -453,10 +429,19 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 	failed := 0
 	waiting := 0
 	blocked := 0
+	wouldApprove := 0
+	wouldMerge := 0
+	wouldUpdate := 0
 
 	for _, ps := range prStatuses {
 		status := ps.GetStatus()
-		if strings.Contains(status, "Merged") {
+		if strings.HasPrefix(status, "Would approve") {
+			wouldApprove++
+		} else if status == "Would merge" {
+			wouldMerge++
+		} else if status == "Would update branch" {
+			wouldUpdate++
+		} else if strings.Contains(status, "Merged") {
 			merged++
 		} else if strings.Contains(status, "Updated, queued") {
 			updated++
@@ -464,13 +449,13 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 		} else if strings.Contains(status, "Branch updated") {
 			updated++
 			approved++
-		} else if strings.Contains(status, "queued to merge") {
+		} else if strings.Contains(status, "queued to merge") || status == "Already approved, queued" {
 			queued++
 		} else if strings.Contains(status, "Approved") && !strings.Contains(status, "Would") && !strings.Contains(status, "Already") {
 			approved++
 		} else if strings.Contains(status, "Blocked") || strings.Contains(status, "not mergeable") || strings.HasSuffix(status, "blocked") {
 			blocked++
-		} else if strings.Contains(status, "Already") {
+		} else if strings.Contains(status, "Already") || strings.HasPrefix(status, "Skipped:") {
 			skipped++
 		} else if strings.Contains(status, "Failed") {
 			failed++
@@ -482,7 +467,13 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 	fmt.Fprintln(r.stdout, "─────────────────────────────")
 	fmt.Fprintln(r.stdout, "Summary:")
 	if r.flag.DryRun {
-		fmt.Fprintf(r.stdout, "  PRs that would be approved: %d\n", len(prStatuses)-skipped-failed-waiting)
+		fmt.Fprintf(r.stdout, "  PRs that would be approved: %d\n", wouldApprove)
+		if wouldMerge > 0 {
+			fmt.Fprintf(r.stdout, "  PRs that would be merged: %d\n", wouldMerge)
+		}
+		if wouldUpdate > 0 {
+			fmt.Fprintf(r.stdout, "  PR branches that would be updated: %d\n", wouldUpdate)
+		}
 	} else {
 		if merged > 0 {
 			fmt.Fprintf(r.stdout, "  PRs merged: %d\n", merged)
