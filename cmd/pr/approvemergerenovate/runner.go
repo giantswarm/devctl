@@ -48,10 +48,15 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// Set logger to only show errors to avoid cluttering the table UI
 	r.logger.SetLevel(logrus.ErrorLevel)
 
+	var renew func(context.Context, string) (string, error)
+	if token.Source == authstore.SourceKeychain {
+		renew = authstore.RenewGitHubToken
+	}
 	ghClientService, err := githubclient.New(githubclient.Config{
 		Logger:      r.logger,
 		AccessToken: token.Value,
 		DryRun:      r.flag.DryRun,
+		Renew:       renew,
 	})
 	if err != nil {
 		return microerror.Mask(err)
