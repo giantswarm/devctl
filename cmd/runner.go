@@ -22,6 +22,9 @@ type runner struct {
 }
 
 func (r *runner) PersistentPreRun(cmd *cobra.Command, args []string) error {
+	if cmd.Annotations[helpOnlyAnnotation] == "true" {
+		return nil
+	}
 	ctx := context.Background()
 
 	err := r.flag.Validate()
