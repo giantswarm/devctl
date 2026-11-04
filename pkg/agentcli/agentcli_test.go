@@ -59,6 +59,8 @@ func TestEnvelopeFinish(t *testing.T) {
 		{name: "exit coder", err: authErr{}, code: ExitAuthRequired, verdict: VerdictAuthRequired, reason: authErr{}.Error()},
 		{name: "masked exit coder", err: microerror.Mask(authErr{}), code: ExitAuthRequired, verdict: VerdictAuthRequired, reason: microerror.Mask(authErr{}).Error()},
 		{name: "wrapped exit error", err: fmt.Errorf("context: %w", NewExitError(ExitRefused, VerdictRefused, "not yours")), code: ExitRefused, verdict: VerdictRefused, reason: "context: not yours"},
+		{name: "remote error", err: fmt.Errorf("CircleCI: %w", &RemoteError{Err: errors.New("HTTP 401")}), code: ExitRemoteError, verdict: VerdictRemoteError, reason: "CircleCI: HTTP 401"},
+		{name: "remote credential gate", err: &RemoteError{Err: authErr{}}, code: ExitAuthRequired, verdict: VerdictAuthRequired, reason: authErr{}.Error()},
 		{name: "plain error is tooling", err: errors.New("boom"), code: ExitUsage, verdict: VerdictUsage, reason: "boom"},
 	}
 	for _, tc := range cases {
