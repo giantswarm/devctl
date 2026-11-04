@@ -51,7 +51,7 @@ func (c *circleSnapshot) setupHalted(now time.Time, statuses []*github.RepoStatu
 		}
 		for _, job := range jobs {
 			name := circleStatusPrefix + job.Name
-			if job.Name == "" || job.Status != "success" || reported[name] != "success" {
+			if job.Name == "" || job.Status != conclusionSuccess || reported[name] != conclusionSuccess {
 				return false
 			}
 			setupContexts[name] = true

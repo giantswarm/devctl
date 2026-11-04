@@ -21,8 +21,9 @@ const (
 
 // The check states the document shares between check runs and statuses.
 const (
-	statusCompleted = "completed"
-	statusPending   = "pending"
+	statusCompleted   = "completed"
+	statusPending     = "pending"
+	conclusionSuccess = "success"
 	// conclusionActionRequired is a completed check run or Actions run
 	// waiting for a human.
 	conclusionActionRequired = "action_required"
@@ -327,7 +328,7 @@ func evaluate(s snapshot) *evaluation {
 			check.Status = statusPending
 			e.requiredPending = e.requiredPending || check.Required
 			e.unfinished = append(e.unfinished, fmt.Sprintf("status %s (pending)", name))
-		case state == "success":
+		case state == conclusionSuccess:
 			check.Conclusion = state
 		case s.accepts(name):
 			check.Conclusion = state
@@ -503,7 +504,7 @@ func (e *evaluation) unseen(accepted map[string]bool) []string {
 // a merge.
 func checkRunPassed(conclusion string) bool {
 	switch conclusion {
-	case "success", "neutral", "skipped":
+	case conclusionSuccess, "neutral", "skipped":
 		return true
 	}
 	return false
