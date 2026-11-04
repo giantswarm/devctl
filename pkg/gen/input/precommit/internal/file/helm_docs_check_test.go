@@ -64,7 +64,7 @@ func Test_HelmDocsDescriptionHook(t *testing.T) {
 					t.Errorf("hook selection for %s: got %v, want %v", path, got, want)
 				}
 			}
-			if err := exec.Command(python, "-c", "import yaml").Run(); err != nil {
+			if err := exec.Command(python, "-c", "import yaml").Run(); err != nil { // #nosec G204 -- interpreter from exec.LookPath, fixed dependency probe, test-only
 				t.Skip("PyYAML not available; the generated hook installs PyYAML==6.0.3")
 			}
 
@@ -121,7 +121,7 @@ func Test_HelmDocsDescriptionHook(t *testing.T) {
 						t.Fatal(err)
 					}
 					args := append([]string{"-c"}, hook.Args...)
-					cmd := exec.Command(python, append(args, path)...)
+					cmd := exec.Command(python, append(args, path)...) // #nosec G204 -- interpreter from exec.LookPath, repository-rendered script, t.TempDir() fixture, test-only
 					out, err := cmd.CombinedOutput()
 					if len(tc.wantLines) == 0 {
 						if err != nil || len(out) != 0 {
@@ -140,7 +140,7 @@ func Test_HelmDocsDescriptionHook(t *testing.T) {
 							t.Errorf("got %d diagnostics, want %d: %s", got, len(tc.wantLines), out)
 						}
 					}
-					if got, err := os.ReadFile(path); err != nil || string(got) != tc.values {
+					if got, err := os.ReadFile(path); err != nil || string(got) != tc.values { // #nosec G304 -- t.TempDir() fixture path, test-only
 						t.Fatalf("check modified the input: %v", err)
 					}
 				})
