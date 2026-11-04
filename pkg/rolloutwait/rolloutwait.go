@@ -77,6 +77,9 @@ type Config struct {
 }
 
 // Waiter runs one rollout wait.
+// finalPollGrace bounds the poll at the deadline, which decides the outcome.
+const finalPollGrace = 30 * time.Second
+
 type Waiter struct {
 	installation, kubeContext, version string
 	charts                             map[string]bool
@@ -182,6 +185,22 @@ func New(config Config) (*Waiter, error) {
 // of the last poll reach the result: a state seen mid-roll and gone by the
 // end is not reported.
 func (w *Waiter) Wait(ctx context.Context, result *Result) error {
+	// The last poll runs at the deadline itself; only a read hanging past it ends here.
+	parent := ctx
+	ctx, cancel := w.clock.Timeout(ctx, w.timeout+finalPollGrace)
+	defer cancel()
+
+	err := w.wait(ctx, result)
+	if ctx.Err() != nil && parent.Err() == nil {
+		var outcome agentcli.ExitCoder
+		if err == nil || !errors.As(err, &outcome) {
+			return w.timeoutErr(result.Deployments)
+		}
+	}
+	return err
+}
+
+func (w *Waiter) wait(ctx context.Context, result *Result) error {
 	result.Version = w.version
 	result.Revision = w.revision
 	result.Charts = w.chartNames()

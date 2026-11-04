@@ -154,8 +154,9 @@ older revision is not the version's: the wait goes on.
 ### Polling and `--reconcile`
 
 The cluster is listed after a pause of 5 seconds, doubling to 30, until `--timeout` (30 minutes by
-default) after the release was available. Flux polls an OCIRepository at its own interval, often ten
-minutes; `--reconcile` sets `reconcile.fluxcd.io/requestedAt` once on the source and the HelmRelease
+default) after the release was available. This budget also bounds cluster reads, retry backoff and
+reconcile requests; a timeout retains the last completed poll. Flux polls an OCIRepository at its own
+interval, often ten minutes; `--reconcile` sets `reconcile.fluxcd.io/requestedAt` once on the source and the HelmRelease
 of each deployment still behind, the annotation `flux reconcile` sets, so Flux looks now. It is the
 only write the command makes; without it the command only reads.
 
