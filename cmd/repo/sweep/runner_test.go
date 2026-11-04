@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
@@ -37,46 +38,69 @@ func (f callerFunc) Call(ctx context.Context, tool string, args map[string]any) 
 
 const sweepAnswer = `{"started":true,"running":true,"login":"alice","teams":["team-bumblebee"]}`
 
-type failingWriter struct {
-	remaining int
-}
+func TestRunCommandCancellation(t *testing.T) {
+	for _, stage := range []string{"opening", "calling"} {
+		t.Run(stage, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if stage == "opening" {
+				cancel()
+			}
 
-func (w *failingWriter) Write(p []byte) (int, error) {
-	n := min(w.remaining, len(p))
-	w.remaining -= n
-	if n < len(p) {
-		return n, io.ErrClosedPipe
-	}
-	return n, nil
-}
-
-func TestRunOutputError(t *testing.T) {
-	firstLine := "sweep started as alice (a member of team-bumblebee); `devctl repo list` shows the new records when it is done\n"
-	for _, tc := range []struct {
-		name      string
-		output    string
-		answer    string
-		remaining int
-	}{
-		{name: "text", output: client.OutputText, answer: sweepAnswer},
-		{name: "missing summary", output: client.OutputText, answer: sweepAnswer, remaining: len(firstLine)},
-		{name: "last summary", output: client.OutputText, answer: `{"started":true,"login":"alice","teams":["team-bumblebee"],"last":{"finishedAt":"2026-09-22T03:00:00Z","duration":"41m2s","repositories":1790}}`, remaining: len(firstLine)},
-		{name: "json", output: client.OutputJSON, answer: sweepAnswer},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
 			calls := 0
 			r := &runner{
-				flag:   &flag{Flags: client.Flags{Output: tc.output}},
-				stdout: &failingWriter{remaining: tc.remaining},
-				open: func(context.Context) (*client.Session, error) {
-					return &client.Session{Caller: callerFunc(func(context.Context, string, map[string]any) (json.RawMessage, error) {
+				flag:   &flag{Flags: client.Flags{Output: client.OutputText}},
+				stdout: io.Discard,
+				open: func(openCtx context.Context) (*client.Session, error) {
+					if err := openCtx.Err(); err != nil {
+						return nil, err
+					}
+					return &client.Session{Caller: callerFunc(func(callCtx context.Context, _ string, _ map[string]any) (json.RawMessage, error) {
 						calls++
-						return json.RawMessage(tc.answer), nil
+						cancel()
+						return json.RawMessage(sweepAnswer), callCtx.Err()
 					})}, nil
 				},
 			}
-			require.ErrorIs(t, r.run(context.Background()), io.ErrClosedPipe)
-			require.Equal(t, 1, calls, "an output failure must not repeat the sweep request")
+			cmd := &cobra.Command{Use: name, RunE: r.Run, SilenceErrors: true, SilenceUsage: true}
+			cmd.SetArgs([]string{})
+			require.ErrorIs(t, cmd.ExecuteContext(ctx), context.Canceled)
+			if stage == "opening" {
+				require.Zero(t, calls, "a canceled open must not start a sweep")
+			} else {
+				require.Equal(t, 1, calls)
+			}
 		})
 	}
+}
+
+func TestRunCommandDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	wantDeadline, _ := ctx.Deadline()
+	var callContext context.Context
+	r := &runner{
+		flag:   &flag{Flags: client.Flags{Output: client.OutputText}},
+		stdout: io.Discard,
+		open: func(openCtx context.Context) (*client.Session, error) {
+			deadline, ok := openCtx.Deadline()
+			require.True(t, ok, "authentication must inherit the command deadline")
+			require.Equal(t, wantDeadline, deadline)
+			return &client.Session{Caller: callerFunc(func(callCtx context.Context, tool string, args map[string]any) (json.RawMessage, error) {
+				callContext = callCtx
+				deadline, ok := callCtx.Deadline()
+				require.True(t, ok)
+				require.Equal(t, wantDeadline, deadline, "the 60-second call timeout must not extend the caller's deadline")
+				require.Equal(t, manager.ToolSweepInventory, tool)
+				require.Nil(t, args)
+				return json.RawMessage(sweepAnswer), nil
+			})}, nil
+		},
+	}
+	cmd := &cobra.Command{Use: name, RunE: r.Run}
+	cmd.SetArgs([]string{})
+	require.NoError(t, cmd.ExecuteContext(ctx))
+	require.NotNil(t, callContext)
+	require.ErrorIs(t, callContext.Err(), context.Canceled, "the call context must be released on return")
+	require.NoError(t, ctx.Err(), "returning must not cancel the caller's context")
 }
