@@ -34,8 +34,8 @@ func lifecycleOver(lifecycle string) bool {
 // branch protection and default branch are the customer's own flow and it
 // has no CircleCI pipeline of ours. The protection, circleci, codeowners and
 // release steps are skipped on it and its default branch is never renamed;
-// settings, permissions, renovate, metadata, lifecycle and catalog run as
-// declared.
+// protection: baseline opts it into the protection step. Settings,
+// permissions, renovate, metadata, lifecycle and catalog run as declared.
 const flavourCustomer = reposetup.FlavourCustomer
 
 // flavourFork is the gen.flavours value of a fork line: the repository
@@ -99,6 +99,13 @@ type Runner struct {
 	// such as repo checks, cannot infer a GitHub Actions source from a name.
 	// False pins the baseline's generated Actions gates as before.
 	PreserveCheckSources bool
+	// WriteClassicChecks replaces the full classic-protection write with a
+	// checks-only writer. When set, only required-check differences are
+	// compared; all other classic settings, including strictness, stay as
+	// read. The writer receives the latest protection snapshot and must
+	// refuse nil protection rather than creating it. Nil uses the baseline's
+	// full protection policy. repo checks supplies its narrower writer here.
+	WriteClassicChecks func(ctx context.Context, owner, repo, branch string, protection *github.Protection, want []string) error
 	// CircleCI is a person's CircleCI client the circleci step reads the
 	// project's pipeline definitions with; nil reads GitHub's statuses. The
 	// engine writes nothing on CircleCI.
@@ -459,7 +466,11 @@ func (r *Runner) skipReason(ctx context.Context, s *run, step Step) (string, err
 	}
 	if s.hasFlavour(flavourCustomer) {
 		switch step {
-		case StepProtection, StepCircleCI, StepCodeowners, StepRelease:
+		case StepProtection:
+			if s.fields.Protection != reposetup.ProtectionBaseline {
+				return "flavour " + flavourCustomer, nil
+			}
+		case StepCircleCI, StepCodeowners, StepRelease:
 			return "flavour " + flavourCustomer, nil
 		}
 	}

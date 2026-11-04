@@ -25,7 +25,7 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
@@ -101,6 +101,7 @@ func (r *runner) run(ctx context.Context, arg string) error {
 	engineRunner := reconcile.Runner{
 		GitHub:               gh,
 		Checks:               client,
+		WriteClassicChecks:   (classicChecksWriter{github: gh}).Write,
 		PreserveCheckSources: true,
 		Baseline:             &baseline,
 		Log:                  engine.LogWriter(r.logger),

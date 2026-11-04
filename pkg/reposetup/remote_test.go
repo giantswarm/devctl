@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -205,6 +206,75 @@ func TestRemote(t *testing.T) {
 	// The same branch again is the change already proposed.
 	if _, err := remote.OpenPullRequest(ctx, PullRequest{Branch: "repo-create/new", Path: tf.Path, Title: "t"}); !IsBranchExists(err) {
 		t.Errorf("second branch: got %v, want branchExistsError", err)
+	}
+}
+
+func TestRemotePersonRequestedTeams(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		omitTeams    bool
+		teams        []string
+		wantTeams    []string
+		wantRequests []string
+	}{
+		{
+			name: "omitted teams return only the login", omitTeams: true,
+			wantRequests: []string{"GET /user"},
+		},
+		{
+			name:         "nil teams return only the login",
+			wantRequests: []string{"GET /user"},
+		},
+		{
+			name: "empty teams return only the login", teams: []string{},
+			wantRequests: []string{"GET /user"},
+		},
+		{
+			name: "unasked active memberships are excluded", teams: []string{"team-planeteers"},
+			wantRequests: []string{
+				"GET /user", "GET /orgs/giantswarm/teams/team-planeteers",
+				"GET /orgs/giantswarm/teams/team-planeteers/memberships/octocat",
+			},
+		},
+		{
+			name: "asked active membership is included", teams: []string{"team-bumblebee"},
+			wantTeams: []string{"team-bumblebee"},
+			wantRequests: []string{
+				"GET /user", "GET /orgs/giantswarm/teams/team-bumblebee",
+				"GET /orgs/giantswarm/teams/team-bumblebee/memberships/octocat",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var requests []string
+			handler := (&fakeTeamFiles{}).handler(t)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests = append(requests, r.Method+" "+strings.TrimPrefix(r.URL.Path, "/api/v3"))
+				handler.ServeHTTP(w, r)
+			}))
+			defer srv.Close()
+			client, err := github.NewClient(github.WithEnterpriseURLs(srv.URL, srv.URL))
+			if err != nil {
+				t.Fatal(err)
+			}
+			remote := Remote{GitHub: client}
+			var person Person
+			if tc.omitTeams {
+				person, err = remote.Person(context.Background(), "giantswarm")
+			} else {
+				person, err = remote.Person(context.Background(), "giantswarm", tc.teams...)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			srv.Close() // Wait for handlers before reading the recorded requests.
+			if person.Login != "octocat" || !slices.Equal(person.Teams, tc.wantTeams) || len(person.Unread) != 0 {
+				t.Errorf("Person: %+v, want login octocat, teams %v and no unread teams", person, tc.wantTeams)
+			}
+			if !slices.Equal(requests, tc.wantRequests) {
+				t.Errorf("requests: %v, want %v", requests, tc.wantRequests)
+			}
+		})
 	}
 }
 
