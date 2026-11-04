@@ -126,6 +126,7 @@ func onlyFallbackProvenanceChanged(existing, rendered []byte) bool {
 // but there are also some exceptions usually when the name is conventional.
 func isRegenerable(path string) bool {
 	base := filepath.Base(path)
+	path = filepath.ToSlash(path)
 
 	switch {
 	case base == "Makefile" || strings.HasPrefix(base, "Makefile.gen."):
