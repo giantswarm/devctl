@@ -142,6 +142,8 @@ func TestRun(t *testing.T) {
 		{name: "another owner's repository keeps the person's login", program: "gh", args: []string{"pr", "list", "--repo", "teemow/klaus-lab"}, wantExec: true, wantPerson: true},
 		{name: "an upload keeps the person's login", program: "gh", args: []string{"issue", "comment", "12", "--repo", "giantswarm/devctl", "--attach", "proof.png"}, wantExec: true, wantPerson: true},
 		{name: "a comment without an upload acts as the App", program: "gh", args: []string{"pr", "comment", "5", "--repo", "giantswarm/devctl", "--body", "done"}, wantExec: true},
+		{name: "body text does not switch the login", program: "gh", args: []string{"pr", "comment", "5", "--body", "--repo=teemow/x", "--repo", "giantswarm/devctl"}, wantExec: true},
+		{name: "body text does not enable attachments", program: "gh", args: []string{"pr", "comment", "5", "--repo", "giantswarm/devctl", "--body", "--attach"}, wantExec: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

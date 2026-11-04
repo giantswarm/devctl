@@ -26,7 +26,12 @@ var repoCommands = map[string]bool{
 // remote configuration; nil reads none.
 func GHOwner(args []string, environ []string, remotes func() string) string {
 flags:
-	for i, a := range args {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if ghTextValueFlag(args, a) {
+			i++
+			continue
+		}
 		switch {
 		case a == "--":
 			break flags
@@ -71,13 +76,33 @@ func GHAttaches(args []string) bool {
 	if len(args) == 0 || (args[0] != "issue" && args[0] != "pr") {
 		return false
 	}
-	for _, a := range args[1:] {
+	for i := 1; i < len(args); i++ {
+		a := args[i]
+		if ghTextValueFlag(args, a) {
+			i++
+			continue
+		}
 		if a == "--" {
 			return false
 		}
 		if a == "--attach" || strings.HasPrefix(a, "--attach=") {
 			return true
 		}
+	}
+	return false
+}
+
+// ghTextValueFlag identifies free-form issue/PR text options. Their next
+// argument is data even when it looks like --repo, --attach or --.
+func ghTextValueFlag(args []string, flag string) bool {
+	if len(args) < 2 || (args[0] != "issue" && args[0] != "pr") {
+		return false
+	}
+	switch flag {
+	case "--body", "-b", "--body-file", "-F", "--title", "-t", "--subject", "--comment":
+		return true
+	case "-c":
+		return args[1] == "close" || args[1] == "reopen"
 	}
 	return false
 }
