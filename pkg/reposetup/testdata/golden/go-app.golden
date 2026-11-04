@@ -1759,7 +1759,7 @@ repos:
             python3 -c 'import json,sys; h=lambda o: {**{k:v for k,v in o.items() if k!="additionalProperties"},"unevaluatedProperties":False} if ("$ref" in o and o.get("additionalProperties") is False) else o; p=sys.argv[1]; f=open(p,encoding="utf-8"); d=json.load(f,object_hook=h); f.close(); f=open(p,"w",encoding="utf-8"); json.dump(d,f); f.close()' "$tmp"
             schemalint normalize "$tmp" -o "$tmp" --force
             if ! diff -u helm/example-go-service/values.schema.json "$tmp"; then
-              echo "helm/example-go-service/values.schema.json is out of date -- run 'devctl gen precommit' and commit the result" >&2
+              printf '%s\n' "helm/example-go-service/values.schema.json is out of date; run from the repository root and commit the result:" 'devctl gen precommit --language='"'"'go'"'"' --repo-name='"'"'github.com/giantswarm/example-go-service'"'"' --flavors='"'"'helmchart'"'"' --k8s-schema-version='"'"'v1.33.1'"'"'' >&2
               exit 1
             fi
   - repo: https://github.com/giantswarm/schemalint

@@ -196,7 +196,7 @@ repos:
             python3 -c '{{ $.RefFixPython }}' "$tmp"
             schemalint normalize "$tmp" -o "$tmp" --force
             if ! diff -u helm/{{.}}/values.schema.json "$tmp"; then
-              echo "helm/{{.}}/values.schema.json is out of date -- run 'devctl gen precommit' and commit the result" >&2
+              printf '%s\n' "helm/{{.}}/values.schema.json is out of date; run from the repository root and commit the result:" {{ $.RegenerateCommand }} >&2
               exit 1
             fi
 {{- /* `rev:` is stamped from the same go.mod pin as the hook above, not a literal: it is
