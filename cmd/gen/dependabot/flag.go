@@ -38,7 +38,7 @@ func (f *flag) Validate() error {
 		if exists("Dockerfile") {
 			f.Ecosystems = append(f.Ecosystems, gen.EcosystemDocker.String())
 		}
-		if exists(".github/workflows/") {
+		if exists(".github/workflows/") || exists("action.yml") || exists("action.yaml") {
 			f.Ecosystems = append(f.Ecosystems, gen.EcosystemGithubActions.String())
 		}
 		if exists("go.mod") && exists("go.sum") {
