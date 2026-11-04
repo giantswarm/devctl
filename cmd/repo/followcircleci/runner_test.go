@@ -3,6 +3,7 @@ package followcircleci
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -72,6 +73,10 @@ func (f *fakeCircleCI) RunPipeline(_ context.Context, _, _, _ string, ref circle
 
 func (f *fakeCircleCI) GetPipeline(context.Context, string) (*circleciclient.PipelineDetail, error) {
 	return &circleciclient.PipelineDetail{Pipeline: circleciclient.Pipeline{State: "created"}}, nil
+}
+
+func (f *fakeCircleCI) GetWorkflow(context.Context, string) (*circleciclient.WorkflowDetail, error) {
+	return nil, fmt.Errorf("unexpected workflow attribution read")
 }
 
 func (f *fakeCircleCI) ListPipelineWorkflows(context.Context, string) ([]circleciclient.Workflow, error) {
