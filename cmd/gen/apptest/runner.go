@@ -64,12 +64,16 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		}
 	}
 
-	// Check if the e2e directory already exists
+	// Reserve the destination before writing any templates. A separate existence
+	// check would let concurrent initializers overwrite each other's tests.
 	f, err := filepath.Abs("./tests/e2e")
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	if _, err = os.Stat(f); errors.Is(err, os.ErrNotExist) {
+	if err := os.MkdirAll(filepath.Dir(f), 0750); err != nil {
+		return microerror.Mask(err)
+	}
+	if err = os.Mkdir(f, 0750); err == nil {
 		r.logger.Debugf(ctx, "E2E tests don't exist\n")
 		var inputs []input.Input
 		{
@@ -89,10 +93,12 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		if err != nil {
 			return microerror.Mask(err)
 		}
-	} else {
+	} else if errors.Is(err, os.ErrExist) {
 		r.logger.Log(ctx, "The e2e directory already exists, stopping.\n")
 		// We don't want to overwrite existing tests
 		return microerror.Mask(fmt.Errorf("the e2e directory already exists"))
+	} else {
+		return microerror.Mask(err)
 	}
 
 	return nil
