@@ -292,7 +292,7 @@ func assertGolden(t *testing.T, golden, got string) {
 	t.Helper()
 
 	want, err := os.ReadFile(golden) // #nosec G304 -- fixed in-package testdata path or t.TempDir()
-	if err != nil && !(*update && os.IsNotExist(err)) {
+	if err != nil && (!*update || !os.IsNotExist(err)) {
 		t.Fatalf("read golden %s: %v (run with -update to create it)", golden, err)
 	}
 
@@ -398,7 +398,7 @@ func Test_AssertGolden_update(t *testing.T) {
 				}
 			}
 			assertGolden(t, golden, tc.got)
-			got, err := os.ReadFile(golden)
+			got, err := os.ReadFile(golden) // #nosec G304 -- golden is created in t.TempDir() above
 			if err != nil {
 				t.Fatal(err)
 			}
