@@ -36,7 +36,7 @@ func readJob(t *testing.T, client *circleciclient.Client, ref string, lines int)
 	t.Helper()
 	result := NewJobResult("o/r")
 	var warnings []string
-	err := ReadJob(context.Background(), client, "o", "r", ref, lines, result, func(w string) { warnings = append(warnings, w) })
+	err := ReadJob(context.Background(), client, "o", "r", ref, JobOptions{Lines: lines}, result, func(w string) { warnings = append(warnings, w) })
 	return result, warnings, err
 }
 
