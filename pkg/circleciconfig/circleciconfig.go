@@ -442,7 +442,7 @@ func evaluate(statement any, config map[string]any, run Run) (bool, bool) {
 			if !known {
 				return false, false
 			}
-			re, err := regexp.Compile(pattern)
+			re, err := regexp.Compile("^(?:" + pattern + ")$")
 			if err != nil {
 				return false, false
 			}
