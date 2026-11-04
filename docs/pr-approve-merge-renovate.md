@@ -115,6 +115,7 @@ The command uses three algorithms in sequence to group PRs:
 - Groups are sorted by PR count (most PRs first)
 - **ALL groups are shown**, including those with only 1 PR
 - Version suffixes like `/v80` are normalized so `go-github/v80` and `go-github/v81` group together
+- Multiword dependency groups search each normalized word, allowing words or versions removed during grouping to appear between them.
 
 ## Examples
 
