@@ -164,6 +164,13 @@ Green lands with one call of the merge API, `PUT /repos/{owner}/{repo}/pulls/{nu
   their own green pull request past the required review; anyone else's is declined (405) until a reviewer
   with write access approves it, and nothing is changed to get past it.
 
+Once GitHub confirms a merge that the wait reported as missing a required approval, the command removes
+that review entry from `blocking` and replaces its "GitHub blocks the merge" warning with
+"merged through the ruleset bypass: an approving review the base requires is missing". A confirmed queue
+merge instead says the wait reported a missing approval, since a review may have arrived while queued.
+Other warnings and blockers stay as reported by the wait, and `pr wait` still names the missing approval.
+This applies even if branch cleanup or the release wait subsequently fails.
+
 A merge GitHub declines as the pull request stands (405: a rule blocks it, the base moved under a
 strict protection; 409: the head moved) or for the token's permissions (403: the devctl App lacks a
 permission the merge needs, such as `workflows` for a pull request that changes a workflow) is exit 3,
