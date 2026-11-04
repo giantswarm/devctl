@@ -2,6 +2,7 @@ package appstatus
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os/exec"
 	"time"
@@ -51,11 +52,24 @@ func (c *Client) WaitForAppDeployment(ctx context.Context, appName, orgNamespace
 		return microerror.Maskf(invalidConfigError, "%s", err)
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	contextError := func() error {
+		return microerror.Mask(fmt.Errorf("waiting for app %s to deploy within %v: %w", appName, timeout, ctx.Err()))
+	}
+	if ctx.Err() != nil {
+		return contextError()
+	}
+
 	c.logger.Infof("Waiting for app %s to be deployed in namespace %s", appName, orgNamespace)
 
 	// Login to management cluster
-	loginCmd := exec.Command("tsh", "kube", "login", managementCluster) // #nosec G204 -- fixed binary; managementCluster is checked above and passed as its own argument element
+	loginCmd := exec.CommandContext(ctx, "tsh", "kube", "login", managementCluster) // #nosec G204 -- fixed binary; managementCluster is checked above and passed as its own argument element
+	loginCmd.WaitDelay = time.Second
 	err := loginCmd.Run()
+	if ctx.Err() != nil {
+		return contextError()
+	}
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -63,17 +77,22 @@ func (c *Client) WaitForAppDeployment(ctx context.Context, appName, orgNamespace
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
 	for {
+		if ctx.Err() != nil {
+			return contextError()
+		}
 		// Get app status using kubectl
-		kubectlCmd := exec.Command("kubectl", "get", "app", appName, // #nosec G204 -- fixed binary and subcommand; appName and orgNamespace are checked above and passed as their own argument elements
+		kubectlCmd := exec.CommandContext(ctx, "kubectl", "get", "app", appName, // #nosec G204 -- fixed binary and subcommand; appName and orgNamespace are checked above and passed as their own argument elements
 			"-n", orgNamespace,
 			"-o", "jsonpath={.status.release.status}")
 		kubectlCmd.Stderr = c.stderr
+		// Credential plugins may inherit the output pipes after kubectl exits.
+		kubectlCmd.WaitDelay = time.Second
 
 		output, err := kubectlCmd.Output()
+		if ctx.Err() != nil {
+			return contextError()
+		}
 		status := string(output)
 		if err == nil {
 			if status == "deployed" {
@@ -86,7 +105,7 @@ func (c *Client) WaitForAppDeployment(ctx context.Context, appName, orgNamespace
 		case <-ticker.C:
 			c.logger.Infof("App %s is not deployed yet, current status: %s", appName, status)
 		case <-ctx.Done():
-			return microerror.Maskf(invalidConfigError, "App %s was not deployed within %v", appName, timeout)
+			return contextError()
 		}
 	}
 }
