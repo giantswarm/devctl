@@ -92,3 +92,18 @@ func TestCommandClassicProtectionDisappeared(t *testing.T) {
 	require.Contains(t, output, `"verdict": "failed"`)
 	require.Empty(t, f.writes, "a checks update must not create full branch protection")
 }
+
+func TestCommandClassicWriterLeavesRulesetUpdatesAlone(t *testing.T) {
+	f := newChecksFixture(t)
+	f.protection.RequiredPullRequestReviews = &github.PullRequestReviewsEnforcement{RequiredApprovingReviewCount: 2, RequireCodeOwnerReviews: true}
+	f.ruleset = fixtureRuleset(&github.RuleStatusCheck{Context: "existing gate", IntegrationID: new(int64(4321))})
+	f.reported = []string{"ci/circleci: build"}
+	before := *f.protection
+	_, err := f.execute(t.Context(), "--update", "--output=json", "fixture/repository")
+	require.NoError(t, err)
+	require.Len(t, f.writes, 1)
+	require.Equal(t, http.MethodPut, f.writes[0].method)
+	require.Equal(t, "/rulesets/7", f.writes[0].path, "when both exist the engine's ruleset remains the checks target")
+	require.Equal(t, before, *f.protection, "classic protection is untouched when the ruleset carries the checks")
+	require.Equal(t, []*github.RuleStatusCheck{{Context: "existing gate", IntegrationID: new(int64(4321))}, {Context: "ci/circleci: build"}}, f.ruleset.Rules.RequiredStatusChecks.RequiredStatusChecks)
+}
