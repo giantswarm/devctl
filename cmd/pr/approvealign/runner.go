@@ -218,7 +218,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 			state := combinedStatus.GetState()
 			totalCount := combinedStatus.GetTotalCount()
 
-			if state == "success" {
+			if state == stateSuccess {
 				// All required checks passed
 				checksPending = false
 				hasFailedChecks = false
@@ -234,13 +234,13 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 		// Check individual check runs (GitHub Actions checks)
 		if checkRuns != nil && len(checkRuns.CheckRuns) > 0 && !hasFailedChecks {
 			// Only check runs if combinedStatus didn't already give us a definitive answer
-			if combinedStatus == nil || (combinedStatus.GetState() != "success" && combinedStatus.GetState() != stateFailure) {
+			if combinedStatus == nil || (combinedStatus.GetState() != stateSuccess && combinedStatus.GetState() != stateFailure) {
 				for _, run := range checkRuns.CheckRuns {
 					conclusion := run.GetConclusion()
 					status := run.GetStatus()
 
 					if status == "completed" {
-						if conclusion != "success" && conclusion != "neutral" && conclusion != "skipped" {
+						if conclusion != stateSuccess && conclusion != "neutral" && conclusion != "skipped" {
 							hasFailedChecks = true
 							break
 						}

@@ -21,9 +21,11 @@ func IsExecutionFailed(err error) bool {
 	return microerror.Cause(err) == executionFailedError
 }
 
-// stateFailure is the GitHub commit-status state and check-run conclusion that
-// marks a failed run.
-const stateFailure = "failure"
+// GitHub commit-status states and matching check-run conclusions.
+const (
+	stateSuccess = "success"
+	stateFailure = "failure"
+)
 
 var invalidFlagError = &microerror.Error{
 	Kind: "invalidFlagError",
