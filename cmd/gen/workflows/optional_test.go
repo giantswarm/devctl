@@ -66,7 +66,7 @@ func Test_Run_DisableOptionalWorkflows(t *testing.T) {
 			}
 			require.FileExists(t, path("semantic_pull_request"))
 			for _, name := range []string{"handwritten.yaml", "zz_generated.other-tool.yaml"} {
-				got, err := os.ReadFile(filepath.Join(".github/workflows", name))
+				got, err := os.ReadFile(filepath.Join(".github/workflows", name)) // #nosec G304 -- fixed fixture names inside t.TempDir
 				require.NoError(t, err)
 				require.Equal(t, "name: keep\n", string(got))
 			}
