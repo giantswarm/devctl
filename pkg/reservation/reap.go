@@ -51,10 +51,10 @@ func (r ReapRequest) validate() error {
 // directory and releases every reservation that ran out of time, whose pull
 // request is closed, or whose stored branch no longer matches its pull
 // request's current head branch. A
-// cluster that fails -- an unparsable ConfigMap, a push that never lands --
-// does not stop the sweep from reaching the next one; its error is joined into
-// the one Reap returns alongside whatever it did manage to release, so a
-// caller can report every failure rather than just the first.
+// cluster that fails, such as an unparsable ConfigMap, does not stop the sweep
+// from reaching the next one. A failed push or refused dirty reset stops the
+// sweep because it leaves an unreported commit on local main. Errors are joined
+// alongside whatever Reap did manage to release.
 func Reap(ctx context.Context, req ReapRequest) ([]Reaped, error) {
 	if err := req.validate(); err != nil {
 		return nil, microerror.Mask(err)
@@ -77,7 +77,7 @@ func Reap(ctx context.Context, req ReapRequest) ([]Reaped, error) {
 		reaped = append(reaped, released...)
 		if err != nil {
 			errs = append(errs, err)
-			if IsPushFailed(err) {
+			if IsPushFailed(err) || IsDirtyWorktree(err) {
 				break
 			}
 		}
@@ -117,9 +117,10 @@ func enabledClusters(repoDir string) ([]string, error) {
 
 // reapCluster sweeps one cluster: every reservation whose expiry passed is
 // released, reported and pushed before the next one is even considered, so a
-// push that fails on one reservation never costs the release of another. A
-// reservation that fails its reason check or its release/push is joined into
-// the returned error rather than stopping the rest of the cluster's sweep.
+// failure that leaves no pending commit does not cost another release. Reason
+// and release errors are joined into the returned error. A failed push or a
+// refused dirty reset stops the sweep before another release can push the
+// unreported commit.
 func reapCluster(ctx context.Context, req ReapRequest, cluster string, now time.Time) ([]Reaped, error) {
 	reservations, err := List(ListRequest{RepoDir: req.RepoDir, Cluster: cluster})
 	if err != nil {
@@ -149,8 +150,9 @@ func reapCluster(ctx context.Context, req ReapRequest, cluster string, now time.
 		}, req.HeadBranch, now)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("releasing %q on cluster %q: %w", r.App, cluster, err))
-			// A given-up push leaves its commit on local main; going on would push it with the next change.
-			if IsPushFailed(err) {
+			// A failed push or refused reset leaves an unreported commit on
+			// local main. Stop before another release can carry it along.
+			if IsPushFailed(err) || IsDirtyWorktree(err) {
 				break
 			}
 			continue

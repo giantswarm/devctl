@@ -21,7 +21,7 @@ func TestPrint(t *testing.T) {
 	  "engine":{"module":"github.com/giantswarm/devctl/v8","version":"v8.82.10","package":"pkg/reposetup"},
 	  "capabilities":{"modes":["commit"],"applyRefused":true,"writeTools":["set_lifecycle","transfer_repository"]}}`), &info))
 	var out bytes.Buffer
-	print(&out, "https://muster.example/mcp", &info)
+	require.NoError(t, print(&out, "https://muster.example/mcp", &info))
 	text := out.String()
 	for _, want := range []string{
 		"giantswarm-repo-manager 0.25.2 at https://muster.example/mcp (tools x_giantswarm-repo-manager_*)",
