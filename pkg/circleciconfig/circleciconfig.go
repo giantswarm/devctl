@@ -15,6 +15,7 @@ package circleciconfig
 import (
 	"context"
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strings"
@@ -469,7 +470,7 @@ func truthy(v any) bool {
 	case int:
 		return v != 0
 	case float64:
-		return v != 0
+		return v != 0 && !math.IsNaN(v)
 	case string:
 		return v != ""
 	}
