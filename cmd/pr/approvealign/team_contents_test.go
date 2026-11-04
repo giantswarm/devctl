@@ -34,6 +34,7 @@ func TestTeamRepositoriesContents(t *testing.T) {
 		{name: "directory", body: `[{"type":"file","name":"entry.yaml"}]`, wantError: true, wantKind: true},
 		{name: "empty directory", body: `[]`, wantError: true, wantKind: true},
 		{name: "submodule metadata", body: `{"type":"submodule","submodule_git_url":"https://example.invalid/fixture"}`, wantError: true, wantKind: true},
+		{name: "submodule compatibility metadata", body: `{"type":"file","submodule_git_url":"https://example.invalid/fixture"}`, wantError: true, wantKind: true},
 		{name: "unresolved symlink metadata", body: `{"type":"symlink","target":"missing"}`, wantError: true, wantKind: true},
 		{name: "regular file", team: "team-fixture", body: file("- name: first\n- name: second\n- name: first\n"), want: map[string]bool{"first": true, "second": true}},
 		{name: "empty team", body: file(""), want: map[string]bool{}},
