@@ -100,7 +100,7 @@ func TestWaitReleaseAssetsOfTheStableTag(t *testing.T) {
 				{
 					name: "case 4: green workflow jobs are not visible yet",
 					change: func(fx *fixture) {
-						fx.circleci["GET /api/v2/workflow/w1/job"] = append([]sequence.Response{{Status: 404}}, fx.circleci["GET /api/v2/workflow/w1/job"]...)
+						fx.circleci["GET /api/v2/workflow/w1/job"] = append([]sequence.Response{{Status: 404}, {Status: 404}}, fx.circleci["GET /api/v2/workflow/w1/job"]...)
 					},
 					wantWait: IntervalFloor, wantCount: 1,
 				},

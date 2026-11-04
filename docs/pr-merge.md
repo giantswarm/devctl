@@ -36,7 +36,8 @@ wait and the release wait, without reading the CircleCI keychain entry or API. I
 the configuration runs on the branch or tag to post and pass, as `devctl serve` does, including jobs
 behind `requires:` that have posted nothing. The flag is passed through to a detached merge too.
 `--failed-log` takes precedence and uses the CircleCI API, requiring the CircleCI login when needed
-for job logs. Without either flag, the existing CircleCI API behavior applies.
+for job logs. Without either flag, the existing CircleCI API behavior applies. A release-assets repository
+cannot be confirmed from statuses alone: the release wait runs out `--release-timeout` and ends exit 9.
 The GitHub identity follows the repository's owner: the
 App login for giantswarm, where the devctl App is installed, and your own `gh` login (`gh auth token` of the
 real `gh`, never a `gh` link to devctl, and no environment variable) for every other owner, with the same
