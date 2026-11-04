@@ -576,7 +576,6 @@ type chartArtifact struct{ name, catalog, catalogTest string }
 // loop polls until every artifact is available and the tag's CI is green,
 // the tag's CI failed or the deadline passed.
 func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
-	owner, repo := w.config.Owner, w.config.Repo
 	for {
 		// The jobs name the artifacts of hand-written CI and of a generated
 		// pipeline's custom.yml; once those are known nothing reads them.
@@ -611,42 +610,21 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 			return err
 		}
 		w.unanswered = ""
+		// The registry answers for the artifacts even when CI has failed.
+		// Observe them before returning that independent pipeline verdict.
+		err = w.updateArtifacts(ctx, result, p, state)
 		if state.failed {
+			if err != nil {
+				w.warn(fmt.Sprintf("reading artifact availability for %s: %v", result.Tag, err))
+			}
 			if w.config.FailedLogLines > 0 {
 				result.FailedJobs = w.failedJobs(ctx, state)
 			}
 			return ciFailedErr("the tag pipeline of %s failed: %s", result.Tag, strings.Join(state.failedJobs, ", "))
 		}
 
-		if !p.derived && result.CIModel == CIModelHandWritten && state.jobs != nil {
-			artifacts, warnings, err := HandWrittenArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, result.Tag, *p.content, state.jobs, p.private, w.config.Images, w.config.Charts, w.config.Endpoints)
-			if err != nil {
-				return err
-			}
-			for _, warning := range warnings {
-				w.warn(warning)
-			}
-			p.setArtifacts(result, artifacts)
-			for _, a := range artifacts {
-				w.progress.Printf("expecting %s %s", a.Kind, a.Reference)
-			}
-		}
-		if p.custom && state.jobs != nil {
-			artifacts, err := CustomArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, p.customJobs, state.jobs, p.private, w.config.Endpoints)
-			if err != nil {
-				return err
-			}
-			w.warnUncheckedImageJobs(p.uncheckedImages, state.jobs)
-			p.addArtifacts(result, artifacts)
-			for _, a := range artifacts {
-				w.progress.Printf("expecting %s %s (%s/%s)", a.Kind, a.Reference, circleCIDir, circleCICustom)
-			}
-		}
-
-		if p.derived {
-			if err := w.probe(ctx, result, p); err != nil {
-				return err
-			}
+		if err != nil {
+			return err
 		}
 
 		done := false
@@ -702,6 +680,43 @@ func (w *Waiter) loop(ctx context.Context, result *Result, p *plan) error {
 			return w.timeout(result)
 		}
 	}
+}
+
+// updateArtifacts derives the expected artifacts once their jobs are known
+// and probes those not yet available, independently of the pipeline verdict.
+func (w *Waiter) updateArtifacts(ctx context.Context, result *Result, p *plan, state *pipelineState) error {
+	owner, repo := w.config.Owner, w.config.Repo
+	if !p.derived && result.CIModel == CIModelHandWritten && state.jobs != nil {
+		artifacts, warnings, err := HandWrittenArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, result.Tag, *p.content, state.jobs, p.private, w.config.Images, w.config.Charts, w.config.Endpoints)
+		if err != nil {
+			return err
+		}
+		for _, warning := range warnings {
+			w.warn(warning)
+		}
+		p.setArtifacts(result, artifacts)
+		for _, a := range artifacts {
+			w.progress.Printf("expecting %s %s", a.Kind, a.Reference)
+		}
+	}
+	if p.custom && state.jobs != nil {
+		artifacts, err := CustomArtifacts(ctx, w.config.GitHub, owner, repo, result.SHA, p.version, p.customJobs, state.jobs, p.private, w.config.Endpoints)
+		if err != nil {
+			return err
+		}
+		w.warnUncheckedImageJobs(p.uncheckedImages, state.jobs)
+		p.addArtifacts(result, artifacts)
+		for _, a := range artifacts {
+			w.progress.Printf("expecting %s %s (%s/%s)", a.Kind, a.Reference, circleCIDir, circleCICustom)
+		}
+	}
+
+	if p.derived {
+		if err := w.probe(ctx, result, p); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // pending names what the wait still waits for, for the heartbeat of a wait
