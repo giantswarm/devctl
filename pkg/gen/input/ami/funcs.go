@@ -35,6 +35,9 @@ func getAMIInfoString(config Config) (string, error) {
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
+		if response.StatusCode != http.StatusOK {
+			return "", microerror.Maskf(executionFailedError, "fetching %s: HTTP status %d", url, response.StatusCode)
+		}
 
 		versions, err = scrapeVersions(response.Body)
 		if err != nil {
@@ -62,6 +65,9 @@ func getAMIInfoString(config Config) (string, error) {
 		}
 		if response.StatusCode == 403 {
 			continue // not found, keep going
+		}
+		if response.StatusCode != http.StatusOK {
+			return "", microerror.Maskf(executionFailedError, "fetching %s: HTTP status %d", url, response.StatusCode)
 		}
 		versionAMI, err := scrapeVersionAMI(response.Body)
 		if err != nil {
@@ -115,6 +121,9 @@ func scrapeVersions(source io.Reader) ([]string, error) {
 		tt := z.Next()
 		switch tt {
 		case html.ErrorToken:
+			if err := z.Err(); err != io.EOF {
+				return nil, microerror.Mask(err)
+			}
 			return versions, nil
 		case html.StartTagToken:
 			t := z.Token()
