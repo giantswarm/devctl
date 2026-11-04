@@ -78,7 +78,7 @@ func (r *refDispatchRecorder) DispatchWorkflowRun(ctx context.Context, owner, re
 
 // Parse the actual public flags, then run the real command/engine/HTTP client
 // with only the version gate and credential lookup replaced by fixtures.
-func runRefCommand(t *testing.T, args []string, routes sequence.Routes) (map[string]any, error, *githubmock.Server, *refDispatchRecorder) {
+func runRefCommand(t *testing.T, args []string, routes sequence.Routes) (map[string]any, *githubmock.Server, *refDispatchRecorder, error) {
 	t.Helper()
 	f := &flag{}
 	cmd := &cobra.Command{}
@@ -90,7 +90,7 @@ func runRefCommand(t *testing.T, args []string, routes sequence.Routes) (map[str
 	recorder := &refDispatchRecorder{GitHub: sources.GitHub}
 	sources.GitHub = recorder
 	doc, err := runCommand(t, cmd.Flags().Args(), f, func() (*releasepromote.Sources, error) { return sources, nil })
-	return doc, err, server, recorder
+	return doc, server, recorder, err
 }
 
 func TestRunRefMaintenance(t *testing.T) {
@@ -102,7 +102,7 @@ func TestRunRefMaintenance(t *testing.T) {
 			args = append(args, "--dry-run")
 		}
 		t.Run(name, func(t *testing.T) {
-			doc, err, server, recorder := runRefCommand(t, args, refRoutes("release-1.9"))
+			doc, server, recorder, err := runRefCommand(t, args, refRoutes("release-1.9"))
 			require.NoError(t, err)
 			require.Equal(t, float64(agentcli.ExitOK), doc["exitCode"])
 			entry := doc["repositories"].([]any)[0].(map[string]any)
@@ -163,7 +163,7 @@ func TestRunRefWorkflowTriggers(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			routes := refRoutes(tc.branch)
 			routes[refWorkflowRoute+"?ref="+tc.branch] = refWorkflowResponse("on:\n  push:\n    " + tc.push + "\n  workflow_dispatch:")
-			doc, err, server, _ := runRefCommand(t, []string{refRepository, "--ref", tc.branch, "--dry-run"}, routes)
+			doc, server, _, err := runRefCommand(t, []string{refRepository, "--ref", tc.branch, "--dry-run"}, routes)
 			if tc.allowed {
 				require.NoError(t, err)
 				require.NotEmpty(t, doc["repositories"])
@@ -213,7 +213,7 @@ func TestRunRefPreservesCandidateChecks(t *testing.T) {
 				routes["GET /repos/"+refRepository+"/compare/v1.9.5...release-1.9"] = []sequence.Response{{Body: map[string]any{"status": "ahead"}}}
 				wantState, wantCandidate = "nothing_to_promote", ""
 			}
-			doc, err, server, recorder := runRefCommand(t, args, routes)
+			doc, server, recorder, err := runRefCommand(t, args, routes)
 			entry := doc["repositories"].([]any)[0].(map[string]any)
 			require.Equal(t, wantState, entry["state"], "%v", err)
 			require.Equal(t, wantCandidate, entry["candidate"])
@@ -259,7 +259,7 @@ func TestRunRefDefaultAndExistingOptions(t *testing.T) {
 				}
 			}
 			args := append([]string{refRepository, "--no-follow"}, option...)
-			doc, err, server, recorder := runRefCommand(t, args, routes)
+			doc, server, recorder, err := runRefCommand(t, args, routes)
 			require.NoError(t, err)
 			entry := doc["repositories"].([]any)[0].(map[string]any)
 			require.Equal(t, "v1.3.0-rc.1", entry["candidate"])
@@ -286,7 +286,7 @@ func TestRunRefWorkflowReadFailures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			routes := refRoutes("release-1.9")
 			routes[refWorkflowRoute+"?ref=release-1.9"] = tc.response
-			doc, err, server, _ := runRefCommand(t, []string{refRepository, "--ref", "release-1.9", "--no-follow"}, routes)
+			doc, server, _, err := runRefCommand(t, []string{refRepository, "--ref", "release-1.9", "--no-follow"}, routes)
 			require.Equal(t, tc.code, agentcli.Exit(err), "%v", err)
 			require.Equal(t, float64(tc.code), doc["exitCode"])
 			require.Contains(t, doc["reason"], "zz_generated.auto_release.yaml")
@@ -303,7 +303,7 @@ func TestRunRefUsageBeforeReads(t *testing.T) {
 		{refRepository, "--branch", "release-1.9", "--ref", "release-1.9"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
-			doc, err, server, _ := runRefCommand(t, args, sequence.Routes{})
+			doc, server, _, err := runRefCommand(t, args, sequence.Routes{})
 			require.Equal(t, agentcli.ExitUsage, agentcli.Exit(err), "%v", err)
 			require.Contains(t, doc["reason"], "--ref")
 			require.Empty(t, doc["repositories"])
