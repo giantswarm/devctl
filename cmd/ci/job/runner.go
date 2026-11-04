@@ -94,5 +94,5 @@ func (r *runner) job(ctx context.Context, args []string, doc *document) error {
 		}
 		doc.Repository = owner + "/" + repo
 	}
-	return ci.ReadJob(ctx, circleci, owner, repo, number, r.flag.Lines, doc.JobResult, doc.Warn)
+	return ci.ReadJob(ctx, circleci, owner, repo, number, ci.JobOptions{Lines: r.flag.Lines, StepOutput: r.flag.StepOutput}, doc.JobResult, doc.Warn)
 }

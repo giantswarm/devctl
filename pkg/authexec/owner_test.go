@@ -37,7 +37,13 @@ func TestGHOwner(t *testing.T) {
 		{name: "remote origin", args: []string{"pr", "list"}, remotes: gsRemotes, want: "giantswarm"},
 		{name: "upstream before origin", args: []string{"pr", "list"}, remotes: forkRemotes, want: "giantswarm"},
 		{name: "set-default wins", args: []string{"pr", "list"}, remotes: defaultRemotes, want: "teemow"},
+		{name: "set-default repository overrides remote URL", args: []string{"pr", "list"}, remotes: "remote.origin.url https://github.com/giantswarm/fork.git\nremote.origin.gh-resolved teemow/parent\n", want: "teemow"},
+		{name: "set-default App repository overrides fork URL", args: []string{"pr", "list"}, remotes: "remote.origin.url https://github.com/teemow/fork.git\nremote.origin.gh-resolved GiantSwarm/parent\n", want: "giantswarm"},
+		{name: "stale set-default without a remote is ignored", args: []string{"pr", "list"}, remotes: "remote.origin.url https://github.com/giantswarm/devctl.git\nremote.gone.gh-resolved teemow/parent\n", want: "giantswarm"},
 		{name: "outside a repository", args: []string{"search", "prs", "x"}, want: ""},
+		{name: "search ignores working directory repository", args: []string{"search", "prs", "x"}, remotes: "remote.origin.url https://github.com/teemow/devctl.git\n", want: ""},
+		{name: "search ignores GH_REPO default", args: []string{"search", "prs", "x"}, env: []string{"GH_REPO=teemow/devctl"}, want: ""},
+		{name: "search repo filters do not select a base repository", args: []string{"search", "prs", "x", "--repo", "teemow/devctl", "--repo", "giantswarm/devctl"}, want: ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

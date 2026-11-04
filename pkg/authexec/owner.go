@@ -28,6 +28,11 @@ var repoCommands = map[string]bool{
 // upstream, github and origin). remotes reads the working directory's
 // remote configuration; nil reads none.
 func GHOwner(args []string, environ []string, remotes func() string) string {
+	// Search is global; --repo is a repeatable search filter, not a base
+	// repository override. Neither GH_REPO nor the checkout selects its repo.
+	if len(args) > 0 && args[0] == "search" {
+		return ""
+	}
 flags:
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -176,6 +181,7 @@ func remoteOwner(remotes func() string) string {
 	urls := map[string]string{}
 	var order []string
 	resolved := ""
+	resolvedRepo := ""
 	for _, line := range strings.Split(remotes(), "\n") {
 		key, value, ok := strings.Cut(strings.TrimSpace(line), " ")
 		if !ok {
@@ -193,7 +199,11 @@ func remoteOwner(remotes func() string) string {
 			urls[name] = value
 		case "gh-resolved":
 			resolved = name
+			resolvedRepo = value
 		}
+	}
+	if _, ok := urls[resolved]; ok && resolvedRepo != "base" {
+		return repoOwner(resolvedRepo)
 	}
 	for _, name := range append([]string{resolved, "upstream", "github", "origin"}, order...) {
 		if u, ok := urls[name]; ok {

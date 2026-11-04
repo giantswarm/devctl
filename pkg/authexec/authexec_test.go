@@ -133,6 +133,7 @@ func TestRun(t *testing.T) {
 		wantExec bool
 		wantErr  string
 		args     []string
+		remotes  string
 		// wantPerson: gh runs without the token, on the person's login.
 		wantPerson bool
 	}{
@@ -144,6 +145,9 @@ func TestRun(t *testing.T) {
 		{name: "a comment without an upload acts as the App", program: "gh", args: []string{"pr", "comment", "5", "--repo", "giantswarm/devctl", "--body", "done"}, wantExec: true},
 		{name: "body text does not switch the login", program: "gh", args: []string{"pr", "comment", "5", "--body", "--repo=teemow/x", "--repo", "giantswarm/devctl"}, wantExec: true},
 		{name: "body text does not enable attachments", program: "gh", args: []string{"pr", "comment", "5", "--repo", "giantswarm/devctl", "--body", "--attach"}, wantExec: true},
+		{name: "search in a personal checkout stays on the App", program: "gh", args: []string{"search", "prs", "query"}, remotes: "remote.origin.url https://github.com/teemow/devctl.git\n", wantExec: true},
+		{name: "gh default can name a different owner from the remote", program: "gh", args: []string{"pr", "list"}, remotes: "remote.origin.url https://github.com/giantswarm/fork.git\nremote.origin.gh-resolved teemow/parent\n", wantExec: true, wantPerson: true},
+		{name: "gh default can name the App owner from a fork", program: "gh", args: []string{"pr", "list"}, remotes: "remote.origin.url https://github.com/teemow/fork.git\nremote.origin.gh-resolved giantswarm/parent\n", wantExec: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -160,6 +164,7 @@ func TestRun(t *testing.T) {
 				Path:    path,
 				Environ: []string{"PATH=" + path, "GH_TOKEN=person-token", "GITHUB_TOKEN=other-token"},
 				Stderr:  &stderr,
+				Remotes: func() string { return tc.remotes },
 				Exec: func(p string, argv, env []string) (int, error) {
 					execPath, execArgv, execEnv = p, argv, env
 					return tc.execCode, nil
