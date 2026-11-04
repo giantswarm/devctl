@@ -25,7 +25,7 @@ func runCommand(t *testing.T, args []string, f *flag, openErr error) (map[string
 		flag:   f,
 		stdout: &stdout,
 		stderr: &stderr,
-		open: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+		open: func(context.Context, string, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
 			return nil, openErr
 		},
 	}

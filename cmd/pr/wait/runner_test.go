@@ -264,7 +264,7 @@ func Test_run_tokenExpiresMidWait(t *testing.T) {
 			sent = append(sent, req.Header.Get("Authorization"))
 		}
 	}
-	if want := "Bearer ghu_test,Bearer ghu_test,Bearer ghu_renewed"; strings.Join(sent, ",") != want {
+	if want := "Bearer ghu_test,Bearer ghu_test,Bearer ghu_renewed,Bearer ghu_renewed,Bearer ghu_renewed,Bearer ghu_renewed"; strings.Join(sent, ",") != want {
 		t.Fatalf("pull request reads sent %v, want %s", sent, want)
 	}
 }
