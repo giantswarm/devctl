@@ -56,7 +56,6 @@ func Test_Command_ReleaseTransitions(t *testing.T) {
 					".github/workflows/custom.yaml",
 					".github/workflows/zz_generated.other.yaml",
 					".github/workflows/zz_generated.semantic_pull_request.yaml",
-					"CHANGELOG.md",
 				}
 				switch mode {
 				case "legacy":
