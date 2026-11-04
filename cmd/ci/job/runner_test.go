@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -102,5 +104,36 @@ func TestUsage(t *testing.T) {
 	}
 	if len(cc.Requests()) != 0 {
 		t.Errorf("CircleCI was called: %v", cc.Requests())
+	}
+}
+
+// Invalid numbers are usage errors even when version lookup or login fails.
+// Neither gate is needed to tell that the requested job cannot exist.
+func TestInvalidJobNumberBeforeGates(t *testing.T) {
+	for _, number := range []string{"seven", "0", "-1", "9223372036854775808"} {
+		for _, failingGate := range []string{"version", "login"} {
+			t.Run(number+"/"+failingGate, func(t *testing.T) {
+				r, cc := start(t, sequence.Routes{})
+				var versionCalls, loginCalls int
+				r.gate = func(bool) error {
+					versionCalls++
+					if failingGate == "version" {
+						return errors.New("version lookup unavailable")
+					}
+					return nil
+				}
+				r.requireCircleCI = func(context.Context) (authstore.Token, error) {
+					loginCalls++
+					return authstore.Token{}, &authstore.AuthRequiredError{Identity: "CircleCI", Cause: "no login"}
+				}
+				doc, code := execute(t, r, "o/r", number)
+				if code != agentcli.ExitUsage || doc["verdict"] != "usage" || !strings.Contains(doc["reason"].(string), "job number is a positive integer") {
+					t.Errorf("exit %d: %v, want the invalid job number", code, doc)
+				}
+				if versionCalls != 0 || loginCalls != 0 || len(cc.Requests()) != 0 {
+					t.Errorf("invalid number reached gates: version=%d login=%d requests=%d", versionCalls, loginCalls, len(cc.Requests()))
+				}
+			})
+		}
 	}
 }
