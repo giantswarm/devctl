@@ -46,6 +46,8 @@ github:
           base: {ref: main, repo: {full_name: giantswarm/devctl}}
       - *open
       - *open
+      - *open
+      - *open
       - body:
           number: 42
           node_id: PR_e2e_42
