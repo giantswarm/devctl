@@ -59,7 +59,7 @@ printf '%s\n' "$CLIFF_RESULT"
 `,
 						"sleep": "#!/usr/bin/env bash\nprintf '%s\\n' \"$*\" >> sleep-calls\n",
 					} {
-						if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o700); err != nil {
+						if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0o700); err != nil { // #nosec G306 -- test fixture
 							t.Fatal(err)
 						}
 					}
