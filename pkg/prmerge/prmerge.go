@@ -76,6 +76,9 @@ type Config struct {
 	// rebase on a fork line (a team-file entry with the fork flavour),
 	// squash everywhere else.
 	Method githubclient.MergeMethod
+	// CarryOf identifies the colleague's original pull request in the same
+	// repository. Its author must own every commit being rebased; zero disables it.
+	CarryOf int
 	// UpdateBranch: a head behind its base is updated from the base before
 	// its checks are judged and the new head waited for; behind a strict
 	// base, instead of exit 3.
@@ -116,6 +119,9 @@ type Result struct {
 	// repository allows when it does not allow the default squash: merge
 	// for a merge commit.
 	Method string `json:"method"`
+	// CarryOf names the original pull request and the author whose commits
+	// a carry preserves. Omitted for an ordinary merge.
+	CarryOf *Carry `json:"carryOf,omitempty"`
 	// BranchDeleted: the head branch was deleted after the merge (or was
 	// gone already). False for a head in a fork, which is left alone.
 	BranchDeleted bool `json:"branchDeleted"`
@@ -152,6 +158,7 @@ type Merger struct {
 	// acceptRed is Wait.AcceptRed: the checks the caller accepts red.
 	acceptRed  []string
 	idempotent bool
+	carryOf    int
 }
 
 // New returns a Merger for config.
@@ -179,6 +186,7 @@ func New(config Config) (*Merger, error) {
 		dispatchTo:   config.Dispatch,
 		acceptRed:    config.Wait.AcceptRed,
 		idempotent:   config.Idempotent,
+		carryOf:      config.CarryOf,
 	}
 	if m.clock.Scale() == 0 {
 		m.clock = agentcli.NewClock(1, nil)
@@ -195,6 +203,12 @@ func New(config Config) (*Merger, error) {
 	case githubclient.MergeSquash, githubclient.MergeRebase:
 	default:
 		return nil, microerror.Maskf(invalidConfigError, "%T.Method is squash or rebase, got %q", config, config.Method)
+	}
+	if m.carryOf < 0 || (m.carryOf > 0 && config.Method == githubclient.MergeSquash) {
+		return nil, microerror.Maskf(invalidConfigError, "carryOf must be positive and requires a rebase merge")
+	}
+	if m.carryOf > 0 {
+		m.method, m.methodDefault = githubclient.MergeRebase, false
 	}
 	if m.policy == nil {
 		client, ok := m.github.(*githubclient.Client)
@@ -254,6 +268,9 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	if err != nil {
 		return result, microerror.Mask(err)
 	}
+	if err := m.guardCarry(ctx, owner, repo, number, pr, result, queued); err != nil {
+		return result, err
+	}
 
 	// The warnings given before the wait (the method the settings chose)
 	// stay ahead of the wait's own.
@@ -311,6 +328,9 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	// The last read before the merge: a review that landed during the wait
 	// holds it.
 	if err := m.guardReviews(ctx, owner, repo, number, pr, caller, result); err != nil {
+		return result, err
+	}
+	if err := m.guardCarry(ctx, owner, repo, number, pr, result, queued); err != nil {
 		return result, err
 	}
 	if queued {
