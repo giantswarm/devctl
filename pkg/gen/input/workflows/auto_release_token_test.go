@@ -134,7 +134,7 @@ printf '%s\n' "$@" > gh-args
 			if err := os.WriteFile(filepath.Join(dir, "release-notes.md"), []byte("fixture release notes\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			values := map[string]string{
+			values := map[string]string{ // #nosec G101 -- synthetic token checked only by the isolated gh stub
 				"${{ steps.release-token.outputs.token }}": "fixture-app-token",
 				"${{ github.repository }}":                 "fixture/repository",
 				"${{ steps.decide.outputs.tag }}":          tc.tag,
