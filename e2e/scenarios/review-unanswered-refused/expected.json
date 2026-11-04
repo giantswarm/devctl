@@ -16,6 +16,7 @@
     "baseRef": "main",
     "checks": [],
     "actions": [],
+    "merged": false,
     "mergeCommitSha": "",
     "mergedBy": "",
     "method": "squash",

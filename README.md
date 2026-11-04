@@ -124,6 +124,10 @@ devctl rollout wait myinstallation giantswarm/app-operator v7.5.4 --progress
 
 ### Merging a pull request (`devctl pr merge`)
 
+SIGINT or SIGTERM during `pr merge`, `pr wait`, `release wait` or `rollout wait` still produces the JSON document,
+with an interrupted reason and the last observed state. The wait exits 2; after an acknowledged merge,
+`pr merge` exits 9 with `merged: true`, the merge commit and the `devctl release wait` confirmation command.
+
 Without an explicit method, an unreadable `gen.flavours` or a GitHub fork whose team-file entry does not declare
 `fork` is refused before waiting or writing (exit 3). Repair the declaration or choose `--rebase` or `--squash`.
 
@@ -140,6 +144,10 @@ devctl pr merge giantswarm/devctl 2278 --timeout 45m --progress
 ### Repository set-up (`devctl repo`)
 
 Giant Swarm repositories are declared in the team files of [giantswarm/github](https://github.com/giantswarm/github); the reconciler keeps them as declared. `devctl repo create` opens the team-file pull request the reconciler creates the repository from; `--dry-run` previews it through giantswarm-repo-manager and `--dry-run --local` validates with devctl's own engine. The other verbs are giantswarm-repo-manager's tools called through muster as you (`devctl auth login --muster-only` first): `list`, `get`, `refresh`, `status`, `sweep`, `watch`, `adopt`, `update`, `transfer`, `set-lifecycle`, `approve`, `align`, each with `--dry-run` where it writes and `-o json` for the manager's answer. See [docs/repo.md](docs/repo.md).
+
+`devctl repo owner giantswarm/devctl` reads the declared owning team directly from those team files
+with the agent App login, without muster or the repository-teams endpoint that requires Administration
+read. `--output json` includes the source declaration. See [the ownership lookup](docs/repo.md#devctl-repo-owner).
 
 ```bash
 devctl repo create --team bumblebee --name my-service --component-type service --flavour app --language go --description "What it does"
