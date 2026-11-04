@@ -28,7 +28,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		return microerror.Mask(err)
 	}
 
-	err = r.run(context.Background(), cmd, args)
+	err = r.run(cmd.Context(), cmd, args)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -72,8 +72,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if len(all) == 0 {
-		_, _ = fmt.Fprintf(r.stdout, "No reservations on %s.\n", r.flag.Cluster)
-		return nil
+		_, err := fmt.Fprintf(r.stdout, "No reservations on %s.\n", r.flag.Cluster)
+		return microerror.Mask(err)
 	}
 
 	w := tabwriter.NewWriter(r.stdout, 0, 0, 2, ' ', 0)
