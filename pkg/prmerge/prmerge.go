@@ -240,6 +240,7 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 		return result, err
 	}
 	result.HeadSHA, result.BaseRef = pr.GetHead().GetSHA(), pr.GetBase().GetRef()
+	result.Draft = pr.GetDraft()
 	if m.idempotent && pr.GetMerged() {
 		return result, m.mergedAlready(ctx, owner, repo, number, pr, result)
 	}
@@ -307,6 +308,7 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 		if err != nil {
 			return result, microerror.Mask(err)
 		}
+		result.Draft = pr.GetDraft()
 		if err := notApplicable(pr); err != nil {
 			return result, err
 		}

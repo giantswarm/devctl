@@ -62,7 +62,7 @@ devctl auth status
 
 ### Waiting for a pull request's CI (`devctl pr wait`)
 
-`devctl pr wait <owner/repo> <number>` blocks until the pull request's head is green as the merge box sees it (the latest run per check, every CircleCI workflow of the head revision, no GitHub Actions run still open or awaiting approval, every required context reported), red, or in a state no CI can turn green (draft, closed, conflicting, behind a strict base), then prints one JSON document and exits 0, 1, 2 (timeout), 3, 4 (a required context never reported), 7 or 8. See [docs/pr-wait.md](docs/pr-wait.md).
+`devctl pr wait <owner/repo> <number>` blocks until the pull request's head is green as the merge box sees it (the latest run per check, every CircleCI workflow of the head revision, no GitHub Actions run still open or awaiting approval, every required context reported), red, or in a state no CI can turn green (closed, conflicting, behind a strict base), then prints one JSON document and exits 0, 1, 2 (timeout), 3, 4 (a required context never reported), 7 or 8. Drafts wait for their checks too, with their latest state in `draft`; `pr merge` still refuses them with exit 3. See [docs/pr-wait.md](docs/pr-wait.md).
 
 ```bash
 devctl pr wait giantswarm/devctl 2277 --timeout 45m --progress
