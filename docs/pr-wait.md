@@ -1,13 +1,23 @@
 # Waiting for a pull request's CI: `devctl pr wait`
 
 ```nohighlight
-devctl pr wait <owner/repo> <number> [--timeout 60m] [--progress] [--failed-log [--failed-log-lines 50]]
+devctl pr wait <owner/repo> <number> [--timeout 60m] [--progress] [--circleci-from-statuses] [--failed-log [--failed-log-lines 50]]
 ```
 
 One blocking call that returns when the outcome of a pull request's CI is known: green, red, or a
 state no CI can turn green. It prints one JSON document on stdout at the end and nothing else; the
 exit code says what happened, so a script or an agent branches on it without parsing. `--progress`
 writes one line per poll to stderr for a person watching.
+
+`--circleci-from-statuses` waits without a CircleCI token, using the same logic as `devctl serve`:
+it reads the head's CircleCI configuration from GitHub, lists the jobs that run on the head's branch,
+and waits for every one to post a commit status and finish successfully. A downstream job behind
+`requires:` that has posted nothing keeps the head pending, even when all posted statuses are green.
+The verdict comes from GitHub statuses; CircleCI pipeline and workflow details are absent from the
+document. Without the flag, the CircleCI API is used as described below.
+`--failed-log` takes precedence over `--circleci-from-statuses`: it uses the CircleCI API and requires
+`devctl auth login --circleci-only` when the head carries a CircleCI configuration, so CircleCI log
+tails can be read. GitHub Actions logs alone require no CircleCI token on a head without CircleCI.
 
 `--failed-log` answers why a red wait is red without a second tool: on a red verdict it reads the
 log of each failed job once, a GitHub Actions job (`GET /repos/{owner}/{repo}/actions/jobs/{id}/logs`)
@@ -26,7 +36,9 @@ yet uploaded) is named in its job's `logError`; the verdict stays red.
 
 The tokens come from the OS keychain (`devctl auth login`, see [auth.md](auth.md)). The GitHub
 token is required before the first request; the CircleCI token only once the head turns out to
-carry a CircleCI configuration for a repository CircleCI builds. The GitHub identity follows the repository's owner: the
+carry a CircleCI configuration for a repository CircleCI builds and the wait uses the CircleCI API.
+`--circleci-from-statuses` without `--failed-log` never reads the CircleCI keychain entry or API.
+The GitHub identity follows the repository's owner: the
 App login for giantswarm, where the devctl App is installed, and your own `gh` login (`gh auth token` of the
 real `gh`, never a `gh` link to devctl, and no environment variable) for every other owner, with the same
 semantics; `identity` in the document says which, `app` or `gh`. Without a `gh` login such a pull request is

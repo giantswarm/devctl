@@ -4,7 +4,7 @@
 devctl pr merge <owner/repo> <number> [--timeout 60m] [--release-timeout 60m] [--no-release-wait]
                 [--rebase | --squash] [--update-branch] [--accept-red <check>]...
                 [--dispatch <owner>/<repo>/<workflow file>[@<ref>]]
-                [--progress] [--failed-log [--failed-log-lines 50]] [--detach [--on-done <command>]]
+                [--progress] [--circleci-from-statuses] [--failed-log [--failed-log-lines 50]] [--detach [--on-done <command>]]
 devctl pr merge status [<handle>]
 ```
 
@@ -22,7 +22,14 @@ the same merge with `--detach` and reads its outcome later ([below](#detached-me
 
 The tokens come from the OS keychain (`devctl auth login`, see [auth.md](auth.md)): the GitHub token
 before the first request, the CircleCI token only once the head or the tag turns out to carry a
-CircleCI configuration for a repository CircleCI builds, as in `pr wait` and `release wait`. The GitHub identity follows the repository's owner: the
+CircleCI configuration for a repository CircleCI builds, as in `pr wait` and `release wait`.
+`--circleci-from-statuses` uses the configuration and GitHub commit statuses instead for both the PR
+wait and the release wait, without reading the CircleCI keychain entry or API. It waits for every job
+the configuration runs on the branch or tag to post and pass, as `devctl serve` does, including jobs
+behind `requires:` that have posted nothing. The flag is passed through to a detached merge too.
+`--failed-log` takes precedence and uses the CircleCI API, requiring the CircleCI login when needed
+for job logs. Without either flag, the existing CircleCI API behavior applies.
+The GitHub identity follows the repository's owner: the
 App login for giantswarm, where the devctl App is installed, and your own `gh` login (`gh auth token` of the
 real `gh`, never a `gh` link to devctl, and no environment variable) for every other owner, with the same
 semantics; `identity` in the document says which, `app` or `gh`. Without a `gh` login such a pull request is
