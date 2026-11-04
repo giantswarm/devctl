@@ -46,12 +46,14 @@ const (
 
 // writeChartTests writes the chart tests into the scaffold at dir after the
 // generators ran, when they emitted the ATS dependencies
-// (atsDependenciesPath): .ats/main.yaml when the scaffold has none, and
+// (atsDependenciesPath): .ats/main.yaml when the template had none, and
 // tests/ats/test_smoke.py -- name is the chart's -- when tests/ats holds no
-// Python file. A template that carries its own configuration or tests keeps
-// them. A scaffold without the dependency file (no chart, skipATS, a 0.x ATS
+// Python file. hadConfig records whether the template carried a configuration
+// before generation, so the generator's starter can be replaced with the
+// scaffold's smoke-enabled configuration. A template with its own config or
+// tests keeps them. A scaffold without the dependency file (no chart, skipATS, a 0.x ATS
 // pin on the Pipfile layout, a template repository) gets nothing.
-func writeChartTests(dir, name string) error {
+func writeChartTests(dir, name string, hadConfig bool) error {
 	if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(atsDependenciesPath))); err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -60,7 +62,7 @@ func writeChartTests(dir, name string) error {
 	}
 
 	config := filepath.Join(dir, filepath.FromSlash(atsConfigPath))
-	if _, err := os.Stat(config); os.IsNotExist(err) {
+	if !hadConfig {
 		data, err := chartTestFiles.ReadFile("scaffold/ats/main.yaml")
 		if err != nil {
 			return microerror.Mask(err)
@@ -68,8 +70,6 @@ func writeChartTests(dir, name string) error {
 		if err := writeFile(config, data, fileMode); err != nil {
 			return microerror.Mask(err)
 		}
-	} else if err != nil {
-		return microerror.Mask(err)
 	}
 
 	smoke := filepath.Join(dir, filepath.FromSlash(atsSmokeTestPath))
