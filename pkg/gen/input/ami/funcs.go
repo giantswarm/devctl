@@ -1,6 +1,7 @@
 package ami
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,7 +14,11 @@ import (
 	"golang.org/x/net/html"
 )
 
-func getAMIInfoString(config Config) (string, error) {
+func getAMIInfoString(ctx context.Context, config Config) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", microerror.Mask(err)
+	}
+
 	existing := map[string]map[string]string{}
 	if config.KeepExisting != "" {
 		// Read versions already defined in file.
@@ -31,9 +36,16 @@ func getAMIInfoString(config Config) (string, error) {
 	{
 		url := fmt.Sprintf("https://%s.release.%s/%s/", config.Channel, config.PrimaryDomain, config.Arch)
 		fmt.Println("getting list of releases from", url)
-		response, err := http.Get(url) //nolint:gosec
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return "", microerror.Mask(err)
+		}
+		response, err := http.DefaultClient.Do(request) //nolint:gosec
+		if err != nil {
+			return "", microerror.Mask(err)
+		}
+		if response.StatusCode != http.StatusOK {
+			return "", microerror.Maskf(executionFailedError, "fetching %s: HTTP status %d", url, response.StatusCode)
 		}
 
 		versions, err = scrapeVersions(response.Body)
@@ -56,19 +68,26 @@ func getAMIInfoString(config Config) (string, error) {
 
 		url := fmt.Sprintf("https://%s.release.%s/%s/%s/flatcar_production_ami_all.json", config.Channel, config.PrimaryDomain, config.Arch, version)
 		fmt.Println("scraping release", version)
-		response, err := http.Get(url) //nolint:gosec
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return "", microerror.Mask(err)
+		}
+		response, err := http.DefaultClient.Do(request) //nolint:gosec
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
 		if response.StatusCode == 403 {
 			continue // not found, keep going
 		}
+		if response.StatusCode != http.StatusOK {
+			return "", microerror.Maskf(executionFailedError, "fetching %s: HTTP status %d", url, response.StatusCode)
+		}
 		versionAMI, err := scrapeVersionAMI(response.Body)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
 
-		chinaVersionAMI, err := getChinaFlatcarRelease(config, version)
+		chinaVersionAMI, err := getChinaFlatcarRelease(ctx, config, version)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
@@ -88,6 +107,9 @@ func getAMIInfoString(config Config) (string, error) {
 		mergedAMI[version] = val
 	}
 
+	if err := ctx.Err(); err != nil {
+		return "", microerror.Mask(err)
+	}
 	result, err := json.MarshalIndent(mergedAMI, "", "  ")
 	if err != nil {
 		return "", microerror.Mask(err)
@@ -115,6 +137,9 @@ func scrapeVersions(source io.Reader) ([]string, error) {
 		tt := z.Next()
 		switch tt {
 		case html.ErrorToken:
+			if err := z.Err(); err != io.EOF {
+				return nil, microerror.Mask(err)
+			}
 			return versions, nil
 		case html.StartTagToken:
 			t := z.Token()

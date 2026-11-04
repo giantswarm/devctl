@@ -385,9 +385,6 @@ Manual changes will be overwritten.
 
 ### Do the docs need to be updated?
 
-### Should this change be mentioned in the release notes?
-
-
 --- .github/workflows/zz_generated.add-team-labels.yaml
 name: Add appropriate labels to issue
 
@@ -653,6 +650,13 @@ jobs:
 # the one `version` names: the stable tag lands on that candidate's commit,
 # so what ships is what was tested.
 #
+# Tags and releases are created with the giantswarm-release GitHub App token,
+# so GitHub Actions workflows listening on push.tags or release can start.
+# Requires the App installed on this repository with Contents write and the
+# RELEASE_BOT_CLIENT_ID / RELEASE_BOT_PRIVATE_KEY secrets available to this
+# workflow. Missing or unusable App credentials fail before creating a release;
+# there is no GITHUB_TOKEN fallback, whose events cannot start those workflows.
+#
 # The tag push then triggers downstream publishing (for chart/service/CLI
 # repos, this is the CircleCI architect pipeline firing on the same /^v.*/
 # tag filter -- go-build + push-to-registries + push-to-app-catalog +
@@ -705,7 +709,7 @@ jobs:
     name: Tag
     runs-on: ubuntu-26.04
     permissions:
-      contents: write       # push tags and create the GitHub Release
+      contents: read        # checkout and fetch; the App creates tags/releases
       # git-cliff's GitHub API lookups (commit.remote.pr_number / username
       # in release notes) need PR read access via GITHUB_TOKEN.
       pull-requests: read
@@ -857,7 +861,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # Single expensive call: walks commits, queries the GitHub API for
+          # One context read: walks commits, queries the GitHub API for
           # per-commit PR lookups, emits the JSON context for ONLY the bumped
           # release.
           #
@@ -874,7 +878,27 @@ jobs:
           # Without either filter, --bump --context returns the full release
           # history in JSON and the render step below would concatenate every
           # past release into each new release's notes.
-          git-cliff --unreleased --bump --context > cliff-context.json
+          # GitHub metadata reads can fail on a transient timeout, truncated
+          # response or 5xx. Retry with bounded backoff. Keep stderr in the
+          # log, including the final cause, and replace any partial context
+          # on each attempt before downstream steps can use it.
+          cliff_context() {
+            local try tries=3 status
+            for ((try=1; try<=tries; try++)); do
+              if git-cliff "$@" > cliff-context.json; then
+                return 0
+              else
+                status=$?
+              fi
+              if [ "$try" -eq "$tries" ]; then
+                echo "::error title=git-cliff failed::git-cliff failed after ${tries} attempts (exit ${status}); see its error above." >&2
+                return "$status"
+              fi
+              echo "git-cliff failed (attempt ${try} of ${tries}, exit ${status}); retrying in $((2 ** try))s" >&2
+              sleep $((2 ** try))
+            done
+          }
+          cliff_context --unreleased --bump --context
           NEXT=$(jq -r '.[0].version // empty' cliff-context.json)
           echo "next computed: ${NEXT:-<empty>}"
           echo "version=${NEXT}" >> "$GITHUB_OUTPUT"
@@ -981,12 +1005,19 @@ jobs:
             # cliff-context.json holds exactly the commits git-cliff counted
             # for this release, so intersecting it with the range since the
             # last candidate needs no second copy of cliff.toml's skip rules.
+            # A new conventional `test:` commit is also enough once this
+            # target has a candidate: a test fix must be able to replace a
+            # red candidate. It opens no cycle and changes no version or notes.
             if [ -n "${n}" ]; then
               counted=$(jq -r '.[0].commits[].id' "$CLIFF_CONTEXT")
               since=$(git rev-list "${NEXT}-rc.${n}..HEAD")
               fresh=0
               if [ -n "$counted" ] && [ -n "$since" ]; then
                 fresh=$(printf '%s\n' "$since" | { grep -cxF "$counted" || true; })
+              fi
+              if [ "$fresh" -eq 0 ]; then
+                fresh=$(git log --format='%s' "${NEXT}-rc.${n}..HEAD" \
+                  | { grep -cE '^test(\([^)]*\))?!?: ' || true; })
               fi
               if [ "$fresh" -eq 0 ]; then
                 echo "No releasable commits since ${NEXT}-rc.${n}; skipping tag."
@@ -1109,6 +1140,17 @@ jobs:
           # create --notes-file expects.
           git-cliff --from-context cliff-context.tagged.json --strip all --output release-notes.md
 
+      # Mint just before publishing, after the release guards have passed.
+      # With owner/repositories unset, the token is scoped to this repository.
+      - name: Generate the giantswarm-release token
+        id: release-token
+        if: steps.decide.outputs.tag != ''
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+
       # Create the tag AND the GitHub Release in one atomic API call. GitHub's
       # release-create endpoint accepts a tag_name + target_commitish and, if
       # the tag doesn't already exist, creates it pointing at that commitish
@@ -1125,7 +1167,7 @@ jobs:
         id: release
         if: steps.decide.outputs.tag != ''
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.decide.outputs.tag }}
           PRERELEASE: ${{ steps.decide.outputs.prerelease }}
@@ -1602,6 +1644,10 @@ linters:
   enable:
     - gosec
     - goconst
+  settings:
+    goconst:
+      # Test fixtures repeat literals intentionally; keep production checks.
+      ignore-tests: true
 
 issues:
   max-issues-per-linter: 0
@@ -1670,6 +1716,8 @@ repos:
       - id: go-mod-tidy
       - id: golangci-lint
         args:
+          # Let independent sessions and worktrees lint at the same time.
+          - --allow-parallel-runners
           # No --timeout: golangci-lint v2 has none by default and a flag would
           # override a repo's `run.timeout` in .golangci.yml, its place to set one.
           # List all issues found
@@ -2247,6 +2295,13 @@ LDFLAGS        ?= -w -linkmode 'auto' -extldflags '$(EXTLDFLAGS)' \
   -X '$(MODULE)/pkg/project.buildTimestamp=$(BUILDTIMESTAMP)' \
   -X '$(MODULE)/pkg/project.gitSHA=$(GITSHA1)'
 
+# Copy to a unique sibling before renaming so a running binary keeps its inode
+# and readers only see complete files. Keep the versioned artifact for packaging.
+INSTALL_BINARY = tmp=$$(mktemp "$(2).tmp.XXXXXX") || exit $$?; \
+	trap 'rm -f "$$tmp"' EXIT; \
+	trap 'exit 1' HUP INT TERM; \
+	cp -a "$(1)" "$$tmp" && mv -f "$$tmp" "$(2)"
+
 .DEFAULT_GOAL := build
 
 ##@ Go
@@ -2267,27 +2322,27 @@ build-windows-amd64: $(APPLICATION)-windows-amd64.exe ## Builds a local binary f
 
 $(APPLICATION): $(APPLICATION)-v$(VERSION)-$(OS)-amd64
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-darwin: $(APPLICATION)-v$(VERSION)-darwin-amd64
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-darwin-arm64: $(APPLICATION)-v$(VERSION)-darwin-arm64
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-linux: $(APPLICATION)-v$(VERSION)-linux-amd64
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-linux-arm64: $(APPLICATION)-v$(VERSION)-linux-arm64
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-windows-amd64.exe: $(APPLICATION)-v$(VERSION)-windows-amd64.exe
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-v$(VERSION)-%-amd64: $(SOURCES)
 	$(REQUIRE_VERSION)
@@ -2327,9 +2382,19 @@ imports: ## Runs goimports.
 	goimports -local $(MODULE) -w .
 
 .PHONY: lint
-lint: ## Runs golangci-lint.
+lint: ## Checks import formatting and runs golangci-lint (requires goimports).
 	@echo "====> $@"
+	@files=$$(goimports -local "$(MODULE)" -l .) || exit $$?; \
+	if [ -n "$$files" ]; then \
+		printf '%s\n' "$$files"; \
+		echo "Run 'make imports' to fix import formatting."; \
+		exit 1; \
+	fi
 	golangci-lint run --timeout=15m ./...
+
+# Extend lint from Makefile.custom.mk without replacing its generated recipe.
+.PHONY: lint-custom
+lint: lint-custom
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -2365,7 +2430,7 @@ test: ## Runs go test with default values (race detector when a C toolchain is a
 build-docker: build-linux ## Builds docker image to registry.
 	$(REQUIRE_VERSION)
 	@echo "====> $@"
-	cp -a $(APPLICATION)-linux $(APPLICATION)
+	@$(call INSTALL_BINARY,$(APPLICATION)-linux,$(APPLICATION))
 	docker build -t ${APPLICATION}:${VERSION} .
 
 --- README.md
@@ -2479,9 +2544,10 @@ commit_preprocessors = [
 # ships. git-cliff decides the bump from the commits that are NOT skipped: a
 # breaking change bumps the major, `feat` the minor, every other type at least
 # the patch. A skipped commit is left out of the release notes and of the
-# bump, so a docs-, style- or test-only push to main computes the current
-# version and the workflow tags nothing; the change ships with the next
-# release. `chore` and `ci` keep releasing: a `chore(deps)` bump changes what
+# bump, so a docs-, style- or test-only push outside a candidate cycle computes
+# the current version and the workflow tags nothing. During a cycle the workflow
+# lets a new test commit advance an existing candidate without changing its
+# version or notes. `chore` and `ci` keep releasing: a `chore(deps)` bump changes what
 # ships, a `ci` change how it is built.
 commit_parsers = [
   { message = "^feat",     group = "Added" },
@@ -2870,7 +2936,7 @@ func main() {}
     // without an ats/ Pipfile, so it is safe to extend for all generated-CI repos.
     'github>giantswarm/renovate-presets:tests-ats.json5',
   ],
-  // Our own bots commit onto Renovate branches. The giantswarm-release
+  // Our automation commits onto Renovate branches. The giantswarm-release
   // GitHub App pushes what the generated workflows produce
   // (zz_generated.helm-docs-regen.yaml, the update-chart and
   // sync-from-upstream flows); taylorbot <dev@giantswarm.io> did so before

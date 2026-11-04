@@ -15,10 +15,33 @@ import (
 func isolate(t testing.TB) {
 	t.Helper()
 
+	// Git hooks export repository-local state. -C does not override these
+	// variables, so fixture commands could otherwise use another repo's index,
+	// config or objects. Empty paths have meaning to Git: unset them instead.
+	for _, key := range []string{
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_OBJECT_DIRECTORY",
+		"GIT_DIR", "GIT_WORK_TREE", "GIT_IMPLICIT_WORK_TREE", "GIT_GRAFT_FILE",
+		"GIT_INDEX_FILE", "GIT_NO_REPLACE_OBJECTS", "GIT_REPLACE_REF_BASE",
+		"GIT_PREFIX", "GIT_SHALLOW_FILE", "GIT_COMMON_DIR",
+	} {
+		if _, ok := os.LookupEnv(key); !ok {
+			continue
+		}
+		// Setenv registers cleanup and enforces testing's parallel-test guard;
+		// unsetting afterward still restores the original value at cleanup.
+		t.Setenv(key, "")
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("unset %s: %v", key, err)
+		}
+	}
+
 	if os.Getenv("GIT_CONFIG_GLOBAL") == "" {
 		t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	}
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	// Git passes -c settings through hooks and shell aliases in this variable.
+	// They override GIT_CONFIG_COUNT, including the fixture's default branch.
+	t.Setenv("GIT_CONFIG_PARAMETERS", "")
 	// The fixtures are repos of a GitOps repo whose branch is main.
 	t.Setenv("GIT_CONFIG_COUNT", "1")
 	t.Setenv("GIT_CONFIG_KEY_0", "init.defaultBranch")

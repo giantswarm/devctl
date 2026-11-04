@@ -15,6 +15,7 @@ package circleciconfig
 import (
 	"context"
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strings"
@@ -187,6 +188,12 @@ func (j *Jobs) add(names map[string]bool, config map[string]any, run Run) {
 			continue
 		}
 		entries, _ := workflow["jobs"].([]any)
+		occurrences := map[string]int{}
+		for _, entry := range entries {
+			ref, params := jobEntry(entry)
+			occurrences[jobName(ref, params)]++
+		}
+		warnedNames := map[string]bool{}
 		var listed []job
 		for _, entry := range entries {
 			ref, params := jobEntry(entry)
@@ -194,12 +201,24 @@ func (j *Jobs) add(names map[string]bool, config map[string]any, run Run) {
 				continue
 			}
 			definition, _ := definitions[ref].(map[string]any)
-			name := ref
-			if n, ok := params["name"].(string); ok && n != "" {
-				name = n
+			name := jobName(ref, params)
+			if occurrences[name] > 1 {
+				if !warnedNames[name] {
+					j.Warnings = append(j.Warnings, fmt.Sprintf("workflow %s invokes %s more than once: CircleCI assigns job name suffixes, so its jobs count once they post a status", key, name))
+					warnedNames[name] = true
+				}
+				continue
+			}
+			if strings.Contains(name, "<<") {
+				j.Warnings = append(j.Warnings, fmt.Sprintf("workflow %s gives %s a name using a template devctl cannot evaluate: its jobs count once they post a status", key, ref))
+				continue
 			}
 			if _, matrix := params["matrix"]; matrix {
 				j.Warnings = append(j.Warnings, fmt.Sprintf("workflow %s runs %s as a matrix: its jobs count once they post a status", key, name))
+				continue
+			}
+			if _, expression := params["filters"].(string); expression {
+				j.Warnings = append(j.Warnings, fmt.Sprintf("workflow %s filters %s with an expression devctl cannot evaluate: its jobs count once they post a status", key, name))
 				continue
 			}
 			if !filtered(params["filters"], run) {
@@ -213,6 +232,13 @@ func (j *Jobs) add(names map[string]bool, config map[string]any, run Run) {
 			names[job] = true
 		}
 	}
+}
+
+func jobName(ref string, params map[string]any) string {
+	if name, ok := params["name"].(string); ok && name != "" {
+		return name
+	}
+	return ref
 }
 
 // jobEntry is a workflow job list's entry: the job it runs and its
@@ -254,8 +280,8 @@ func requires(value any) []string {
 	return names
 }
 
-// runnable are the names of the jobs that post a status and whose required
-// jobs all run: a job behind one the run filters out never starts.
+// runnable are the names of jobs that can post a status. CircleCI ignores
+// filtered dependencies, but skips a job when all its dependencies are filtered.
 func runnable(jobs []job) []string {
 	listed := map[string]job{}
 	for _, job := range jobs {
@@ -272,9 +298,9 @@ func runnable(jobs []job) []string {
 			return false
 		}
 		seen[name] = true
-		ok = true
+		ok = len(job.requires) == 0
 		for _, r := range job.requires {
-			ok = ok && runs(r, seen)
+			ok = ok || runs(r, seen)
 		}
 		memo[name] = ok
 		return ok
@@ -344,9 +370,15 @@ func matches(patterns any, value string) bool {
 // pipeline knows.
 func condition(workflow, config map[string]any, run Run) (runs, known bool) {
 	if when, ok := workflow["when"]; ok {
+		if isExpression(when) {
+			return false, false
+		}
 		return evaluate(when, config, run)
 	}
 	if unless, ok := workflow["unless"]; ok {
+		if isExpression(unless) {
+			return false, false
+		}
 		v, known := evaluate(unless, config, run)
 		return !v, known
 	}
@@ -355,6 +387,16 @@ func condition(workflow, config map[string]any, run Run) (runs, known bool) {
 
 // pipelineValue matches a << pipeline.… >> value as a whole.
 var pipelineValue = regexp.MustCompile(`^<<\s*pipeline\.([A-Za-z0-9_.-]+)\s*>>$`)
+
+// Direct expressions are distinct from legacy logic statements and their
+// literal strings. Do not turn their source text into a truthy value. Unknown
+// expressions use the same warning fallback as unknown pipeline values.
+var expressionSyntax = regexp.MustCompile(`\bpipeline\.|==|!=|>=|<=|[<>]|\b(?:and|or|not|starts-with|matches)\b`)
+
+func isExpression(v any) bool {
+	s, ok := v.(string)
+	return ok && !pipelineValue.MatchString(strings.TrimSpace(s)) && expressionSyntax.MatchString(s)
+}
 
 // value is what a logic statement's operand is for a pipeline the push of
 // run triggers.
@@ -409,18 +451,20 @@ func evaluate(statement any, config map[string]any, run Run) (bool, bool) {
 			return !v, known
 		case opAnd, opOr:
 			result := op == opAnd
+			allKnown := true
 			for _, a := range args {
 				v, known := evaluate(a, config, run)
 				if !known {
-					return false, false
+					allKnown = false
+					continue
 				}
-				if op == opAnd {
-					result = result && v
-				} else {
-					result = result || v
+				if op == opAnd && !v || op == opOr && v {
+					// One known operand decides the result even when
+					// another operand is unavailable before the run.
+					return v, true
 				}
 			}
-			return result, true
+			return result, allKnown
 		case "equal":
 			var first any
 			for i, a := range args {
@@ -442,7 +486,7 @@ func evaluate(statement any, config map[string]any, run Run) (bool, bool) {
 			if !known {
 				return false, false
 			}
-			re, err := regexp.Compile(pattern)
+			re, err := regexp.Compile("^(?:" + pattern + ")$")
 			if err != nil {
 				return false, false
 			}
@@ -463,7 +507,7 @@ func truthy(v any) bool {
 	case int:
 		return v != 0
 	case float64:
-		return v != 0
+		return v != 0 && !math.IsNaN(v)
 	case string:
 		return v != ""
 	}
