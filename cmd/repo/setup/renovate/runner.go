@@ -24,7 +24,10 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	err := r.flag.Validate()
 	if err != nil {
