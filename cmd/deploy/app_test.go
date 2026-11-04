@@ -59,7 +59,7 @@ func fixtureKubectl(t *testing.T, mode string) string {
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	target, err := os.OpenFile(filepath.Join(bin, name), os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o700) // #nosec G302 -- the private fixture must be executable to stand in for kubectl
+	target, err := os.OpenFile(filepath.Join(bin, name), os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o700) // #nosec G302 G304 -- parent-owned temporary path; the private fixture must be executable to stand in for kubectl
 	require.NoError(t, err)
 	_, err = io.Copy(target, source)
 	require.NoError(t, target.Close())
