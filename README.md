@@ -54,6 +54,10 @@ cosign verify-blob "${ASSET}" \
 
 `devctl auth login` logs in to GitHub (the device flow of the devctl GitHub App, refreshed without a human) and CircleCI (OAuth 2.0 with PKCE and dynamic client registration, a 90-day token) and keeps both tokens in the OS keychain; `devctl auth login --muster-only` signs in to muster the same way, for the `repo` commands that call giantswarm-repo-manager through it, and completes the sign-in to the manager; `devctl auth status` shows the identities, never a token; `devctl auth exec -- gh …` (or a `gh` link to devctl first on an agent's `PATH`) runs gh with the App's short-lived token, never your long-lived gh login. Commands that need a token exit 8 naming `devctl auth login` when none is usable. See [docs/auth.md](docs/auth.md).
 
+`devctl nancy` scans a local Go repository with CircleCI's dependency selection and Nancy scan options,
+including both repository ignore files. Its OSS Index username and token come from the OS keychain's
+`devctl/ossindex` record and reach only Nancy's environment. See [docs/nancy.md](docs/nancy.md) for setup.
+
 ```bash
 devctl auth login
 devctl auth login --muster-only

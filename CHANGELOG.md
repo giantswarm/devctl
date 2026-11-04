@@ -58,6 +58,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `devctl nancy` runs the local Go dependency scan with CircleCI's Nancy scan options and both ignore files,
+  reading OSS Index credentials from the OS keychain's `devctl/ossindex` record. Credentials go only to
+  Nancy's environment. Failed dependency listing and scanner failures return a nonzero exit status.
+
 - `ci job` takes the URL a CircleCI commit status links, alone, including a GitHub App pipeline's
   `app.circleci.com/workflow/<id>/job/<id>`, which it resolves to the project and job number through the workflow.
 
