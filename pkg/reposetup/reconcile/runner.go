@@ -94,6 +94,11 @@ type Runner struct {
 	Dispatch *github.Client
 	// Checks answers which check contexts have reported.
 	Checks ReportedChecker
+	// PreserveCheckSources keeps existing required-check integration IDs and
+	// leaves new checks unpinned. Callers accepting generic context names,
+	// such as repo checks, cannot infer a GitHub Actions source from a name.
+	// False pins the baseline's generated Actions gates as before.
+	PreserveCheckSources bool
 	// WriteClassicChecks replaces the full classic-protection write with a
 	// checks-only writer. When set, only required-check differences are
 	// compared; all other classic settings, including strictness, stay as
