@@ -4,6 +4,9 @@
 devctl rollout wait <installation> <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--context <kube-context>] [--kubeconfig <file>]
     [--timeout 30m] [--release-timeout 60m] [--image <owner/name>]... [--chart <path>]... [--helmrelease [<namespace>/]<name>]...
     [--reconcile] [--progress] [--failed-log [--failed-log-lines 50]]
+
+devctl rollout wait <installation> --chart <name> --version <vX.Y.Z | X.Y.Z>
+    [--chart <name>]... [--context <kube-context>] [--kubeconfig <file>] [--timeout 30m] [--reconcile] [--progress]
 ```
 
 Blocks until a release runs on an installation, then prints one JSON document and exits with a code
@@ -20,6 +23,28 @@ devctl rollout wait myinstallation giantswarm/giantswarm-configs --pr 1234
 ```
 
 ## What the command reads, and why
+
+### A component rolled by a range
+
+A component can roll to a new chart version within its range while the meta chart stays unchanged.
+Wait for the component directly, using its chart name and target version:
+
+```nohighlight
+devctl rollout wait myinstallation --chart kagent --version v1.2.4 --progress
+```
+
+This form needs no repository, meta-chart version or PR. `--chart` names the component chart itself,
+without a registry, path or tag, and can be repeated for several charts at the same version. It uses
+the installation checks below: matching HelmReleases and Apps that follow the version must run it
+or a newer one and have their workloads rolled out; a HelmRelease must be Ready at its current
+generation. Excluded or suspended deployments keep the diagnostics described below. `charts` and
+`version` name the target; `deployments[].chart` and `runningVersion` name what actually rolled.
+
+It reads the installation directly, with no GitHub login, registry probe or tag-pipeline check.
+`release.verdict` is `not_applicable` and `release.reason` says the repository release checks were
+skipped. `--pr`, `--image` and `--failed-log` require a repository; `--release-timeout` has no effect
+on this form. Specify the component version explicitly: omitting a version with only `--helmrelease`
+still cannot identify which range-resolved release to wait for.
 
 ### The release first
 
