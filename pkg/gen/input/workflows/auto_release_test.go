@@ -462,6 +462,17 @@ func flakyGhStub(t *testing.T, release, status string, failures int) string {
 		}
 	}
 
+	devctl := `#!/usr/bin/env bash
+printf '%s\n' "$*" >> verifier-args
+if [ -n "${VERIFIER_FAILURE:-}" ]; then
+  printf '{"reason":"missing %s"}\n' "$VERIFIER_FAILURE"
+  exit 2
+fi
+printf '{"ciModel":"generated","pipeline":{"id":"%s"}}\n' "${VERIFIER_PIPELINE-tag-pipeline}"
+`
+	if err := os.WriteFile(filepath.Join(dir, "devctl"), []byte(devctl), 0o700); err != nil { // #nosec G306 -- test executable
+		t.Fatal(err)
+	}
 	return dir
 }
 
@@ -691,11 +702,11 @@ func Test_AutoReleasePromoteRefuses(t *testing.T) {
 		}
 	})
 
-	t.Run("a candidate no pipeline reports on is promoted", func(t *testing.T) {
+	t.Run("a candidate no pipeline reports on is refused", func(t *testing.T) {
 		dir := repo(t, "v1.2.9", "fix: x", "v1.2.10-rc.1")
 		got, log, err := runStep(t, promoteScript(t), dir, ghStub(t, "true", statuses()), "GH_REPO=giantswarm/example")
-		if err != nil || got["rc"] != "v1.2.10-rc.1" {
-			t.Errorf("rc = %q, err = %v, want v1.2.10-rc.1:\n%s", got["rc"], err, log)
+		if err == nil || got["rc"] != "" || !strings.Contains(log, "has no commit status") {
+			t.Errorf("rc = %q, err = %v, want a missing-status refusal:\n%s", got["rc"], err, log)
 		}
 	})
 

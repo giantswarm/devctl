@@ -3,6 +3,7 @@ package laptop
 import (
 	"context"
 	"net/http"
+	"os"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 
@@ -24,8 +25,9 @@ func ReleaseWaitSources(ctx context.Context, endpoints agentcli.Endpoints, trans
 		return nil, err
 	}
 	return releasewait.NewSources(endpoints, transport, releasewait.Credentials{
-		GitHubToken: token.Value,
-		RenewGitHub: authstore.RenewGitHubToken,
+		GitHubToken:     token.Value,
+		TeamGitHubToken: os.Getenv(releasewait.EnvTeamGitHubToken),
+		RenewGitHub:     authstore.RenewGitHubToken,
 		CircleCI: func(ctx context.Context) (string, string, error) {
 			token, err := authstore.RequireCircleCI(ctx)
 			if err != nil {
@@ -52,6 +54,15 @@ func ReleasePromoteSources(ctx context.Context, endpoints agentcli.Endpoints, tr
 		GitHubToken:  token.Value,
 		Identity:     releasepromote.Identity{Source: token.Source, Login: token.Login},
 		NotFoundHint: authstore.GitHubNotFoundHint(token),
+		CircleCI: func(ctx context.Context) (string, string, error) {
+			token, err := authstore.RequireCircleCI(ctx)
+			if err != nil {
+				return "", "", err
+			}
+			warn(token.Warning)
+			return token.Value, token.SourceName(), nil
+		},
+		Registry: authn.DefaultKeychain,
 	}
 	if token.Source == authstore.SourceKeychain {
 		credentials.RenewGitHub = authstore.RenewGitHubToken

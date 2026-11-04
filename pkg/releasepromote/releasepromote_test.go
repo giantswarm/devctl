@@ -280,11 +280,11 @@ func TestPromote(t *testing.T) {
 			message:     "dispatched zz_generated.auto_release.yaml on main to promote v1.3.0-rc.2",
 		},
 		{
-			name:        "no status at all counts as built",
+			name:        "no status at all is not built",
 			repository:  fakeRepository{branch: "main", releases: releases, status: githubclient.CombinedStatus{State: "pending", TotalCount: 0}},
-			state:       StateDispatched,
+			state:       StateNotBuilt,
 			statusState: "pending",
-			dispatched:  true,
+			message:     "the commit statuses of v1.3.0-rc.2 are missing (no commit status reported): promote it once its pipelines passed; no other release candidate since v1.2.0 is built",
 		},
 		{
 			name:        "failed status is not built",
@@ -392,7 +392,7 @@ func TestPromote(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			gh := &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/kserve": tc.repository}}
 			result := NewResult("")
-			err := Promote(t.Context(), Config{GitHub: gh, DryRun: tc.dryRun}, []string{"giantswarm/kserve"}, &result)
+			err := Promote(t.Context(), Config{GitHub: gh, CheckBuilt: verifiedBuild, DryRun: tc.dryRun}, []string{"giantswarm/kserve"}, &result)
 
 			require.Len(t, result.Repositories, 1)
 			got := result.Repositories[0]
@@ -419,28 +419,28 @@ func TestPromote(t *testing.T) {
 
 func TestPromoteReadsTheCandidateStatusAndDispatchesOnTheDefaultBranch(t *testing.T) {
 	gh := &fakeGitHub{repositories: map[string]fakeRepository{
-		"giantswarm/fork": {branch: "giantswarm-main", releases: []githubclient.Release{candidate("v0.2.0-rc.1")}},
+		"giantswarm/fork": {branch: "giantswarm-main", status: githubclient.CombinedStatus{State: "success", TotalCount: 1}, releases: []githubclient.Release{candidate("v0.2.0-rc.1")}},
 	}}
 	result := NewResult("")
-	require.NoError(t, Promote(t.Context(), Config{GitHub: gh}, []string{"giantswarm/fork"}, &result))
+	require.NoError(t, Promote(t.Context(), Config{GitHub: gh, CheckBuilt: verifiedBuild}, []string{"giantswarm/fork"}, &result))
 	require.Equal(t, []string{"giantswarm/fork@v0.2.0-rc.1"}, gh.statusRefs)
 	require.Equal(t, "giantswarm-main", gh.dispatches[0].ref)
-	require.Equal(t, Repository{Repository: "giantswarm/fork", Candidate: "v0.2.0-rc.1", State: StateDispatched, Message: "dispatched zz_generated.auto_release.yaml on giantswarm-main to promote v0.2.0-rc.1"}, result.Repositories[0])
+	require.Equal(t, Repository{Repository: "giantswarm/fork", Candidate: "v0.2.0-rc.1", StatusState: "success", State: StateDispatched, Message: "dispatched zz_generated.auto_release.yaml on giantswarm-main to promote v0.2.0-rc.1"}, result.Repositories[0])
 }
 
 func TestPromoteOnAMaintenanceBranch(t *testing.T) {
-	maintenance := fakeRepository{branch: "release-1.16", defaultBranch: "giantswarm", releases: []githubclient.Release{candidate("v1.16.5-rc.1"), stable("v1.16.4")}}
+	maintenance := fakeRepository{branch: "release-1.16", defaultBranch: "giantswarm", status: builtStatus, releases: []githubclient.Release{candidate("v1.16.5-rc.1"), stable("v1.16.4")}}
 
 	gh := &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/fork": maintenance}}
 	result := NewResult("")
-	require.NoError(t, Promote(t.Context(), Config{GitHub: gh, Branch: "release-1.16", Version: "v1.16.5-rc.1"}, []string{"giantswarm/fork"}, &result))
+	require.NoError(t, Promote(t.Context(), Config{GitHub: gh, CheckBuilt: verifiedBuild, Branch: "release-1.16", Version: "v1.16.5-rc.1"}, []string{"giantswarm/fork"}, &result))
 	require.Equal(t, []dispatch{{repository: "giantswarm/fork", file: Workflow, ref: "release-1.16", inputs: map[string]any{"release-type": "stable", "version": "v1.16.5-rc.1"}}}, gh.dispatches)
 	require.Equal(t, "dispatched zz_generated.auto_release.yaml on release-1.16 to promote v1.16.5-rc.1", result.Repositories[0].Message)
 
 	// Without --branch the default branch is read, which has neither.
 	gh = &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/fork": maintenance}}
 	result = NewResult("")
-	require.Error(t, Promote(t.Context(), Config{GitHub: gh, Version: "v1.16.5-rc.1"}, []string{"giantswarm/fork"}, &result))
+	require.Error(t, Promote(t.Context(), Config{GitHub: gh, CheckBuilt: verifiedBuild, Version: "v1.16.5-rc.1"}, []string{"giantswarm/fork"}, &result))
 	require.Equal(t, StateNotAutoRelease, result.Repositories[0].State)
 	require.Empty(t, gh.dispatches)
 }
@@ -449,7 +449,7 @@ func TestPromoteGoesOnAfterARepositoryFails(t *testing.T) {
 	built := fakeRepository{branch: "main", releases: []githubclient.Release{candidate("v1.0.0-rc.1")}, status: githubclient.CombinedStatus{State: "success", TotalCount: 1}}
 	gh := &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/a": built, "giantswarm/c": built}}
 	result := NewResult("")
-	err := Promote(t.Context(), Config{GitHub: gh, NotFoundHint: "the App reaches giantswarm only."}, []string{"giantswarm/a", "giantswarm/missing", "giantswarm/c"}, &result)
+	err := Promote(t.Context(), Config{GitHub: gh, CheckBuilt: verifiedBuild, NotFoundHint: "the App reaches giantswarm only."}, []string{"giantswarm/a", "giantswarm/missing", "giantswarm/c"}, &result)
 
 	require.Equal(t, agentcli.ExitRed, agentcli.Exit(err))
 	require.EqualError(t, err, "1 of 3 repositories not promoted: giantswarm/missing (failed)")
@@ -523,7 +523,7 @@ func TestPromoteComparesAgainstTheDefaultBranch(t *testing.T) {
 		"giantswarm/a": {branch: "main", releases: []githubclient.Release{candidate("v1.3.0-rc.1"), stable("v1.2.0")}, unreachable: []string{"v1.3.0-rc.1"}},
 	}}
 	result := NewResult("")
-	require.NoError(t, Promote(t.Context(), Config{GitHub: gh}, []string{"giantswarm/a"}, &result))
+	require.NoError(t, Promote(t.Context(), Config{GitHub: gh, CheckBuilt: verifiedBuild}, []string{"giantswarm/a"}, &result))
 	require.Equal(t, StateNothingToPromote, result.Repositories[0].State)
 	require.Equal(t, []string{"v1.2.0", "v1.3.0-rc.1"}, gh.compared)
 	require.Empty(t, gh.dispatches)
@@ -682,7 +682,7 @@ func TestPromoteVersion(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			gh := &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/kserve": tc.repository}}
 			result := NewResult("")
-			err := Promote(t.Context(), Config{GitHub: gh, Version: tc.version, Clock: agentcli.NewVirtualClock(time.Unix(0, 0))}, []string{"giantswarm/kserve"}, &result)
+			err := Promote(t.Context(), Config{GitHub: gh, CheckBuilt: verifiedBuild, Version: tc.version, Clock: agentcli.NewVirtualClock(time.Unix(0, 0))}, []string{"giantswarm/kserve"}, &result)
 
 			got := result.Repositories[0]
 			require.Equal(t, tc.state, got.State, got.Message)
@@ -705,7 +705,7 @@ func TestPromoteVersion(t *testing.T) {
 // carries is not read again.
 func TestPromoteVersionReadsAMissingReleaseByItsTag(t *testing.T) {
 	gh := &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/kserve": {branch: "main", releases: streamReleases, statuses: streamStatuses}}}
-	config := Config{GitHub: gh, Version: "v1.2.3-rc.16", Clock: agentcli.NewVirtualClock(time.Unix(0, 0))}
+	config := Config{GitHub: gh, CheckBuilt: verifiedBuild, Version: "v1.2.3-rc.16", Clock: agentcli.NewVirtualClock(time.Unix(0, 0))}
 	result := NewResult("")
 	_ = Promote(t.Context(), config, []string{"giantswarm/kserve"}, &result)
 	require.Equal(t, "v1.2.3-rc.16 is not a release candidate to promote on main: no published GitHub release v1.2.3-rc.16", result.Repositories[0].Message)
@@ -724,7 +724,7 @@ func TestPromoteNotBuiltNamesTheNewestBuiltCandidate(t *testing.T) {
 		"giantswarm/kserve": {branch: "main", releases: streamReleases, statuses: streamStatuses},
 	}}
 	result := NewResult("")
-	err := Promote(t.Context(), Config{GitHub: gh}, []string{"giantswarm/kserve"}, &result)
+	err := Promote(t.Context(), Config{GitHub: gh, CheckBuilt: verifiedBuild}, []string{"giantswarm/kserve"}, &result)
 
 	require.Equal(t, agentcli.ExitRed, agentcli.Exit(err))
 	require.Equal(t, Repository{
@@ -807,7 +807,7 @@ func TestPromoteVersionWarnsWhenTheLaterCandidatesAreUnreadable(t *testing.T) {
 		"giantswarm/kserve": {branch: "main", releases: streamReleases, status: builtStatus},
 	}}, failOn: "v1.2.3-rc.15"}
 	result := NewResult("")
-	err := Promote(t.Context(), Config{GitHub: gh, Version: "v1.2.3-rc.14"}, []string{"giantswarm/kserve"}, &result)
+	err := Promote(t.Context(), Config{GitHub: gh, CheckBuilt: verifiedBuild, Version: "v1.2.3-rc.14"}, []string{"giantswarm/kserve"}, &result)
 
 	require.NoError(t, err)
 	got := result.Repositories[0]

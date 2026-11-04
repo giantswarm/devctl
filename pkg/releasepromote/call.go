@@ -75,6 +75,7 @@ func (c Call) Run(ctx context.Context, sources *Sources, clock agentcli.Clock, p
 	}
 	return Promote(ctx, Config{
 		GitHub:        sources.GitHub,
+		CheckBuilt:    sources.CheckBuilt,
 		DryRun:        c.DryRun,
 		Version:       c.Version,
 		Branch:        c.Branch,

@@ -13,6 +13,10 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
+// EnvTeamGitHubToken is an optional read token for private organisation team
+// files when the main GitHub token is scoped to the repository being checked.
+const EnvTeamGitHubToken = "DEVCTL_TEAM_GITHUB_TOKEN"
+
 // Sources are what one wait reads, opened after the version gate: the
 // fields of [Config] that are not the wait's own parameters.
 type Sources struct {
@@ -33,6 +37,9 @@ type Sources struct {
 type Credentials struct {
 	// GitHubToken is the GitHub access token; required.
 	GitHubToken string
+	// TeamGitHubToken, when set, reads only the organisation's team files.
+	// The main token still reads the release, its statuses, checks and runs.
+	TeamGitHubToken string
 	// RenewGitHub is what a GitHub client that got 401 for the rejected
 	// token sends its request with again; nil never renews.
 	RenewGitHub func(ctx context.Context, rejected string) (string, error)
@@ -55,9 +62,16 @@ func NewSources(endpoints agentcli.Endpoints, transport http.RoundTripper, crede
 	if err != nil {
 		return nil, err
 	}
+	teamClient := gh
+	if credentials.TeamGitHubToken != "" {
+		teamClient, _, err = githubclient.NewConditional(githubclient.Config{Logger: logger, AccessToken: credentials.TeamGitHubToken, BaseURL: endpoints.GitHubAPIURL, Transport: transport})
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &Sources{
 		GitHub:  gh,
-		Entries: TeamFileEntries{GitHub: gh.GitHub()},
+		Entries: TeamFileEntries{GitHub: teamClient.GitHub()},
 		CircleCI: func(ctx context.Context) (CircleCI, error) {
 			if credentials.CircleCI == nil {
 				return nil, agentcli.NewExitError(agentcli.ExitAuthRequired, agentcli.VerdictAuthRequired, "the release's pipeline runs on CircleCI and no CircleCI token was handed in")

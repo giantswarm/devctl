@@ -51,12 +51,15 @@ are its own series'):
      lands on that candidate's commit whatever was cut after it. The
      candidates cut after it on the default branch are named in later[]
      and in the message, as not in the release.
-  3. The combined commit status of the candidate's commit: with at least one
-     status and a state other than success, not_built. No status at all
-     counts as built, as in the workflow. A failed CircleCI status of a job
+  3. The candidate must have commit statuses and they must succeed, else
+     not_built. No status means the candidate is not built. A failed CircleCI status of a job
      the release does not require (sync-china-registry) is judged as
      devctl release wait judges it: a warning in the entry's warnings[],
      not a refusal; any other failed or running context still refuses.
+     Before dispatch, release wait verifies the tag pipeline and resolves
+     every expected chart and image, with a 30-second bound. Missing artifacts
+     or unverified CI are not_built, naming what could not be verified.
+     CircleCI and private-registry reads use the release wait credentials.
      A not_built entry names in newestBuilt, and in its message, the
      highest other candidate since the stable release that is built:
      promote it with --version, or wait for the refused one.

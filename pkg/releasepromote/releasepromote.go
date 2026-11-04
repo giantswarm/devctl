@@ -86,6 +86,9 @@ type GitHub interface {
 type Config struct {
 	// GitHub is required.
 	GitHub GitHub
+	// CheckBuilt verifies the candidate's tag pipeline and published artifacts.
+	// A missing verifier refuses promotion.
+	CheckBuilt func(ctx context.Context, owner, repo, tag string) error
 	// DryRun checks every repository and dispatches nothing.
 	DryRun bool
 	// Version is the candidate vX.Y.Z-rc.N to promote instead of the
@@ -219,7 +222,13 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 	entry.StatusState = status.State
 	built, advisory := builtState(status)
 	if built != statusSuccess {
-		return notBuilt(ctx, gh, owner, repo, entry, releases, reachable, built)
+		return notBuilt(ctx, config, owner, repo, entry, releases, reachable, fmt.Sprintf("the commit statuses of %s are %s", candidate, built))
+	}
+	if config.CheckBuilt == nil {
+		return entry.set(StateNotBuilt, "cannot verify the tag pipeline and artifacts of %s: no build verifier", candidate)
+	}
+	if err := config.CheckBuilt(ctx, owner, repo, candidate); err != nil {
+		return notBuilt(ctx, config, owner, repo, entry, releases, reachable, fmt.Sprintf("%s is not built: %v", candidate, err))
 	}
 	for _, s := range advisory {
 		entry.Warnings = append(entry.Warnings, fmt.Sprintf("the commit status %s of %s is %s; the release does not require it, so the candidate is judged without it", s.Context, candidate, s.State))
@@ -288,19 +297,18 @@ func withNamedRelease(ctx context.Context, config Config, owner, repo string, re
 	}
 }
 
-// notBuilt is entry refused as not_built, its candidate's statuses judged
-// built (the state builtState returned, not success), naming the newest other candidate that is built: the one the caller
-// can promote with --version instead of waiting. A read failing while
+// notBuilt refuses the candidate, naming the newest other candidate whose
+// statuses, tag pipeline and artifacts are verified: the one the caller can
+// promote with --version instead of waiting. A read failing while
 // looking for it leaves it out and says so; the refusal stands either way.
-func notBuilt(ctx context.Context, gh GitHub, owner, repo string, entry Repository, releases []githubclient.Release, reachable func(tag string) (bool, error), built string) Repository {
-	refusal := fmt.Sprintf("the commit statuses of %s are %s", entry.Candidate, built)
+func notBuilt(ctx context.Context, config Config, owner, repo string, entry Repository, releases []githubclient.Release, reachable func(tag string) (bool, error), refusal string) Repository {
 	newest, err := NewestBuilt(releases, reachable, func(tag string) (bool, error) {
-		status, err := gh.GetCombinedStatus(ctx, owner, repo, tag)
+		status, err := config.GitHub.GetCombinedStatus(ctx, owner, repo, tag)
 		if err != nil {
 			return false, err
 		}
 		state, _ := builtState(status)
-		return state == statusSuccess, nil
+		return state == statusSuccess && config.CheckBuilt != nil && config.CheckBuilt(ctx, owner, repo, tag) == nil, nil
 	}, entry.Candidate)
 	entry.NewestBuilt = newest
 	switch {
@@ -322,11 +330,14 @@ func sinceOrInception(stable string) string {
 // builtState is the candidate's combined commit status as the promotion
 // judges it, success when it is built, and the failed statuses of advisory
 // jobs ([circleciclient.AdvisoryStatus]) it was judged without: the rule
-// devctl release wait applies. A commit no context reports on is built. A
+// devctl release wait applies. A commit no context reports on is not built. A
 // failure that is not an advisory job's keeps GitHub's combined state, and
 // a context still running beside an advisory failure is pending.
 func builtState(status githubclient.CombinedStatus) (string, []githubclient.CommitStatus) {
-	if status.TotalCount == 0 || status.State == statusSuccess {
+	if status.TotalCount == 0 {
+		return "missing (no commit status reported)", nil
+	}
+	if status.State == statusSuccess {
 		return statusSuccess, nil
 	}
 	state := statusSuccess

@@ -36,7 +36,7 @@ func run(status, conclusion string) githubclient.WorkflowRun {
 }
 
 func followConfig(gh GitHub) Config {
-	return Config{GitHub: gh, Follow: true, Clock: agentcli.NewVirtualClock(time.Unix(0, 0))}
+	return Config{GitHub: gh, CheckBuilt: verifiedBuild, Follow: true, Clock: agentcli.NewVirtualClock(time.Unix(0, 0))}
 }
 
 // A run that passes leaves the promotion as it was: dispatched, exit 0, the
@@ -122,7 +122,7 @@ func TestPromoteWithoutARunToFollow(t *testing.T) {
 
 	gh = &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/kserve": followed(run("completed", "failure"))}}
 	result = NewResult("")
-	require.NoError(t, Promote(t.Context(), Config{GitHub: gh}, []string{"giantswarm/kserve"}, &result))
+	require.NoError(t, Promote(t.Context(), Config{GitHub: gh, CheckBuilt: verifiedBuild}, []string{"giantswarm/kserve"}, &result))
 	require.Equal(t, StateDispatched, result.Repositories[0].State)
 	require.Zero(t, gh.runReads)
 }

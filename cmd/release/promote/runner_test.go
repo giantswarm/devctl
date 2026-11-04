@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"testing"
@@ -117,7 +118,8 @@ func mockSources(t *testing.T, routes sequence.Routes) (*githubmock.Server, func
 	require.NoError(t, err)
 	return server, func() (*releasepromote.Sources, error) {
 		return &releasepromote.Sources{
-			GitHub: gh,
+			GitHub:     gh,
+			CheckBuilt: func(context.Context, string, string, string) error { return nil },
 			Team: func(ctx context.Context, team string) ([]string, error) {
 				return releasepromote.TeamRepositories(ctx, gh.GitHub(), team)
 			},
@@ -203,6 +205,33 @@ func TestRunDryRunDispatchesNothing(t *testing.T) {
 	require.Equal(t, true, doc["dryRun"])
 	require.Equal(t, "would_dispatch", doc["repositories"].([]any)[0].(map[string]any)["state"])
 	require.Zero(t, dispatches(server))
+}
+
+func TestRunBuildVerification(t *testing.T) {
+	for _, dryRun := range []bool{false, true} {
+		t.Run(fmt.Sprint(dryRun), func(t *testing.T) {
+			server, open := mockSources(t, promoteRoutes("giantswarm/app"))
+			checked := false
+			doc, err := runCommand(t, []string{"giantswarm/app"}, &flag{DryRun: dryRun}, func() (*releasepromote.Sources, error) {
+				sources, err := open()
+				if err != nil {
+					return nil, err
+				}
+				sources.CheckBuilt = func(_ context.Context, owner, repo, tag string) error {
+					checked = true
+					require.Equal(t, "giantswarm/app@v1.3.0-rc.1", owner+"/"+repo+"@"+tag)
+					return errors.New("missing chart charts/giantswarm/app:1.3.0-rc.1")
+				}
+				return sources, nil
+			})
+			require.True(t, checked)
+			require.Equal(t, agentcli.ExitRed, agentcli.Exit(err))
+			entry := doc["repositories"].([]any)[0].(map[string]any)
+			require.Equal(t, "not_built", entry["state"])
+			require.Contains(t, entry["message"], "missing chart charts/giantswarm/app:1.3.0-rc.1")
+			require.Zero(t, dispatches(server))
+		})
+	}
 }
 
 func TestRunNotAutoReleaseIsExit1(t *testing.T) {

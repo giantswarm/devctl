@@ -1,12 +1,54 @@
 package releasewait
 
 import (
+	"encoding/base64"
+	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	githubmock "github.com/giantswarm/devctl/v8/e2e/mock/github"
 	"github.com/giantswarm/devctl/v8/e2e/mock/sequence"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 )
+
+func TestNewSourcesSeparatesTeamFileCredentials(t *testing.T) {
+	for _, separate := range []bool{false, true} {
+		t.Run(fmt.Sprint(separate), func(t *testing.T) {
+			team := "- name: app\n  gen:\n    flavours: [app]\n    language: go\n    ci:\n      generate: true\n"
+			gh, err := githubmock.Start(sequence.Routes{
+				"GET /repos/giantswarm/app":                          {{Body: map[string]any{"name": "app"}}},
+				"GET /repos/giantswarm/github/contents/repositories": {{Body: []map[string]any{{"name": "team-test.yaml", "path": "repositories/team-test.yaml", "type": "file"}}}},
+				"GET /repos/giantswarm/github/contents/repositories/team-test.yaml": {{Body: map[string]any{
+					"type": "file", "encoding": "base64", "path": "repositories/team-test.yaml", "content": base64.StdEncoding.EncodeToString([]byte(team)),
+				}}},
+			})
+			require.NoError(t, err)
+			t.Cleanup(gh.Close)
+			credentials := Credentials{GitHubToken: "ghu_repository_fixture"}
+			if separate {
+				credentials.TeamGitHubToken = "ghu_team_fixture"
+			}
+			sources, err := NewSources(agentcli.Endpoints{GitHubAPIURL: gh.URL}, nil, credentials)
+			require.NoError(t, err)
+			_, found, err := sources.Entries.FindEntry(t.Context(), "giantswarm", "app")
+			require.NoError(t, err)
+			require.True(t, found)
+			_, err = sources.GitHub.IsPrivateRepository(t.Context(), "giantswarm", "app")
+			require.NoError(t, err)
+			require.Len(t, gh.Requests(), 3)
+			for _, request := range gh.Requests() {
+				want := "Bearer ghu_repository_fixture"
+				if separate && strings.HasPrefix(request.Path, "/repos/giantswarm/github/") {
+					want = "Bearer ghu_team_fixture"
+				}
+				require.Equal(t, want, request.Header.Get("Authorization"), request.Path)
+				require.Equal(t, "GET", request.Method)
+			}
+		})
+	}
+}
 
 // TestNewSourcesActsWithTheHandedInToken builds a wait's sources from the
 // token a server holds for a person: every GitHub request carries it.

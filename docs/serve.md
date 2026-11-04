@@ -217,3 +217,8 @@ tools included) and `devctl-read-only` (`pr_wait`, `release_wait`, `rollout_wait
 `reservation_list` by name), which resolves to the same devctl tools as muster's built-in `read-only`. A preset names
 `reservation_list` ahead of the server: a name no tool in the [list above](#tools) answers matches nothing until a
 release serves it.
+
+`release_promote` now requires verified tag CI and resolving release artifacts before dispatch.
+This server source has no CircleCI credential, so a CircleCI candidate is refused as `not_built`;
+use CLI promotion with the CircleCI login for that verification. Commit statuses of a shared commit
+alone cannot prove that the candidate tag was built.

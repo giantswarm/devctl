@@ -101,6 +101,9 @@ jobs:
       # The stable run reads the commit statuses of the candidate it promotes,
       # and every run with a tag those of the tag's CircleCI build.
       statuses: read
+      # The release verifier reads the candidate's checks and workflow runs.
+      checks: read
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -181,6 +184,40 @@ jobs:
           } >> "$GITHUB_ENV"
 {{{{- end }}}}
 
+      # The job token reads the candidate's CI; this separate read-only token
+      # reads its declaration in the private giantswarm/github repository.
+      - name: Create candidate verification token
+        id: candidate-token
+        if: inputs.release-type == 'stable'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: github
+          permission-contents: read
+
+      # Resolve an exact version so the install action's cache cannot keep
+      # an old binary under a permanent "latest" cache key.
+      - name: Resolve candidate verifier version
+        id: candidate-devctl
+        if: inputs.release-type == 'stable'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version=$(gh api repos/giantswarm/devctl/releases/latest --jq '.tag_name | ltrimstr("v")')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install candidate verifier
+        if: inputs.release-type == 'stable'
+        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854  # v4.1.0
+        with:
+          binary: devctl
+          version: ${{ steps.candidate-devctl.outputs.version }}
+          download_url: 'https://github.com/giantswarm/devctl/releases/download/v${version}/devctl-linux-amd64'
+          smoke_test: '${binary} version'
+
       # A stable release promotes the latest release candidate since the last
       # stable release rather than tagging the branch head: whatever merged
       # after that candidate has not run as one. Checking the candidate out
@@ -191,6 +228,9 @@ jobs:
         if: inputs.release-type == 'stable'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEVCTL_TEAM_GITHUB_TOKEN: ${{ steps.candidate-token.outputs.token }}
+          CIRCLECI_TOKEN: ${{ secrets.CIRCLECI_API_TOKEN }}
           GH_REPO: ${{ github.repository }}
           PROMOTE_VERSION: ${{ inputs.version }}
         run: |
@@ -227,8 +267,8 @@ jobs:
           # The tag alone does not say the candidate was built. Its GitHub
           # pre-release is created with the tag, and the pipelines that build
           # and publish it report on its commit: a failed or still running one
-          # refuses the promotion. A commit no pipeline reports on has nothing
-          # to wait for. A failed CircleCI job the release does not require
+          # refuses the promotion. A commit no pipeline reports on is not built.
+          # A failed CircleCI job the release does not require
           # (advisory_jobs, the rule `devctl release wait` and `devctl release
           # promote` apply) is a warning, not a refusal.
           if ! prerelease=$(gh release view "$rc" --json isPrerelease --jq .isPrerelease 2>/dev/null); then
@@ -258,6 +298,10 @@ jobs:
             echo "GET ${request} failed (try ${try} of ${tries}), retrying in $((2 ** try))s"
             sleep $((2 ** try))
           done
+          if [ "$count" -eq 0 ]; then
+            echo "::error title=Candidate not built::${rc} has no commit status; nothing is promoted."
+            exit 1
+          fi
           advisory_jobs=" {{{{ .AdvisoryJobs }}}} "
           failed=() running=() advisory=()
           while read -r state context; do
@@ -287,6 +331,19 @@ jobs:
           for context in "${advisory[@]}"; do
             echo "::warning title=Advisory status failed::the commit status ${context} of ${rc} failed; the release does not require it, so the candidate is judged without it."
           done
+
+          # A green commit can still have an unbuilt tag or missing artifacts.
+          # Use release wait's source-derived artifact names and registry probes.
+          if ! build=$(devctl release wait "$GH_REPO" "$rc" --timeout 30s); then
+            echo "$build"
+            echo "::error title=Candidate not built::${rc}: its tag pipeline and release artifacts are not verified; nothing is promoted."
+            exit 1
+          fi
+          # A status fallback on a shared commit cannot prove the tag ran.
+          if ! jq -e 'if .ciModel == "generated" or .ciModel == "hand-written" then (.pipeline.id // "") != "" else true end' <<<"$build" >/dev/null; then
+            echo "::error title=Candidate not built::${rc} has no verified tag pipeline; nothing is promoted."
+            exit 1
+          fi
 
           after=$(git log --format='%h %s' "${rc}..HEAD")
           git checkout -q --detach "$rc"

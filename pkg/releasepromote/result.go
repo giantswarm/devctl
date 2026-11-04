@@ -16,8 +16,9 @@ const (
 	// StateNothingToPromote: no candidate pre-release newer than the latest
 	// stable release.
 	StateNothingToPromote = "nothing_to_promote"
-	// StateNotBuilt: a commit status of the candidate's commit is not
-	// success; statusState names the combined state, newestBuilt the
+	// StateNotBuilt: statuses are missing or not successful, or the tag
+	// pipeline and artifacts are unverified; statusState names the combined
+	// state, newestBuilt the
 	// highest other candidate that is built.
 	StateNotBuilt = "not_built"
 	// StateNotAutoRelease: the repository has no auto-release workflow.

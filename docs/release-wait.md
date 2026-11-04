@@ -377,3 +377,8 @@ the token.
 
 Registries: `GET /v2/` then `HEAD /v2/{name}/manifests/{X.Y.Z}`, images under `giantswarm/…`, charts
 under `charts/giantswarm/…`.
+
+When a workflow's GitHub token is scoped to the release repository, an optional
+`DEVCTL_TEAM_GITHUB_TOKEN` supplies read access to the private organisation team files. Only those
+team-file reads use this token; release contents, statuses, checks and workflow runs continue to use
+the main GitHub token. The CLI accepts this setting; the server uses only credentials handed in by its caller.
