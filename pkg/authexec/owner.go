@@ -39,7 +39,7 @@ flags:
 		}
 	}
 	for _, kv := range environ {
-		if v, ok := strings.CutPrefix(kv, "GH_REPO="); ok && v != "" {
+		if v, ok := envValue(kv, "GH_REPO"); ok && v != "" {
 			return repoOwner(v)
 		}
 	}
