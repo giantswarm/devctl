@@ -45,6 +45,10 @@ func TestSetupChecksSelection(t *testing.T) {
 		want []string
 	}{
 		{
+			name: "the default filter keeps the reported values-schema gate",
+			want: []string{"legacy-ci", "pre-commit", "check-values-schema / validate", "ci/circleci: go-build"},
+		},
+		{
 			name: "an explicit list replaces the current and detected contexts",
 			args: []string{"--checks=run-tests"},
 			want: []string{"run-tests"},
