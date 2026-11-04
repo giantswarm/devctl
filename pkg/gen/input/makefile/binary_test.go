@@ -2,6 +2,7 @@ package makefile
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -76,13 +77,20 @@ func TestGoBuildReplacesRunningBinary(t *testing.T) {
 					}
 					// #nosec G204 -- an isolated copy of cat, with no arguments
 					process := exec.CommandContext(t.Context(), target)
+					// BusyBox dispatches its cat applet using argv[0], even when
+					// the executable itself has been copied to an alias path.
+					process.Args[0] = "cat"
 					stdin, err := process.StdinPipe()
 					if err != nil {
 						t.Fatal(err)
 					}
-					defer stdin.Close()
-					var echoed bytes.Buffer
-					process.Stdout = &echoed
+					defer func() { _ = stdin.Close() }()
+					stdout, err := process.StdoutPipe()
+					if err != nil {
+						t.Fatal(err)
+					}
+					var stderr bytes.Buffer
+					process.Stderr = &stderr
 					if err := process.Start(); err != nil {
 						t.Fatal(err)
 					}
@@ -92,6 +100,16 @@ func TestGoBuildReplacesRunningBinary(t *testing.T) {
 							_ = process.Wait()
 						}
 					}()
+
+					// Confirm the executable is serving stdin before replacement;
+					// this also catches multicall applet dispatch failures.
+					if _, err := stdin.Write([]byte("ready\n")); err != nil {
+						t.Fatal(err)
+					}
+					ready := make([]byte, len("ready\n"))
+					if _, err := io.ReadFull(stdout, ready); err != nil || string(ready) != "ready\n" {
+						t.Fatalf("previous process did not become ready: %v", err)
+					}
 
 					out, err := runGoBinaryMake(t, dir, tc.goal)
 					if err != nil {
@@ -112,8 +130,12 @@ func TestGoBuildReplacesRunningBinary(t *testing.T) {
 					if err := stdin.Close(); err != nil {
 						t.Fatal(err)
 					}
-					if err := process.Wait(); err != nil || echoed.String() != "still running\n" {
-						t.Errorf("previous process: error = %v, output = %q", err, echoed.String())
+					echoed, err := io.ReadAll(stdout)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := process.Wait(); err != nil || string(echoed) != "still running\n" {
+						t.Errorf("previous process: error = %v, output = %q, stderr = %q", err, echoed, stderr.String())
 					}
 					assertGoBinaryTempsRemoved(t, dir, tc.target)
 				})
@@ -159,10 +181,13 @@ func TestGoBuildAtomicPublication(t *testing.T) {
 			if tc.fail == "cp" {
 				copyScript += "exit 23\n"
 			} else {
-				copyScript += "exec real-cp \"$@\"\n"
+				copyScript += "exec ./bin/real/cp \"$@\"\n"
 			}
-			// Move the fixture's tool link aside before writing the stub.
-			if err := os.Rename(filepath.Join(dir, "bin", "cp"), filepath.Join(dir, "bin", "real-cp")); err != nil {
+			// Preserve the basename for multicall tools such as BusyBox.
+			if err := os.Mkdir(filepath.Join(dir, "bin", "real"), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Rename(filepath.Join(dir, "bin", "cp"), filepath.Join(dir, "bin", "real", "cp")); err != nil {
 				t.Fatal(err)
 			}
 			writeGoBinaryFixture(t, filepath.Join(dir, "bin", "cp"), []byte(copyScript))
@@ -253,7 +278,7 @@ func runGoBinaryMake(t *testing.T, dir, target string) ([]byte, error) {
 
 func writeGoBinaryFixture(t *testing.T, path string, body []byte) {
 	t.Helper()
-	if err := os.WriteFile(path, body, 0o751); err != nil { // #nosec G306 -- executable test fixtures under t.TempDir()
+	if err := os.WriteFile(path, body, 0o751); err != nil { // #nosec G306 G703 -- executable test fixtures at caller-controlled paths under t.TempDir()
 		t.Fatal(err)
 	}
 }
