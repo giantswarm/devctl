@@ -25,7 +25,7 @@ const componentName = "agent-platform-connectivity"
 
 // componentCommand exercises flag parsing and the real rollout engine. Its
 // release opener refuses access: the component version is not a meta-chart tag.
-func componentCommand(t *testing.T, args []string, objects ...runtime.Object) (rolloutwait.Document, error, int, *dynamicfake.FakeDynamicClient) {
+func componentCommand(t *testing.T, args []string, objects ...runtime.Object) (rolloutwait.Document, int, *dynamicfake.FakeDynamicClient, error) {
 	t.Helper()
 	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), rolloutwait.ListKinds(), objects...)
 	var stdout, stderr bytes.Buffer
@@ -53,7 +53,7 @@ func componentCommand(t *testing.T, args []string, objects ...runtime.Object) (r
 	if stderr.Len() != 0 {
 		t.Errorf("unexpected stderr: %s", stderr.String())
 	}
-	return doc, err, releaseCalls, client
+	return doc, releaseCalls, client, err
 }
 
 func componentObjects(kind, running, ready string, observed, available int64) []runtime.Object {
@@ -120,7 +120,7 @@ func TestComponentChartWait(t *testing.T) {
 		{"failed App release", rolloutwait.KindApp, "1.2.3", "False", 2, 2, 1, rolloutwait.StateFailed},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			doc, err, releaseCalls, client := componentCommand(t, []string{
+			doc, releaseCalls, client, err := componentCommand(t, []string{
 				"myinstallation", "giantswarm/agent-platform", "--chart", componentName, "v1.2.3", "--timeout", "1ns",
 			}, componentObjects(tc.kind, tc.running, tc.ready, tc.observed, tc.available)...)
 			if agentcli.Exit(err) != tc.code || doc.ExitCode != tc.code {
@@ -145,7 +145,7 @@ func TestComponentChartWait(t *testing.T) {
 }
 
 func TestComponentChartVersionFlagAndReconcile(t *testing.T) {
-	doc, err, calls, client := componentCommand(t, []string{
+	doc, calls, client, err := componentCommand(t, []string{
 		"myinstallation", "giantswarm/agent-platform", "--chart", componentName, "--version", "1.2.3", "--reconcile", "--timeout", "1ns",
 	}, componentObjects(rolloutwait.KindHelmRelease, "1.2.2", "True", 2, 2)...)
 	if agentcli.Exit(err) != agentcli.ExitTimeout || calls != 0 || doc.Version != "1.2.3" {
@@ -168,7 +168,7 @@ func TestComponentChartUsage(t *testing.T) {
 		{"myinstallation", "giantswarm/agent-platform"},
 		{"myinstallation", "giantswarm/agent-platform", "--chart", componentName},
 	} {
-		doc, err, calls, client := componentCommand(t, args)
+		doc, calls, client, err := componentCommand(t, args)
 		if agentcli.Exit(err) != agentcli.ExitUsage || !strings.Contains(doc.Reason, "--chart <chart-name> <version>") || calls != 0 || len(client.Actions()) != 0 {
 			t.Errorf("args %v: document %+v, release calls %d, error %v", args, doc, calls, err)
 		}
@@ -178,7 +178,7 @@ func TestComponentChartUsage(t *testing.T) {
 		{"--chart", "another-component"}, {"--chart", "giantswarm/kagent/helm/kagent"},
 	} {
 		args := append([]string{"myinstallation", "giantswarm/agent-platform", "v1.2.3", "--chart", componentName}, flags...)
-		doc, err, calls, client := componentCommand(t, args)
+		doc, calls, client, err := componentCommand(t, args)
 		if agentcli.Exit(err) != agentcli.ExitUsage || calls != 0 || len(client.Actions()) != 0 {
 			t.Errorf("args %v: document %+v, release calls %d, error %v", args, doc, calls, err)
 		}
@@ -187,7 +187,7 @@ func TestComponentChartUsage(t *testing.T) {
 
 func TestComponentChartInvalidName(t *testing.T) {
 	for _, chart := range []string{"kagent:1.2.3", "bad name", "kagent@sha256:digest"} {
-		doc, err, calls, client := componentCommand(t, []string{"myinstallation", "giantswarm/agent-platform", "v1.2.3", "--chart", chart})
+		doc, calls, client, err := componentCommand(t, []string{"myinstallation", "giantswarm/agent-platform", "v1.2.3", "--chart", chart})
 		if agentcli.Exit(err) != agentcli.ExitUsage || !strings.Contains(doc.Reason, "--chart") || calls != 0 || len(client.Actions()) != 0 {
 			t.Errorf("chart %q: document %+v, release calls %d, error %v", chart, doc, calls, err)
 		}
@@ -195,14 +195,14 @@ func TestComponentChartInvalidName(t *testing.T) {
 }
 
 func TestComponentChartMissingDeployment(t *testing.T) {
-	doc, err, calls, _ := componentCommand(t, []string{"myinstallation", "giantswarm/agent-platform", "v1.2.3", "--chart", componentName})
+	doc, calls, _, err := componentCommand(t, []string{"myinstallation", "giantswarm/agent-platform", "v1.2.3", "--chart", componentName})
 	if agentcli.Exit(err) != agentcli.ExitNotApplicable || calls != 0 || !strings.Contains(doc.Reason, componentName) {
 		t.Errorf("document %+v, release calls %d, error %v", doc, calls, err)
 	}
 }
 
 func TestComponentChartPathKeepsReleaseWait(t *testing.T) {
-	_, _, calls, _ := componentCommand(t, []string{
+	_, calls, _, _ := componentCommand(t, []string{
 		"myinstallation", "giantswarm/kagent-upstream", "v1.2.3", "--chart", "giantswarm/kagent/helm/kagent", "--chart", "giantswarm/kagent/helm/kagent-crds",
 	})
 	if calls != 1 {
