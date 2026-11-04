@@ -136,6 +136,94 @@ func TestCheckWithAFreshCacheDoesNotOpenTheKeychain(t *testing.T) {
 	}
 }
 
+// An override left in a shell only permits the version it names; it must
+// not turn into a permanent opt-out when a different build is installed.
+func TestCheckUnsafeForceVersionMustMatch(t *testing.T) {
+	clearGitHubEnv(t)
+	brokenKeychain(t)
+	t.Setenv(agentcli.EnvGitHubAPIURL, "http://127.0.0.1:1")
+	config := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", config)
+	dir := filepath.Join(config, "devctl")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cache := "last_update: " + time.Now().UTC().Format(time.RFC3339) + "\nlatest_version: 2.0.0\n"
+	if err := os.WriteFile(filepath.Join(dir, "selfupdate.yaml"), []byte(cache), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name     string
+		override string
+		allowed  bool
+	}{
+		{name: "unset"},
+		{name: "boolean", override: "true"},
+		{name: "another build", override: "0.9.0"},
+		{name: "different spelling", override: "v1.0.0"},
+		{name: "exact running version", override: "1.0.0", allowed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DEVCTL_UNSAFE_FORCE_VERSION", tc.override)
+			var warnings bytes.Buffer
+			err := check("1.0.0", false, &warnings)
+			if tc.allowed {
+				if err != nil {
+					t.Fatalf("matching override refused: %v", err)
+				}
+			} else {
+				if err == nil {
+					t.Fatal("outdated build allowed without an exact override")
+				}
+				for _, want := range []string{
+					"version 2.0.0 of devctl is released", "this is 1.0.0",
+					"`devctl version update`", "DEVCTL_UNSAFE_FORCE_VERSION=1.0.0",
+				} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("refusal %q lacks %q", err, want)
+					}
+				}
+			}
+			if warnings.Len() != 0 {
+				t.Errorf("warned %q", warnings.String())
+			}
+		})
+	}
+}
+
+// The escape hatch must still work when updater setup itself would fail,
+// including a local build whose identifier is not a semantic version.
+func TestCheckUnsafeForceVersionBeforeUpdaterSetup(t *testing.T) {
+	clearGitHubEnv(t)
+	brokenKeychain(t)
+	t.Setenv(agentcli.EnvGitHubAPIURL, "://invalid")
+	config := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", config)
+
+	for _, version := range []string{"1.0.0", "dev"} {
+		t.Run(version, func(t *testing.T) {
+			t.Setenv("DEVCTL_UNSAFE_FORCE_VERSION", version)
+			for _, noCache := range []bool{false, true} {
+				var warnings bytes.Buffer
+				if err := check(version, noCache, &warnings); err != nil {
+					t.Errorf("check(noCache=%v): %v", noCache, err)
+				}
+				if warnings.Len() != 0 {
+					t.Errorf("check(noCache=%v) warned %q", noCache, warnings.String())
+				}
+			}
+		})
+	}
+	entries, err := os.ReadDir(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("override created configuration files: %v", entries)
+	}
+}
+
 // TestCheckInAWorkflowStepWithGHTokenAuthenticates is a generated workflow
 // step that hands devctl the job's token in $GH_TOKEN only: the version
 // check's releases call carries it, where GitHub answers an anonymous one
