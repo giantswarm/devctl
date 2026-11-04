@@ -30,9 +30,9 @@ var Readers = []string{
 
 // Main is a TestMain: it checks that the package in the working directory
 // imports none of [Readers], makes every credential store fail on any
-// access, and runs the tests. devctl's keyring file, the docker
-// configuration and KUBECONFIG sit below a regular file, so any read, write
-// or lock of them fails; the GitHub token variables are unset.
+// access, and runs the tests. devctl's keyring file and KUBECONFIG sit below
+// a regular file, so any read, write or lock of them fails; the Docker
+// configuration is malformed and the GitHub token variables are unset.
 func Main(m *testing.M) {
 	os.Exit(run(m))
 }
@@ -55,16 +55,25 @@ func run(m *testing.M) int {
 	return m.Run()
 }
 
-// failEveryStore points every store below a regular file in dir and proves
-// the keyring fails.
+// failEveryStore installs failing credential stores in dir and proves the
+// keyring fails.
 func failEveryStore(dir string) error {
 	file := filepath.Join(dir, "file")
 	if err := os.WriteFile(file, nil, 0o600); err != nil {
 		return err
 	}
+	// The registry keychain must find a Docker config: when none exists it
+	// can read Podman credentials instead, or silently answer anonymously.
+	docker := filepath.Join(dir, "docker")
+	if err := os.Mkdir(docker, 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(docker, "config.json"), []byte("{"), 0o600); err != nil {
+		return err
+	}
 	env := map[string]string{
 		agentcli.EnvKeyringFile: filepath.Join(file, "keyring.json"),
-		"DOCKER_CONFIG":         filepath.Join(file, "docker"),
+		"DOCKER_CONFIG":         docker,
 		"KUBECONFIG":            filepath.Join(file, "kubeconfig"),
 	}
 	for key, value := range env {

@@ -16,6 +16,10 @@ keyring:
     expiresAt: "2099-01-01T00:00:00Z"
 github:
   routes:
+    "GET /repos/giantswarm/e2e-app/releases/tags/v1.2.3":
+      - body: {id: 42, tag_name: v1.2.3, body: "Keep release notes"}
+    "PATCH /repos/giantswarm/e2e-app/releases/42":
+      - body: {id: 42}
     "GET /repos/giantswarm/e2e-app/git/ref/tags/v1.2.3":
       - body: {ref: refs/tags/v1.2.3, object: {type: commit, sha: aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44}}
     "GET /repos/giantswarm/e2e-app":
@@ -25,6 +29,8 @@ github:
           - {name: Dockerfile, path: Dockerfile, type: file}
           - {name: helm, path: helm, type: dir}
           - {name: main.go, path: main.go, type: file}
+    "GET /repos/giantswarm/e2e-app/contents/.github/workflows/zz_generated.auto_release.yaml?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body: {type: file, name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, sha: c0ffee, encoding: base64, content: b246IHB1c2gK}
     "GET /repos/giantswarm/e2e-app/contents/.github/workflows?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
       - body:
           - {name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, type: file}
