@@ -45,7 +45,7 @@ func TestRunValidHelmReleaseReachesRolloutDocument(t *testing.T) {
 				openCluster: func(context.Context, laptop.ClusterConfig) (dynamic.Interface, error) {
 					return client, nil
 				},
-				openRelease: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+				openRelease: func(context.Context, string, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
 					return sources, nil
 				},
 			}

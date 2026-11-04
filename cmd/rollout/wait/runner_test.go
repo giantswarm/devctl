@@ -184,7 +184,7 @@ func TestRunMalformedHelmReleaseEndsBeforeTooling(t *testing.T) {
 					called = true
 					return nil, errors.New("the cluster must not open for malformed --helmrelease")
 				},
-				openRelease: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+				openRelease: func(context.Context, string, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
 					called = true
 					return nil, errors.New("the release must not open for malformed --helmrelease")
 				},
