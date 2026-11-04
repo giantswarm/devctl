@@ -89,6 +89,33 @@ func TestNewRefusesMalformedRoutes(t *testing.T) {
 	assert.Error(t, err, "no responses")
 }
 
+func TestNewRefusesMalformedQueries(t *testing.T) {
+	for _, key := range []string{
+		"GET /runs?head_sha=%zz",
+		"GET /runs?head%zz=abc",
+		"GET /runs?head_sha=abc&branch=%",
+		"GET /runs?head_sha=abc;branch=feature",
+	} {
+		t.Run(key, func(t *testing.T) {
+			s, err := New(Routes{key: {{Body: "must not become a broader route"}}})
+			require.Error(t, err)
+			assert.Nil(t, s)
+			assert.Contains(t, err.Error(), key, "the error identifies the fixture route")
+		})
+	}
+}
+
+func TestNextMatchesEncodedQueryValues(t *testing.T) {
+	s, err := New(Routes{
+		"GET /runs?branch=feature%2Fone&filter=a%3Bb": {{Body: "matched"}},
+	})
+	require.NoError(t, err)
+
+	resp, ok := s.Next(httptest.NewRequest(http.MethodGet, "/runs?per_page=100&filter=a%3Bb&branch=feature%2Fone", nil))
+	require.True(t, ok)
+	assert.Equal(t, "matched", resp.Body)
+}
+
 func TestResponseBytes(t *testing.T) {
 	data, err := Response{}.Bytes()
 	require.NoError(t, err)
