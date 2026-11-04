@@ -28,7 +28,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		return microerror.Mask(err)
 	}
 
-	err = r.run(context.Background(), cmd, args)
+	err = r.run(cmd.Context(), cmd, args)
 	if err != nil {
 		return microerror.Mask(err)
 	}
