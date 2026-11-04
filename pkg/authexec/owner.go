@@ -153,6 +153,7 @@ func remoteOwner(remotes func() string) string {
 	urls := map[string]string{}
 	var order []string
 	resolved := ""
+	resolvedRepo := ""
 	for _, line := range strings.Split(remotes(), "\n") {
 		key, value, ok := strings.Cut(strings.TrimSpace(line), " ")
 		if !ok {
@@ -170,7 +171,11 @@ func remoteOwner(remotes func() string) string {
 			urls[name] = value
 		case "gh-resolved":
 			resolved = name
+			resolvedRepo = value
 		}
+	}
+	if _, ok := urls[resolved]; ok && resolvedRepo != "base" {
+		return repoOwner(resolvedRepo)
 	}
 	for _, name := range append([]string{resolved, "upstream", "github", "origin"}, order...) {
 		if u, ok := urls[name]; ok {

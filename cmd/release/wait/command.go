@@ -98,8 +98,10 @@ Exit codes:
      pipeline's, another CI's): devctl release promote refuses the commit;
      the reason names the failed statuses
 
-Tokens come from the keychain (devctl auth login). GitHub is always needed;
-CircleCI only when the tag carries a .circleci/config.yml.
+GitHub uses the same login as pr wait: the devctl App login from the keychain
+(devctl auth login) for giantswarm, your own gh login (gh auth login) for
+other owners. CircleCI uses the keychain only when the tag carries a
+.circleci/config.yml.
 
 Examples:
   devctl release wait giantswarm/devctl v8.9.0
