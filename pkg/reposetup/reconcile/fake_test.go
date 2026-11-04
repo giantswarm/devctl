@@ -30,7 +30,7 @@ import (
 // fakeRepo is one repository's state.
 type fakeRepo struct {
 	owner, name, description string
-	private, archived        bool
+	private, archived, fork  bool
 	topics                   []string
 	hasWiki, hasIssues, hasProjects, allowMerge, allowSquash, allowRebase,
 	allowUpdate, allowAuto, deleteOnMerge bool
@@ -82,6 +82,10 @@ type fakeRepo struct {
 	commits           map[string]fakeCommit // commit sha → tree sha and message
 	heads             map[string]string     // branch → sha of its head commit
 	seq               int
+
+	// protectionStatus is the HTTP status of the classic protection read
+	// when not 200 (403 for an integration without administration: read).
+	protectionStatus int
 
 	// releaseSubject is the subject of the commit the release's tag names;
 	// empty leaves the tag's commit unknown (404).
@@ -411,6 +415,7 @@ func (r *fakeRepo) toGitHub() *github.Repository {
 		Owner:                  &github.User{Login: new(r.owner)},
 		Description:            new(r.description),
 		Private:                new(r.private),
+		Fork:                   new(r.fork),
 		Topics:                 r.topics,
 		CreatedAt:              &github.Timestamp{Time: r.createdAt},
 		Archived:               new(r.archived),
@@ -957,6 +962,10 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]any{"name": r.PathValue("branch")})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/branches/{branch}/protection", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		if repo.protectionStatus != 0 {
+			writeJSON(w, repo.protectionStatus, map[string]string{"message": "Resource not accessible by integration"})
+			return
+		}
 		p := repo.protection
 		if p == nil {
 			notFound(w, "Branch not protected")

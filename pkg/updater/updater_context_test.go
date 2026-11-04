@@ -34,7 +34,7 @@ func TestGetLatestFromSourceContextCancelsWithoutRefreshingTheCache(t *testing.T
 			dir := t.TempDir()
 			writeCache(t, dir, cache{LastUpdate: time.Now().UTC(), LatestVersion: cachedVersion})
 			path := filepath.Join(dir, cacheFileName)
-			before, err := os.ReadFile(path)
+			before, err := os.ReadFile(path) // #nosec G304 -- fixture path under t.TempDir()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -64,7 +64,7 @@ func TestGetLatestFromSourceContextCancelsWithoutRefreshingTheCache(t *testing.T
 			if !errors.Is(err, context.Canceled) || version != "" || !called {
 				t.Errorf("lookup = %q, %v (source called %v); want cancellation", version, err, called)
 			}
-			after, err := os.ReadFile(path)
+			after, err := os.ReadFile(path) // #nosec G304 -- fixture path under t.TempDir()
 			if err != nil {
 				t.Fatal(err)
 			}
