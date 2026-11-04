@@ -24,7 +24,7 @@ func TestMain(m *testing.M) {
 			os.Exit(90)
 		}
 		b, err := json.Marshal(kubectlCall{Args: os.Args[1:], Dir: dir})
-		if err != nil || os.WriteFile(os.Getenv("DEVCTL_DEPLOY_FIXTURE_CALL"), b, 0o600) != nil {
+		if err != nil || os.WriteFile(os.Getenv("DEVCTL_DEPLOY_FIXTURE_CALL"), b, 0o600) != nil { // #nosec G703 -- the parent test supplies its own temporary fixture path
 			os.Exit(91)
 		}
 		fmt.Fprintln(os.Stdout, "fixture kubectl stdout")
@@ -51,7 +51,7 @@ func fixtureKubectl(t *testing.T, mode string) string {
 	t.Helper()
 	executable, err := os.Executable()
 	require.NoError(t, err)
-	source, err := os.Open(executable)
+	source, err := os.Open(executable) // #nosec G304 -- os.Executable identifies this running test binary
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = source.Close() })
 	bin := t.TempDir()
@@ -59,7 +59,7 @@ func fixtureKubectl(t *testing.T, mode string) string {
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	target, err := os.OpenFile(filepath.Join(bin, name), os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o700)
+	target, err := os.OpenFile(filepath.Join(bin, name), os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o700) // #nosec G302 -- the private fixture must be executable to stand in for kubectl
 	require.NoError(t, err)
 	_, err = io.Copy(target, source)
 	require.NoError(t, target.Close())
@@ -84,7 +84,7 @@ func TestAddAppArgumentsAndFailure(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
-			data, err := os.ReadFile(callFile)
+			data, err := os.ReadFile(callFile) // #nosec G304 -- fixtureKubectl returns a path inside this test's temporary directory
 			require.NoError(t, err)
 			var call kubectlCall
 			require.NoError(t, json.Unmarshal(data, &call))
