@@ -7,6 +7,7 @@ package gitops
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -47,7 +48,8 @@ or $` + EnvTargetDir + `/cmc/<repo> when that is empty, where <repo> is the
 name part of --gitops-repo. It never clones. First it fast-forwards the
 checkout to origin/main. It stops when the checkout is not on main, has changes
 to tracked files, or has local commits that are not on origin/main. It leaves
-untracked files alone. Git uses the checkout's own credentials.`
+untracked files alone. Only one reservation command can use a checkout at a time.
+Git uses the checkout's own credentials.`
 
 // Flags select the GitOps repo and where its checkout is, and the flags every
 // reservation command shares: how to print the result and, for a command that
@@ -125,9 +127,11 @@ type Checkout struct {
 	Dir    string
 	source string
 	flags  *Flags
+	lock   *os.File
 }
 
-// Open resolves the checkout and syncs it to origin/main. It runs before any
+// Open resolves the checkout, locks it exclusively, and syncs it to origin/main.
+// Callers must release the lock with Finish or Close. It runs before any
 // command logic, list included. Git uses the checkout's own credentials.
 func (f *Flags) Open(ctx context.Context, stderr io.Writer) (*Checkout, error) {
 	dir, source, err := f.Resolve()
@@ -138,11 +142,16 @@ func (f *Flags) Open(ctx context.Context, stderr io.Writer) (*Checkout, error) {
 		return nil, microerror.Maskf(invalidFlagError, "the GitOps checkout %s (from %s) does not exist or is not a directory", dir, source)
 	}
 
-	if err := Sync(ctx, dir, stderr); err != nil {
+	lock, err := lockCheckout(ctx, dir)
+	if err != nil {
 		return nil, microerror.Mask(err)
 	}
+	checkout := &Checkout{Dir: dir, source: source, flags: f, lock: lock}
+	if err := Sync(ctx, dir, stderr); err != nil {
+		return nil, errors.Join(err, checkout.Close())
+	}
 
-	return &Checkout{Dir: dir, source: source, flags: f}, nil
+	return checkout, nil
 }
 
 // Explain turns the errors the user can act on into messages that say so: a
@@ -175,10 +184,10 @@ func (c *Checkout) Wrote(stderr io.Writer) {
 
 // Finish ends the command. After a dry run it shows the commits the command
 // made on stderr and resets the checkout to origin/main, even when err is
-// set. Open left the checkout clean on origin/main, so the reset drops only
-// what the command wrote. It returns err, or the reset's error when err is
-// nil.
-func (c *Checkout) Finish(ctx context.Context, stderr io.Writer, err error) error {
+// set. If tracked files changed since the command committed, it refuses the
+// reset to preserve that work. A cleanup failure is reported alongside err.
+func (c *Checkout) Finish(ctx context.Context, stderr io.Writer, err error) (result error) {
+	defer func() { result = errors.Join(result, c.Close()) }()
 	if !c.flags.DryRun {
 		return err
 	}
@@ -190,17 +199,35 @@ func (c *Checkout) Finish(ctx context.Context, stderr io.Writer, err error) erro
 	case log == "":
 		_, _ = fmt.Fprintln(stderr, "Dry run: no commit to push.")
 	default:
-		_, _ = fmt.Fprintf(stderr, "%s\n\nDry run: nothing was pushed. devctl drops these commits from %s.\n", log, c.Dir)
+		_, _ = fmt.Fprintf(stderr, "%s\n\nDry run: nothing was pushed.\n", log)
 	}
 
-	if _, resetErr := git(ctx, c.Dir, "reset", "--hard", "origin/"+branch); resetErr != nil && err == nil {
-		return microerror.Maskf(syncError, "dry run: cannot drop the commits: %s. To drop them, run:\n\n  %s", resetErr, resetCommand(c.Dir))
+	status, statusErr := git(ctx, c.Dir, "status", "--porcelain", "--untracked-files=no")
+	if statusErr != nil {
+		return errors.Join(err, microerror.Maskf(syncError, "dry run: cannot check whether it is safe to drop the commits: %s. The checkout was left untouched", statusErr))
+	}
+	if status != "" {
+		return errors.Join(err, microerror.Maskf(syncError,
+			"dry run: refusing to drop the commits in %s because tracked files have changed; a reset could destroy this work. Preserve these changes before dropping the dry-run commits:\n%s", c.Dir, status))
+	}
+
+	// --keep also protects edits to paths being restored if they arrive after
+	// the status check.
+	if _, resetErr := git(ctx, c.Dir, "reset", "--keep", "origin/"+branch); resetErr != nil {
+		return errors.Join(err, microerror.Maskf(syncError, "dry run: cannot drop the commits: %s. After preserving any local changes, drop them with:\n\n  %s", resetErr, resetCommand(c.Dir)))
+	}
+	if log != "" {
+		_, _ = fmt.Fprintf(stderr, "Dry run: dropped these commits from %s.\n", c.Dir)
 	}
 
 	return err
 }
 
 func resetCommand(dir string) string {
+	// Leave simple paths readable, and quote the rest as one POSIX shell word.
+	if strings.ContainsAny(dir, " \t\r\n'\"\\`$;&|<>()*?[]{}!~#") {
+		dir = "'" + strings.ReplaceAll(dir, "'", "'\"'\"'") + "'"
+	}
 	return "git -C " + dir + " reset --hard origin/" + branch
 }
 
@@ -222,7 +249,7 @@ func Sync(ctx context.Context, dir string, stderr io.Writer) error {
 	}
 
 	// Untracked files are the user's: devctl never stages them, and a
-	// fast-forward that would overwrite one fails on its own.
+	// fast-forward that would overwrite one must fail, including ignored files.
 	status, err := git(ctx, dir, "status", "--porcelain", "--untracked-files=no")
 	if err != nil {
 		return microerror.Maskf(syncError, "%s: %s", dir, err)
@@ -262,7 +289,7 @@ func Sync(ctx context.Context, dir string, stderr io.Writer) error {
 			dir, ahead, branch, resetCommand(dir))
 	}
 
-	if _, err := git(ctx, dir, "merge", "--ff-only", "origin/"+branch); err != nil {
+	if _, err := git(ctx, dir, "merge", "--ff-only", "--no-overwrite-ignore", "origin/"+branch); err != nil {
 		return microerror.Maskf(syncError, "cannot fast-forward %s to origin/%s: %s", dir, branch, err)
 	}
 	short, _ := git(ctx, dir, "rev-parse", "--short", "HEAD")
