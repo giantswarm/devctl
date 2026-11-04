@@ -123,7 +123,7 @@ func Test_Run_CustomWorkflowErrorsLeaveFilesUntouched(t *testing.T) {
 				t.Fatalf("malformed custom workflows: got %v, want invalid config naming custom.yml", err)
 			}
 			for path, want := range files {
-				got, err := os.ReadFile(path)
+				got, err := os.ReadFile(path) // #nosec G304 -- fixed fixture paths under t.TempDir, test-only
 				if err != nil || string(got) != want {
 					t.Errorf("%s changed after failed probe: err=%v", path, err)
 				}
