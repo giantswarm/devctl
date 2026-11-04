@@ -543,11 +543,18 @@ func Test_Golden(t *testing.T) {
 // pushed to only while it is told to ignore them. It is unconditional: a repo
 // that neither touches never sees a commit by those authors, so the entries
 // are inert there.
+// The machine identity's author email also covers update-branch merges such as
+// https://github.com/giantswarm/giantswarm-platform-manager/commit/f8e987fd583c06111c2a40ef1b8dfef1d7ebb844
+// (author teemow@gmail.com, committer noreply@github.com).
 func Test_GitIgnoredAuthorsAlwaysPresent(t *testing.T) {
 	for _, c := range []Config{
+		{},
 		{Language: "go"},
+		{Language: "python"},
 		{Language: "node", CircleCIGenerated: true},
 		{Language: "go", Deprecated: true, HasCustomConfig: true, RepoName: "some-repo"},
+		{Language: "go", Fork: true},
+		{Language: "node", CircleCIGenerated: true, Fork: true},
 	} {
 		got := render(t, c)
 
@@ -557,7 +564,12 @@ func Test_GitIgnoredAuthorsAlwaysPresent(t *testing.T) {
 		if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
 			t.Fatalf("generated config is not valid JSON5: %v\n%s", err, got)
 		}
-		want := []string{"342014845+giantswarm-release[bot]@users.noreply.github.com", "dev@giantswarm.io", "329428426+giantswarm-marge[bot]@users.noreply.github.com"}
+		want := []string{
+			"342014845+giantswarm-release[bot]@users.noreply.github.com",
+			"dev@giantswarm.io",
+			"329428426+giantswarm-marge[bot]@users.noreply.github.com",
+			"teemow@gmail.com",
+		}
 		if !slices.Equal(parsed.GitIgnoredAuthors, want) {
 			t.Errorf("gitIgnoredAuthors = %v for %+v, want %v", parsed.GitIgnoredAuthors, c, want)
 		}
