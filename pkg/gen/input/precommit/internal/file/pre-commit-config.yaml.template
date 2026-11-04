@@ -179,6 +179,17 @@ repos:
   # lines from hello-world-app's) and CI then rejected it.
   - repo: local
     hooks:
+      # The schema generator drops a description continuation containing --.
+      # Keep real helm-docs annotations, but name prose that needs rewording.
+      - id: helm-docs-description-{{.}}
+        name: "check helm/{{.}}/values.yaml description continuations"
+        language: python
+        additional_dependencies: ['PyYAML==6.0.3']
+        files: ^helm/{{.}}/values\.yaml$
+        entry: python -c
+        args:
+          - |
+            {{ $.HelmDocsCheckPython }}
       - id: helm-schema-{{.}}
         name: "verify helm/{{.}}/values.schema.json is up to date"
         language: golang
