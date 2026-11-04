@@ -136,7 +136,7 @@ $(PACKAGE_DIR)/$(APPLICATION)-v$(VERSION)-%-arm64.tar.gz: $(APPLICATION)-v$(VERS
 install: ## Install the application.
 	$(REQUIRE_VERSION)
 	@echo "====> $@"
-	go build -ldflags "$(LDFLAGS)" -o "$(shell go env GOPATH)/bin/$(APPLICATION)" "$(MAIN_SOURCE)"
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o "$(shell go env GOPATH)/bin/$(APPLICATION)" "$(MAIN_SOURCE)"
 
 .PHONY: run
 run: ## Runs go run main.go.
