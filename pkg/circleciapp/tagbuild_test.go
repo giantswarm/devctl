@@ -77,7 +77,7 @@ func (f *imageTagCircleCI) addBuild(gh *fakeGitHub, tag, id, state string) {
 		ProjectSlug: project,
 	}
 	// Every tag sees the same commit's statuses; both images post setup.
-	at := gh.release.GetPublishedAt().Time.Add(time.Minute)
+	at := gh.release.GetPublishedAt().Add(time.Minute)
 	gh.statuses = append([]*github.RepoStatus{status("setup", state, id, at)}, gh.statuses...)
 }
 
