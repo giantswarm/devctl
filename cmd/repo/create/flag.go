@@ -56,6 +56,9 @@ func (f *flag) Validate() error {
 	if f.Output != outputText && f.Output != outputJSON {
 		return microerror.Maskf(invalidFlagError, "--output must be %s or %s", outputText, outputJSON)
 	}
+	if !f.DryRun && f.Owner != reposetup.DefaultOwner {
+		return microerror.Maskf(invalidFlagError, "--owner must be %s when opening a declaration pull request: the declaration is written to %s/%s", reposetup.DefaultOwner, reposetup.SchemaRepositoryOwner, reposetup.SchemaRepository)
+	}
 	if f.Local && !f.DryRun {
 		return microerror.Maskf(invalidFlagError, "--local requires --dry-run")
 	}
