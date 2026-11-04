@@ -105,8 +105,8 @@ func TestGitHubIdentityIsKeptForRedelivery(t *testing.T) {
 			if redelivery := doc["redelivery"].(map[string]any); redelivery["outcome"] != "redelivered" || redelivery["after"] != "abc" {
 				t.Errorf("redelivery: %v", redelivery)
 			}
-			if len(cc.Requests()) != 2 {
-				t.Fatalf("expected pipeline and workflows reads, got %v", cc.Requests())
+			if len(cc.Requests()) != 3 {
+				t.Fatalf("expected pipeline, workflows and post-redelivery pipeline reads, got %v", cc.Requests())
 			}
 			for _, req := range cc.Requests() {
 				if req.Header.Get("Circle-Token") != "token_test" || req.Header.Get("Authorization") != "" {
