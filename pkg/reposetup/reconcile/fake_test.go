@@ -83,6 +83,10 @@ type fakeRepo struct {
 	heads             map[string]string     // branch → sha of its head commit
 	seq               int
 
+	// protectionStatus is the HTTP status of the classic protection read
+	// when not 200 (403 for an integration without administration: read).
+	protectionStatus int
+
 	// releaseSubject is the subject of the commit the release's tag names;
 	// empty leaves the tag's commit unknown (404).
 	releaseSubject string
@@ -957,6 +961,10 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]any{"name": r.PathValue("branch")})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/branches/{branch}/protection", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		if repo.protectionStatus != 0 {
+			writeJSON(w, repo.protectionStatus, map[string]string{"message": "Resource not accessible by integration"})
+			return
+		}
 		p := repo.protection
 		if p == nil {
 			notFound(w, "Branch not protected")

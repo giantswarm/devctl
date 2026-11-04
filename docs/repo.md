@@ -462,6 +462,13 @@ written. A repository without the ruleset yet keeps its classic branch protectio
 it always was (administrators bound too, `enforce_admins`), with the advisory finding `rulesets-not-enabled`
 naming the run that writes the ruleset; it does not keep the repository from converging.
 
+In check mode (`repo reconcile --dry-run`), a 403 reading classic branch protection is the advisory
+finding `unchecked`: `cannot read classic protection with this token`. The classic protection check is
+skipped, while an existing ruleset is still compared and any drift reported. Without an existing ruleset,
+the step plans no protection changes from the unknown classic protection. A token with
+`administration: read` can complete that check. Repair mode still fails on the forbidden read, so it
+cannot migrate or remove classic protection it could not inspect.
+
 The `catalog` step dispatches the catalog and mapping workflows of the catalog repository, which needs an
 Actions permission there. `--dispatch-token-envvar` names a second token for those two calls (listing the
 workflow's runs, dispatching it) when the GitHub token's identity has none -- the reconciler passes its
