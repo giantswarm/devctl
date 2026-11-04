@@ -48,6 +48,15 @@ the version: rolled out once it is Ready at its current generation with no
 reconcile in flight and its workloads are rolled out, failed when it is
 Stalled or not Ready after a failed install, upgrade or test.
 
+A component under an unchanged meta chart can be waited for directly:
+  devctl rollout wait <installation> <owner/repo> --chart <chart-name> <version>
+The bare chart name selects its HelmReleases or Apps on the installation;
+the version (or --version) is the component's, with no meta-chart version
+or PR needed. The repository release wait is skipped: no tag pipeline or
+artifact is checked, and release.verdict is not_applicable with a reason
+that says so. This form takes one chart and no --pr, --image or --failed-log.
+An OCI path in --chart keeps the release wait described above.
+
 A deployment has rolled out when it runs the version or a newer one
 (status.history of the HelmRelease, status.version and a deployed release
 of the App), is Ready at its current generation, and every Deployment,
@@ -103,6 +112,7 @@ Exit codes:
 
 Examples:
   devctl rollout wait myinstallation giantswarm/app-operator v7.5.4
+  devctl rollout wait myinstallation giantswarm/agent-platform --chart agent-platform-connectivity v1.2.3
   devctl rollout wait myinstallation giantswarm/app-operator --pr 1234 --reconcile --progress`
 )
 
