@@ -7,8 +7,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The devctl chart's opt-in `networkPolicy.enabled` renders a Cilium egress policy for DNS, GitHub, the registries
+  and catalogs, and the Dex token endpoint and API server of every installation. It uses the same endpoints as
+  `--installations`, including overrides, so adding an installation needs only one values change.
+
 ### Fixed
 
+- Concurrent updates to `DEVCTL_KEYRING_FILE` preserve changes to every identity and readers see complete records.
+- CircleCI waits read every workflow page, so a failed or running workflow on a later page is no longer missed.
+
+- Bulk PR approval targets the checked commit, and direct merges and Align branch updates
+  require that head so a concurrent push cannot substitute unchecked code.
+- The bulk PR approval commands require readable commit statuses and every page of check runs;
+  a green status no longer hides a failed or pending Actions check.
 - `gen dependabot` detects root Python requirements, Pipfile, setup.cfg and pyproject manifests.
 
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the

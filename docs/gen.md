@@ -72,6 +72,14 @@ workflows:
 
 A stable minor or major release is cut only by running the workflow by hand with `release-type: stable`. It promotes the latest candidate since the last stable release, or the one its `version` input names (`vX.Y.Z-rc.N`, one of those candidates: one built while a later one still builds, or the one proven; any other tag fails the run): the workflow checks that candidate out, so the version, the release notes and the tag's commit are all the candidate's, and whatever merged after it waits for the next candidate. The run fails when there is no candidate to promote, when the candidate has no GitHub pre-release (the run that cut it did not finish), or when a commit status of its commit failed or is still pending (the pipelines that build and publish it report there). A failed `ci/circleci: sync-china-registry`, the in-China mirror the release does not require, is a warning on the run, not a refusal, as in `devctl release wait` and `devctl release promote`. Only commit statuses count, which CircleCI writes; a GitHub Actions workflow of the repository's own that publishes on a tag reports check runs, and the promotion does not wait for it. A repository's own rules for a stable release go in `.github/release-gate.custom.sh`: when the released commit carries it (the promoted candidate, or a patch push's head), the run executes it with bash on that checkout, with the version about to be tagged as its argument, after the version is decided and before the tag and the GitHub release are created; a non-zero exit fails the run and cuts neither. A repository without the script has no gate. A check in the tag's own pipeline runs after the release exists, so a refusal there leaves a release that looks published with nothing built. One commit releases one version: every run that is about to tag, a candidate or a stable, first reads the remote's tags, and when the commit already carries the release tag (`vX.Y.Z`, `vX.Y.Z-rc.N`) of another version the run fails naming both and cuts no tag and no release. A stable on its own candidate's commit is the same version and passes; a tag outside that pattern (an upstream pre-release) counts for nothing. `release-type: auto` applies the same rule as a push. A `stable` run queued behind a push run waits in the branch's concurrency group, where GitHub keeps one waiting run: a further push replaces it, and the promotion has to be started again.
 
+#### CHANGELOG.md
+
+On `auto-release` the GitHub Releases are the changelog. Each release's notes are git-cliff's grouping of the pull request titles merged since the previous release (the squash commit subjects), so the pull request title is the entry and nothing writes `CHANGELOG.md`: no release commit, no pull request after a release, no check, and no conflict between parallel pull requests on the file.
+
+`gen workflows` on `auto-release` freezes an existing `CHANGELOG.md` as a pointer at `https://github.com/giantswarm/<repo>/releases`; its earlier entries stay in the git history and in the file at every earlier tag. It also drops a checklist item asking for a changelog edit from the repository's `.github/pull_request_template.md`, keeping the rest of the template. A repository without either file gets none. A multi-image repository and a fork line keep their `CHANGELOG.md` as it is: the first releases each image on its own tag, the second carries upstream's file.
+
+`devctl release create` reads a component's changes from its `CHANGELOG.md` at the tag, and from its GitHub Releases when that file has no section for the version: the notes of every release after the previous version up to the new one, its pre-releases left out, since the stable release carries their notes. A note's `[**breaking**]` bullet is listed under the breaking changes.
+
 `cliff.toml`'s `[remote.github].repo` is read from the consuming repo's `origin` git remote URL, its `giantswarm/<repo>` path. A checkout with no origin remote, or one outside `giantswarm`, needs `--repo-name <repo>` instead; without either the command fails rather than silently writing `repo = ""`.
 
 ### helm-docs regen workflow
@@ -117,10 +125,15 @@ a complete binary. Copy or rename failures keep the previous binary and remove t
 Versioned artifacts, executable permissions and timestamps are preserved. Consumers receive the updated
 Makefile through align after adopting a devctl release containing this template.
 
+For Go repositories, `make install` sets `CGO_ENABLED=0`, like the release build targets,
+and writes the binary to `$(go env GOPATH)/bin`. On Linux this keeps the statically linked
+binary from calling glibc's hostname resolver through cgo. Regenerate existing repositories'
+Makefiles to pick up this fix.
+
 Example:
 
 ```nohighlight
-devctl gen workflows --flavour cli --language go
+devctl gen makefile --flavour cli --language go
 ```
 
 ## Generating pre-commit configuration
@@ -132,6 +145,14 @@ The `--language` flag sets the primary language (`go`, `python`, `generic`). The
 - `bash` — shell script linting via `pre-commit-shell`
 - `md` — Markdown linting via `markdownlint-cli`
 - `helmchart` — Helm chart schema and docs hooks (auto-detects charts under `helm/`)
+
+With `--flavors helmchart`, generation also writes `helm/<chart>/values.schema.json`.
+The schema hook prints a regeneration command containing the original language, repository,
+flavors, Kubernetes schema version and `--go-generate` setting. Run that complete command
+from the repository root: a bare `devctl gen precommit` uses empty language and flavor
+defaults, which removes the language and Helm hooks and skips schema generation. For
+example, a Go repository with a chart can regenerate with
+`devctl gen precommit --language go --flavors helmchart`; keep any other original options.
 
 A Go repository's config also refuses a `require` line in any `go.mod` (single or in a block) whose trailing comment has more than one word (`go-mod-require-comment`): Renovate's gomod manager reads only a one-word comment such as `// indirect` and skips the whole line otherwise, so that dependency is never updated and nothing says so. The explanation goes on a comment line above the require.
 
@@ -146,6 +167,10 @@ devctl gen precommit --language go --repo-name devctl
 devctl gen precommit --language go --repo-name my-app --flavors bash,helmchart
 devctl gen precommit --language generic --repo-name my-service --flavors md,bash
 ```
+
+With `--flavors helmchart`, the `helm-docs` hook builds the pinned revision in pre-commit's Go environment and uses file order for the values table. A globally installed `helm-docs` cannot change that hook's output. The schema generator and normalizer are likewise pinned to devctl's own dependencies. `devctl gen precommit` writes the schema and scaffolds `README.md.gotmpl`; run `pre-commit run helm-docs --all-files` to update the README. Hook environments need their pinned sources on first installation; cached environments run offline. Schema annotations that reference remote documents still require those documents to be reachable.
+
+A devctl build without generated template provenance files keeps an existing generated YAML file untouched when only its fallback module tree link differs. Changes to the rendered body still regenerate the file, and builds with a known template commit continue to update that provenance.
 
 ## Generating renovate configuration
 
@@ -177,13 +202,42 @@ devctl gen plans --flavour plans
 
 ## Generating CircleCI configuration
 
-Generates the dynamic-config pipeline of a repository on devctl-generated CI: `.circleci/config.yml` (the static setup workflow, which merges the optional repo-owned `.circleci/custom.yml` in at pipeline runtime) and `.circleci/workflows.yml` (the pipeline), plus the canonical `tests/ats` dependency file of a chart repository. The chart tests themselves -- `.ats/main.yaml` and the Python files under `tests/ats` -- are the repository's own and never generated; app-test-suite picks the pytest executor from the dependency file and refuses a `tests/ats` without a test, so a chart repository carries at least one (`devctl repo create` writes a first smoke test into a new repository's scaffold).
+Generates the dynamic-config pipeline of a repository on devctl-generated CI: `.circleci/config.yml` (the static setup workflow, which merges the optional repo-owned `.circleci/custom.yml` in at pipeline runtime) and `.circleci/workflows.yml` (the pipeline), plus the canonical `tests/ats` dependency file of a chart repository.
+
+When chart-test jobs are emitted and neither `.ats/main.yaml` nor `.ats/main.yml` exists, generation also creates a starter `.ats/main.yaml` with `skip-steps: [smoke, functional, upgrade]`. A repository without ATS scenarios can then run the job without failing on missing test configuration. The legacy ATS 0.x starter also sets the smoke and upgrade cluster types to `kind`; ATS 1.x receives its cluster from the orb and does not accept those old options. Existing configuration, including an empty file, is kept byte for byte, and an existing `main.yml` is never shadowed by a new `main.yaml`. Non-app, fork, template and `--skip-ats` repositories get no starter.
+
+The configuration and Python tests are the repository's own after creation. Add tests and remove their scenario names from `skip-steps` to enable them; app-test-suite picks the pytest executor from the generated dependency file and requires test files for enabled scenarios. `devctl repo create` continues to write a first smoke test and its smoke-enabled configuration into a new repository's scaffold, preserving any configuration supplied by the template.
 
 ```nohighlight
 devctl gen circleci --repo-name REPOSITORY --language LANGUAGE --flavour FLAVOUR[,FLAVOUR]
 ```
 
 The pipeline is derived from the repository's signals — the language, the flavours, the presence of a `Dockerfile`, a `.ats/kind-config.yaml`, a lockfile or `.nvmrc` — rather than configured: `go` and `node` select a build/test job, a `Dockerfile` the image jobs, the `app` flavour the chart jobs (build, chart tests, push on the release tag). The knobs the giantswarm/github team file exposes under `gen.ci` are the flags of this command; `devctl gen circleci --help` documents each, and the architect-orb version is baked into devctl next to the template.
+
+A chart whose tests need an image pushed by a custom job can add that job's workflow name to
+`.circleci/config.custom.yml`:
+
+```yaml
+chart_tests:
+  requires:
+  - push-buzz-minio-to-registries
+```
+
+`gen circleci` reads this repository-owned file on every regeneration and adds the names to
+`execute-chart-tests.requires`, keeping `build-chart` and the generated branch image push when present.
+Duplicate names are emitted once. The file is generator input; `.circleci/custom.yml` still defines
+the jobs and their invocations in the `build` workflow, and is merged at pipeline runtime. Neither
+custom file is generated or overwritten. Malformed configuration, unknown keys, and empty or
+self-referencing job names fail before generated files are written. Nonempty dependencies require the app flavour with chart tests
+enabled, and are refused for template and multi-image repositories.
+
+The custom jobs must run on the same branches as `execute-chart-tests`: a job filtered to release
+tags cannot gate branch tests. For a custom image, publish the branch's computed version before
+chart tests and let the chart's test values select that version instead of pinning a released tag.
+The generated chart and image builds use the same version for the same commit. A custom image job
+should set `persist-build-version: false`, leaving `build-chart` to persist its version file into the
+shared workspace. This setting affects branch chart tests only; `execute-chart-tests-release` keeps
+its existing dependencies when `--ats-on-release` is enabled.
 
 ### Template repositories
 

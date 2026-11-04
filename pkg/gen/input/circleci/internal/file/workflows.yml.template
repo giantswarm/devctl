@@ -766,6 +766,9 @@ workflows:
 {{- if and .HasDockerfile .BranchPublish }}
         - push-to-registries
 {{- end }}
+{{- range .ChartTestRequires }}
+        - {{ printf "%q" . }}
+{{- end }}
         filters:
           branches:
             ignore:

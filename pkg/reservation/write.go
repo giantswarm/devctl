@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/giantswarm/microerror"
+	"github.com/go-git/go-git/v5"
 	"gopkg.in/yaml.v3"
 )
 
@@ -64,6 +65,40 @@ func marshalYAML(v any) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+// newComponentFiles refuses output paths already occupied by untracked files.
+// The returned paths are absent before this attempt and are the only files its
+// rollback may remove. Tracked component files can be rewritten on refresh.
+func newComponentFiles(dir, cluster, chart string) ([]string, error) {
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	index, err := repo.Storer.Index()
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	tracked := map[string]bool{}
+	for _, entry := range index.Entries {
+		tracked[entry.Name] = true
+	}
+	var created []string
+	for _, name := range []string{"kustomization.yaml", chart + SourceNameSuffix + ".yaml"} {
+		relative := clusterPath(cluster, collectionsDir, reservationsDir, chart, name)
+		if tracked[relative] {
+			continue
+		}
+		_, err := os.Lstat(filepath.Join(dir, relative))
+		if err == nil {
+			return nil, microerror.Maskf(invalidConfigError, "refusing to overwrite untracked reservation output %s", relative)
+		}
+		if !os.IsNotExist(err) {
+			return nil, microerror.Mask(err)
+		}
+		created = append(created, relative)
+	}
+	return created, nil
 }
 
 // writeComponent writes the reservation's own Kustomize component: the new
