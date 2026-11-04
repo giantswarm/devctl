@@ -15,6 +15,8 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/gen/internal"
 )
 
+// Execute processes inputs in order. If an input fails or ctx is canceled,
+// earlier successful writes remain; later inputs are not started.
 func Execute(ctx context.Context, files ...input.Input) error {
 	for _, f := range files {
 		err := execute(ctx, f)
@@ -27,6 +29,10 @@ func Execute(ctx context.Context, files ...input.Input) error {
 }
 
 func execute(ctx context.Context, file input.Input) error {
+	if err := ctx.Err(); err != nil {
+		return microerror.Mask(err)
+	}
+
 	if file.Delete {
 		_ = os.Remove(file.Path) // Ignore error, file may already be deleted
 		return nil
@@ -70,6 +76,11 @@ func execute(ctx context.Context, file input.Input) error {
 	// worse off than before the run. See giantswarm/devctl#2195.
 	var buf bytes.Buffer
 	if err := internal.Execute(ctx, &buf, file); err != nil {
+		return microerror.Mask(err)
+	}
+
+	// A generator may finish with content after its caller has canceled.
+	if err := ctx.Err(); err != nil {
 		return microerror.Mask(err)
 	}
 
