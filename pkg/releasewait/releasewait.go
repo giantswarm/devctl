@@ -143,9 +143,9 @@ type Config struct {
 	// Images name the images a hand-written tag pipeline pushes outside the
 	// architect orb (a plain docker push), which its configuration cannot
 	// tell: repository paths such as giantswarm/dex, or with the public or
-	// private registry host in front. Each is expected as <image>:<tag>, the
-	// git tag as written ($CIRCLE_TAG, v2.43.3), beside what the push jobs
-	// name (giantswarm/devctl#2418).
+	// private registry host in front. Each is expected as <image>:<tag>,
+	// trying the git tag as written and then its other leading-v spelling,
+	// beside what the push jobs name. Reference reports the spelling found.
 	Images []string
 	// Charts name the charts a hand-written tag pipeline pushes outside the
 	// architect orb (a helm push of its own), which its configuration cannot
@@ -192,7 +192,7 @@ type Config struct {
 
 // ImageFlagUsage is the help of --image on the commands that wait for a
 // release.
-const ImageFlagUsage = "An image the hand-written tag pipeline pushes outside the architect orb (a plain docker push), as <owner>/<name> or with the registry host in front; expected as <image>:<git tag>, the tag as written (v1.2.3). Repeatable"
+const ImageFlagUsage = "An image the hand-written tag pipeline pushes outside the architect orb (a plain docker push), as <owner>/<name> or with the registry host in front; tries <image>:<git tag> with and without a leading v and reports the reference found. Repeatable"
 
 // ChartFlagUsage is the help of --chart on the commands that wait for a
 // release.
@@ -723,7 +723,7 @@ func (w *Waiter) probe(ctx context.Context, result *Result, p *plan) error {
 		if a.State == StateAvailable || a.Kind == KindReleaseAsset {
 			continue
 		}
-		digest, found, err := w.config.Registry.Probe(ctx, *a)
+		digest, found, err := w.probeArtifact(ctx, a)
 		if err != nil {
 			if ctx.Err() != nil {
 				return err

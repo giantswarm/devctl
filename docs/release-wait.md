@@ -128,8 +128,12 @@ command waits for the pipeline to exist before it knows the artifacts.
 A tag job that pushes outside the architect orb (a plain `docker push` in a job of its own, as in a fork
 whose upstream Dockerfile builds the binary) cannot be read from the configuration: the caller names
 its image with `--image <owner>/<name>` (repeatable; the public or private registry host may come
-first and then decides the registry, else the repository's visibility does). Each is expected as
-`<image>:<git tag>`, the tag as written (`v2.43.3`, the `$CIRCLE_TAG` such a job pushes), beside what the push jobs name, and the release is out when every artifact is
+first and then decides the registry, else the repository's visibility does). Each is probed as
+`<image>:<git tag>`, the tag as written first, then its other spelling with or without a leading `v`
+(`v2.43.3` and `2.43.3`). The second spelling is tried only when the first is missing; a registry
+refusal or transport error keeps its normal error handling. The image's `reference` reports the
+spelling that resolves to a digest. Images named by the pipeline's architect push jobs and charts
+still require the exact bare version those jobs publish. The release is out when every artifact is
 pullable and the tag pipeline is green. `--image` applies to hand-written CI only: with generated CI or
 none, the artifacts are derived as before and a warning says the named image is not probed.
 

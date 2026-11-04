@@ -61,6 +61,9 @@ type Artifact struct {
 
 	// private selects the private registry and its keychain.
 	private bool
+	// alternateReference is the other v spelling of an explicit --image.
+	// Derived images and charts require their exact reference.
+	alternateReference string
 	// chart, catalog and catalogTest, for a chart: what the catalog index
 	// lists it as, in the production catalog and in the test catalog.
 	chart, catalog, catalogTest string

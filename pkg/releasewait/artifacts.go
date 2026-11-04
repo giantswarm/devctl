@@ -287,9 +287,9 @@ func ParsePushJobs(config []byte) ([]PushJob, error) {
 // tag that the pipeline runs (pipelineJobs are the job names CircleCI lists
 // for it), each naming its image or the chart directory whose Chart.yaml
 // names the chart, and the images the caller names (--image) for a job that
-// pushes outside the architect orb, tagged with the git tag as written: such
-// a job pushes $CIRCLE_TAG, where the orb strips the v, and the charts the
-// caller names (--chart) for a job that pushes them with helm itself,
+// pushes outside the architect orb, accepting the git tag with or without
+// a leading v, and the charts the caller names (--chart) for a job that
+// pushes them with helm itself,
 // tagged with the bare version as helm requires. The charts under helm/ and
 // charts/ that the configuration's own jobs push with helm push are expected
 // at the repository that job pushes to; the warnings name every chart at the
@@ -311,7 +311,7 @@ func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, vers
 		if private == nil {
 			private = &privateRepo
 		}
-		artifacts = append(artifacts, imageArtifact(path, tag, *private, endpoints))
+		artifacts = append(artifacts, namedImageArtifact(path, tag, *private, endpoints))
 	}
 	for _, name := range charts {
 		path, private, err := namedChart(name, endpoints)
@@ -524,12 +524,13 @@ func sortedKeys(m map[string]bool) []string {
 }
 
 // dedupe drops artifacts with a reference seen before (two jobs pushing the
-// same image to the same registry).
+// same image to the same registry), including an explicit image whose
+// alternate spelling is already required by a push job.
 func dedupe(artifacts []Artifact) []Artifact {
 	seen := map[string]bool{}
 	out := make([]Artifact, 0, len(artifacts))
 	for _, a := range artifacts {
-		if seen[a.Reference] {
+		if seen[a.Reference] || seen[a.alternateReference] {
 			continue
 		}
 		seen[a.Reference] = true
