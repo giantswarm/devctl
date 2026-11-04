@@ -182,6 +182,7 @@ func writeGoInstallFixture(t *testing.T, dir string, flavours gen.FlavourSlice, 
 
 func goInstallCommand(t *testing.T, dir, targetOS string) *exec.Cmd {
 	t.Helper()
+	//nolint:gosec // targetOS is a test case constant or runtime.GOOS; make runs only the temporary fixture.
 	cmd := exec.CommandContext(t.Context(), "make", "-f", "Makefile.gen.go.mk", "install",
 		"APPLICATION=fixture", "MODULE=example.com/install-fixture", "VERSION=1.2.3",
 		"BUILDTIMESTAMP=fixed", "GITSHA1=abc", "OS="+targetOS)
