@@ -2,6 +2,7 @@ package list
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"text/tabwriter"
@@ -28,7 +29,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 		return microerror.Mask(err)
 	}
 
-	err = r.run(context.Background(), cmd, args)
+	err = r.run(cmd.Context(), cmd, args)
 	if err != nil {
 		return microerror.Mask(err)
 	}
@@ -38,9 +39,14 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 
 // run reads the GitOps checkout, synced to origin/main first: never the
 // cluster, and no GitHub token, so it works from a laptop exactly like release.
-func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (err error) {
 	checkout, err := r.flag.GitOps.Open(ctx, r.stderr)
 	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	defer func() { err = errors.Join(err, checkout.Close()) }()
+	if err := requireCommittedConfigMap(ctx, checkout.Dir, r.flag.Cluster); err != nil {
 		return microerror.Mask(err)
 	}
 
@@ -68,8 +74,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	if len(all) == 0 {
-		_, _ = fmt.Fprintf(r.stdout, "No reservations on %s.\n", r.flag.Cluster)
-		return nil
+		_, err := fmt.Fprintf(r.stdout, "No reservations on %s.\n", r.flag.Cluster)
+		return microerror.Mask(err)
 	}
 
 	w := tabwriter.NewWriter(r.stdout, 0, 0, 2, ' ', 0)
