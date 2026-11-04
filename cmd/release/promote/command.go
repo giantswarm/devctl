@@ -78,6 +78,10 @@ are its own series'):
 
 Repeated repositories are promoted once.
 
+With --dry-run, a network or 5xx failure is retried once after one second.
+Each attempt is limited to two seconds, including reading the response body.
+A failed repository read names the request URL and last cause in its message.
+
 A dispatched repository's release is built from its tag by CircleCI; follow
 it with
   devctl release wait <owner/repo> vX.Y.Z
