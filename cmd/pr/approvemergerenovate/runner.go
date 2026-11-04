@@ -79,10 +79,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// Build search query
 	searchQuery := fmt.Sprintf("%s is:pr is:open archived:false review-requested:@me author:app/renovate", query)
 
-	searchOpts := &github.SearchOptions{
-		ListOptions: github.ListOptions{PerPage: 100},
-	}
-	searchResults, _, err := githubClient.Search.Issues(ctx, searchQuery, searchOpts)
+	issues, err := r.searchIssues(ctx, githubClient, searchQuery)
 	if err != nil {
 		return microerror.Maskf(executionFailedError, "failed to search for PRs: %v", err)
 	}
