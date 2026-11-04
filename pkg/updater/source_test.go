@@ -314,6 +314,42 @@ func TestListReleasesWithTheLatestRelease(t *testing.T) {
 	}
 }
 
+// The release is already listed, but its binary uploads before the separate
+// latest lookup. That newer snapshot must be used even though the ID matches.
+func TestTheLatestReleaseRefreshesListedAssets(t *testing.T) {
+	g := &flakyGitHub{
+		lists:        [][]map[string]any{{releaseJSON(2, "v2.0.0", false), releaseJSON(1, "v1.0.0", true)}},
+		latestStatus: http.StatusOK,
+		latest:       releaseJSON(2, "v2.0.0", true),
+	}
+	rel, found := g.detectLatest(t)
+	if !found || rel.Version() != newerVersion {
+		t.Fatalf("DetectLatest = %v, %v; want %s with its uploaded binary", rel, found, newerVersion)
+	}
+}
+
+// The installer also needs the latest snapshot when the binary was listed
+// before its signature bundle uploaded.
+func TestTheLatestReleaseRefreshesListedSignatureBundle(t *testing.T) {
+	latest := releaseJSON(2, "v2.0.0", true)
+	latest["assets"] = append(latest["assets"].([]map[string]any), map[string]any{
+		"id": 21, "name": binaryAsset() + ".bundle", "browser_download_url": "https://example.test/" + binaryAsset() + ".bundle",
+	})
+	g := &flakyGitHub{
+		lists:        [][]map[string]any{{releaseJSON(2, "v2.0.0", true)}},
+		latestStatus: http.StatusOK,
+		latest:       latest,
+	}
+	up, err := selfupdate.NewUpdater(selfupdate.Config{Source: g.source(t), Validator: accepting{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel, found, err := up.DetectLatest(t.Context(), selfupdate.ParseSlug("giantswarm/devctl"))
+	if err != nil || !found || rel.Version() != newerVersion {
+		t.Fatalf("DetectLatest = %v, %v, %v; want %s with its uploaded bundle", rel, found, err, newerVersion)
+	}
+}
+
 func TestTheRetryEndsWithTheContext(t *testing.T) {
 	g := &flakyGitHub{lists: [][]map[string]any{{}}, latestStatus: http.StatusOK, latest: releaseJSON(2, "v2.0.0", true)}
 	s := g.source(t)

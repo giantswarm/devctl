@@ -77,10 +77,10 @@ func (s *githubSource) newClient(token string) (*github.Client, error) {
 // ListReleases implements selfupdate.Source. GitHub intermittently answers
 // the release list with 200 and no releases at all, independently each time:
 // an empty list is asked for again. The latest release, answered reliably, is
-// asked for on its own and added when the list lacks it, so a list that stays
-// empty still finds it; it is the most recently published release, not
-// necessarily the highest version, hence the list's second chance. A failed
-// latest lookup is an error only when the list is empty too.
+// asked for on its own and refreshes its listed entry (or is added), so a
+// list that stays empty still finds it; it is the most recently published
+// release, not necessarily the highest version, hence the list's second
+// chance. A failed latest lookup is an error only when the list is empty too.
 func (s *githubSource) ListReleases(ctx context.Context, repository selfupdate.Repository) ([]selfupdate.SourceRelease, error) {
 	owner, repo, err := repository.GetSlug()
 	if err != nil {
@@ -122,8 +122,10 @@ func (s *githubSource) ListReleases(ctx context.Context, repository selfupdate.R
 	case err != nil:
 		return releases, nil
 	}
-	for _, rel := range rels {
+	for i, rel := range rels {
 		if rel.GetID() == latest.GetID() {
+			// Assets may have uploaded between the list and this lookup.
+			releases[i] = githubRelease{latest}
 			return releases, nil
 		}
 	}
