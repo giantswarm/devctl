@@ -66,6 +66,45 @@ func TestManifestGetAndChartConfig(t *testing.T) {
 	assert.Contains(t, body, `"schemaVersion":2`)
 }
 
+func TestManifestRoutesPreserveReset(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for _, tc := range []struct {
+			name   string
+			status int
+		}{
+			{"default status", 0},
+			{"ok", http.StatusOK},
+			{"not found", http.StatusNotFound},
+		} {
+			t.Run(method+"/"+tc.name, func(t *testing.T) {
+				path := "/v2/giantswarm/devctl/manifests/v1.2.3"
+				s, err := Start(sequence.Routes{
+					method + " " + path: {{Reset: true, Status: tc.status}, {Status: http.StatusOK}},
+				}, false)
+				require.NoError(t, err)
+				t.Cleanup(s.Close)
+
+				// The first request uses a fresh connection, so net/http cannot replay the reset.
+				client := s.Client()
+				req, err := http.NewRequestWithContext(t.Context(), method, s.URL+path, nil)
+				require.NoError(t, err)
+				resp, err := client.Do(req)
+				if resp != nil {
+					_ = resp.Body.Close()
+				}
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "connection reset by peer")
+
+				resp, err = client.Do(req)
+				require.NoError(t, err)
+				defer func() { _ = resp.Body.Close() }()
+				assert.Equal(t, http.StatusOK, resp.StatusCode, "the reset consumed exactly one scripted answer")
+				assert.Len(t, s.Requests(), 2)
+			})
+		}
+	}
+}
+
 func TestUnscriptedManifestIsUnknown(t *testing.T) {
 	s, err := Start(sequence.Routes{}, false)
 	require.NoError(t, err)
