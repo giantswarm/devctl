@@ -241,7 +241,7 @@ func authenticatedCreateFixture(t *testing.T, override bool) (*cobra.Command, st
 
 func readCreateFile(t *testing.T, provider, name string) []byte {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(provider, name))
+	data, err := os.ReadFile(filepath.Join(provider, name)) // #nosec G304 -- paths are fixed test fixture names under t.TempDir
 	if err != nil {
 		t.Fatal(err)
 	}
