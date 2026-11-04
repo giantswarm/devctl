@@ -25,6 +25,9 @@ type Params struct {
 	// emitted, and the chart push jobs gate directly on build-chart instead.
 	// Only meaningful for a chart/app repo (HasApp); ignored otherwise.
 	SkipATS bool
+	// ChartTestRequires are additional branch execute-chart-tests dependencies
+	// read from the repo's .circleci/config.custom.yml.
+	ChartTestRequires []string
 	// ATSOnRelease adds the tag-time chart-test job (execute-chart-tests-release,
 	// gating push-chart-release) next to the branch job. False, the default,
 	// runs the chart tests on branches only and lets the tag build and push

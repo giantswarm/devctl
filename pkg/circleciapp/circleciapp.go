@@ -32,6 +32,7 @@ type CircleCI interface {
 	DeleteTrigger(ctx context.Context, projectID, triggerID string) error
 	RunPipeline(ctx context.Context, org, repo, definitionID string, ref circleciclient.Ref) (*circleciclient.Pipeline, error)
 	GetPipeline(ctx context.Context, id string) (*circleciclient.PipelineDetail, error)
+	GetWorkflow(ctx context.Context, id string) (*circleciclient.WorkflowDetail, error)
 	GetProjectSettings(ctx context.Context, org, repo string) (*circleciclient.ProjectSettings, error)
 	UpdateProjectSettings(ctx context.Context, org, repo string, settings circleciclient.ProjectSettings) (*circleciclient.ProjectSettings, error)
 	ListPipelineWorkflows(ctx context.Context, pipelineID string) ([]circleciclient.Workflow, error)
@@ -335,7 +336,9 @@ func finished(p circleciclient.Pipeline, workflows []circleciclient.Workflow) *O
 		case wf.Status == workflowOnHold:
 			outcome.OnHold = append(outcome.OnHold, wf.Name)
 		case wf.Status == workflowNotRun:
-		case !circleciclient.WorkflowFinished(wf.Status):
+		case circleciclient.WorkflowRunning(wf.Status) || !circleciclient.WorkflowFinished(wf.Status):
+			// A failing workflow has a failed job, but its other jobs still
+			// run. Wait for them as for a running workflow.
 			return nil
 		case circleciclient.WorkflowFailed(wf.Status):
 			outcome.Green = false
