@@ -58,6 +58,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- The CLI's `release wait` and the release wait after `pr merge` mark a GitHub release's notes
+  **Not published** when its verified CircleCI tag pipeline fails, preserving the existing notes
+  and release metadata. A later successful wait clears the notice. `release failed <owner/repo>`
+  lists recorded failures, including prereleases. Failed note edits warn without changing the
+  wait's outcome; server waits remain read-only.
+
 - `ci job` takes the URL a CircleCI commit status links, alone, including a GitHub App pipeline's
   `app.circleci.com/workflow/<id>/job/<id>`, which it resolves to the project and job number through the workflow.
 

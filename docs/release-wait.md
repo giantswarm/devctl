@@ -22,6 +22,32 @@ Tokens come from the keychain (`devctl auth login`, see [auth.md](auth.md)). Git
 needed; CircleCI only when the tag carries a `.circleci/config.yml`. A missing token is exit 8 with
 the login command in `reason`, before anything is waited for.
 
+The CLI also records a failed, verified CircleCI tag pipeline in the GitHub release's notes with a
+visible **Not published** notice and a link to the pipeline. It preserves the existing notes, title,
+tag, draft and prerelease state. The notice means artifacts may be missing or incomplete; a pipeline
+can fail after publishing some of them. A later wait that confirms availability removes only
+devctl's notice, including when the tag is available but a separate commit status causes exit 12.
+The release wait after `pr merge` records the same notice. Editing notes requires GitHub
+`Contents: write`; a failed edit appears in `warnings` without replacing the wait's outcome.
+
+This records observations from CLI waits, rather than continuously monitoring releases. Timeouts,
+failures before a tag exists and commit statuses without a verified tag pipeline change no notes.
+The server's read-only `release_wait` tool and `rollout wait` change no notes.
+
+List published releases carrying devctl's notice with one read-only command:
+
+```nohighlight
+devctl release failed giantswarm/devctl
+```
+
+It prints the JSON envelope and `repository`, `releases[{tag, url}]`, including marked prereleases.
+An empty list is `[]`. Exit 0 (`listed`) means the listing completed, 7 is usage or a read failure,
+and 8 is missing authentication. It reads up to 1000 releases across all API pages and reports an
+error if more pages remain, rather than silently returning an incomplete list. It reads recorded
+notices only: it neither scans historical pipelines nor infers failure from releases without
+binary assets. Historical failures need a CLI wait to record them; hand-written notices are
+preserved but are not included in this list.
+
 ## What the command reads, and why
 
 ### The version

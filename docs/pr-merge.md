@@ -1,5 +1,10 @@
 # Merging a pull request: `devctl pr merge`
 
+The CLI's release wait records a failed, verified CircleCI tag pipeline in the GitHub release notes
+with a **Not published** notice and its pipeline link, just like [`release wait`](release-wait.md).
+`devctl release failed <owner/repo>` lists these recorded failures. A notes-edit failure is a
+warning; the merge's release-failure exit code is preserved.
+
 ```nohighlight
 devctl pr merge <owner/repo> <number> [--timeout 60m] [--release-timeout 60m] [--no-release-wait]
                 [--rebase | --squash] [--update-branch] [--accept-red <check>]...

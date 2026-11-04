@@ -21,6 +21,12 @@ wait), merge it and delete its branch, then wait until the release the merge
 triggers is pullable (the wait of devctl release wait --pr), print one JSON
 document on stdout and exit with a code that says what happened.
 
+If its verified CircleCI tag pipeline fails, the CLI release wait marks the
+GitHub release's notes "Not published" with a pipeline link. A later
+successful wait removes the notice. Editing notes requires Contents: write;
+an edit failure warns without replacing the release-failure outcome.
+devctl release failed <owner/repo> lists recorded failures.
+
 Refused before any wait: a draft, a closed or merged pull request, one
 conflicting with its base, or behind its base, strict or not, since its
 checks ran against an older base than the one the merge lands it on (exit 3,
