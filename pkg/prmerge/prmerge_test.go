@@ -358,11 +358,11 @@ func Test_Merge_paths(t *testing.T) {
 				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 0}},
 		},
 		{
-			name:      "an entry whose flavours cannot be read keeps the default squash, with a warning",
+			name:      "an entry whose flavours cannot be read refuses the default method",
 			routes:    routes(pull(nil)),
 			configure: func(c *Config) { c.Policy = verdict(Verdict{Team: "team-a", Warning: "gen.flavours unreadable"}) },
-			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123", warning: "gen.flavours unreadable",
-				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
+			want: want{code: 3, reason: "gen.flavours unreadable", method: "squash", headSHA: "abc123",
+				requested: map[string]int{"GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 0}},
 		},
 		{
 			name:   "settings the token cannot read leave the asked method to GitHub",
@@ -875,10 +875,10 @@ func Test_TeamFilePolicy(t *testing.T) {
 			"GET /repos/giantswarm/github/contents/repositories":             {dir},
 			"GET /repos/giantswarm/github/contents/repositories/team-a.yaml": {teamFile("- name: svc\n  gen:\n    flavours:\n      - app\n    language: go\n")},
 		}, wantTeam: "team-a", wantRequests: 2},
-		{name: "flavours that do not decode are no fork line, with a warning", owner: "giantswarm", repo: "odd", routes: sequence.Routes{
+		{name: "flavours that do not decode leave fork-line status unknown", owner: "giantswarm", repo: "odd", routes: sequence.Routes{
 			"GET /repos/giantswarm/github/contents/repositories":             {dir},
 			"GET /repos/giantswarm/github/contents/repositories/team-a.yaml": {teamFile("- name: odd\n  gen:\n    flavours: fork\n")},
-		}, wantTeam: "team-a", wantWarning: "is not taken for a fork line", wantRequests: 2},
+		}, wantTeam: "team-a", wantWarning: "fork-line status is unknown", wantRequests: 2},
 		{name: "a repository outside the organisation is not looked up", owner: "o", repo: "r", routes: sequence.Routes{}, wantRequests: 0},
 		{name: "team files the token cannot read are an error, not a guess", owner: "giantswarm", repo: "svc", routes: sequence.Routes{}, wantErr: true, wantRequests: 1},
 	}

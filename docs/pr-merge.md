@@ -128,8 +128,12 @@ Green lands with one call of the merge API, `PUT /repos/{owner}/{repo}/pulls/{nu
   carries its upstream's files plus one commit per carried patch). Each carried commit lands as its
   own commit without the caller remembering `--rebase`; `--squash` squashes there, and an explicit
   `--rebase` or `--squash` is never replaced. The entry is the one the `agentMerge` check reads, so
-  this costs no request. An entry whose `gen.flavours` does not decode keeps the squash default,
-  with a warning; a repository no team file declares and one outside giantswarm are no fork line.
+  this costs no request. An entry whose `gen.flavours` does not decode refuses the default method
+  (exit 3). A repository GitHub identifies as a fork, without a team-file entry declaring `fork`,
+  also refuses the default method before any wait, branch update, enqueue or merge. Repair the
+  declaration or choose `--rebase` or `--squash` explicitly. The GitHub fork flag is read with the
+  repository's merge settings; it does not choose rebase on its own. Ordinary repositories without
+  an entry keep the squash default; forks outside giantswarm need an explicit method too.
   `--rebase` and `--squash` together are exit 7.
 - The repository's settings (`allow_squash_merge`, `allow_merge_commit`, `allow_rebase_merge` of
   `GET /repos/{owner}/{repo}`) are read before the wait. A repository that does not allow squash
@@ -440,7 +444,7 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 | 0 | `green` | Merged (or enqueued and merged by the queue), the branch deleted, and the release is pullable or none follows the merge (`release.verdict` says which). |
 | 1 | `red` | Something failed during the wait, or the merge queue dropped the pull request; `reason` names it. |
 | 2 | `timeout` | The timeout passed before an outcome, in the wait or in the queue; `unfinished` names what was still open. |
-| 3 | `not_applicable` | Draft, closed, merged, conflicting, behind a strict base without `--update-branch`, GitHub declined the merge as the pull request stands, or `--accept-red` names a required check, a security scan or no check of the head; `reason` says which. |
+| 3 | `not_applicable` | Draft, closed, merged, conflicting, behind a strict base without `--update-branch`, an unknown fork-line status without an explicit method, GitHub declined the merge as the pull request stands, or `--accept-red` names a required check, a security scan or no check of the head; `reason` says which. |
 | 4 | `required_missing`, `approval_required`, `no_checks` | A required status context never reported, the head waits only for Actions runs awaiting a member's approval (`approval_required`), or its `pull_request` workflows never started (`no_checks`: close and reopen the pull request), known at the poll that saw it and before any merge; `reason` names the context or the runs. |
 | 5 | `refused` | Another human's pull request, a repository whose entry says `agentMerge: false`, or a standing request for changes or an unanswered review; `reason` names the author, the field or the feedback (`changes requested: …`, `unanswered review: …`, listed in `unansweredReviews`). |
 | 6 | `release_failed` | **Merged**, and the release failed: the merge commit's auto-release run failed before it tagged, or the tag pipeline failed; `release.pipeline.failedJobs` names the jobs. |
