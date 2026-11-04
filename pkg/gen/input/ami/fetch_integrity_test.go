@@ -1,6 +1,7 @@
 package ami
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -52,7 +53,7 @@ func TestReleaseFetchRejectsHTTPFailures(t *testing.T) {
 				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 			})
 
-			got, err := getAMIInfoString(Config{Channel: "stable", PrimaryDomain: "fixture.invalid", Arch: "amd64-usr", MinimumVersion: "1.0.0"})
+			got, err := getAMIInfoString(context.Background(), Config{Channel: "stable", PrimaryDomain: "fixture.invalid", Arch: "amd64-usr", MinimumVersion: "1.0.0"})
 			if err == nil || !strings.Contains(err.Error(), strconv.Itoa(tc.status)) {
 				t.Fatalf("got output %q, error %v; want HTTP status error", got, err)
 			}
@@ -79,7 +80,7 @@ func TestReleaseListingReadFailureIsReturned(t *testing.T) {
 				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(io.MultiReader(strings.NewReader(prefix), failedListingReader{})), Header: make(http.Header)}, nil
 			})
 
-			got, err := getAMIInfoString(Config{Channel: "stable", PrimaryDomain: "fixture.invalid", Arch: "amd64-usr", MinimumVersion: "1.0.0", KeepExisting: existingPath})
+			got, err := getAMIInfoString(context.Background(), Config{Channel: "stable", PrimaryDomain: "fixture.invalid", Arch: "amd64-usr", MinimumVersion: "1.0.0", KeepExisting: existingPath})
 			if microerror.Cause(err) != io.ErrUnexpectedEOF || got != "" {
 				t.Fatalf("got output %q, error %v; want no output and unexpected EOF", got, err)
 			}
@@ -99,7 +100,7 @@ func TestReleaseFetchAllowsEmptyListingAndMissingAMI(t *testing.T) {
 				}
 				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 			})
-			got, err := getAMIInfoString(Config{Channel: "stable", PrimaryDomain: "fixture.invalid", Arch: "amd64-usr", MinimumVersion: "1.0.0"})
+			got, err := getAMIInfoString(context.Background(), Config{Channel: "stable", PrimaryDomain: "fixture.invalid", Arch: "amd64-usr", MinimumVersion: "1.0.0"})
 			if err != nil || got != "{}" {
 				t.Fatalf("got %q, %v; want {}, nil", got, err)
 			}
