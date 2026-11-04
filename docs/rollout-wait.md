@@ -69,8 +69,9 @@ deployment that took new values after the merge runs the change although the Con
 apart). kustomize-controller writes an object only when the repository changed it, so its field-manager entry
 says when the change landed: a pull request that changes no HelmRelease, values or chart source returns once
 the source and the Kustomizations applied it. A Kustomization or Konfiguration whose attempt at the revision
-failed, or an App whose release failed with the new values, is exit 1; once everything else is applied, a
-changed app whose values nothing takes is exit 3, verdict `rollout_unknown`, never `rolled_out`; nothing on the installation fetching the repository keeps the `no_release` verdict, exit
+failed, or an App whose release failed with the new values, is exit 1. A failed attempt of the requested
+revision is still a failure when that revision was already applied, including a failed health check.
+Once everything else is applied, a changed app whose values nothing takes is exit 3, verdict `rollout_unknown`, never `rolled_out`; nothing on the installation fetching the repository keeps the `no_release` verdict, exit
 3, its reason saying so; a GitRepository nothing reads (one included into another) is exit 3. `--reconcile`
 asks the GitRepository, the Kustomizations and, once its values are rendered, each HelmRelease to
 reconcile, once each.
