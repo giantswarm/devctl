@@ -3,6 +3,7 @@ package merge
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/rogpeppe/go-internal/lockedfile"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/mergejob"
@@ -53,6 +56,18 @@ func (r *runner) detach(ctx context.Context, args []string, doc *startDocument) 
 	if err != nil {
 		return err
 	}
+	// A separate CLI process can be starting the same merge. Hold the
+	// startup lock until the child PID is saved, so the next caller sees
+	// that running job before deciding whether to launch another one.
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return err
+	}
+	unlock, err := lockedfile.MutexAt(filepath.Join(root, ".start.lock")).Lock()
+	if err != nil {
+		return fmt.Errorf("locking detached merge startup: %w", err)
+	}
+	defer unlock()
+
 	running, ok, err := mergejob.Running(root, doc.Repository, c.number)
 	if err != nil {
 		return err
@@ -99,14 +114,17 @@ func (r *runner) detach(ctx context.Context, args []string, doc *startDocument) 
 // stdout (its log) and into the job's directory, then the --on-done command.
 func (r *runner) finishDetached(ctx context.Context, doc *document, mergeErr error) error {
 	var buf bytes.Buffer
-	err := agentcli.Report(io.MultiWriter(r.stdout, &buf), doc, agentcli.VerdictGreen, mergeErr)
+	err := agentcli.Report(&buf, doc, agentcli.VerdictGreen, mergeErr)
+	// The log descriptor can fail independently of the saved outcome.
+	// Serialize first so a failed stdout never produces an empty document.
+	_, outputErr := io.Copy(r.stdout, bytes.NewReader(buf.Bytes()))
 	root, rerr := r.jobRoot()
 	if rerr == nil {
 		rerr = mergejob.WriteDocument(root, r.flag.DetachedHandle, buf.Bytes())
 	}
 	if rerr != nil {
 		_, _ = fmt.Fprintf(r.stderr, "writing the document of %s: %v\n", r.flag.DetachedHandle, rerr)
-		return err
+		return errors.Join(err, outputErr, fmt.Errorf("writing the detached merge document: %w", rerr))
 	}
 	if r.flag.OnDone != "" {
 		o := r.onDone(ctx, root, doc)
@@ -114,7 +132,7 @@ func (r *runner) finishDetached(ctx context.Context, doc *document, mergeErr err
 			_, _ = fmt.Fprintf(r.stderr, "recording the --on-done outcome of %s: %v\n", r.flag.DetachedHandle, werr)
 		}
 	}
-	return err
+	return errors.Join(err, outputErr)
 }
 
 // onDone runs the --on-done command with the merge's outcome in its
