@@ -63,6 +63,16 @@ naming it. --catalog also waits for the catalog index to list the chart: the
 test catalog for a pre-release when the tag's architect orb (10.12.0 on) sends
 it there.
 
+When a verified CircleCI tag pipeline fails, the CLI adds a visible "Not
+published" notice linking that pipeline to the GitHub release's notes.
+Existing notes and release metadata are preserved. A successful wait removes
+devctl's notice (also when only a later commit-status gate fails, exit 12).
+Editing notes requires Contents: write; an edit failure is a warning and
+preserves the wait's exit code. No notice is written for a timeout, an
+auto-release failure before tagging, or commit statuses that cannot identify
+the tag pipeline. The server's read-only release_wait tool never edits notes.
+List recorded failures with devctl release failed <owner/repo>.
+
 Output: one JSON document on stdout at the end; on stderr a heartbeat naming
 what the wait still waits for, every two minutes and when it changes
 (--progress writes one line per step instead): the envelope (command,

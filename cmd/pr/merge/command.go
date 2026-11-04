@@ -21,6 +21,12 @@ wait), merge it and delete its branch, then wait until the release the merge
 triggers is pullable (the wait of devctl release wait --pr), print one JSON
 document on stdout and exit with a code that says what happened.
 
+If its verified CircleCI tag pipeline fails, the CLI release wait marks the
+GitHub release's notes "Not published" with a pipeline link. A later
+successful wait removes the notice. Editing notes requires Contents: write;
+an edit failure warns without replacing the release-failure outcome.
+devctl release failed <owner/repo> lists recorded failures.
+
 --circleci-from-statuses reads CircleCI jobs from the configuration and GitHub
 commit statuses for both waits, without a CircleCI token, as in devctl serve.
 Jobs that have not posted yet keep the wait pending. --failed-log takes

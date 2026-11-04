@@ -59,6 +59,7 @@ type clients struct {
 	policy prmerge.Policy
 	// release is what the release wait reads; rateLimit its pace.
 	release   releasewait.GitHub
+	publish   *githubclient.Client
 	rateLimit func() githubclient.RateLimit
 }
 
@@ -74,6 +75,7 @@ func newClients(config githubclient.Config) (clients, error) {
 		rate:      conditional,
 		entries:   releasewait.TeamFileEntries{GitHub: github.GitHub()},
 		release:   github,
+		publish:   github,
 		rateLimit: conditional.Rate,
 	}, nil
 }
@@ -281,7 +283,11 @@ func (r *runner) merge(ctx context.Context, args []string, doc *document) error 
 			if err != nil {
 				return err
 			}
-			return agentcli.Interrupted(ctx, waiter.Wait(ctx, result))
+			err = agentcli.Interrupted(ctx, waiter.Wait(ctx, result))
+			if recordErr := releasewait.RecordPublishStatus(ctx, gh.publish, *result, err); recordErr != nil {
+				doc.Warn(recordErr.Error())
+			}
+			return err
 		}
 	}
 

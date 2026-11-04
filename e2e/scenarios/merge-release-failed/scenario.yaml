@@ -18,6 +18,10 @@ keyring:
     expiresAt: "2099-01-01T00:00:00Z"
 github:
   routes:
+    "GET /repos/giantswarm/e2e-app/releases/tags/v1.2.3":
+      - body: {id: 42, tag_name: v1.2.3, body: "Keep release notes"}
+    "PATCH /repos/giantswarm/e2e-app/releases/42":
+      - body: {id: 42}
     "GET /repos/giantswarm/e2e-app/compare/main...abc123":
       - body: {status: ahead, ahead_by: 1, behind_by: 0}
     "GET /repos/giantswarm/e2e-app/pulls/42/reviews":
