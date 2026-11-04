@@ -31,7 +31,8 @@ func TestSessionRefreshesMusterBetweenCalls(t *testing.T) {
 	providerCalls := 0
 	var created []string
 	var used []string
-	key := struct{}{}
+	type contextKey struct{}
+	key := contextKey{}
 	ctx := context.WithValue(context.Background(), key, "parent")
 	s, err := openMuster(ctx, func(callCtx context.Context) (authstore.Token, error) {
 		require.Equal(t, "parent", callCtx.Value(key))
