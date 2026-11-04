@@ -89,8 +89,11 @@ func TestGetLatestFromSourceContextAlreadyCanceledDoesNotAskTheSource(t *testing
 	}
 }
 
+// callerContextKey marks the caller's context; the lookup may wrap it in a deadline.
+type callerContextKey struct{}
+
 func TestGetLatestFromSourceContextReachesTokenResolution(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), callerContextKey{}, true))
 	defer cancel()
 	called := false
 	u, err := New(Config{
@@ -99,7 +102,7 @@ func TestGetLatestFromSourceContextReachesTokenResolution(t *testing.T) {
 		GitHubAPIURL:   "http://127.0.0.1:1",
 		GithubToken: func(got context.Context) (string, error) {
 			called = true
-			if got != ctx {
+			if got.Value(callerContextKey{}) != true {
 				t.Error("token resolution did not receive the caller's context")
 			}
 			cancel()
