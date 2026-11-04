@@ -25,6 +25,10 @@ CircleCI: a job behind requires: has posted nothing to GitHub until it starts),
 no GitHub Actions run of the head queued, in progress, waiting or awaiting a
 maintainer's approval, and every status context the base requires reported.
 
+Before judging a head, the wait reads the pull request again after a short delay
+until two consecutive reads name the same head. It rechecks the head after reading
+its checks before returning a verdict. Red and green progress lines name the SHA.
+
 The wait ends before it starts for a pull request no CI can turn green: a draft,
 a closed or merged one, one conflicting with its base, one behind a base that
 requires branches to be up to date. A failure anywhere ends the wait at once, and
