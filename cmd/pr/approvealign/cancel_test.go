@@ -64,9 +64,9 @@ func TestCommandCancellation(t *testing.T) {
 					var body any
 					switch req.Method + " " + req.URL.Path {
 					case "GET /search/issues":
-						body = map[string]any{"total_count": 1, "items": []any{map[string]any{"number": 7, "title": "Update fixture", "html_url": "https://github.com/o/r/pull/7"}}}
+						body = map[string]any{"total_count": 1, "items": []any{map[string]any{"number": 7, "title": alignTitle, "html_url": "https://github.com/o/r/pull/7"}}}
 					case "GET /repos/o/r/pulls/7":
-						body = map[string]any{"head": map[string]any{"sha": "abc"}, "mergeable_state": "clean"}
+						body = map[string]any{"title": alignTitle, "head": map[string]any{"sha": "abc"}, "mergeable_state": "clean"}
 						if tc.afterApproval {
 							body.(map[string]any)["auto_merge"] = map[string]any{"enabled": true}
 						}
