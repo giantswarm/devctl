@@ -27,12 +27,13 @@ const StalledAfter = 5 * time.Minute
 
 // The outcomes of a redelivery.
 const (
-	// OutcomeRedelivered: the push delivery was sent again; CircleCI creates a
-	// new pipeline for it.
+	// OutcomeRedelivered: GitHub accepted the request to send the push again.
 	OutcomeRedelivered = "redelivered"
-	// OutcomeAlreadyRedelivered: the push delivery was sent again before and
-	// the pipeline it created has no workflow either; a second redelivery is
-	// not sent.
+	// OutcomeDeduplicated: no newer pipeline appeared within the bounded
+	// observation after redelivery (pr rerun).
+	OutcomeDeduplicated = "deduplicated"
+	// OutcomeAlreadyRedelivered: the push delivery was sent again before;
+	// the pipeline still has no workflow, and a second redelivery is not sent.
 	OutcomeAlreadyRedelivered = "already_redelivered"
 )
 
@@ -47,8 +48,9 @@ type Hooks interface {
 
 // Redelivery is the way out of a pipeline that never got a workflow (its
 // setup workflow finished and the continuation was never created, or the
-// pipeline stays pending without a workflow): the push webhook delivery that
-// created it is sent again, so CircleCI creates a new pipeline for the head.
+// pipeline stays pending without a workflow): request that GitHub send the
+// push webhook delivery again. CircleCI may deduplicate it; pr rerun observes
+// whether a newer pipeline appears after GitHub accepts the request.
 // Once per head: a delivery sent again before is not sent a second time.
 type Redelivery struct {
 	// Hooks is asked for the webhook API and the identity it acts as
@@ -97,8 +99,10 @@ type RedeliveryResult struct {
 	// Ref and After are the push as the delivery carried it.
 	Ref   string `json:"ref"`
 	After string `json:"after"`
-	// Outcome is one of redelivered, already_redelivered, refused.
+	// Outcome is one of redelivered, deduplicated, already_redelivered, refused.
 	Outcome string `json:"outcome"`
+	// Pipeline is the newer pipeline observed after redelivery (pr rerun).
+	Pipeline *Pipeline `json:"pipeline,omitempty"`
 	// RedeliveredAt is when the delivery was sent again before
 	// (already_redelivered).
 	RedeliveredAt *time.Time `json:"redeliveredAt,omitempty"`
@@ -205,7 +209,7 @@ func (r Redelivery) redeliver(ctx context.Context, org, repo string, pipeline *c
 		return forbidden(err, identity, org, repo, "the redelivery")
 	}
 	result.Redelivery.Outcome = OutcomeRedelivered
-	warn(fmt.Sprintf("%s: its push delivery %s (%s at %s, delivered %s) was sent again; CircleCI creates a new pipeline for the head, the one the wait reads",
+	warn(fmt.Sprintf("%s: GitHub accepted redelivery of its push %s (%s at %s, delivered %s); acceptance does not confirm a new CircleCI pipeline",
 		state, match.GetGUID(), push.Ref, push.After, match.GetDeliveredAt().UTC().Format(time.RFC3339)))
 	return nil
 }
