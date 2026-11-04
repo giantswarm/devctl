@@ -118,8 +118,8 @@ func Test_Wait_registration(t *testing.T) {
 				gh["GET /repos/o/r/actions/runs?head_sha=def456"] = []sequence.Response{noRuns, ciRun("in_progress", ""), ciRun("completed", "success")}
 				return gh
 			},
-			exit: agentcli.ExitOK, v: agentcli.VerdictGreen, polls: 4,
-			progress: "poll 2: waiting for required context lint (absent)",
+			exit: agentcli.ExitOK, v: agentcli.VerdictGreen, polls: 3,
+			progress: "poll 1: waiting for required context lint (absent)",
 		},
 		{
 			// The required run is registered and running beside another
