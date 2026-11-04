@@ -2061,7 +2061,7 @@ By making a contribution to this project, I certify that:
 #    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.template
 #
 
-include Makefile.*.mk
+-include Makefile.*.mk
 
 ##@ General
 
