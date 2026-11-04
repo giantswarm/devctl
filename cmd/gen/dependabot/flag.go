@@ -41,7 +41,7 @@ func (f *flag) Validate() error {
 		if exists(".github/workflows/") {
 			f.Ecosystems = append(f.Ecosystems, gen.EcosystemGithubActions.String())
 		}
-		if exists("go.mod") && exists("go.sum") {
+		if exists("go.mod") || exists("go.work") {
 			f.Ecosystems = append(f.Ecosystems, gen.EcosystemGomod.String())
 		}
 		if exists("package.json") {
