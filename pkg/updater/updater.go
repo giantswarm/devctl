@@ -198,7 +198,7 @@ func (u *Updater) InstallLatestWithResult() (InstallResult, error) {
 // hour answers instead of the source: the check that runs before every
 // command.
 func (u *Updater) GetLatest() (version string, err error) {
-	return u.latest(true)
+	return u.latest(context.Background(), true)
 }
 
 // GetLatestFromSource is GetLatest asking the source whatever the cache
@@ -206,11 +206,18 @@ func (u *Updater) GetLatest() (version string, err error) {
 // update` or `version check` right after a release finds it, where the
 // cache written before the release would deny it for up to an hour.
 func (u *Updater) GetLatestFromSource() (version string, err error) {
-	return u.latest(false)
+	return u.GetLatestFromSourceContext(context.Background())
 }
 
-func (u *Updater) latest(readCache bool) (version string, err error) {
-	latestVersion, err := u.getLatestVersion(readCache)
+// GetLatestFromSourceContext is GetLatestFromSource with the caller's context
+// governing token resolution and release requests. A canceled lookup does not
+// refresh the cache.
+func (u *Updater) GetLatestFromSourceContext(ctx context.Context) (version string, err error) {
+	return u.latest(ctx, false)
+}
+
+func (u *Updater) latest(ctx context.Context, readCache bool) (version string, err error) {
+	latestVersion, err := u.getLatestVersion(ctx, readCache)
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
@@ -224,7 +231,11 @@ func (u *Updater) latest(readCache bool) (version string, err error) {
 	return latestVersion.String(), err
 }
 
-func (u *Updater) getLatestVersion(readCache bool) (semver.Version, error) {
+func (u *Updater) getLatestVersion(ctx context.Context, readCache bool) (semver.Version, error) {
+	if err := ctx.Err(); err != nil {
+		return semver.Version{}, microerror.Mask(err)
+	}
+
 	allowCache := len(u.cacheDir) > 0
 
 	if allowCache && readCache && !u.cache.IsExpired() {
@@ -237,8 +248,11 @@ func (u *Updater) getLatestVersion(readCache bool) (semver.Version, error) {
 		}
 	}
 
-	latest, found, err := u.lookup.DetectLatest(context.Background(), selfupdate.ParseSlug(u.repository))
+	latest, found, err := u.lookup.DetectLatest(ctx, selfupdate.ParseSlug(u.repository))
 	if err != nil {
+		return semver.Version{}, microerror.Mask(err)
+	}
+	if err := ctx.Err(); err != nil {
 		return semver.Version{}, microerror.Mask(err)
 	}
 

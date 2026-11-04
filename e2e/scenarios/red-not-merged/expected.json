@@ -5,7 +5,7 @@
     "schemaVersion": 1,
     "exitCode": 1,
     "verdict": "red",
-    "reason": "circleci workflow build failed",
+    "reason": "head abc123: circleci workflow build failed",
     "warnings": [],
     "startedAt": "*",
     "finishedAt": "*",
