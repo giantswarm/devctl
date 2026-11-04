@@ -725,6 +725,7 @@ func (w *Waiter) probe(ctx context.Context, result *Result, p *plan) error {
 		}
 		digest, found, err := w.config.Registry.Probe(ctx, *a)
 		if err != nil {
+			a.LastProbeError = err.Error()
 			if ctx.Err() != nil {
 				return err
 			}
@@ -740,6 +741,7 @@ func (w *Waiter) probe(ctx context.Context, result *Result, p *plan) error {
 			continue
 		}
 		p.failures[a.Reference] = 0
+		a.LastProbeError = ""
 		if found {
 			a.Digest, a.State = digest, StateAvailable
 			w.progress.Printf("%s %s available (%s)", a.Kind, a.Reference, digest)
@@ -1033,7 +1035,11 @@ func (w *Waiter) timeout(result *Result) error {
 	var missing []string
 	for _, a := range result.Artifacts {
 		if a.State != StateAvailable {
-			missing = append(missing, a.Kind+" "+a.Reference)
+			message := a.Kind + " " + a.Reference
+			if a.LastProbeError != "" {
+				message += " (missing; last probe error: " + a.LastProbeError + ")"
+			}
+			missing = append(missing, message)
 		}
 	}
 	// What the tag pipeline was still doing, so the reason says where the
