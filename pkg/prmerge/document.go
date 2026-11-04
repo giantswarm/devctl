@@ -14,11 +14,19 @@ const Command = "pr merge"
 type Document struct {
 	agentcli.Envelope
 	*Result
+	// Merged reports an acknowledged merge, derived from its commit.
+	Merged bool `json:"merged"`
 	// Identity is who acted on GitHub: "app", a GitHub App's user token (the
 	// devctl App login on a laptop, the person's token on the server), or
 	// "gh", the person's own gh login for an owner the App is not installed
 	// on; empty when the run ended before choosing.
 	Identity string `json:"identity"`
+}
+
+// Finish records whether the merge happened alongside the outcome.
+func (d *Document) Finish(now time.Time, ok agentcli.Verdict, err error) {
+	d.Merged = d.Result != nil && d.MergeCommitSHA != ""
+	d.Envelope.Finish(now, ok, err)
 }
 
 // NewDocument is the document of a merge started at now that lands with
