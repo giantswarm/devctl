@@ -152,8 +152,14 @@ func (r *Retrying) try(base http.RoundTripper, req *http.Request) (*http.Respons
 }
 
 func (r *Retrying) retrying(req *http.Request, failure string, pause time.Duration, next, attempts int) {
+	// Log downloads use signed URLs. Keep their credentials out of the
+	// document's warnings and progress without changing the request itself.
+	location := *req.URL
+	location.User = nil
+	location.RawQuery, location.Fragment, location.RawFragment = "", "", ""
+	location.ForceQuery = false
 	message := fmt.Sprintf("%s %s %s: %s; retried in %s (try %d of %d)",
-		r.Clock.Now().UTC().Format(time.RFC3339), req.Method, req.URL.Redacted(), failure, pause, next, attempts)
+		r.Clock.Now().UTC().Format(time.RFC3339), req.Method, location.String(), failure, pause, next, attempts)
 	r.Progress.Printf("%s", message)
 	if r.Warn == nil {
 		return
