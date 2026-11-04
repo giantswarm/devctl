@@ -40,6 +40,9 @@ const Workflow = "zz_generated.auto_release.yaml"
 // workflowPath is where the workflow lives in the repository.
 const workflowPath = ".github/workflows/" + Workflow
 
+// nextUpgradeSection matches the line prefix used by check-upgrade-notes.
+var nextUpgradeSection = regexp.MustCompile(`(?m)^## Next`)
+
 // promotionMarker is the step of the auto-release workflow that promotes the
 // latest candidate on release-type stable. A workflow without it tags the
 // branch head on release-type stable and checks no commit status.
@@ -236,6 +239,14 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 	}
 	if candidate == "" {
 		return entry.set(StateNothingToPromote, "no release candidate on %s since %s", branch, sinceOrInception(stable))
+	}
+
+	upgrade, found, err := gh.ReadFile(ctx, owner, repo, "UPGRADE.md", candidate)
+	if err != nil {
+		return entry.set(StateFailed, "reading UPGRADE.md at %s: %v", candidate, err)
+	}
+	if found && nextUpgradeSection.Match(upgrade) {
+		return entry.set(StateFailed, "UPGRADE.md at %s still has a ## Next section: land the rename from ## Next to ## %s, then promote a new release candidate containing that change", candidate, StableVersion(candidate))
 	}
 
 	status, err := gh.GetCombinedStatus(ctx, owner, repo, candidate)

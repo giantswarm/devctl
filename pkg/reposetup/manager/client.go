@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/giantswarm/microerror"
 )
@@ -67,6 +68,9 @@ const (
 
 // protocolVersion is the MCP revision the client speaks.
 const protocolVersion = "2025-03-26"
+
+// interruptedRetryBackoff lets the next call reach a ready muster replica.
+const interruptedRetryBackoff = time.Second
 
 // Caller calls the manager's tools. Client satisfies it; a test fakes it.
 type Caller interface {
@@ -115,7 +119,9 @@ func (c *Client) GetRepository(ctx context.Context, repository string) (*Record,
 // otherwise). A tool that answers an error, or a muster that refuses the
 // call (a tool it does not know, a toolset that excludes it), is [IsTool]
 // with the text; an endpoint that refuses the bearer is [IsAuthRequired];
-// one that does not answer is [IsUnreachable].
+// one that does not answer is [IsUnreachable]. A retryable interruption from
+// muster is retried once for known read-only tools after a backoff, bounded
+// by ctx. Writes retain the interruption because their outcome is unknown.
 func (c *Client) Call(ctx context.Context, tool string, args map[string]any) (json.RawMessage, error) {
 	if c.Endpoint == "" {
 		return nil, microerror.Maskf(invalidConfigError, "%T.Endpoint must not be empty", c)
@@ -129,17 +135,31 @@ func (c *Client) Call(ctx context.Context, tool string, args map[string]any) (js
 		return nil, microerror.Mask(err)
 	}
 
-	result, err := c.call(ctx, session, "tools/call", map[string]any{
-		keyName:      MetaToolCall,
-		keyArguments: map[string]any{keyName: tool, keyArguments: args},
-	})
-	if err != nil {
-		return nil, microerror.Mask(err)
-	}
+	var outer toolResult
+	for attempt := 0; ; attempt++ {
+		result, err := c.call(ctx, session, "tools/call", map[string]any{
+			keyName:      MetaToolCall,
+			keyArguments: map[string]any{keyName: tool, keyArguments: args},
+		})
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
 
-	outer, err := decodeResult(result)
-	if err != nil {
-		return nil, microerror.Maskf(unreachableError, "%s: %s's result is not an MCP result: %v", tool, MetaToolCall, err)
+		outer, err = decodeResult(result)
+		if err != nil {
+			return nil, microerror.Maskf(unreachableError, "%s: %s's result is not an MCP result: %v", tool, MetaToolCall, err)
+		}
+		if attempt > 0 || !readOnlyTool(tool) || !outer.retryableInterrupted() {
+			break
+		}
+
+		timer := time.NewTimer(interruptedRetryBackoff)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return nil, microerror.Mask(ctx.Err())
+		case <-timer.C:
+		}
 	}
 	text := outer.firstText()
 
@@ -167,13 +187,36 @@ func (c *Client) Call(ctx context.Context, tool string, args map[string]any) (js
 	return payload, nil
 }
 
+// readOnlyTool limits retries to calls that cannot duplicate a write whose
+// outcome was lost during interruption. Unknown tools fail closed.
+func readOnlyTool(tool string) bool {
+	switch tool {
+	case ToolGetInfo, ToolListRepositories, ToolGetRepository, ToolValidateRepository, ToolWatchRepository:
+		return true
+	default:
+		return false
+	}
+}
+
 // toolResult is an MCP tool result, the outer one of call_tool or the
 // wrapped tool's envelope; the envelope's content items are objects or
 // plain strings.
 type toolResult struct {
 	IsError           bool              `json:"isError"`
+	Meta              json.RawMessage   `json:"_meta"`
 	StructuredContent json.RawMessage   `json:"structuredContent"`
 	Content           []json.RawMessage `json:"content"`
+}
+
+// retryableInterrupted reads muster's machine-readable interruption marker.
+// Text alone is not a retry signal, nor is a backend tool's payload.
+func (r toolResult) retryableInterrupted() bool {
+	var meta struct {
+		Interrupted struct {
+			Retryable bool `json:"retryable"`
+		} `json:"giantswarm.io/interrupted"`
+	}
+	return r.IsError && json.Unmarshal(r.Meta, &meta) == nil && meta.Interrupted.Retryable
 }
 
 // firstText is the first text content, an object's text or a plain string.

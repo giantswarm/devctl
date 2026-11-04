@@ -75,6 +75,14 @@ func (r *runner) promote(ctx context.Context, args []string, doc *releasepromote
 	// A read that fails in transit or with a 5xx is sent again; a dispatch
 	// is never repeated.
 	retrying := &agentcli.Retrying{Clock: clock, Progress: progress, Warn: doc.Warn}
+	if call.DryRun {
+		// A dry run reads candidates without waiting for a dispatched run.
+		// Bound an outage to seconds so the caller gets the network cause
+		// before its own deadline ends the command.
+		retrying.Attempts = 2
+		retrying.Backoff = time.Second
+		retrying.AttemptTimeout = 2 * time.Second
+	}
 	sources, err := r.open(ctx, agentcli.EndpointsFromEnv(), retrying, doc.Warn)
 	if err != nil {
 		return err
