@@ -437,7 +437,8 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 			} else {
 				ps.UpdateStatus("Approving...")
 				reviewRequest := &github.PullRequestReviewRequest{
-					Event: new("APPROVE"),
+					Event:    new("APPROVE"),
+					CommitID: new(headSHA),
 				}
 				_, _, err = githubClient.PullRequests.CreateReview(ctx, ps.Owner, ps.Repo, ps.Number, reviewRequest)
 				if err != nil {
@@ -513,6 +514,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 		ps.UpdateStatus(fmt.Sprintf("Merging (%s)...", mergeMethod))
 		mergeOpts := &github.PullRequestOptions{
 			MergeMethod: mergeMethod,
+			SHA:         headSHA,
 		}
 
 		mergeResult, _, err := githubClient.PullRequests.Merge(ctx, ps.Owner, ps.Repo, ps.Number, "", mergeOpts)
