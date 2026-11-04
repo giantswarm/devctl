@@ -184,8 +184,11 @@ func writeFixture(t *testing.T, path, contents string) {
 // of .claude on a skipped command, and loss of unrelated files on failure.
 func checkout(t *testing.T) map[string]string {
 	t.Helper()
+	root, err := os.OpenRoot(".")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, root.Close()) })
 	got := make(map[string]string)
-	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -196,7 +199,7 @@ func checkout(t *testing.T) map[string]string {
 			got[filepath.ToSlash(path)+"/"] = ""
 			return nil
 		}
-		content, err := os.ReadFile(path) // #nosec G304 -- synthetic paths in t.TempDir only
+		content, err := root.ReadFile(path)
 		if err != nil {
 			return err
 		}
