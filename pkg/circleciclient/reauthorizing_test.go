@@ -130,6 +130,9 @@ func TestCircleCIRenewalBoundaries(t *testing.T) {
 				}
 				err = client.do(ctx, method, "/api/v2/me", nil, nil)
 				wantExit := agentcli.ExitRemoteError
+				if tc == "cancel pause" {
+					wantExit = agentcli.ExitUsage // a cancelled read is the caller's outcome
+				}
 				if tc == "5xx" {
 					wantExit = agentcli.ExitTimeout // an exhausted read is transient
 				}
