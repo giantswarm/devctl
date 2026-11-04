@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Use Helm v4.3.1 for rollout values parsing to avoid the vulnerable v4.2.0 dependency
+  flagged by the dependency security scan (CVE-2026-63308).
+
 - `rollout wait` waits past a HelmRelease failure on obsolete values, compares the current merged values
   with Flux's last attempted digest, and reports a new failure on those values even at the same chart
   version. `--reconcile` requests the new attempt once, including for a named component HelmRelease.
