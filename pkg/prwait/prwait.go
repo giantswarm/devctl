@@ -262,7 +262,13 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 		}
 		if err != nil {
 			if ctx.Err() != nil && errors.Is(err, ctx.Err()) {
-				return result, w.timedOut(result, last, unanswered)
+				// The deadline interrupted this poll: the preceding complete
+				// poll cannot establish that the continuation is still absent.
+				reason := unanswered
+				if last != nil && last.missingContinuation != "" {
+					reason = err.Error()
+				}
+				return result, w.timedOut(result, last, reason)
 			}
 			// A rate limit resetting after the deadline is a timeout ahead
 			// of it: the document names what was unfinished all the same.
@@ -374,6 +380,9 @@ func (w *Waiter) timedOut(result *Result, last *evaluation, unanswered string) e
 	}
 	if last == nil {
 		return agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout, "timeout after %s before the first poll completed%s", w.timeout, suffix)
+	}
+	if unanswered == "" && last.headSHA == result.HeadSHA && last.missingContinuation != "" {
+		suffix = "; " + last.missingContinuation
 	}
 	if len(last.red) > 0 {
 		suffix = "; red already, besides the required contexts it waited for: " + last.redReason() + suffix

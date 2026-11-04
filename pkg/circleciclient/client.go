@@ -378,12 +378,13 @@ func (c *Client) ListPipelineWorkflows(ctx context.Context, pipelineID string) (
 	}
 }
 
-// ListWorkflowJobs returns the jobs of a workflow.
+// ListWorkflowJobs returns the jobs of a workflow, retrying an authenticated
+// 404 anonymously for workflows readable through the public API.
 func (c *Client) ListWorkflowJobs(ctx context.Context, workflowID string) ([]Job, error) {
 	var out struct {
 		Items []Job `json:"items"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/api/v2/workflow/"+url.PathEscape(workflowID)+"/job", nil, &out); err != nil {
+	if err := c.readPublicJob(ctx, "/api/v2/workflow/"+url.PathEscape(workflowID)+"/job", &out); err != nil {
 		return nil, microerror.Mask(err)
 	}
 	return out.Items, nil
@@ -400,7 +401,8 @@ func (c *Client) RerunWorkflowFromFailed(ctx context.Context, workflowID string)
 
 // FailedStepsOutput returns the output of the failed steps of job number of
 // org/repo (v1.1: API v2 has no job output), in step order. The output
-// lives at a signed URL per step, read without the token.
+// lives at a signed URL per step, read without the token. An authenticated
+// 404 reading the job is retried anonymously for public jobs.
 func (c *Client) FailedStepsOutput(ctx context.Context, org, repo string, number int64) (string, error) {
 	var job struct {
 		Steps []struct {
@@ -410,7 +412,7 @@ func (c *Client) FailedStepsOutput(ctx context.Context, org, repo string, number
 			} `json:"actions"`
 		} `json:"steps"`
 	}
-	if err := c.do(ctx, http.MethodGet, fmt.Sprintf("%s/%d", c.v1Project(org, repo), number), nil, &job); err != nil {
+	if err := c.readPublicJob(ctx, fmt.Sprintf("%s/%d", c.v1Project(org, repo), number), &job); err != nil {
 		return "", microerror.Mask(err)
 	}
 	var out strings.Builder
@@ -425,6 +427,20 @@ func (c *Client) FailedStepsOutput(ctx context.Context, org, repo string, number
 		}
 	}
 	return out.String(), nil
+}
+
+// readPublicJob retries a job read once without the token when CircleCI
+// hides it from the authenticated caller with 404 but may expose it publicly.
+// Explicit authentication refusals are returned as-is. The copy keeps the
+// original client's identity, transport and timeout intact for other calls.
+func (c *Client) readPublicJob(ctx context.Context, path string, out any) error {
+	err := c.do(ctx, http.MethodGet, path, nil, out)
+	if IsNotFound(err) && c.token != "" {
+		anonymous := *c
+		anonymous.token = ""
+		err = anonymous.do(ctx, http.MethodGet, path, nil, out)
+	}
+	return microerror.Mask(err)
 }
 
 // stepOutput appends the messages of one step's output to out.
