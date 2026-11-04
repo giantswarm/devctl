@@ -31,7 +31,8 @@ detail) and how long ago that was.
   behind its jobs; nothing is stuck, the wait is on CircleCI.
 
 A login that granted Read access suffices. Jobs CircleCI does not list yet, steps or output it does
-not answer are warnings, not an outcome: the rest of the view is read.
+not answer are warnings, not an outcome: the rest of the view is read. Caller cancellation ends the
+inspection with an error while preserving the view assembled so far.
 
 ```nohighlight
 devctl ci jobs giantswarm/devctl 3885
@@ -71,6 +72,8 @@ is the tail `devctl pr wait --failed-log` reads, for a job of any pipeline: a ta
 pull request waits on. The CircleCI login is used in devctl's process only, a step's output is read
 from its signed URL without it, so a session reads a failed job without a token of its own, a browser
 or the CircleCI UI. Output CircleCI does not answer is `job.logError`; the steps still stand.
+Caller cancellation during a step or output read ends the inspection with an error and retains the
+job data already assembled.
 
 Use `--step-output` to include output from **every** step, successful ones included. Each action
 gets `outputHead` and `outputTail`, the first and last `--lines` lines (200 each by default), with

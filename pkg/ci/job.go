@@ -70,7 +70,8 @@ func NewJobResult(repository string) *JobResult {
 // and the tail of its failed steps' output. With StepOutput, each step also
 // carries the first and last Lines of its output, or an OutputError. Exit 3 when
 // CircleCI has no such job of the repository. Steps CircleCI does not answer
-// are a warning; output it does not answer is the job's LogError.
+// are a warning; output it does not answer is the job's LogError. Caller
+// cancellation ends the read with its context error and retains the job data.
 func ReadJob(ctx context.Context, client *circleciclient.Client, org, repo, ref string, options JobOptions, result *JobResult, warn func(string)) error {
 	number, err := strconv.ParseInt(ref, 10, 64)
 	if err != nil || number <= 0 {
@@ -97,6 +98,9 @@ func ReadJob(ctx context.Context, client *circleciclient.Client, org, repo, ref 
 	result.Job = detail
 
 	steps, err := client.JobSteps(ctx, org, repo, number)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err != nil {
 		warn(fmt.Sprintf("the steps of job %s (%d) could not be read: %v", job.Name, number, err))
 	}
@@ -104,6 +108,10 @@ func ReadJob(ctx context.Context, client *circleciclient.Client, org, repo, ref 
 		step := JobStep{Name: s.Name, Index: s.Index, Status: s.Status, StartedAt: timePtr(s.StartedAt), EndedAt: timePtr(s.EndedAt)}
 		if options.StepOutput && s.OutputURL != "" {
 			output, err := client.StepOutput(ctx, s.OutputURL)
+			if err := ctx.Err(); err != nil {
+				detail.Steps = append(detail.Steps, step)
+				return err
+			}
 			if err != nil {
 				step.OutputError = err.Error()
 			} else {
@@ -115,6 +123,9 @@ func ReadJob(ctx context.Context, client *circleciclient.Client, org, repo, ref 
 
 	logs := prwait.LogReader{Lines: options.Lines}.CircleCIJob(ctx, org, repo, client, number, job.Name, job.WebURL)
 	detail.LogTail, detail.LogError = logs.LogTail, logs.LogError
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if detail.LogTail == "" && detail.LogError == "" && circleciclient.JobFailed(job.Status) {
 		warn(fmt.Sprintf("job %s (%d) reads %s, but no step of it failed with output", job.Name, number, job.Status))
 	}
