@@ -161,6 +161,11 @@ func lockFile(path string) (func(), error) {
 
 // Get implements [Store].
 func (s *FileStore) Get(user string) (Record, error) {
+	unlock, err := lockFile(s.Path + ".lock")
+	if err != nil {
+		return Record{}, err
+	}
+	defer unlock()
 	records, err := s.read()
 	if err != nil {
 		return Record{}, err
@@ -174,6 +179,13 @@ func (s *FileStore) Get(user string) (Record, error) {
 
 // Set implements [Store].
 func (s *FileStore) Set(user string, record Record) error {
+	// All identities share one document. This transaction lock is separate
+	// from the identity lock a refresh holds across its network exchange.
+	unlock, err := lockFile(s.Path + ".lock")
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	records, err := s.read()
 	if err != nil {
 		return err
@@ -184,6 +196,11 @@ func (s *FileStore) Set(user string, record Record) error {
 
 // Delete implements [Store].
 func (s *FileStore) Delete(user string) error {
+	unlock, err := lockFile(s.Path + ".lock")
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	records, err := s.read()
 	if err != nil {
 		return err
@@ -209,6 +226,9 @@ func (s *FileStore) read() (map[string]Record, error) {
 	}
 	if err := json.Unmarshal(b, &records); err != nil {
 		return nil, fmt.Errorf("the keyring file %s is not devctl's: %w", s.Path, err)
+	}
+	if records == nil {
+		return nil, fmt.Errorf("the keyring file %s is not devctl's: expected a records object, got null", s.Path)
 	}
 	return records, nil
 }
