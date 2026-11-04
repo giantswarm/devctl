@@ -41,7 +41,7 @@ type statusRunner struct {
 
 func newStatus(config Config) *cobra.Command {
 	r := &statusRunner{stdout: config.Stdout, jobRoot: mergejob.Root}
-	return &cobra.Command{
+	c := &cobra.Command{
 		Use:         "status [handle]",
 		Short:       "Read the outcome of a merge devctl pr merge --detach started; one JSON document, an exit code.",
 		Long:        statusLong,
@@ -52,6 +52,14 @@ func newStatus(config Config) *cobra.Command {
 			return r.run(args)
 		},
 	}
+	c.SetFlagErrorFunc(r.FlagError)
+	return c
+}
+
+// FlagError keeps parser failures in the status command's document schema.
+func (r *statusRunner) FlagError(_ *cobra.Command, err error) error {
+	doc := mergejob.NewStatusDocument(time.Now())
+	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, agentcli.FlagError(mergejob.StatusCommand, err))
 }
 
 func (r *statusRunner) run(args []string) error {
