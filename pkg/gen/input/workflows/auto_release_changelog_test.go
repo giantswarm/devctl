@@ -59,7 +59,8 @@ const (
 
 // changelogRepo is a clone of a bare origin, as the job's checkout leaves it,
 // with a stub gh on PATH. The stub records its calls in calls, answers
-// `release view <tag>` from releases and `pr list` with open.
+// `release view <tag>` from releases and `pr list` with open, as gh would at the
+// position and limit the call gives.
 type changelogRepo struct {
 	dir, origin, bin, calls string
 }
@@ -103,7 +104,18 @@ func newChangelogRepo(t *testing.T, changelog string, open string, releases map[
 	stub := fmt.Sprintf(`#!/usr/bin/env bash
 echo "$*" >> %q
 case "$1 $2" in
-  "pr list") echo %q | sed '/^$/d' ;;
+  "pr list")
+    # gh returns the newest 30 unless told otherwise, and --jq filters only
+    # those: the pull requests sit at GH_OPEN_POSITION in that list.
+    limit=30
+    args=("$@")
+    for i in "${!args[@]}"; do
+      if [ "${args[$i]}" = --limit ]; then limit=${args[$((i + 1))]}; fi
+    done
+    if [ "${GH_OPEN_POSITION:-1}" -le "$limit" ]; then
+      echo %q | sed '/^$/d'
+    fi
+    ;;
   "release view") cat %q/"$3" ;;
   "pr create") echo https://github.com/giantswarm/x/pull/9 ;;
   "pr merge") exit "${GH_MERGE_EXIT:-0}" ;;
@@ -256,6 +268,46 @@ func Test_AutoReleaseChangelogSection(t *testing.T) {
 			t.Fatalf("the open pull request was not closed:\n%s", calls)
 		}
 		inOrder(t, r.changelog(t), "## [1.0.2]", "- two", "## [1.0.1]", "- one", "## [1.0.0]")
+	})
+
+	t.Run("an old pull request behind hundreds of open ones is found", func(t *testing.T) {
+		r := newChangelogRepo(t, changelogHead+"## [Unreleased]\n\n## [1.0.0] - 2026-01-01\n", "7",
+			map[string]string{"v1.0.1": "- one\n"})
+		r.release(t, "v1.0.0", "v1.0.1")
+
+		if _, out, err := r.run(t, writeChangelogStep, "v1.0.1", "GH_OPEN_POSITION=700"); err != nil {
+			t.Fatalf("step failed: %v\n%s", err, out)
+		}
+		if calls := r.ghCalls(t); !strings.Contains(calls, "pr close 7 --delete-branch") {
+			t.Fatalf("the open pull request was not closed:\n%s", calls)
+		}
+	})
+
+	t.Run("mawk, the awk of a stock Ubuntu, writes the same file", func(t *testing.T) {
+		mawk, err := exec.LookPath("mawk")
+		if err != nil {
+			t.Skip("no mawk on PATH")
+		}
+		changelog := changelogHead + "## [Unreleased]\n\n### Added\n\n- By hand\n\n## [1.0.0] - 2026-01-01\n\n" +
+			"[Unreleased]: https://github.com/giantswarm/x/compare/v1.0.0...HEAD\n[1.0.0]: https://github.com/giantswarm/x/releases/tag/v1.0.0\n"
+		written := map[string]string{}
+		for _, awk := range []string{"awk", mawk} {
+			r := newChangelogRepo(t, changelog, "", map[string]string{"v1.0.1": notes})
+			r.release(t, "v1.0.0", "v1.0.1")
+			if awk == mawk {
+				if err := os.Symlink(mawk, filepath.Join(r.bin, "awk")); err != nil {
+					t.Fatalf("link awk: %v", err)
+				}
+			}
+			if _, out, err := r.run(t, writeChangelogStep, "v1.0.1"); err != nil {
+				t.Fatalf("step failed under %s: %v\n%s", awk, err, out)
+			}
+			written[awk] = r.changelog(t)
+		}
+		if written["awk"] != written[mawk] {
+			t.Fatalf("awk wrote:\n%s\nmawk wrote:\n%s", written["awk"], written[mawk])
+		}
+		inOrder(t, written[mawk], "## [Unreleased]", marker, "## [1.0.1]", "- A fix", "- By hand", "## [1.0.0]", "[Unreleased]: https://github.com/giantswarm/x/compare/v1.0.1...HEAD")
 	})
 
 	t.Run("a candidate tag on the branch is no section", func(t *testing.T) {

@@ -1254,7 +1254,10 @@ jobs:
           # An open pull request of an earlier release is replaced, never
           # stacked on: the sections are rebuilt from the branch below, so what
           # the old one carried comes back unless it merged in the meantime.
-          open=$(gh pr list --base "$GITHUB_REF_NAME" --state open --json number,headRefName \
+          # `--jq` filters what the list returned, and `gh pr list` stops at 30
+          # by default, newest first: the limit has to reach an old pull request
+          # behind every other open one.
+          open=$(gh pr list --base "$GITHUB_REF_NAME" --state open --limit 5000 --json number,headRefName \
             --jq '.[] | select(.headRefName | startswith("auto-release/changelog-")) | .number')
           for number in $open; do
             gh pr close "$number" --delete-branch --comment "Replaced by the changelog of ${TAG}."
