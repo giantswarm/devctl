@@ -142,6 +142,14 @@ The `--language` flag sets the primary language (`go`, `python`, `generic`). The
 - `md` — Markdown linting via `markdownlint-cli`
 - `helmchart` — Helm chart schema and docs hooks (auto-detects charts under `helm/`)
 
+With `--flavors helmchart`, generation also writes `helm/<chart>/values.schema.json`.
+The schema hook prints a regeneration command containing the original language, repository,
+flavors, Kubernetes schema version and `--go-generate` setting. Run that complete command
+from the repository root: a bare `devctl gen precommit` uses empty language and flavor
+defaults, which removes the language and Helm hooks and skips schema generation. For
+example, a Go repository with a chart can regenerate with
+`devctl gen precommit --language go --flavors helmchart`; keep any other original options.
+
 A Go repository's config also refuses a `require` line in any `go.mod` (single or in a block) whose trailing comment has more than one word (`go-mod-require-comment`): Renovate's gomod manager reads only a one-word comment such as `// indirect` and skips the whole line otherwise, so that dependency is never updated and nothing says so. The explanation goes on a comment line above the require.
 
 A Go repository's `golangci-lint` hook, like `make lint` of `devctl gen makefile --language go`, passes no linter flags: the linters live in the repository's golangci-lint configuration, so a bare `golangci-lint run` lints with the same set. Both commands write `.golangci.yaml` (gosec and goconst on top of the standard set) when the repository has no configuration. A repository's own `.golangci.yml` or `.golangci.yaml` is kept as it is, except that gosec and goconst are added to `linters.enable` when it neither enables nor disables them (and govet too when `linters.default` replaces the standard set); a TOML or JSON configuration, or one whose `linters.enable` is a flow sequence, fails generation naming the linters to enable.

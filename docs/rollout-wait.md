@@ -74,9 +74,14 @@ says when the change landed: a pull request that changes no HelmRelease, values 
 the source and the Kustomizations applied it. A Kustomization or Konfiguration whose attempt at the revision
 failed, or an App whose release failed with the new values, is exit 1; once everything else is applied, a
 changed app whose values nothing takes is exit 3, verdict `rollout_unknown`, never `rolled_out`; nothing on the installation fetching the repository keeps the `no_release` verdict, exit
-3, its reason saying so; a GitRepository nothing reads (one included into another) is exit 3. `--reconcile`
-asks the GitRepository, the Kustomizations and, once its values are rendered, each HelmRelease to
-reconcile, once each.
+3, its reason saying so; a GitRepository nothing reads (one included into another) is exit 3.
+
+A failed values attempt is exit 1 once helm-controller has observed the current generation and
+finished reconciling, even when a new history digest or a handled reconcile proves it attempted the
+change. Active retries keep waiting.
+
+With `--reconcile`, the wait asks the GitRepository, the Kustomizations and, once its values are
+rendered, each HelmRelease to reconcile, once each.
 
 ### The installation
 

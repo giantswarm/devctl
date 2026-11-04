@@ -276,6 +276,56 @@ func TestALatestReleaseWithoutAssetsFallsBackToTheListed(t *testing.T) {
 	}
 }
 
+// The list and latest requests straddle an asset upload, or return cached
+// views of its progress. The same release ID must keep the binary and bundle
+// found by either request, with the latest response winning a replacement.
+func TestLatestReleaseRefreshesAssetsOfAListedRelease(t *testing.T) {
+	asset := func(id int64, name string) map[string]any {
+		return map[string]any{"id": id, "name": name, "browser_download_url": "https://example.test/" + name}
+	}
+	binary := asset(20, binaryAsset())
+	bundle := asset(21, binaryAsset()+".bundle")
+	for _, tc := range []struct {
+		name         string
+		listedAssets []map[string]any
+		latestAssets []map[string]any
+		wantBinaryID int64
+		wantBundleID int64
+	}{
+		{"binary uploaded", nil, []map[string]any{binary, bundle}, 20, 21},
+		{"bundle uploaded", []map[string]any{binary}, []map[string]any{binary, bundle}, 20, 21},
+		{"latest has fewer assets", []map[string]any{binary, bundle}, nil, 20, 21},
+		{"assets split across responses", []map[string]any{binary}, []map[string]any{bundle}, 20, 21},
+		{"latest replaces named assets", []map[string]any{binary, bundle}, []map[string]any{
+			asset(30, binaryAsset()), asset(31, binaryAsset()+".bundle"),
+		}, 30, 31},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			listed := releaseJSON(2, "v"+newerVersion, false)
+			listed["assets"] = tc.listedAssets
+			latest := releaseJSON(2, "v"+newerVersion, false)
+			latest["assets"] = tc.latestAssets
+			g := &flakyGitHub{
+				lists:        [][]map[string]any{{listed, releaseJSON(1, "v"+currentVersion, true)}},
+				latestStatus: http.StatusOK,
+				latest:       latest,
+			}
+			up, err := selfupdate.NewUpdater(selfupdate.Config{Source: g.source(t), Validator: accepting{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			rel, found, err := up.DetectLatest(context.Background(), selfupdate.ParseSlug("giantswarm/devctl"))
+			if err != nil || !found {
+				t.Fatalf("DetectLatest = %v, %v; want the release with its uploaded binary and bundle", found, err)
+			}
+			if rel.Version() != newerVersion || rel.AssetID != tc.wantBinaryID || rel.ValidationAssetID != tc.wantBundleID {
+				t.Errorf("release = %s, binary %d, bundle %d; want %s, binary %d, bundle %d",
+					rel.Version(), rel.AssetID, rel.ValidationAssetID, newerVersion, tc.wantBinaryID, tc.wantBundleID)
+			}
+		})
+	}
+}
+
 func TestListReleasesWithTheLatestRelease(t *testing.T) {
 	listed := []map[string]any{releaseJSON(1, "v1.0.0", true)}
 	for _, tc := range []struct {

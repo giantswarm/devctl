@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -138,8 +139,21 @@ func (s *githubSource) ListReleases(ctx context.Context, repository selfupdate.R
 	case err != nil:
 		return releases, nil
 	}
-	for _, rel := range rels {
+	for i, rel := range rels {
 		if rel.GetID() == latest.GetID() {
+			// Assets upload after the release is published. The two reads
+			// can see different upload progress even for the same release:
+			// prefer the latest response, keeping assets only the list saw.
+			merged := *latest
+			merged.Assets = append([]*github.ReleaseAsset(nil), latest.Assets...)
+			for _, asset := range rel.Assets {
+				if !slices.ContainsFunc(merged.Assets, func(a *github.ReleaseAsset) bool {
+					return a.GetID() == asset.GetID() || a.GetName() == asset.GetName()
+				}) {
+					merged.Assets = append(merged.Assets, asset)
+				}
+			}
+			releases[i] = githubRelease{&merged}
 			return releases, nil
 		}
 	}
