@@ -207,7 +207,8 @@ func (s *Script) Requests() []Request {
 // Write sends the response: the fixture's headers, Content-Type
 // application/json for a JSON body unless the fixture named one, the status,
 // then the body (no body on a HEAD request, as the protocol demands). A Reset
-// response resets the connection instead.
+// response resets the connection instead. Content-Length defaults to the body's
+// length unless a header already sets it.
 func Write(w http.ResponseWriter, r *http.Request, resp Response) error {
 	if resp.Delay > 0 {
 		timer := time.NewTimer(resp.Delay)
@@ -233,7 +234,9 @@ func Write(w http.ResponseWriter, r *http.Request, resp Response) error {
 	if _, isString := resp.Body.(string); !isString && len(body) > 0 && h.Get("Content-Type") == "" {
 		h.Set("Content-Type", "application/json; charset=utf-8")
 	}
-	h.Set("Content-Length", strconv.Itoa(len(body)))
+	if _, set := h["Content-Length"]; !set {
+		h.Set("Content-Length", strconv.Itoa(len(body)))
+	}
 	w.WriteHeader(resp.StatusCode())
 	if r.Method == http.MethodHead || len(body) == 0 {
 		return nil
