@@ -144,7 +144,7 @@ func TestStalledPipelineRedeliversThePush(t *testing.T) {
 		t.Errorf("redelivery: %+v", r)
 	}
 	if len(run.warnings) != 1 || !strings.Contains(run.warnings[0], "pipeline 12 has no workflow 30m0s after its creation (state pending)") ||
-		!strings.Contains(run.warnings[0], "g-push") || !strings.Contains(run.warnings[0], "sent again") {
+		!strings.Contains(run.warnings[0], "g-push") || !strings.Contains(run.warnings[0], "acceptance does not confirm a new CircleCI pipeline") {
 		t.Errorf("warnings: %q", run.warnings)
 	}
 	if run.result.Pipeline == nil || run.result.Pipeline.Number != 12 || run.result.HeadSHA != "abc" || len(run.result.Workflows) != 0 {

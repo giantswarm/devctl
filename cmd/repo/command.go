@@ -17,6 +17,7 @@ import (
 	"github.com/giantswarm/devctl/v8/cmd/repo/get"
 	"github.com/giantswarm/devctl/v8/cmd/repo/info"
 	"github.com/giantswarm/devctl/v8/cmd/repo/list"
+	"github.com/giantswarm/devctl/v8/cmd/repo/owner"
 	"github.com/giantswarm/devctl/v8/cmd/repo/reconcile"
 	"github.com/giantswarm/devctl/v8/cmd/repo/renovateplan"
 	"github.com/giantswarm/devctl/v8/cmd/repo/setlifecycle"
@@ -52,6 +53,11 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	var err error
+
+	ownerCmd, err := owner.New(owner.Config{Logger: config.Logger, Stderr: config.Stderr, Stdout: config.Stdout})
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
 
 	followCircleCICmd, err := followcircleci.New(followcircleci.Config{Stderr: config.Stderr, Stdout: config.Stdout})
 	if err != nil {
@@ -215,6 +221,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	c.AddCommand(checksCmd)
 	c.AddCommand(managed...)
+	c.AddCommand(ownerCmd)
 	c.AddCommand(createCmd)
 	c.AddCommand(followCircleCICmd)
 	c.AddCommand(reconcileCmd)

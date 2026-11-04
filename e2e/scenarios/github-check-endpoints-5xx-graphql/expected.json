@@ -2,7 +2,8 @@
   "exitCode": 0,
   "stdoutContains": [
     "the REST check endpoints went unanswered (Get \\\"http://",
-    "/repos/giantswarm/devctl/commits/abc123/check-runs?filter=latest\\u0026per_page=100\\\": failed 15 times in a row: 500 Internal Server Error): the head's checks are read through GraphQL (statusCheckRollup)"
+    "/repos/giantswarm/devctl/commits/abc123/check-runs?filter=latest\\u0026per_page=100\\\": failed 15 times in a row: 500 Internal Server Error; transient API or network failure after ",
+    "): the head's checks are read through GraphQL (statusCheckRollup)"
   ],
   "json": {
     "command": "pr wait",
