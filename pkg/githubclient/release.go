@@ -16,6 +16,8 @@ type PullRequestMerge struct {
 	Number int
 	State  string
 	Merged bool
+	// BaseRef is the branch the pull request targets.
+	BaseRef string
 	// MergeCommitSHA is the commit on the base branch; empty until merged.
 	MergeCommitSHA string
 	MergedAt       time.Time
@@ -27,7 +29,7 @@ func (c *Client) GetPullRequestMerge(ctx context.Context, owner, repo string, nu
 	if err != nil {
 		return PullRequestMerge{}, microerror.Mask(err)
 	}
-	m := PullRequestMerge{Number: pr.GetNumber(), State: pr.GetState(), Merged: pr.GetMerged()}
+	m := PullRequestMerge{Number: pr.GetNumber(), State: pr.GetState(), Merged: pr.GetMerged(), BaseRef: pr.GetBase().GetRef()}
 	if m.Merged {
 		m.MergeCommitSHA = pr.GetMergeCommitSHA()
 		m.MergedAt = pr.GetMergedAt().Time
@@ -145,7 +147,9 @@ type Release struct {
 	Published bool
 	// Prerelease: marked as a pre-release.
 	Prerelease bool
-	Assets     []ReleaseAsset
+	// PublishFailed: devctl recorded a failed tag pipeline in the notes.
+	PublishFailed bool
+	Assets        []ReleaseAsset
 }
 
 // ReleaseAsset is one uploaded asset with the digest GitHub reports for it.
@@ -164,7 +168,7 @@ func (c *Client) GetReleaseByTag(ctx context.Context, owner, repo, tag string) (
 	if err != nil {
 		return Release{}, microerror.Mask(err)
 	}
-	r := Release{Tag: rel.GetTagName(), URL: rel.GetHTMLURL(), Published: !rel.GetDraft(), Prerelease: rel.GetPrerelease(), Assets: []ReleaseAsset{}}
+	r := Release{Tag: rel.GetTagName(), URL: rel.GetHTMLURL(), Published: !rel.GetDraft(), Prerelease: rel.GetPrerelease(), PublishFailed: hasPublishFailure(rel.GetBody()), Assets: []ReleaseAsset{}}
 	for _, a := range rel.Assets {
 		r.Assets = append(r.Assets, ReleaseAsset{Name: a.GetName(), URL: a.GetBrowserDownloadURL(), Digest: a.GetDigest()})
 	}
