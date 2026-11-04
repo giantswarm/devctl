@@ -9,6 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen makefile`: Go builds and installs fall back to local version tags with `git describe` when
+  `gitsemver get` fails or returns no version, including older gitsemver releases in linked worktrees.
+  Tagged worktrees stamp the release version without a `VERSION` override; unsuccessful lookups still refuse
+  to ship an unversioned binary, while lint no longer prints the handled gitsemver error.
+
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
