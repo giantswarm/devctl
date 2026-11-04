@@ -678,6 +678,10 @@ linters:
   enable:
     - gosec
     - goconst
+  settings:
+    goconst:
+      # Test fixtures repeat literals intentionally; keep production checks.
+      ignore-tests: true
 
 issues:
   max-issues-per-linter: 0
