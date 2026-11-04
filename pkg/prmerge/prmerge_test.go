@@ -392,7 +392,7 @@ func Test_Merge_paths(t *testing.T) {
 			name: "a merge-queue base is enqueued, waited for, then the branch deleted",
 			routes: routes(pull(nil), sequence.Routes{
 				"GET /repos/o/r/pulls/42": {
-					{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(map[string]any{"mergeable_state": "blocked"})},
+					{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(map[string]any{"mergeable_state": "blocked"})},
 					{Body: pull(map[string]any{"state": "closed", "merged": true, "merge_commit_sha": "q1", "merged_by": map[string]any{"login": "queue-enqueuer"}})},
 				},
 				"GET /repos/o/r/rules/branches/main": {{Body: []any{
@@ -406,7 +406,7 @@ func Test_Merge_paths(t *testing.T) {
 		{
 			name: "the merge queue drops the pull request: red",
 			routes: routes(pull(nil), sequence.Routes{
-				"GET /repos/o/r/pulls/42":            {{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(map[string]any{"state": "closed"})}},
+				"GET /repos/o/r/pulls/42":            {{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(map[string]any{"state": "closed"})}},
 				"GET /repos/o/r/rules/branches/main": {{Body: []any{map[string]any{"type": "merge_queue", "ruleset_id": 1}}}},
 				"POST /graphql":                      {{Body: map[string]any{"data": map[string]any{}}}},
 			}),
@@ -519,7 +519,7 @@ func Test_Merge_paths(t *testing.T) {
 			name: "the base moves during the wait, with --update-branch: update, wait for the new head, merge it",
 			routes: routes(pull(nil), greenHead("def456"), sequence.Routes{
 				"GET /repos/o/r/pulls/42": {
-					{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)},
+					{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)},
 					{Body: pull(map[string]any{"head": map[string]any{"sha": "def456", "ref": "feature", "repo": map[string]any{"full_name": "o/r"}}})},
 				},
 				"GET /repos/o/r/compare/main...abc123": {
@@ -536,7 +536,7 @@ func Test_Merge_paths(t *testing.T) {
 			name: "behind a merge-queue base without --update-branch: the queue tests it against the base, no comparison",
 			routes: routes(pull(nil), sequence.Routes{
 				"GET /repos/o/r/pulls/42": {
-					{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)},
+					{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)},
 					{Body: pull(map[string]any{"state": "closed", "merged": true, "merge_commit_sha": "q1", "merged_by": map[string]any{"login": "queue-enqueuer"}})},
 				},
 				"GET /repos/o/r/rules/branches/main":   {{Body: []any{map[string]any{"type": "merge_queue", "ruleset_id": 1}}}},
