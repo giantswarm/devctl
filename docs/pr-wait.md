@@ -24,6 +24,17 @@ already within the tail, a single failing last step, prints the tail alone. The 
 timed-out wait reads no log and costs no extra request. A log that cannot be read (expired, not
 yet uploaded) is named in its job's `logError`; the verdict stays red.
 
+Use `--failed-log --failed-log-lines 0` to return the full Actions log, including setup, output
+between failures and post-job cleanup, without excerpts or skipped-line markers. It uses devctl's
+GitHub login to get the signed download URL and reads that URL without the token, so no raw
+`gh api` call is needed. Terminal controls are still removed. On CircleCI, zero keeps all output
+of the failed steps; it does not read successful steps. Negative line counts are usage errors.
+The full output goes to `failedJobs[].logTail` and stderr, with the same red verdict and log errors.
+
+```nohighlight
+devctl pr wait giantswarm/kagent-upstream 329 --failed-log --failed-log-lines 0
+```
+
 The tokens come from the OS keychain (`devctl auth login`, see [auth.md](auth.md)). The GitHub
 token is required before the first request; the CircleCI token only once the head turns out to
 carry a CircleCI configuration for a repository CircleCI builds. The GitHub identity follows the repository's owner: the
@@ -258,7 +269,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 | `checksVia` | `graphql` when the last poll read `checks[]` through GraphQL's `statusCheckRollup` because REST's check endpoints went unanswered (Polling); absent when REST answered. |
 | `circleci` | Present only when CircleCI was consulted: the newest pipeline of the head revision and its workflows, the newest run per name, sorted by name. |
 | `actions[]` | The head's GitHub Actions runs, the latest per workflow name, sorted by name. `jobsCompleted` is true on a run that still reads `in_progress` while all its jobs completed five minutes ago or longer (rule 3). |
-| `failedJobs[]` | Present at exit 1 with `--failed-log`: each failed job with `name` (an Actions check run's name, with `[<workflow>, check run <id>]` when several runs share it; `<workflow>/<job>` on CircleCI), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, led by the lines from its first failure when that lies before them, or `logError` when the log could not be read. A check run of another app, a commit status and a CircleCI workflow without a failed job are named in `reason` only. |
+| `failedJobs[]` | Present at exit 1 with `--failed-log`: each failed job with `name` (an Actions check run's name, with `[<workflow>, check run <id>]` when several runs share it; `<workflow>/<job>` on CircleCI), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, led by the lines from its first failure when that lies before them (zero keeps the full Actions log or all failed-step output on CircleCI), or `logError` when the log could not be read. A check run of another app, a commit status and a CircleCI workflow without a failed job are named in `reason` only. |
 | `blocking[]` | Present on a green head that GitHub's merge box still holds: each pending check the base does not require, which the wait did not wait for (`check Heimdall - PR Gatekeeper (in_progress, not required, not waited for)`, `status <context> (pending, not required, not waited for)`), and, while the pull request's `mergeable_state` is `blocked`, the review the base requires (`review: an approving review the base requires is missing`, `review: a reviewer requested changes`), read from GitHub's `reviewDecision`. Each is a warning too. |
 | `unfinished[]` | Present at exit 2 and 4: what the head was still waiting for, one line each (`check go-test (in_progress)`, `circleci workflow build (running)`, `actions run CI (awaiting approval)`, `required context lint (absent)`, `actions runs of .github/workflows/ci.yaml (none registered)`). |
 

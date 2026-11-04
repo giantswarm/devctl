@@ -232,6 +232,9 @@ headed `failed job <name> (<url>):`, and into the document under `failedJobs[]`.
 timed-out wait reads no log; a log that cannot be read is named in its job's `logError`, and the
 verdict stays exit 1. Without the flag the document is unchanged.
 
+`--failed-log --failed-log-lines 0` keeps the full Actions log, including post-job cleanup, or all
+failed-step output on CircleCI, with the same control-character filtering and output fields.
+
 ### The commit's statuses
 
 The tag pipeline is not every status of the tag's commit: a late job, the branch pipeline that built
@@ -317,7 +320,7 @@ stderr.
 | `actions[]` | The Actions runs the tag triggered, for a repository without CircleCI: `name`, `runId`, `status`, `conclusion`, `url`. |
 | `statuses[]` | The newest commit status of every context of the tag's commit, `context`, `state` (`pending`, `success`, `failure`, `error`) and `url`, read once the artifacts are available and the tag's CI is green; empty before. |
 | `conflictingTags[]` | Present at exit 11: every release tag on the commit the wait resolved to, newest first. Absent otherwise. |
-| `failedJobs[]` | Present at exit 1 with `--failed-log`, as in [`pr wait`](pr-wait.md#the-document): each failed job with `name` (`<workflow>/<job>` on CircleCI, `<run>/<job>` on Actions), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, led by the lines from its first failure when that lies before them, or `logError` when the log could not be read. A failed workflow or run whose jobs cannot be listed is named alone with its `logError`. Absent without the flag. |
+| `failedJobs[]` | Present at exit 1 with `--failed-log`, as in [`pr wait`](pr-wait.md#the-document): each failed job with `name` (`<workflow>/<job>` on CircleCI, `<run>/<job>` on Actions), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, led by the lines from its first failure when that lies before them (zero keeps the full Actions log or all failed-step output on CircleCI), or `logError` when the log could not be read. A failed workflow or run whose jobs cannot be listed is named alone with its `logError`. Absent without the flag. |
 
 ## Exit codes
 

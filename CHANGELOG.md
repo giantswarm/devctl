@@ -58,6 +58,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `pr wait --failed-log --failed-log-lines 0` returns each failed Actions job's full log through
+  devctl's GitHub login, including setup and cleanup, in `failedJobs[].logTail` and stderr. The
+  option also applies to `pr merge`, `release wait` and `rollout wait`; on CircleCI it keeps all
+  output of the failed steps. Terminal controls are still removed; the default remains 50 lines.
+
 - `ci job` takes the URL a CircleCI commit status links, alone, including a GitHub App pipeline's
   `app.circleci.com/workflow/<id>/job/<id>`, which it resolves to the project and job number through the workflow.
 
