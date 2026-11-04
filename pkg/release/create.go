@@ -581,7 +581,7 @@ func CreateRelease(githubToken, name, base, releases, provider string, component
 
 		// Generate new README.md
 		// Use newRelease (merged) instead of updatesRelease to include all apps, not just requested ones
-		releaseNotes, err := createReleaseNotes(newRelease, readmeBaseRelease, provider, changelogNoisePatterns)
+		releaseNotes, err := createReleaseNotes(githubToken, newRelease, readmeBaseRelease, provider, changelogNoisePatterns)
 		if err != nil {
 			return microerror.Mask(err)
 		}
