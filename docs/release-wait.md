@@ -308,7 +308,7 @@ stderr.
 
 | Field | Meaning |
 |---|---|
-| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `available`, `ci_failed`, `timeout`, `not_applicable`, `no_release`, `ambiguous_release`, `status_failed`, `usage` or `auth_required`. `warnings` carries the CircleCI token's seven-day expiry notice and a team-file declaration that disagrees with the tag's workflows about the release model. |
+| `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `available`, `ci_failed`, `timeout`, `not_applicable`, `no_release`, `ambiguous_release`, `status_failed`, `tag_pipeline_empty`, `usage` or `auth_required`. `warnings` carries the CircleCI token's seven-day expiry notice and a team-file declaration that disagrees with the tag's workflows about the release model. |
 | `repository`, `tag`, `sha` | What was waited for. `tag` is empty when it never appeared; `sha` is the tag's commit (with `--pr` the merge commit). |
 | `releaseModel` | `auto-release` or `legacy`. |
 | `ciModel` | `generated`, `hand-written`, `actions` or `none`. |
@@ -318,6 +318,14 @@ stderr.
 | `statuses[]` | The newest commit status of every context of the tag's commit, `context`, `state` (`pending`, `success`, `failure`, `error`) and `url`, read once the artifacts are available and the tag's CI is green; empty before. |
 | `conflictingTags[]` | Present at exit 11: every release tag on the commit the wait resolved to, newest first. Absent otherwise. |
 | `failedJobs[]` | Present at exit 1 with `--failed-log`, as in [`pr wait`](pr-wait.md#the-document): each failed job with `name` (`<workflow>/<job>` on CircleCI, `<run>/<job>` on Actions), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, led by the lines from its first failure when that lies before them, or `logError` when the log could not be read. A failed workflow or run whose jobs cannot be listed is named alone with its `logError`. Absent without the flag. |
+
+An empty CircleCI tag pipeline in state `created` or `errored` ends the wait within that poll
+with exit 13, `tag_pipeline_empty`, when the configuration at the tag admits jobs for it. The
+reason names its number and URL and advises re-triggering the pipeline for the same tag.
+`setup-pending`, `setup` and `pending` still wait for workflows; an unknown state, a tag excluded
+by filters or a configuration whose conditions cannot establish any expected job does not prove
+this failure. The configuration reader uses the same filters and generated continuation merge
+as the CircleCI commit-status wait. A wait without a CircleCI client cannot establish this outcome.
 
 ## Exit codes
 
@@ -332,6 +340,7 @@ stderr.
 | 8 | `auth_required` | No usable token in the keychain; `reason` names the `devctl auth login` invocation. |
 | 11 | `ambiguous_release` | With `--pr`, the commit the wait resolves to (the merge commit, or the first tagged commit after it) carries the release tags (`vX.Y.Z`, `vX.Y.Z-rc.N`) of more than one version, or the `<image>/vX.Y.Z` tags of more than one image: the wait does not choose. `reason` and `conflictingTags` name every release tag on the commit, newest first; a wait given the version waits on it. A candidate and its promoted stable on one commit are one version. |
 | 12 | `status_failed` | Every artifact is available and the tag's CI is green, and a commit status of the tag's commit (the branch pipeline's, another CI's) is `failure` or `error`: `devctl release promote` refuses the commit. `reason` and `statuses[]` name the failed contexts. |
+| 13 | `tag_pipeline_empty` | The CircleCI tag pipeline is `created` or `errored` with no workflows although the configuration at the tag admits jobs. `pipeline.number`, `pipeline.url` and `reason` identify it. Re-trigger the pipeline for that tag; waiting on this pipeline cannot publish the release. |
 
 ## Environment
 

@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `release wait` ends within one poll with exit 13, `tag_pipeline_empty`, when a CircleCI tag
+  pipeline is `created` or `errored` without workflows although its configuration admits the tag.
+  The reason names the pipeline and advises re-triggering it. `pr merge` preserves that outcome
+  after the merge instead of waiting out the release timeout.
 - `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
   last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
   branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
