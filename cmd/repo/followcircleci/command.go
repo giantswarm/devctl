@@ -111,7 +111,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.Flags().BoolVar(&f.Wait, "wait", true, "Wait for the runs the command starts to settle.")
 	c.Flags().DurationVar(&f.Timeout, "timeout", defaultTimeout, "How long to wait for the runs.")
 	c.Flags().BoolVar(&f.Pending, "pending", false, "Instead of one repository, set up every repository of your teams the inventory reports circleci-pipeline-missing for, without waiting for the runs.")
-	f.Flags.Init(c)
+	f.Init(c)
 	return c, nil
 }
 

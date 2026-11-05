@@ -25,7 +25,17 @@ const exitError = 2
 // error that knows its exit code ([agentcli.ExitCoder], such as
 // [authstore.ErrAuthRequired], exit 8) exits with it; any other exits 2.
 func Execute(root *cobra.Command, stderr io.Writer) int {
+	return ExecuteThen(root, stderr, nil)
+}
+
+// ExecuteThen is [Execute], and calls after with the command that ran, once
+// it ran and whatever its outcome, before returning the exit code. after
+// cannot change the exit code.
+func ExecuteThen(root *cobra.Command, stderr io.Writer, after func(executed *cobra.Command)) int {
 	executed, err := root.ExecuteC()
+	if after != nil {
+		defer after(executed)
+	}
 	if err == nil {
 		return 0
 	}
