@@ -30,9 +30,13 @@ waited for: devctl pr wait waits for it.
 A pipeline that never got a workflow (its setup workflow done and the
 continuation never created, or pending without a workflow) has nothing to
 rerun: once it is five minutes old, the push webhook delivery of the head
-revision is sent again through GitHub, so CircleCI creates a new pipeline for
-the head, which devctl pr wait reads. Once per head: a delivery sent again
-before is not sent a second time. A head in a fork was pushed to the fork,
+revision is sent again through GitHub. Check for a newer pipeline on that
+branch and head for at most one minute. If none appears, exit 5 names
+"redelivery deduplicated; push a new head": push an empty commit to the PR
+branch or merge its base, then devctl pr wait follows the new head. A new
+pipeline is confirmation of creation only; pr wait waits for its workflows.
+Once per head: a delivery sent again before is not sent a second time.
+A head in a fork was pushed to the fork,
 whose deliveries the repository does not have: exit 3.
 
 A rerun is a write: it takes a CircleCI login that granted Write access
@@ -48,21 +52,23 @@ startedAt, finishedAt, repository, number, headSha,
 pipeline{id, number, url}, workflows[{name, id, status, url, failedJobs[],
 outcome (rerun|running|no_failed_job|nothing_to_rerun|refused), rerunId, rerunUrl}],
 redelivery{hookId, hookUrl, deliveryId, guid, deliveredAt, ref, after, outcome
-(redelivered|already_redelivered|refused), redeliveredAt}, identity. See
+(redelivered|deduplicated|already_redelivered|refused), redeliveredAt,
+pipeline{id, number, url}}, identity. See
 docs/pr-rerun.md.
 
 Exit codes:
-  0  at least one workflow is rerun from failed, or the push webhook redelivered
+  0  at least one workflow is rerun from failed, or a newer pipeline is observed
+     for the redelivered push
   3  not applicable: no pipeline for the head, no failed workflow, or no push
      delivery to send again
   5  refused: nothing finished failed and a workflow is still running, a
      pipeline without a workflow younger than five minutes, or a delivery
-     sent again before
+     sent again before, or no newer pipeline observed after redelivery
   7  usage or a tooling failure
   8  authentication required: no CircleCI login, or one without Write access;
      a GitHub identity without webhook access`
 	example = `  devctl pr rerun giantswarm/devctl 2277
-  devctl pr rerun giantswarm/devctl 2277 && beekeeper gate -- devctl pr wait giantswarm/devctl 2277`
+  devctl pr rerun giantswarm/devctl 2277 && devctl pr wait giantswarm/devctl 2277`
 )
 
 type Config struct {
@@ -80,6 +86,7 @@ func New(config Config) (*cobra.Command, error) {
 
 	r := &runner{
 		gate:            versiongate.Check,
+		clock:           agentcli.SystemClock,
 		stdout:          config.Stdout,
 		requireGitHub:   authstore.RequireGitHub,
 		personGitHub:    authexec.PersonGitHub,

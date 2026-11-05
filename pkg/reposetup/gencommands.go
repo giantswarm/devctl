@@ -90,6 +90,9 @@ func genCommands(f Fields, gc genContext) [][]string {
 	if releaseWorkflow == releaseWorkflowAutoRelease && ci != nil && ci.MaintenanceBranches && knows(genWorkflows, "--maintenance-branches") {
 		releaseArgs = append(releaseArgs, "--maintenance-branches")
 	}
+	if releaseWorkflow == releaseWorkflowAutoRelease && ci != nil && ci.PatchCandidates && knows(genWorkflows, "--patch-candidates") {
+		releaseArgs = append(releaseArgs, "--patch-candidates")
+	}
 
 	if !generates(g.Flavours) {
 		if releaseWorkflow != releaseWorkflowAutoRelease {

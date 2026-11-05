@@ -125,16 +125,29 @@ func Test_FreeTextValuesEscaped(t *testing.T) {
 	}
 }
 
-// Test_CircleCIGeneratedOffOmitsPackageRules verifies the default: without the
+// Test_CircleCIGeneratedOffOmitsArchitectOrb verifies the default: without the
 // flag the generated Renovate config has no architect orb override.
-func Test_CircleCIGeneratedOffOmitsPackageRules(t *testing.T) {
+func Test_CircleCIGeneratedOffOmitsArchitectOrb(t *testing.T) {
 	got := render(t, Config{Language: "go"})
 
-	if strings.Contains(got, "packageRules") {
-		t.Errorf("default renovate config should not contain packageRules:\n%s", got)
-	}
 	if strings.Contains(got, "giantswarm/architect") {
 		t.Errorf("default renovate config should not reference the architect orb:\n%s", got)
+	}
+}
+
+// Test_GeneratedWorkflowRunnersDisabled verifies that every generated Renovate
+// config leaves the runner images of the zz_generated workflows to devctl.
+func Test_GeneratedWorkflowRunnersDisabled(t *testing.T) {
+	for _, cfg := range []Config{{Language: "go"}, {Language: "go", CircleCIGenerated: true}} {
+		got := render(t, cfg)
+		for _, want := range []string{
+			`'.github/workflows/zz_generated.*',`,
+			`'github-runners',`,
+		} {
+			if !strings.Contains(got, want) {
+				t.Errorf("renovate config (CircleCIGenerated=%v) missing %q:\n%s", cfg.CircleCIGenerated, want, got)
+			}
+		}
 	}
 }
 
@@ -461,7 +474,7 @@ func Test_Golden(t *testing.T) {
 			name: "fork",
 			config: Config{
 				Language:        "go",
-				Reviewers:       []string{"teemow"},
+				Reviewers:       []string{"fixture-person"},
 				RepoName:        "kagent-upstream",
 				HasCustomConfig: true,
 				Fork:            true,
@@ -532,9 +545,13 @@ func Test_Golden(t *testing.T) {
 // are inert there.
 func Test_GitIgnoredAuthorsAlwaysPresent(t *testing.T) {
 	for _, c := range []Config{
+		{},
 		{Language: "go"},
+		{Language: "python"},
 		{Language: "node", CircleCIGenerated: true},
 		{Language: "go", Deprecated: true, HasCustomConfig: true, RepoName: "some-repo"},
+		{Language: "go", Fork: true},
+		{Language: "node", CircleCIGenerated: true, Fork: true},
 	} {
 		got := render(t, c)
 
@@ -544,7 +561,11 @@ func Test_GitIgnoredAuthorsAlwaysPresent(t *testing.T) {
 		if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
 			t.Fatalf("generated config is not valid JSON5: %v\n%s", err, got)
 		}
-		want := []string{"342014845+giantswarm-release[bot]@users.noreply.github.com", "dev@giantswarm.io", "329428426+giantswarm-marge[bot]@users.noreply.github.com"}
+		want := []string{
+			"342014845+giantswarm-release[bot]@users.noreply.github.com",
+			"dev@giantswarm.io",
+			"329428426+giantswarm-marge[bot]@users.noreply.github.com",
+		}
 		if !slices.Equal(parsed.GitIgnoredAuthors, want) {
 			t.Errorf("gitIgnoredAuthors = %v for %+v, want %v", parsed.GitIgnoredAuthors, c, want)
 		}

@@ -2,6 +2,7 @@ package circleci
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/ats"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/circleci"
 )
 
@@ -27,7 +29,13 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return microerror.Mask(err)
+	}
 
 	err := r.flag.Validate()
 	if err != nil {
@@ -61,6 +69,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 	// gates, runtime config) is test content, so it lives next to .ats/main.yaml
 	// and the tests rather than in a gen.ci key.
 	hasATSKindConfig := detectATSKindConfig()
+	chartTestRequires, err := readChartTestRequires()
+	if err != nil {
+		return microerror.Mask(err)
+	}
 
 	// The images the repo's own jobs push are derived from its custom.yml: an
 	// architect/push-to-registries job there builds a second image the chart
@@ -125,6 +137,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 			ATSVersion:              r.flag.ATSVersion,
 			ATSOnRelease:            r.flag.ATSOnRelease,
 			ATSResourceClass:        r.flag.ATSResourceClass,
+			ChartTestRequires:       chartTestRequires,
 			HasATSKindConfig:        hasATSKindConfig,
 			HasDockerfile:           hasDockerfile,
 			CustomImages:            customImages,
@@ -167,7 +180,17 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, _ []string) error 
 	// that emits the run-tests-with-ats jobs, so it is folded into this
 	// generator rather than invoked separately (which would risk leaking it
 	// into non-generated-CI repos). ATSInputs returns nil for non-app repos.
-	inputs = append(inputs, circleciInput.ATSInputs()...)
+	atsInputs := circleciInput.ATSInputs()
+	if len(atsInputs) > 0 {
+		hasConfig, err := ats.HasConfig(".")
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		if !hasConfig {
+			atsInputs = append(atsInputs, circleciInput.ATSConfig())
+		}
+	}
+	inputs = append(inputs, atsInputs...)
 
 	err = gen.Execute(ctx, inputs...)
 	if err != nil {
@@ -200,16 +223,24 @@ func detectCustomImages() ([]string, error) {
 	}
 
 	var custom struct {
-		Workflows map[string]struct {
-			Jobs []any `json:"jobs"`
-		} `json:"workflows"`
+		Workflows map[string]json.RawMessage `json:"workflows"`
 	}
 	if err := yaml.Unmarshal(data, &custom); err != nil {
 		return nil, microerror.Maskf(invalidConfigError, "parse %s: %v", circleci.CustomConfigPath, err)
 	}
 
 	var images []string
-	for _, workflow := range custom.Workflows {
+	for name, data := range custom.Workflows {
+		// CircleCI allows version metadata alongside the named workflows.
+		if name == "version" {
+			continue
+		}
+		var workflow struct {
+			Jobs []any `json:"jobs"`
+		}
+		if err := json.Unmarshal(data, &workflow); err != nil {
+			return nil, microerror.Maskf(invalidConfigError, "parse %s workflow %q: %v", circleci.CustomConfigPath, name, err)
+		}
 		for _, job := range workflow.Jobs {
 			entry, ok := job.(map[string]any)
 			if !ok {

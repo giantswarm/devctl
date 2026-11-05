@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd"
+	"github.com/giantswarm/devctl/v8/internal/termout"
 	"github.com/giantswarm/devctl/v8/pkg/authexec"
 )
 
@@ -22,7 +23,7 @@ func main() {
 
 	rootCommand, err := newRootCommand()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", microerror.Pretty(err, true))
+		fmt.Fprintf(os.Stderr, "%s: %s\n", termout.Error(os.Stderr), microerror.Pretty(err, true))
 		os.Exit(2)
 	}
 

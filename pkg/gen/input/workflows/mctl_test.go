@@ -392,8 +392,9 @@ func Test_MctlCommentFlagParsing(t *testing.T) {
 
 // Test_MctlValidateManifestSkipsLegacyCharts checks legacy charts are skipped, release-* and unparsable ones validated.
 func Test_MctlValidateManifestSkipsLegacyCharts(t *testing.T) {
-	if _, err := exec.LookPath("yq"); err != nil {
-		t.Skip("yq not on PATH (it is on the GitHub-hosted runner)")
+	yq := mikefarahYq(t)
+	if yq == "" {
+		t.Skip("no mikefarah yq v4 on PATH (the GitHub-hosted runner has one; the step's `yq eval-all` needs it)")
 	}
 
 	dir := t.TempDir()
@@ -428,6 +429,10 @@ func Test_MctlValidateManifestSkipsLegacyCharts(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Shadow any other yq on PATH (the Python jq wrapper has no eval-all, so the step would skip nothing).
+	if err := os.Symlink(yq, filepath.Join(bin, "yq")); err != nil {
+		t.Fatal(err)
+	}
 
 	cmd := exec.CommandContext(t.Context(), "bash", "-eo", "pipefail", "-c", mctlStepScript(t, "validate_manifest", "Validate changed manifests")) // #nosec G204 -- the script is the rendered template, test-only
 	cmd.Dir = dir
@@ -454,6 +459,21 @@ func Test_MctlValidateManifestSkipsLegacyCharts(t *testing.T) {
 	}
 }
 
+// mikefarahYq returns the first yq on PATH that is mikefarah's v4, the one the workflow's runner has, or "".
+func mikefarahYq(t *testing.T) string {
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		path, err := exec.LookPath(filepath.Join(dir, "yq"))
+		if err != nil {
+			continue
+		}
+		out, err := exec.CommandContext(t.Context(), path, "--version").CombinedOutput() // #nosec G204 G702 -- a yq found on PATH, test-only
+		if err == nil && strings.Contains(string(out), "mikefarah") && strings.Contains(string(out), "version v4") {
+			return path
+		}
+	}
+	return ""
+}
+
 // outputValue reads a key out of a $GITHUB_OUTPUT file.
 func outputValue(raw, key string) string {
 	for _, line := range strings.Split(raw, "\n") {
@@ -470,5 +490,55 @@ func Test_MctlNoGetOctokit(t *testing.T) {
 		if strings.Contains(body, "getOctokit(") {
 			t.Errorf("%s calls getOctokit, which github-script@v7 does not provide; use new github.constructor({ auth })", name)
 		}
+	}
+}
+
+// Test_MctlInstallationsContacts pins the installations contacts check (giantswarm/giantswarm#38847): mctl's
+// FILL_IN_ placeholder prefix, the gate checking before the /create-mc result, and the cascade before landing.
+func Test_MctlInstallationsContacts(t *testing.T) {
+	renders := mctlRenders(t, false)
+
+	for _, name := range []string{"merge_gate", "merge_cascade"} {
+		body := renders[name]
+		for _, want := range []string{"startsWith('FILL_IN_')", "['giantswarm', 'antonia']", "'slack.support'", "'accountEngineer'", "'accountEngineersHandle'"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s does not contain %s", name, want)
+			}
+		}
+	}
+
+	gate := renders["merge_gate"]
+	check := strings.Index(gate, "await contactsProblem(crossRepo, findMarker('Installations PR'))")
+	result := strings.Index(gate, "if (!latestResult) {")
+	if check < 0 || result < 0 || check > result {
+		t.Error("the merge gate must check the installations contacts before the /create-mc result")
+	}
+
+	cascade := renders["merge_cascade"]
+	check = strings.Index(cascade, "await contactsProblem(github, installationsPR)")
+	land := strings.Index(cascade, "await land('installations', installationsPR, false)")
+	if check < 0 || land < 0 || check > land {
+		t.Error("the merge cascade must check the installations contacts before landing the installations PR")
+	}
+
+	if !strings.Contains(renders["config"], `Edit \S+ in the installations PR`) {
+		t.Error("config does not match mctl's installations contacts line")
+	}
+
+	// validate-config warns (exit 0) on missing contacts; the prompt must show mctl's "  ⚠ <file>: <reason>" lines.
+	validate := renders["validate_config"]
+	prompt := validate[strings.Index(validate, "- name: Post create-mc prompt"):]
+	for _, want := range []string{
+		"MCTL_OUTPUT:  ${{ steps.mctl.outputs.output }}",
+		".map(l => l.trim()).filter(l => l.startsWith('⚠'))",
+		"'Checks passed with warnings'",
+		"the merge gate blocks until these are fixed",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("validate_config create-mc prompt does not contain %s", want)
+		}
+	}
+	if strings.Contains(prompt[strings.Index(prompt, "script: |"):], "${{") {
+		t.Error("validate_config create-mc prompt must read mctl's output from env, not interpolate it into the script")
 	}
 }

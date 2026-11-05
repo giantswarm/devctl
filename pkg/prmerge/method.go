@@ -40,7 +40,9 @@ func allowedMethods(repository *github.Repository) []githubclient.MergeMethod {
 // into result.Method, the method the merge lands with, before the wait, so a merge GitHub would decline for its method is not
 // waited for. Without an explicit method a fork line (the verdict's
 // ForkLine) lands with a rebase merge, one commit per carried patch, and
-// every other repository with a squash. The method stands when the
+// other repositories with a squash. Unreadable flavours or a GitHub fork
+// without the fork flavour refuse the default instead of guessing. An
+// explicit method still stands. The method stands when the
 // settings allow it or do not say. The default squash, not allowed, gives
 // way to the one other method the settings allow, with a warning; an
 // explicit method never gives way, and neither does a default rebase on a
@@ -49,8 +51,8 @@ func allowedMethods(repository *github.Repository) []githubclient.MergeMethod {
 func (m *Merger) resolveMethod(ctx context.Context, owner, repo string, verdict Verdict, result *Result) error {
 	if m.methodDefault {
 		if verdict.Warning != "" {
-			m.progress.Printf("warning: %s", verdict.Warning)
-			result.Warnings = append(result.Warnings, verdict.Warning)
+			return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable,
+				"%s; cannot choose a default merge method for %s/%s: repair gen.flavours or choose --rebase or --squash explicitly", verdict.Warning, owner, repo)
 		}
 		if verdict.ForkLine {
 			result.Method = string(githubclient.MergeRebase)
@@ -58,9 +60,13 @@ func (m *Merger) resolveMethod(ctx context.Context, owner, repo string, verdict 
 		}
 	}
 	method := githubclient.MergeMethod(result.Method)
-	repository, _, err := m.github.GitHub().Repositories.Get(ctx, owner, repo)
+	repository, err := m.github.Repository(ctx, owner, repo)
 	if err != nil {
 		return microerror.Mask(err)
+	}
+	if m.methodDefault && !verdict.ForkLine && repository.GetFork() {
+		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable,
+			"GitHub identifies %s/%s as a fork, but no team-file entry declares fork in gen.flavours; declare the fork flavour or choose --rebase or --squash explicitly", owner, repo)
 	}
 	allowed := allowedMethods(repository)
 	if allowed == nil || slices.Contains(allowed, method) {
@@ -75,6 +81,8 @@ func (m *Merger) resolveMethod(ctx context.Context, owner, repo string, verdict 
 	}
 	reason := fmt.Sprintf("%s/%s does not allow %s merges; its settings allow %s", owner, repo, method, describe(allowed))
 	switch {
+	case m.carryOf > 0:
+		reason += "; --carry-of requires rebase to preserve the colleague's authorship"
 	case method == githubclient.MergeSquash && slices.Contains(allowed, githubclient.MergeRebase):
 		reason += "; --rebase lands a rebase merge"
 	case method == githubclient.MergeRebase && slices.Contains(allowed, githubclient.MergeSquash):

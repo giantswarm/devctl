@@ -16,6 +16,9 @@ import (
 	sigsyaml "sigs.k8s.io/yaml"
 )
 
+// ProtectionBaseline opts a customer repository into the protection baseline.
+const ProtectionBaseline = "baseline"
+
 // TeamFile is one repositories/<team>.yaml of giantswarm/github: the team
 // that owns every entry in it and the entries themselves.
 type TeamFile struct {
@@ -171,6 +174,10 @@ type Fields struct {
 	// the repository's own GitHub Actions gate that runs on every pull
 	// request. A declared context is never removed as a ghost.
 	RequiredChecks []string `yaml:"requiredChecks"`
+	// Protection opts a customer repository into the protection step with
+	// "baseline". Empty keeps the customer's own protection; other flavours
+	// always get the baseline.
+	Protection string `yaml:"protection"`
 	// AgentMerge is the repository's opt-out from agent merges: with false
 	// the default branch's ruleset has no bypass actor, so nothing merges
 	// past the required review. Nil is the default, true.
@@ -272,7 +279,10 @@ type CIFields struct {
 	ReleaseWorkflow string `yaml:"releaseWorkflow"`
 	// MaintenanceBranches says a fork line's maintenance branches
 	// (release-X.Y) cut releases too, each the patches of its X.Y series.
-	MaintenanceBranches     bool   `yaml:"maintenanceBranches"`
+	MaintenanceBranches bool `yaml:"maintenanceBranches"`
+	// PatchCandidates says a patch of the last stable release is cut as a
+	// release candidate too, never tagged stable on its push.
+	PatchCandidates         bool   `yaml:"patchCandidates"`
 	AppCatalog              string `yaml:"appCatalog"`
 	AppCatalogTest          string `yaml:"appCatalogTest"`
 	ChartName               string `yaml:"chartName"`

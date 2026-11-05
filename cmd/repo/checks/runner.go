@@ -25,7 +25,7 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
@@ -99,10 +99,12 @@ func (r *runner) run(ctx context.Context, arg string) error {
 		mode = reconcile.ModeRepair
 	}
 	engineRunner := reconcile.Runner{
-		GitHub:   gh,
-		Checks:   client,
-		Baseline: &baseline,
-		Log:      engine.LogWriter(r.logger),
+		GitHub:               gh,
+		Checks:               client,
+		WriteClassicChecks:   (classicChecksWriter{github: gh}).Write,
+		PreserveCheckSources: true,
+		Baseline:             &baseline,
+		Log:                  engine.LogWriter(r.logger),
 	}
 	res, err := engineRunner.Run(ctx, reconcile.Request{
 		Owner:    owner,
@@ -121,7 +123,7 @@ func (r *runner) run(ctx context.Context, arg string) error {
 // hasEngineRuleset says whether the repository carries the engine's ruleset
 // [reconcile.RulesetName].
 func hasEngineRuleset(ctx context.Context, gh *github.Client, owner, repo string) (bool, error) {
-	rulesets, _, err := gh.Repositories.GetAllRulesets(ctx, owner, repo, &github.RepositoryListRulesetsOptions{IncludesParents: new(false)})
+	rulesets, err := reconcile.ListRepositoryRulesets(ctx, gh, owner, repo)
 	if err != nil {
 		return false, err
 	}

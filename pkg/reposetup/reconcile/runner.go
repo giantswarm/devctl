@@ -34,8 +34,8 @@ func lifecycleOver(lifecycle string) bool {
 // branch protection and default branch are the customer's own flow and it
 // has no CircleCI pipeline of ours. The protection, circleci, codeowners and
 // release steps are skipped on it and its default branch is never renamed;
-// settings, permissions, renovate, metadata, lifecycle and catalog run as
-// declared.
+// protection: baseline opts it into the protection step. Settings,
+// permissions, renovate, metadata, lifecycle and catalog run as declared.
 const flavourCustomer = reposetup.FlavourCustomer
 
 // flavourFork is the gen.flavours value of a fork line: the repository
@@ -46,6 +46,11 @@ const flavourCustomer = reposetup.FlavourCustomer
 // land by rebase merge, one upstream-ready commit per carried patch, so the
 // settings step keeps rebase merges on it ([run.mergeMethods]).
 const flavourFork = "fork"
+
+// flavourMultiImage is the gen.flavours value of a repository of several
+// images, one per toolchains/<name>/ directory, each released as its own
+// <name>/vX.Y.Z line: the release step verifies every line's newest release.
+const flavourMultiImage = "multi-image"
 
 // componentTypeTemplate is the componentType of a template repository, one
 // other repositories are created from: its chart lives under a placeholder
@@ -71,7 +76,8 @@ type ScaffoldRenderer interface {
 
 // Runner runs the set-up steps. GitHub is required; the others are optional
 // and their absence skips what needs them: without CircleCI the CircleCI
-// and release steps are skipped, without Checks no check is required on the
+// step reads the default branch's CircleCI statuses instead of the
+// project's pipeline definitions, without Checks no check is required on the
 // reported-only rule (none is removed on a guess either), without Renderer
 // the scaffold cannot be repaired.
 type Runner struct {
@@ -88,7 +94,21 @@ type Runner struct {
 	Dispatch *github.Client
 	// Checks answers which check contexts have reported.
 	Checks ReportedChecker
-	// CircleCI is the client for follow, settings, keys and pipelines.
+	// PreserveCheckSources keeps existing required-check integration IDs and
+	// leaves new checks unpinned. Callers accepting generic context names,
+	// such as repo checks, cannot infer a GitHub Actions source from a name.
+	// False pins the baseline's generated Actions gates as before.
+	PreserveCheckSources bool
+	// WriteClassicChecks replaces the full classic-protection write with a
+	// checks-only writer. When set, only required-check differences are
+	// compared; all other classic settings, including strictness, stay as
+	// read. The writer receives the latest protection snapshot and must
+	// refuse nil protection rather than creating it. Nil uses the baseline's
+	// full protection policy. repo checks supplies its narrower writer here.
+	WriteClassicChecks func(ctx context.Context, owner, repo, branch string, protection *github.Protection, want []string) error
+	// CircleCI is a person's CircleCI client the circleci step reads the
+	// project's pipeline definitions with; nil reads GitHub's statuses. The
+	// engine writes nothing on CircleCI.
 	CircleCI *circleciclient.Client
 	// Renderer renders the scaffold the scaffold step pushes.
 	Renderer ScaffoldRenderer
@@ -206,11 +226,7 @@ type run struct {
 	repo           *github.Repository // nil when the repository does not exist
 	// created says the create step created the repository in this run.
 	created bool
-	// followedNow says the circleci step followed the project in this run
-	// (planned the follow, in check mode): CircleCI never saw a tag pushed
-	// before it.
-	followedNow bool
-	renamed     bool
+	renamed bool
 	// unarchive is the lifecycle step's unarchive, applied by the lookup
 	// ahead of the steps an archived repository refuses (unarchiveRepository);
 	// unarchiveErr is its error. The lifecycle step reports both.
@@ -236,9 +252,7 @@ type run struct {
 	reportedErr  error
 	reportedRead bool
 	// hooks are the repository's webhooks, once readHooks has read them
-	// (hooksRead); the response and the error are kept the same way. The
-	// circleci step (CircleCI's hook) and the webhooks step (the baseline's)
-	// share the one read.
+	// (hooksRead); the response and the error are kept the same way.
 	hooks     []*github.Hook
 	hooksResp *github.Response
 	hooksErr  error
@@ -281,8 +295,8 @@ func (r *Runner) Run(ctx context.Context, req Request) (*Result, error) {
 			continue
 		}
 		sr := r.execute(ctx, s, step)
-		if !selected {
-			continue // the lookup ran for the other steps; not part of the result
+		if !selected && sr.Converges() {
+			continue // a successful prerequisite lookup need not be listed
 		}
 		res.Steps = append(res.Steps, *sr)
 		if !sr.Converges() {
@@ -452,7 +466,11 @@ func (r *Runner) skipReason(ctx context.Context, s *run, step Step) (string, err
 	}
 	if s.hasFlavour(flavourCustomer) {
 		switch step {
-		case StepProtection, StepCircleCI, StepCodeowners, StepRelease:
+		case StepProtection:
+			if s.fields.Protection != reposetup.ProtectionBaseline {
+				return "flavour " + flavourCustomer, nil
+			}
+		case StepCircleCI, StepCodeowners, StepRelease:
 			return "flavour " + flavourCustomer, nil
 		}
 	}

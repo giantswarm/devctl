@@ -17,7 +17,7 @@ permissions:
   issues: write
 
 env:
-  MCTL_IMAGE: ${{ vars.MCTL_IMAGE || 'gsoci.azurecr.io/giantswarm/mctl:0.2.1' }}
+  MCTL_IMAGE: ${{ vars.MCTL_IMAGE || 'gsoci.azurecr.io/giantswarm/mctl:0.6.0' }}
   OP_VAULT: mctl - common
 
 jobs:
@@ -34,7 +34,7 @@ jobs:
     steps:
       - name: Generate app token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
         with:
           app-id: ${{ secrets.MCTL_APP_ID }}
           private-key: ${{ secrets.MCTL_APP_PRIVATE_KEY }}
@@ -42,7 +42,7 @@ jobs:
           owner: ${{ github.repository_owner }}
 
       - name: Acknowledge comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             await github.rest.reactions.createForIssueComment({
@@ -54,7 +54,7 @@ jobs:
 
       - name: Get PR info
         id: pr
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             const pr = await github.rest.pulls.get({
@@ -163,7 +163,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Post result comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           MCTL_OUTPUT: ${{ steps.mctl.outputs.output }}
           MCTL_EXIT_CODE: ${{ steps.mctl.outputs.exit_code }}
@@ -182,6 +182,10 @@ jobs:
               const lines = ['### ✅ `mctl config` completed\n'];
               if (ccrMatch)  lines.push(`- **CCR PR:** ${ccrMatch[1]}`);
               if (instMatch) lines.push(`- **Installations PR:** ${instMatch[1]}`);
+              // mctl prints this line for customer installations only.
+              if (instMatch && /Edit \S+ in the installations PR/.test(output)) {
+                lines.push('\n📇 Fill in the Slack support channel (`slack.support`) and AE info (`accountEngineer`, `accountEngineersHandle`) in the Installations PR\'s `cluster.yaml`; the merge gate waits for them.');
+              }
 
               // Skipped steps: `[name] reason\n  → command`
               const stepMatches = [...output.matchAll(/\[([\w-]+)\] ([^\n]+)\n\s+→ ([^\n]+)/g)];

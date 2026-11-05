@@ -1,12 +1,11 @@
-// Package circleciclient is devctl's client for the CircleCI API: the calls
-// the repository set-up engine makes for a project — follow and unfollow
-// (v1.1), the token's user, the project, its settings and
-// checkout keys, its pipelines (paged) and their workflows and jobs (v2), a
-// job's steps and their output (v1.1), a workflow's cancel and rerun (v2) —
-// and nothing else. The token is a personal
-// API token (architectbot's `CIRCLECI_API_TOKEN` for the reconciler, the
-// person's for `devctl repo reconcile`); the org and repository name a
-// project by their GitHub slug. A reader without a token of its own reads a
+// Package circleciclient is devctl's client for the CircleCI API: the token's
+// user, the project, its pipeline definitions and their triggers, a
+// pipeline run of a definition, its pipelines (paged) and their workflows
+// and jobs (v2), a job's steps and their output (v1.1), a workflow's cancel
+// and rerun (v2) — and nothing else. The token is the person's: their devctl
+// CircleCI login. CircleCI has no service accounts, and the reconciler holds
+// no CircleCI token; the org and repository name a project by their GitHub
+// slug. A reader without a token of its own reads a
 // public project's pipelines, workflows and jobs anonymously
 // ([Config.Anonymous]): CircleCI answers those reads for a public project
 // without one, and a private project with 404.
@@ -25,14 +24,12 @@ import (
 
 	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
+
+	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 )
 
 // DefaultBaseURL is CircleCI's public API host.
 const DefaultBaseURL = "https://circleci.com"
-
-// KeyTypeDeployKey is the checkout key type CircleCI creates as a deploy key
-// on the GitHub repository; a project without one cannot check out.
-const KeyTypeDeployKey = "deploy-key"
 
 // Config configures a Client.
 type Config struct {
@@ -42,6 +39,10 @@ type Config struct {
 	// environment variable ("$CIRCLECI_TOKEN"), or a description such as the
 	// devctl keychain. Empty means "the CircleCI token".
 	TokenSource string
+	// Renew re-reads the selected token source after a read gets 401. When
+	// set, the read is retried once after two seconds, even if the token is
+	// unchanged. Nil preserves a fixed credential, without retrying 401.
+	Renew func(ctx context.Context, rejected string) (string, error)
 	// Anonymous is a client without a token: it reads what CircleCI answers
 	// without one, the pipelines, workflows and jobs of a public project (a
 	// private one answers 404, IsNotFound), and no header is sent. Set with
@@ -90,6 +91,15 @@ func New(config Config) (*Client, error) {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 60 * time.Second, Transport: config.Transport}
 	}
+	if config.Renew != nil {
+		copy := *httpClient
+		base := copy.Transport
+		if base == nil {
+			base = http.DefaultTransport
+		}
+		copy.Transport = &reauthorizing{base: base, renew: config.Renew, token: config.Token}
+		httpClient = &copy
+	}
 	logger := config.Logger
 	if logger == nil {
 		logger = logrus.New()
@@ -133,30 +143,6 @@ type VCSInfo struct {
 	DefaultBranch string `json:"default_branch"`
 }
 
-// ProjectSettings are the v2 project settings; only the advanced settings
-// the engine manages are modelled. Pointer fields are omitted when nil, so a
-// value can carry just the settings to change.
-type ProjectSettings struct {
-	Advanced AdvancedSettings `json:"advanced"`
-}
-
-// AdvancedSettings are the settings under "advanced".
-type AdvancedSettings struct {
-	// SetupWorkflows enables dynamic configuration: the setup workflow the
-	// generated pipeline needs (`Use of setup workflows must be enabled in
-	// project settings` otherwise).
-	SetupWorkflows *bool `json:"setup_workflows,omitempty"`
-}
-
-// CheckoutKey is a key CircleCI checks the repository out with.
-type CheckoutKey struct {
-	Type        string    `json:"type"`
-	Preferred   bool      `json:"preferred"`
-	Fingerprint string    `json:"fingerprint"`
-	PublicKey   string    `json:"public_key"`
-	CreatedAt   time.Time `json:"created_at"`
-}
-
 // Pipeline is one pipeline of a project.
 type Pipeline struct {
 	ID        string          `json:"id"`
@@ -165,6 +151,51 @@ type Pipeline struct {
 	CreatedAt time.Time       `json:"created_at"`
 	VCS       PipelineVCS     `json:"vcs"`
 	Trigger   PipelineTrigger `json:"trigger"`
+}
+
+// UnmarshalJSON reads a pipeline. One the CircleCI GitHub App triggered
+// carries no vcs: when vcs is absent, what it built is read from
+// trigger_parameters.git, the checkout's revision, its branch (or the branch
+// of a ref under refs/heads/) and the tag of a ref under refs/tags/.
+func (p *Pipeline) UnmarshalJSON(data []byte) error {
+	type pipeline Pipeline
+	var raw struct {
+		pipeline
+		TriggerParameters struct {
+			Git json.RawMessage `json:"git"`
+		} `json:"trigger_parameters"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*p = Pipeline(raw.pipeline)
+	if p.VCS == (PipelineVCS{}) {
+		p.VCS = triggerVCS(raw.TriggerParameters.Git)
+	}
+	return nil
+}
+
+// triggerVCS reads what a pipeline built from its trigger_parameters.git, or
+// nothing when that is absent or not the shape the GitHub App gives it: an
+// API-triggered pipeline's parameters are the project's own, and one named
+// git must not fail the read of the pipeline.
+func triggerVCS(data json.RawMessage) PipelineVCS {
+	var git struct {
+		CheckoutSHA string `json:"checkout_sha"`
+		Branch      string `json:"branch"`
+		Ref         string `json:"ref"`
+	}
+	if len(data) == 0 || json.Unmarshal(data, &git) != nil || git.CheckoutSHA == "" {
+		return PipelineVCS{}
+	}
+	if tag, ok := strings.CutPrefix(git.Ref, "refs/tags/"); ok {
+		return PipelineVCS{Revision: git.CheckoutSHA, Tag: tag}
+	}
+	branch := git.Branch
+	if branch == "" {
+		branch, _ = strings.CutPrefix(git.Ref, "refs/heads/")
+	}
+	return PipelineVCS{Revision: git.CheckoutSHA, Branch: branch}
 }
 
 // PipelineTrigger is what created a pipeline. Type is webhook for a push,
@@ -305,96 +336,6 @@ func (c *Client) GetProject(ctx context.Context, org, repo string) (*Project, er
 	return &p, nil
 }
 
-// Follow follows the GitHub repository org/repo (v1.1). CircleCI builds the
-// default branch at once with whatever .circleci/config.yml it carries and
-// refuses an empty repository, so the scaffold is pushed first.
-func (c *Client) Follow(ctx context.Context, org, repo string) error {
-	var out struct {
-		Followed bool `json:"followed"`
-	}
-	if err := c.do(ctx, http.MethodPost, c.v1Project(org, repo)+"/follow", nil, &out); err != nil {
-		return microerror.Mask(err)
-	}
-	if out.Followed {
-		return nil
-	}
-	// The first follow of a fresh project answers followed=false although
-	// the project is followed from then on (seen live on a repository
-	// created minutes before); the project itself is the truth.
-	if _, err := c.GetProject(ctx, org, repo); err != nil {
-		if IsNotFound(err) {
-			return microerror.Maskf(apiError, "follow %s/%s: CircleCI answered followed=false and knows no such project", org, repo)
-		}
-		return microerror.Mask(err)
-	}
-	return nil
-}
-
-// Unfollow makes the token's user unfollow org/repo (v1.1). The project
-// stays, set up and building for the organization; what the unfollow
-// changes is Following.
-func (c *Client) Unfollow(ctx context.Context, org, repo string) error {
-	return microerror.Mask(c.do(ctx, http.MethodPost, c.v1Project(org, repo)+"/unfollow", nil, nil))
-}
-
-// v1ProjectSettings is the part of the v1.1 project settings the engine
-// reads.
-type v1ProjectSettings struct {
-	Following bool `json:"following"`
-}
-
-// Following says whether the token's user follows org/repo (v1.1 project
-// settings): the state Follow and Unfollow change. IsNotFound when CircleCI
-// does not know the project.
-func (c *Client) Following(ctx context.Context, org, repo string) (bool, error) {
-	var settings v1ProjectSettings
-	if err := c.do(ctx, http.MethodGet, c.v1Project(org, repo)+"/settings", nil, &settings); err != nil {
-		return false, microerror.Mask(err)
-	}
-	return settings.Following, nil
-}
-
-// GetProjectSettings returns the v2 project settings.
-func (c *Client) GetProjectSettings(ctx context.Context, org, repo string) (*ProjectSettings, error) {
-	var s ProjectSettings
-	if err := c.do(ctx, http.MethodGet, c.v2Project(org, repo)+"/settings", nil, &s); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return &s, nil
-}
-
-// UpdateProjectSettings patches the settings set in settings and returns the
-// settings as they are afterwards.
-func (c *Client) UpdateProjectSettings(ctx context.Context, org, repo string, settings ProjectSettings) (*ProjectSettings, error) {
-	var s ProjectSettings
-	if err := c.do(ctx, http.MethodPatch, c.v2Project(org, repo)+"/settings", settings, &s); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return &s, nil
-}
-
-// ListCheckoutKeys returns the project's checkout keys.
-func (c *Client) ListCheckoutKeys(ctx context.Context, org, repo string) ([]CheckoutKey, error) {
-	var out struct {
-		Items []CheckoutKey `json:"items"`
-	}
-	if err := c.do(ctx, http.MethodGet, c.v2Project(org, repo)+"/checkout-key", nil, &out); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return out.Items, nil
-}
-
-// CreateCheckoutKey creates a checkout key of keyType ([KeyTypeDeployKey] or
-// user-key); CircleCI installs a deploy key on the GitHub repository.
-func (c *Client) CreateCheckoutKey(ctx context.Context, org, repo, keyType string) (*CheckoutKey, error) {
-	body := map[string]string{"type": keyType}
-	var k CheckoutKey
-	if err := c.do(ctx, http.MethodPost, c.v2Project(org, repo)+"/checkout-key", body, &k); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return &k, nil
-}
-
 // PipelinePage is one page of a project's pipelines, newest first, and the
 // token of the page after it — empty on the last page.
 type PipelinePage struct {
@@ -433,24 +374,45 @@ func (c *Client) TriggerTagPipeline(ctx context.Context, org, repo, tag string) 
 
 // ListPipelineWorkflows returns the workflows of a pipeline.
 func (c *Client) ListPipelineWorkflows(ctx context.Context, pipelineID string) ([]Workflow, error) {
-	var out struct {
-		Items []Workflow `json:"items"`
+	var out []Workflow
+	base := "/api/v2/pipeline/" + url.PathEscape(pipelineID) + "/workflow"
+	path := base
+	for {
+		var page struct {
+			Items         []Workflow `json:"items"`
+			NextPageToken string     `json:"next_page_token"`
+		}
+		if err := c.do(ctx, http.MethodGet, path, nil, &page); err != nil {
+			return nil, microerror.Mask(err)
+		}
+		out = append(out, page.Items...)
+		if page.NextPageToken == "" {
+			return out, nil
+		}
+		path = base + "?page-token=" + url.QueryEscape(page.NextPageToken)
 	}
-	if err := c.do(ctx, http.MethodGet, "/api/v2/pipeline/"+url.PathEscape(pipelineID)+"/workflow", nil, &out); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return out.Items, nil
 }
 
-// ListWorkflowJobs returns the jobs of a workflow.
+// ListWorkflowJobs returns every page of the jobs of a workflow, retrying an authenticated
+// 404 anonymously for workflows readable through the public API.
 func (c *Client) ListWorkflowJobs(ctx context.Context, workflowID string) ([]Job, error) {
-	var out struct {
-		Items []Job `json:"items"`
+	var out []Job
+	base := "/api/v2/workflow/" + url.PathEscape(workflowID) + "/job"
+	path := base
+	for {
+		var page struct {
+			Items         []Job  `json:"items"`
+			NextPageToken string `json:"next_page_token"`
+		}
+		if err := c.readPublicJob(ctx, path, &page); err != nil {
+			return nil, microerror.Mask(err)
+		}
+		out = append(out, page.Items...)
+		if page.NextPageToken == "" {
+			return out, nil
+		}
+		path = base + "?page-token=" + url.QueryEscape(page.NextPageToken)
 	}
-	if err := c.do(ctx, http.MethodGet, "/api/v2/workflow/"+url.PathEscape(workflowID)+"/job", nil, &out); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return out.Items, nil
 }
 
 // RerunWorkflowFromFailed reruns the failed jobs of a finished workflow and
@@ -464,7 +426,8 @@ func (c *Client) RerunWorkflowFromFailed(ctx context.Context, workflowID string)
 
 // FailedStepsOutput returns the output of the failed steps of job number of
 // org/repo (v1.1: API v2 has no job output), in step order. The output
-// lives at a signed URL per step, read without the token.
+// lives at a signed URL per step, read without the token. An authenticated
+// 404 reading the job is retried anonymously for public jobs.
 func (c *Client) FailedStepsOutput(ctx context.Context, org, repo string, number int64) (string, error) {
 	var job struct {
 		Steps []struct {
@@ -474,7 +437,7 @@ func (c *Client) FailedStepsOutput(ctx context.Context, org, repo string, number
 			} `json:"actions"`
 		} `json:"steps"`
 	}
-	if err := c.do(ctx, http.MethodGet, fmt.Sprintf("%s/%d", c.v1Project(org, repo), number), nil, &job); err != nil {
+	if err := c.readPublicJob(ctx, fmt.Sprintf("%s/%d", c.v1Project(org, repo), number), &job); err != nil {
 		return "", microerror.Mask(err)
 	}
 	var out strings.Builder
@@ -489,6 +452,20 @@ func (c *Client) FailedStepsOutput(ctx context.Context, org, repo string, number
 		}
 	}
 	return out.String(), nil
+}
+
+// readPublicJob retries a job read once without the token when CircleCI
+// hides it from the authenticated caller with 404 but may expose it publicly.
+// Explicit authentication refusals are returned as-is. The copy keeps the
+// original client's identity, transport and timeout intact for other calls.
+func (c *Client) readPublicJob(ctx context.Context, path string, out any) error {
+	err := c.do(ctx, http.MethodGet, path, nil, out)
+	if IsNotFound(err) && c.token != "" {
+		anonymous := *c
+		anonymous.token = ""
+		err = anonymous.do(ctx, http.MethodGet, path, nil, out)
+	}
+	return microerror.Mask(err)
 }
 
 // stepOutput appends the messages of one step's output to out.
@@ -528,7 +505,7 @@ func (c *Client) v2Project(org, repo string) string {
 // do sends one request with body (JSON-encoded when not nil) and decodes a
 // 2xx answer into out (when not nil). A 404 is IsNotFound; every other
 // non-2xx status is an apiError carrying CircleCI's message.
-func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
+func (c *Client) do(ctx context.Context, method, path string, body, out any) (err error) {
 	var reader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -550,6 +527,12 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	}
 	c.logger.Debugf("circleci: %s %s", method, path)
 
+	defer func() {
+		// A cancelled read is the caller's outcome, not a failed service request.
+		if err != nil && ctx.Err() == nil {
+			err = &agentcli.RemoteError{Err: err}
+		}
+	}()
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return microerror.Mask(err)

@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/internal/termout"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 )
 
@@ -33,7 +35,7 @@ func Execute(root *cobra.Command, stderr io.Writer) int {
 		return exitErr.Code
 	}
 
-	fmt.Fprintf(stderr, "Error: %s\n", microerror.Pretty(err, debug(root)))
+	fmt.Fprintf(stderr, "%s: %s\n", termout.Error(stderr), prettyError(err, debug(root)))
 
 	var coder agentcli.ExitCoder
 	var usage *UsageError
@@ -53,6 +55,22 @@ func Execute(root *cobra.Command, stderr io.Writer) int {
 	fmt.Fprintf(stderr, "Run '%s --help' for more information.\n", executed.CommandPath())
 
 	return exitError
+}
+
+// prettyError keeps the full message of a joined error tree. microerror.Pretty
+// selects only the first annotation, losing other failures and their context.
+// Single errors retain their existing formatting, and debug retains the trace.
+func prettyError(err error, stackTrace bool) string {
+	for cause := err; cause != nil; cause = errors.Unwrap(cause) {
+		if _, joined := cause.(interface{ Unwrap() []error }); joined {
+			message := err.Error()
+			if stackTrace {
+				message += strings.TrimPrefix(microerror.Pretty(err, true), microerror.Pretty(err, false))
+			}
+			return message
+		}
+	}
+	return microerror.Pretty(err, stackTrace)
 }
 
 // debug reports whether --log-level asks for debug output or more.

@@ -107,8 +107,9 @@ func registryHost(private bool, endpoints agentcli.Endpoints) string {
 // gen.ci.appCatalog or the default catalog (gen.ci.appCatalogTest or the
 // default test catalog for a pre-release). The private registry holds a
 // private-only image and the artifacts of a private repository that does
-// not force them public.
-func GeneratedArtifacts(entry reposetup.Fields, repo, version string, content TagContent, privateRepo bool, endpoints agentcli.Endpoints, charts ChartNames) ([]Artifact, error) {
+// not force them public. A multi-image repository's release, image's tag
+// <image>/vX.Y.Z, publishes the one image <owner>/<repo>/<image>.
+func GeneratedArtifacts(entry reposetup.Fields, repo, image, version string, content TagContent, privateRepo bool, endpoints agentcli.Endpoints, charts ChartNames) ([]Artifact, error) {
 	if entry.Gen == nil {
 		return nil, usageErr("the team-file entry of %s has no gen block to derive the artifacts from", repo)
 	}
@@ -121,6 +122,13 @@ func GeneratedArtifacts(entry reposetup.Fields, repo, version string, content Ta
 	}
 	owner := reposetup.DefaultOwner
 	var artifacts []Artifact
+
+	if slices.Contains(entry.Gen.Flavours, string(gen.FlavourMultiImage)) {
+		if image == "" {
+			return nil, usageErr("%s releases one line per image, <image>/vX.Y.Z; %s names no image", repo, version)
+		}
+		return []Artifact{imageArtifact(owner+"/"+repo+"/"+image, version, privateRepo && !ci.ForcePublic, endpoints)}, nil
+	}
 
 	hasDockerfile := content.HasDockerfile() || (ci.Image != nil && ci.Image.Dockerfile != "")
 	if hasDockerfile {
@@ -295,16 +303,11 @@ func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, vers
 		return nil, nil, err
 	}
 
-	for _, name := range images {
-		path, private, err := namedImage(name, endpoints)
-		if err != nil {
-			return nil, nil, err
-		}
-		if private == nil {
-			private = &privateRepo
-		}
-		artifacts = append(artifacts, imageArtifact(path, tag, *private, endpoints))
+	named, err := namedImageArtifacts(images, tag, privateRepo, endpoints)
+	if err != nil {
+		return nil, nil, err
 	}
+	artifacts = append(artifacts, named...)
 	for _, name := range charts {
 		path, private, err := namedChart(name, endpoints)
 		if err != nil {
@@ -334,12 +337,29 @@ func HandWrittenArtifacts(ctx context.Context, gh GitHub, owner, repo, sha, vers
 	return dedupe(artifacts), warnings, nil
 }
 
+// namedImageArtifacts are the additional images explicitly requested with
+// --image, for generated as well as hand-written CI.
+func namedImageArtifacts(images []string, tag string, privateRepo bool, endpoints agentcli.Endpoints) ([]Artifact, error) {
+	var artifacts []Artifact
+	for _, name := range images {
+		path, private, err := namedImage(name, endpoints)
+		if err != nil {
+			return nil, err
+		}
+		if private == nil {
+			private = &privateRepo
+		}
+		artifacts = append(artifacts, imageArtifact(path, tag, *private, endpoints))
+	}
+	return artifacts, nil
+}
+
 // CustomPushJobs are the architect push jobs the repository's own custom.yml
 // adds to a generated pipeline, read at the tag: what the pipeline publishes
 // beyond the team-file entry's artifacts (a second chart released off the
 // same tag, giantswarm/agent-platform's connectivity chart). None for a
-// custom.yml of test and repository-owned jobs alone, which then names no
-// artifact and needs no look at the pipeline's jobs.
+// custom.yml of test and repository-owned jobs alone; its unchecked image
+// publishers are read separately by readUncheckedImageJobs.
 func CustomPushJobs(ctx context.Context, gh GitHub, owner, repo, sha string, content TagContent) ([]PushJob, error) {
 	jobs, err := readPushJobs(ctx, gh, owner, repo, sha, content, []string{circleCICustom})
 	if err != nil {

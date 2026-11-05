@@ -25,7 +25,13 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return microerror.Mask(err)
+	}
 
 	err := r.flag.Validate()
 	if err != nil {
@@ -55,8 +61,11 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	// isn't in the declaration this command reads, so it's read from the
 	// origin remote, with --repo-name as the override a render with no real
 	// checkout (e.g. devctl repo create's scaffold) has to pass explicitly.
+	// A multi-image repository releases without git-cliff, so it has no
+	// cliff.toml to name the repository in.
+	multiImage := r.flag.Flavours.Contains(gen.FlavourMultiImage)
 	repoName := r.flag.RepoName
-	if repoName == "" && r.flag.ReleaseWorkflow == releaseWorkflowAutoRelease {
+	if repoName == "" && r.flag.ReleaseWorkflow == releaseWorkflowAutoRelease && !multiImage {
 		repoName, err = gitremote.RepoName(ctx, ".")
 		if err != nil {
 			return microerror.Maskf(invalidFlagError, "cliff.toml's [remote.github].repo cannot be read from the origin remote: %s; pass --%s <name>", err, flagRepoName)
@@ -69,6 +78,7 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 			Flavours:            r.flag.Flavours,
 			ReleaseBranch:       r.flag.ReleaseBranch,
 			MaintenanceBranches: r.flag.MaintenanceBranches,
+			PatchCandidates:     r.flag.PatchCandidates,
 			RepoName:            repoName,
 		}
 
@@ -101,7 +111,20 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	// over from manual migrations predating the `zz_generated.` rename is
 	// deleted in BOTH branches via AutoReleaseLegacyDeletion, and so is the
 	// retired zz_generated.changelog.yaml via ChangelogDeletion.
-	if r.flag.ReleaseWorkflow == releaseWorkflowAutoRelease {
+	if multiImage {
+		// Validate admits a multi-image repository on auto-release alone. Its
+		// workflow takes the auto-release path, so a switch from either flow
+		// to it, or back, leaves one set of release files.
+		inputs = append(inputs,
+			workflowsInput.AutoReleaseLegacyDeletion(),
+			workflowsInput.AutoReleaseMultiImage(),
+			workflowsInput.ChangelogDeletion(),
+			workflowsInput.CliffTomlDeletion(),
+			workflowsInput.CreateReleaseDeletion(),
+			workflowsInput.CreateReleasePRDeletion(),
+			workflowsInput.ValidateChangelogDeletion(),
+		)
+	} else if r.flag.ReleaseWorkflow == releaseWorkflowAutoRelease {
 		inputs = append(inputs,
 			workflowsInput.AutoReleaseLegacyDeletion(),
 			workflowsInput.AutoRelease(),
@@ -111,6 +134,14 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 			workflowsInput.CreateReleasePRDeletion(),
 			workflowsInput.ValidateChangelogDeletion(),
 		)
+		// GitHub Releases are the changelog here: CHANGELOG.md is frozen as a
+		// pointer at them, and the pull request template stops asking for an
+		// edit. A repository without either file gets none.
+		for _, in := range []input.Input{workflowsInput.ChangelogPointer(), workflowsInput.PullRequestTemplate()} {
+			if _, err := os.Stat(in.Path); err == nil {
+				inputs = append(inputs, in)
+			}
+		}
 	} else {
 		r.warnAutoReleaseDeclaredLegacy(workflowsInput.AutoReleaseDeletion(), workflowsInput.CliffTomlDeletion())
 		inputs = append(inputs,
@@ -140,6 +171,9 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 		}
 		if r.flag.HelmDocsRegen {
 			inputs = append(inputs, workflowsInput.HelmDocsRegen())
+		}
+		if r.flag.ReservationSupport {
+			inputs = append(inputs, workflowsInput.ReservationCommand())
 		}
 		if r.flag.InstallUpdateChart {
 			inputs = append(inputs, workflowsInput.UpdateChart())
@@ -182,6 +216,42 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	if r.flag.PublishTechdocs {
 		inputs = append(inputs, workflowsInput.PublishTechdocsInput())
+	}
+
+	// An omitted input leaves an old workflow active. Retire only the known
+	// generated workflows that no longer match this run's flags or flavours.
+	// Keep configuration files (such as zizmor.base.yml) and unrelated
+	// workflows, including ones another generator prefixes zz_generated.
+	optional := []input.Input{
+		workflowsInput.FixVulnerabilities(),
+		workflowsInput.Gitleaks(),
+		workflowsInput.CheckValuesSchema(),
+		workflowsInput.ChartTests(),
+		workflowsInput.CheckReadmeLinks(),
+		workflowsInput.HelmDocsRegen(),
+		workflowsInput.ReservationCommand(),
+		workflowsInput.UpdateChart(),
+		workflowsInput.SyncFromUpstream(),
+		workflowsInput.DispatchUpdateChartEvents(""),
+		workflowsInput.TestKyvernoPoliciesWithChainsaw(),
+		workflowsInput.AddCustomerBoardAutomation(),
+		workflowsInput.ClusterAppDocumentationValidation(),
+		workflowsInput.ClusterAppSchemaValidation(),
+		workflowsInput.HelmRenderDiff(),
+		workflowsInput.RunOSSFScorecard(),
+		workflowsInput.AnalyzeGithubActions(),
+		workflowsInput.ClusterAppValuesValidationUsingSchema(),
+		workflowsInput.PublishTechdocsInput(),
+	}
+	optional = append(optional, workflowsInput.Mctl()...)
+	selected := make(map[string]bool, len(inputs))
+	for _, in := range inputs {
+		selected[in.Path] = true
+	}
+	for _, in := range optional {
+		if !selected[in.Path] {
+			inputs = append(inputs, input.Input{Path: in.Path, Delete: true})
+		}
 	}
 
 	err = gen.Execute(

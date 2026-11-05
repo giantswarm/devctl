@@ -20,12 +20,21 @@ const SourceGHLogin = "gh login"
 // own login is read with none of them set.
 var ghTokenVars = []string{EnvToken, "GITHUB_TOKEN"}
 
+// withoutGHTokens is environ without [ghTokenVars], so gh acts on its stored
+// login.
+func withoutGHTokens(environ []string) []string {
+	for _, name := range ghTokenVars {
+		environ = without(environ, name)
+	}
+	return environ
+}
+
 // RepositoryToken is the GitHub token a command acts with on owner's
 // repositories: the App login (app) for an owner in [AppOwners], where the
 // App is installed, and the person's own gh login (person) for every other
 // owner, which the App cannot reach.
 func RepositoryToken(ctx context.Context, owner string, app, person func(context.Context) (authstore.Token, error)) (authstore.Token, error) {
-	if AppOwners[owner] {
+	if AppOwners[strings.ToLower(owner)] {
 		return app(ctx)
 	}
 	return person(ctx)
@@ -45,11 +54,7 @@ func personGitHub(ctx context.Context, path, self string, environ []string, outp
 	if err != nil {
 		return authstore.Token{}, personAuthRequired(err.Error())
 	}
-	env := environ
-	for _, name := range ghTokenVars {
-		env = without(env, name)
-	}
-	out, err := output(ctx, gh, []string{"auth", "token", "--hostname", "github.com"}, env)
+	out, err := output(ctx, gh, []string{"auth", "token", "--hostname", "github.com"}, withoutGHTokens(environ))
 	token := strings.TrimSpace(string(out))
 	if err != nil || token == "" {
 		return authstore.Token{}, personAuthRequired("gh has no login for github.com")
@@ -57,14 +62,15 @@ func personGitHub(ctx context.Context, path, self string, environ []string, outp
 	return authstore.Token{Value: token, Source: SourceGHLogin}, nil
 }
 
-// realGH is the first gh on path that is no devctl: neither self nor a gh
-// link to another devctl, which would answer with the App login.
+// realGH uses the full PATH to skip shims ahead of devctl links, including
+// links to another devctl, which would answer with the App login.
 func realGH(path, self string) (string, error) {
-	for _, dir := range filepath.SplitList(path) {
-		gh, err := LookPath("gh", dir, self)
-		if err != nil || strings.TrimSuffix(filepath.Base(resolve(gh)), ".exe") == "devctl" {
-			continue
-		}
+	selfResolved := resolve(self)
+	gh, err := lookPath("gh", path, func(candidate string) bool {
+		resolved := resolve(candidate)
+		return resolved == selfResolved || strings.TrimSuffix(filepath.Base(resolved), ".exe") == "devctl"
+	})
+	if err == nil {
 		return gh, nil
 	}
 	return "", errors.New("gh: not found on PATH (gh links to devctl skipped)")

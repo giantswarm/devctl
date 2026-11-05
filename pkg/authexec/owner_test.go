@@ -4,8 +4,8 @@ import "testing"
 
 func TestGHOwner(t *testing.T) {
 	const gsRemotes = "remote.origin.url git@github.com:giantswarm/devctl.git\n"
-	const forkRemotes = "remote.origin.url https://github.com/teemow/devctl.git\nremote.upstream.url https://github.com/giantswarm/devctl\n"
-	const defaultRemotes = "remote.origin.url git@github.com:giantswarm/devctl.git\nremote.mine.url git@github.com:teemow/devctl.git\nremote.mine.gh-resolved base\n"
+	const forkRemotes = "remote.origin.url https://github.com/fixture-person/devctl.git\nremote.upstream.url https://github.com/giantswarm/devctl\n"
+	const defaultRemotes = "remote.origin.url git@github.com:giantswarm/devctl.git\nremote.mine.url git@github.com:fixture-person/devctl.git\nremote.mine.gh-resolved base\n"
 
 	cases := []struct {
 		name    string
@@ -14,31 +14,87 @@ func TestGHOwner(t *testing.T) {
 		remotes string
 		want    string
 	}{
-		{name: "--repo", args: []string{"pr", "list", "--repo", "teemow/klaus-lab"}, remotes: gsRemotes, want: "teemow"},
+		{name: "--repo", args: []string{"pr", "list", "--repo", "fixture-person/fixture-repo"}, remotes: gsRemotes, want: "fixture-person"},
 		{name: "-R", args: []string{"issue", "view", "1", "-R", "giantswarm/devctl"}, want: "giantswarm"},
-		{name: "--repo=", args: []string{"pr", "view", "1", "--repo=Teemow/klaus-lab"}, want: "teemow"},
-		{name: "-Rvalue", args: []string{"pr", "view", "1", "-Rteemow/klaus-lab"}, want: "teemow"},
-		{name: "host/owner/repo", args: []string{"pr", "view", "1", "-R", "github.com/teemow/klaus-lab"}, want: "teemow"},
-		{name: "after --", args: []string{"api", "user", "--", "--repo", "teemow/x"}, want: ""},
-		{name: "GH_REPO", args: []string{"pr", "list"}, env: []string{"GH_REPO=teemow/klaus-lab"}, remotes: gsRemotes, want: "teemow"},
-		{name: "api repos", args: []string{"api", "repos/teemow/klaus-lab/pulls"}, remotes: gsRemotes, want: "teemow"},
+		{name: "--repo=", args: []string{"pr", "view", "1", "--repo=Fixture-Person/fixture-repo"}, want: "fixture-person"},
+		{name: "-Rvalue", args: []string{"pr", "view", "1", "-Rfixture-person/fixture-repo"}, want: "fixture-person"},
+		{name: "host/owner/repo", args: []string{"pr", "view", "1", "-R", "github.com/fixture-person/fixture-repo"}, want: "fixture-person"},
+		{name: "after --", args: []string{"api", "user", "--", "--repo", "fixture-person/x"}, want: ""},
+		{name: "GH_REPO", args: []string{"pr", "list"}, env: []string{"GH_REPO=fixture-person/fixture-repo"}, remotes: gsRemotes, want: "fixture-person"},
+		{name: "explicit API owner beats GH_REPO", args: []string{"api", "repos/fixture-person/fixture-repo/pulls"}, env: []string{"GH_REPO=giantswarm/devctl"}, want: "fixture-person"},
+		{name: "App API owner beats GH_REPO", args: []string{"api", "repos/giantswarm/devctl/pulls"}, env: []string{"GH_REPO=fixture-person/fixture-repo"}, want: "giantswarm"},
+		{name: "API user ignores GH_REPO", args: []string{"api", "user"}, env: []string{"GH_REPO=fixture-person/fixture-repo"}, want: ""},
+		{name: "API graphql ignores GH_REPO", args: []string{"api", "graphql"}, env: []string{"GH_REPO=fixture-person/fixture-repo"}, want: ""},
+		{name: "API placeholder uses GH_REPO", args: []string{"api", "repos/{owner}/{repo}/pulls"}, env: []string{"GH_REPO=fixture-person/fixture-repo"}, remotes: gsRemotes, want: "fixture-person"},
+		{name: "API absolute URL", args: []string{"api", "https://api.github.com/repos/fixture-person/fixture-repo/pulls"}, env: []string{"GH_REPO=giantswarm/devctl"}, want: "fixture-person"},
+		{name: "API colon placeholder uses GH_REPO", args: []string{"api", "repos/:owner/:repo/pulls"}, env: []string{"GH_REPO=fixture-person/fixture-repo"}, remotes: gsRemotes, want: "fixture-person"},
+		{name: "explicit PR URL beats GH_REPO", args: []string{"pr", "view", "https://github.com/fixture-person/fixture-repo/pull/5"}, env: []string{"GH_REPO=giantswarm/devctl"}, want: "fixture-person"},
+		{name: "explicit PR URL beats repo flag", args: []string{"pr", "view", "https://github.com/fixture-person/fixture-repo/pull/5", "--repo", "giantswarm/devctl"}, want: "fixture-person"},
+		{name: "explicit repo argument beats GH_REPO", args: []string{"repo", "view", "fixture-person/fixture-repo"}, env: []string{"GH_REPO=giantswarm/devctl"}, want: "fixture-person"},
+		{name: "PR URL after boolean flags", args: []string{"pr", "view", "--comments", "https://github.com/fixture-person/fixture-repo/pull/5"}, remotes: gsRemotes, want: "fixture-person"},
+		{name: "PR URL after output flags", args: []string{"pr", "view", "--json", "title", "--jq", ".title", "https://github.com/fixture-person/fixture-repo/pull/5"}, remotes: gsRemotes, want: "fixture-person"},
+		{name: "repository after branch flag", args: []string{"repo", "view", "--branch", "feature", "fixture-person/fixture-repo"}, remotes: gsRemotes, want: "fixture-person"},
+		{name: "body URL before selector is no repository", args: []string{"pr", "comment", "--body", "https://github.com/fixture-person/x", "5"}, remotes: gsRemotes, want: "giantswarm"},
+		{name: "URL after milestone shorthand", args: []string{"issue", "edit", "-m", "Sprint", "https://github.com/fixture-person/fixture-repo/issues/5"}, remotes: gsRemotes, want: "fixture-person"},
+		{name: "URL after merge boolean shorthand", args: []string{"pr", "merge", "-m", "https://github.com/fixture-person/fixture-repo/pull/5"}, remotes: gsRemotes, want: "fixture-person"},
+		{name: "URL after review boolean shorthand", args: []string{"pr", "review", "-r", "https://github.com/fixture-person/fixture-repo/pull/5"}, remotes: gsRemotes, want: "fixture-person"},
+		{name: "URL after close reason shorthand", args: []string{"issue", "close", "-r", "completed", "https://github.com/fixture-person/fixture-repo/issues/5"}, remotes: gsRemotes, want: "fixture-person"},
+		{name: "api repos", args: []string{"api", "repos/fixture-person/fixture-repo/pulls"}, remotes: gsRemotes, want: "fixture-person"},
 		{name: "api /orgs", args: []string{"api", "-X", "GET", "/orgs/giantswarm/teams"}, want: "giantswarm"},
 		{name: "api {owner}", args: []string{"api", "repos/{owner}/{repo}/pulls"}, remotes: forkRemotes, want: "giantswarm"},
 		{name: "api user", args: []string{"api", "user"}, remotes: forkRemotes, want: ""},
 		{name: "api graphql", args: []string{"api", "graphql", "-f", "query=..."}, remotes: forkRemotes, want: ""},
-		{name: "pr URL", args: []string{"pr", "view", "https://github.com/teemow/klaus-lab/pull/5"}, remotes: gsRemotes, want: "teemow"},
-		{name: "repo view owner/repo", args: []string{"repo", "view", "teemow/klaus-lab"}, want: "teemow"},
-		{name: "body URL is no repository", args: []string{"pr", "comment", "5", "--body", "https://github.com/teemow/x"}, remotes: gsRemotes, want: "giantswarm"},
+		{name: "pr URL", args: []string{"pr", "view", "https://github.com/fixture-person/fixture-repo/pull/5"}, remotes: gsRemotes, want: "fixture-person"},
+		{name: "repo view owner/repo", args: []string{"repo", "view", "fixture-person/fixture-repo"}, want: "fixture-person"},
+		{name: "body URL is no repository", args: []string{"pr", "comment", "5", "--body", "https://github.com/fixture-person/x"}, remotes: gsRemotes, want: "giantswarm"},
+		{name: "body text is not a repo flag", args: []string{"pr", "comment", "5", "--body", "--repo=fixture-person/x", "--repo", "giantswarm/devctl"}, want: "giantswarm"},
+		{name: "short body text is not a repo flag", args: []string{"issue", "comment", "5", "-b", "-Rfixture-person/x", "-R", "giantswarm/devctl"}, want: "giantswarm"},
+		{name: "body text is not a flag terminator", args: []string{"pr", "comment", "5", "--body", "--", "--repo", "fixture-person/x"}, remotes: gsRemotes, want: "fixture-person"},
+		{name: "title text is not a repo flag", args: []string{"pr", "create", "--title", "--repo=fixture-person/x", "--repo", "giantswarm/devctl"}, want: "giantswarm"},
+		{name: "view comments remains a boolean", args: []string{"pr", "view", "-c", "--repo", "fixture-person/x"}, remotes: gsRemotes, want: "fixture-person"},
 		{name: "remote origin", args: []string{"pr", "list"}, remotes: gsRemotes, want: "giantswarm"},
 		{name: "upstream before origin", args: []string{"pr", "list"}, remotes: forkRemotes, want: "giantswarm"},
-		{name: "set-default wins", args: []string{"pr", "list"}, remotes: defaultRemotes, want: "teemow"},
+		{name: "set-default wins", args: []string{"pr", "list"}, remotes: defaultRemotes, want: "fixture-person"},
+		{name: "set-default repository overrides remote URL", args: []string{"pr", "list"}, remotes: "remote.origin.url https://github.com/giantswarm/fork.git\nremote.origin.gh-resolved fixture-person/parent\n", want: "fixture-person"},
+		{name: "set-default App repository overrides fork URL", args: []string{"pr", "list"}, remotes: "remote.origin.url https://github.com/fixture-person/fork.git\nremote.origin.gh-resolved GiantSwarm/parent\n", want: "giantswarm"},
+		{name: "stale set-default without a remote is ignored", args: []string{"pr", "list"}, remotes: "remote.origin.url https://github.com/giantswarm/devctl.git\nremote.gone.gh-resolved fixture-person/parent\n", want: "giantswarm"},
 		{name: "outside a repository", args: []string{"search", "prs", "x"}, want: ""},
+		{name: "search ignores working directory repository", args: []string{"search", "prs", "x"}, remotes: "remote.origin.url https://github.com/fixture-person/devctl.git\n", want: ""},
+		{name: "search ignores GH_REPO default", args: []string{"search", "prs", "x"}, env: []string{"GH_REPO=fixture-person/devctl"}, want: ""},
+		{name: "search repo filters do not select a base repository", args: []string{"search", "prs", "x", "--repo", "fixture-person/devctl", "--repo", "giantswarm/devctl"}, want: ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			remotes := func() string { return tc.remotes }
 			if got := GHOwner(tc.args, tc.env, remotes); got != tc.want {
 				t.Fatalf("GHOwner(%v) = %q, want %q", tc.args, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGHAttaches(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "issue comment --attach", args: []string{"issue", "comment", "12", "--repo", "giantswarm/devctl", "--attach", "./proof.png#The proof"}, want: true},
+		{name: "pr comment --attach=", args: []string{"pr", "comment", "5", "--attach=./proof.png"}, want: true},
+		{name: "pr create --attach", args: []string{"pr", "create", "--attach", "a.png", "--attach", "b.png"}, want: true},
+		{name: "comment without a file", args: []string{"pr", "comment", "5", "--body", "done"}, want: false},
+		{name: "body is not an attachment flag", args: []string{"pr", "comment", "5", "--body", "--attach"}, want: false},
+		{name: "short body is not an attachment flag", args: []string{"issue", "comment", "5", "-b", "--attach=proof.png"}, want: false},
+		{name: "body terminator before real attachment", args: []string{"pr", "comment", "5", "--body", "--", "--attach", "proof.png"}, want: true},
+		{name: "close comment is not an attachment flag", args: []string{"issue", "close", "5", "-c", "--attach"}, want: false},
+		{name: "after --", args: []string{"issue", "comment", "12", "--", "--attach"}, want: false},
+		{name: "not an issue or pr", args: []string{"api", "repos/giantswarm/devctl", "-f", "--attach"}, want: false},
+		{name: "no arguments", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := GHAttaches(tc.args); got != tc.want {
+				t.Fatalf("GHAttaches(%v) = %t, want %t", tc.args, got, tc.want)
 			}
 		})
 	}

@@ -25,6 +25,7 @@ func TestResolveModels(t *testing.T) {
 	cases := []struct {
 		name      string
 		entry     *reposetup.Fields
+		tag       string
 		workflows []string
 		circleci  []string
 		want      Models
@@ -98,6 +99,22 @@ func TestResolveModels(t *testing.T) {
 			wantErr: "gen.ci.generate true but .circleci",
 		},
 		{
+			name: "generate true and an un-prefixed tag of a multi-image entry before the generated config", entry: entryWith(boolPtr(true), "", "multi-image"),
+			tag: "v0.1.0", workflows: autoRelease, circleci: handWritten,
+			wantErr: "gen.ci.generate true but .circleci",
+		},
+		{
+			name: "generate true and an image's tag of a multi-image entry before the generated config", entry: entryWith(boolPtr(true), "", "multi-image"),
+			tag: "go/v0.1.0", workflows: autoRelease, circleci: handWritten,
+			want:        Models{Release: ReleaseModelAutoRelease, CI: CIModelHandWritten},
+			wantWarning: "go/v0.1.0 predates the generated pipeline",
+		},
+		{
+			name: "generate true and an image's tag of an entry without the multi-image flavour", entry: entryWith(boolPtr(true), ""),
+			tag: "go/v0.1.0", workflows: autoRelease, circleci: handWritten,
+			wantErr: "gen.ci.generate true but .circleci",
+		},
+		{
 			name: "generate false but the generated config is there", entry: entryWith(boolPtr(false), ""),
 			workflows: legacy, circleci: generated,
 			wantErr: "gen.ci.generate false but .circleci",
@@ -106,7 +123,7 @@ func TestResolveModels(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			content := TagContent{SHA: "0123456789abcdef", Root: []string{"Dockerfile"}, Workflows: tc.workflows, CircleCI: tc.circleci}
-			got, err := ResolveModels(tc.entry, content)
+			got, err := ResolveModels(tc.entry, content, tc.tag)
 			if tc.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected an error containing %q, got models %+v", tc.wantErr, got)
@@ -125,11 +142,12 @@ func TestResolveModels(t *testing.T) {
 			if got.Release != tc.want.Release || got.CI != tc.want.CI {
 				t.Errorf("want %+v, got %+v", tc.want, got)
 			}
-			if tc.wantWarning == "" && got.Warning != "" {
-				t.Errorf("unexpected warning %q", got.Warning)
+			warning := strings.Join(got.Warnings, "\n")
+			if tc.wantWarning == "" && warning != "" {
+				t.Errorf("unexpected warning %q", warning)
 			}
-			if tc.wantWarning != "" && !strings.Contains(got.Warning, tc.wantWarning) {
-				t.Errorf("warning %q does not contain %q", got.Warning, tc.wantWarning)
+			if tc.wantWarning != "" && !strings.Contains(warning, tc.wantWarning) {
+				t.Errorf("warning %q does not contain %q", warning, tc.wantWarning)
 			}
 		})
 	}

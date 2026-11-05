@@ -55,7 +55,7 @@ devctl pr approve-merge-renovate "architect v1.2.3"
 2. **Parallel Processing**: All PRs are processed simultaneously using goroutines for maximum speed
 
 3. **Continuous Polling**: Re-runs the search query to discover newly created PRs that match the criteria and automatically processes them
-   - Normal mode: Polls every 10 seconds until all PRs are processed
+   - Normal mode: Polls every 10 seconds until all PRs are processed; a discovery read already in flight and any workers it adds finish before the command returns
    - Watch mode (`--watch`): Polls every minute and runs indefinitely
 
 4. **Live Table UI**: Displays a real-time updating table showing:
@@ -65,10 +65,12 @@ devctl pr approve-merge-renovate "architect v1.2.3"
 
 5. **For Each PR**:
    - Checks if already merged (skip if yes)
-   - Verifies status checks are passing (reports "Failed checks" if failing)
+   - Reads every page of commit statuses and check runs; both sources must be readable
+   - Verifies both sources are passing (reports "Failed checks" if failing); a green status cannot hide a failed or pending check run
    - **Polls and waits** if checks are pending (retries up to 60 times over 5 minutes)
    - Checks if auto-merge is enabled after checks pass
-   - Approves the PR when checks pass (if not already approved)
+   - Approves the checked commit when checks pass (if not already approved)
+   - Direct merges require that same head; a concurrent push is refused so its checks can be judged on a new run
    - **If auto-merge enabled**: Waits up to 1 minute for auto-merge to complete
    - **If no auto-merge**: Determines merge method from repository settings and merges directly
 
@@ -115,6 +117,7 @@ The command uses three algorithms in sequence to group PRs:
 - Groups are sorted by PR count (most PRs first)
 - **ALL groups are shown**, including those with only 1 PR
 - Version suffixes like `/v80` are normalized so `go-github/v80` and `go-github/v81` group together
+- Dependency selections search PR titles; mentioning the dependency only in a body or comment does not select that PR.
 
 ## Examples
 
@@ -277,4 +280,5 @@ Watch mode (`--watch`) is particularly useful for:
   - New PRs are discovered every minute
   - Command runs indefinitely, never exits automatically
   - Perfect for long-running Renovate batch updates
-  - Exit gracefully with Ctrl+C or Cmd+C
+  - Exit with Ctrl+C or Cmd+C: in-flight requests and waits are canceled and workers finish before the command returns
+- Cancellation is reported as a failure; writes GitHub already accepted remain in effect

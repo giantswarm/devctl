@@ -18,17 +18,16 @@
 // as added — never from a missing repository), scaffold (rendered by the
 // front half and pushed as the first commit before protection), settings
 // baseline, team permissions, branch protection with the required checks on
-// the reported-only rule, CircleCI (follow, setup workflows, checkout key,
-// and the webhook CircleCI installs on the follow, verified), webhooks,
+// the reported-only rule, CircleCI (check only: a GitHub App pipeline builds
+// the repository; nothing is written on CircleCI), webhooks,
 // Renovate (check only), CODEOWNERS (a pull request), description
 // and visibility, labels (the owning team's team/<team>, created when
-// missing), lifecycle (archived → unfollowed on CircleCI and
-// CircleCI's deploy key deleted, then archived on GitHub; deleted →
-// unfollowed, then deleted on GitHub, the entry the record),
+// missing), lifecycle (archived → CircleCI's deploy key deleted, then
+// archived on GitHub; deleted → deleted on GitHub, the entry the record),
 // catalog and mapping (the giantswarm/github workflows), first-release
-// verification (a vX.Y.Z tag → pipeline → workflows; a missed tag build is
-// reported, never rebuilt, except a creation's first release, which is
-// built once; a release tagged otherwise is not verified).
+// verification (a vX.Y.Z tag → the GitHub App pipeline's statuses on its
+// commit; a missed tag build is reported, never rebuilt; a release tagged
+// otherwise, or built by an OAuth follow alone, is not verified).
 //
 // What a run costs in requests is counted at the clients' transports
 // ([Counter]) into [Result.Requests], and per step in the log. A check of a
@@ -144,17 +143,29 @@ const (
 	// FindingRedRelease: the latest release's tag pipeline failed in a job
 	// that leaves something unpublished (UnpublishedJobs).
 	FindingRedRelease FindingKind = "red-release"
-	// FindingMissedTagBuild: the latest release's tag has no pipeline. The
-	// reconciler rebuilds no tag but a creation's first release; the fix is
-	// the next tag, or the tag's pipeline triggered by hand.
+	// FindingMissedTagBuild: the latest release's tag carries no CircleCI
+	// status of its own build. The reconciler rebuilds no tag; the fix is
+	// `devctl repo follow-circleci`, which runs it as the person, or the
+	// next tag.
 	FindingMissedTagBuild FindingKind = "missed-tag-build"
-	// FindingCircleCIWebhookMissing: the project is followed on CircleCI
-	// but the repository carries no active CircleCI webhook for push
-	// events, so no push and no tag reaches CircleCI: no branch builds,
-	// and the first release tag goes unbuilt. CircleCI installs the hook on
-	// a follow by a GitHub admin of the repository whose CircleCI grant
-	// carries the hook scope; devctl cannot create it, CircleCI signs it
-	// with its own secret.
+	// FindingCircleCIPipelineMissing: the repository has a CircleCI
+	// configuration but no CircleCI pipeline builds it (an OAuth follow is
+	// FindingCircleCIOAuthFollow). CircleCI has no service accounts, so a
+	// person creates the GitHub App pipeline with their own CircleCI login:
+	// `devctl repo follow-circleci`.
+	FindingCircleCIPipelineMissing FindingKind = "circleci-pipeline-missing"
+	// FindingCircleCIOAuthFollow: the repository builds through an OAuth
+	// follow, alone or beside a GitHub App pipeline. It builds today, through
+	// the follower's GitHub grant, and stops when they leave; beside the App
+	// pipeline every push builds twice. Advisory: the repository is built.
+	// The fix is the person's `devctl repo follow-circleci --migrate`.
+	FindingCircleCIOAuthFollow FindingKind = "circleci-oauth-follow"
+	// FindingCircleCIWebhookMissing was the finding of an OAuth follow
+	// without CircleCI's webhook.
+	//
+	// Deprecated: the engine no longer follows on CircleCI and never reports
+	// it; it stays for readers of older run artifacts, such as
+	// giantswarm-repo-manager. Use FindingCircleCIPipelineMissing.
 	FindingCircleCIWebhookMissing FindingKind = "circleci-webhook-missing"
 	// FindingRenovateNotScanned: the repository shows no sign that Renovate
 	// scans it — no configuration, or a configuration without a trace of a
@@ -213,7 +224,8 @@ const (
 // something a person must fix before the repository counts as in sync.
 func (k FindingKind) Advisory() bool {
 	switch k {
-	case FindingDefaultIcon, FindingForeignRuleset, FindingDeclaredRulesetMissing, FindingRulesetsNotEnabled, FindingOpenPullRequests:
+	case FindingDefaultIcon, FindingForeignRuleset, FindingDeclaredRulesetMissing, FindingRulesetsNotEnabled, FindingOpenPullRequests,
+		FindingCircleCIOAuthFollow:
 		return true
 	}
 	return false
@@ -224,8 +236,9 @@ type Finding struct {
 	Kind    FindingKind `json:"kind"`
 	Message string      `json:"message"`
 	Fix     string      `json:"fix"`
-	// Advisory mirrors [FindingKind.Advisory] in the artifact, so a reader
-	// knows the weight of the finding without knowing the kinds.
+	// Advisory says this finding does not prevent convergence. It defaults
+	// to [FindingKind.Advisory]; a skipped classic protection read in check
+	// mode is advisory too. The artifact carries the weight for its readers.
 	Advisory bool `json:"advisory,omitempty"`
 }
 

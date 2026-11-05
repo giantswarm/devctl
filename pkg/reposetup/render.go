@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/giantswarm/microerror"
+
+	"github.com/giantswarm/devctl/v8/pkg/gen/input/ats"
 )
 
 // Renderer renders the scaffold of an accepted declaration: the template
@@ -153,6 +155,9 @@ func (r Renderer) Render(ctx context.Context, req RenderRequest) (*Scaffold, err
 	if err := writeChartOptions(dir, fields.Name, options); err != nil {
 		return nil, microerror.Mask(err)
 	}
+	if err := openChartValueMaps(dir); err != nil {
+		return nil, microerror.Mask(err)
+	}
 
 	knows, err := knownGenFlags()
 	if err != nil {
@@ -160,12 +165,19 @@ func (r Renderer) Render(ctx context.Context, req RenderRequest) (*Scaffold, err
 	}
 	_, helmErr := os.Stat(filepath.Join(dir, "helm"))
 	commands := genCommands(fields, genContext{HasHelm: helmErr == nil, Knows: knows})
+	hadATSConfig, err := ats.HasConfig(dir)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
 	if err := runGen(ctx, dir, r.Log, commands); err != nil {
 		return nil, microerror.Mask(err)
 	}
 	// After the generators: the chart tests follow the ATS dependency file
 	// `devctl gen circleci` emits, and are the repository's own from then on.
-	if err := writeChartTests(dir, fields.Name); err != nil {
+	// A template's config is kept. Where none existed before generation,
+	// replace the generator's all-skipped starter with the scaffold's config
+	// that enables its smoke test.
+	if err := writeChartTests(dir, fields.Name, hadATSConfig); err != nil {
 		return nil, microerror.Mask(err)
 	}
 

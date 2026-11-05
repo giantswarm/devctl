@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
@@ -66,6 +67,9 @@ type Config struct {
 	// Reconcile asks Flux to reconcile the sources and HelmReleases that
 	// are behind once, instead of waiting for their next interval.
 	Reconcile bool
+	// SignIn is what a refused sign-in tells the caller to do; empty is
+	// tsh kube login <installation>, the laptop's.
+	SignIn string
 
 	Clock    agentcli.Clock
 	Progress *agentcli.Progress
@@ -73,6 +77,9 @@ type Config struct {
 }
 
 // Waiter runs one rollout wait.
+// finalPollGrace bounds the poll at the deadline, which decides the outcome.
+const finalPollGrace = 30 * time.Second
+
 type Waiter struct {
 	installation, kubeContext, version string
 	charts                             map[string]bool
@@ -80,6 +87,7 @@ type Waiter struct {
 	client                             dynamic.Interface
 	timeout                            time.Duration
 	reconcile                          bool
+	signIn                             string
 	clock                              agentcli.Clock
 	progress                           *agentcli.Progress
 	warn                               func(string)
@@ -98,6 +106,10 @@ type Waiter struct {
 	// requested are the reconcile requests --reconcile made, by object:
 	// the requestedAt each carried.
 	requested map[string]string
+	// seenHelmReleases is how many HelmReleases the last poll listed.
+	seenHelmReleases int
+	// listed are the lists of this poll, by resource and namespace.
+	listed map[string][]unstructured.Unstructured
 }
 
 // New validates config.
@@ -111,17 +123,20 @@ func New(config Config) (*Waiter, error) {
 	if config.Revision != "" && (config.GitHub == nil || config.Repository == "") {
 		return nil, errors.New("rolloutwait: a Revision needs GitHub and Repository")
 	}
-	for _, name := range config.HelmReleases {
-		namespace, n, namespaced := strings.Cut(name, "/")
-		if name == "" || strings.Contains(n, "/") || (namespaced && (namespace == "" || n == "")) {
-			return nil, agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--helmrelease %q: name a HelmRelease as <name> or <namespace>/<name>", name)
-		}
+	if err := ValidateHelmReleases(config.HelmReleases); err != nil {
+		return nil, err
+	}
+	if config.Revision == "" && bare(config.Version) == "" {
+		return nil, errors.New("rolloutwait: Version must not be empty without a Revision")
 	}
 	if config.Timeout <= 0 {
 		config.Timeout = DefaultTimeout
 	}
 	if config.Warn == nil {
 		config.Warn = func(string) {}
+	}
+	if config.SignIn == "" {
+		config.SignIn = fmt.Sprintf("sign in with `tsh kube login %s`", config.Installation)
 	}
 	w := &Waiter{
 		installation:     config.Installation,
@@ -132,6 +147,7 @@ func New(config Config) (*Waiter, error) {
 		client:           config.Client,
 		timeout:          config.Timeout,
 		reconcile:        config.Reconcile,
+		signIn:           config.SignIn,
 		clock:            config.Clock,
 		progress:         config.Progress,
 		warn:             config.Warn,
@@ -156,15 +172,44 @@ func New(config Config) (*Waiter, error) {
 	return w, nil
 }
 
+// ValidateHelmReleases checks the names before a caller opens clients or
+// waits for a release; New checks them for other callers too.
+func ValidateHelmReleases(names []string) error {
+	for _, name := range names {
+		namespace, n, namespaced := strings.Cut(name, "/")
+		if name == "" || strings.Contains(n, "/") || (namespaced && (namespace == "" || n == "")) {
+			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--helmrelease %q: name a HelmRelease as <name> or <namespace>/<name>", name)
+		}
+	}
+	return nil
+}
+
 // Wait polls the installation until the release runs there, fails, turns out
 // never to get there, or the timeout passes, and fills result with the last
 // poll. The error places the outcome in the exit-code table: nil when every
 // deployment that follows the version has rolled out, exit 1 when one
 // failed, 2 at the timeout, 3 when no deployment of the charts exists,
-// none follows the version, or whether a changed app runs the change
-// cannot be told. Only the warnings of the last poll reach the result: a
-// state seen mid-roll and gone by the end is not reported.
+// none follows the version by the timeout (all suspended ends at once), or
+// whether a changed app runs the change cannot be told. Only the warnings
+// of the last poll reach the result: a state seen mid-roll and gone by the
+// end is not reported.
 func (w *Waiter) Wait(ctx context.Context, result *Result) error {
+	// The last poll runs at the deadline itself; only a read hanging past it ends here.
+	parent := ctx
+	ctx, cancel := w.clock.Timeout(ctx, w.timeout+finalPollGrace)
+	defer cancel()
+
+	err := w.wait(ctx, result)
+	if ctx.Err() != nil && parent.Err() == nil {
+		var outcome agentcli.ExitCoder
+		if err == nil || !errors.As(err, &outcome) {
+			return w.timeoutErr(result.Deployments)
+		}
+	}
+	return err
+}
+
+func (w *Waiter) wait(ctx context.Context, result *Result) error {
 	result.Version = w.version
 	result.Revision = w.revision
 	result.Charts = w.chartNames()
@@ -177,22 +222,28 @@ func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 	interval := IntervalFloor
 	reconciled := false
 	for {
-		w.polled = nil
+		w.polled, w.listed = nil, map[string][]unstructured.Unstructured{}
 		list, err := w.observe(ctx)
 		if err != nil {
 			return err
 		}
 		result.Deployments = list
 		if missing := w.missingHelmReleases(list); len(missing) > 0 {
-			return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "no HelmRelease %s on %s", strings.Join(missing, ", "), w.installation)
+			return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "no HelmRelease %s on %s: none of the %d HelmReleases in all namespaces of %s answers to it as <name> or <namespace>/<name>", strings.Join(missing, ", "), w.installation, w.seenHelmReleases, w.kubeContext)
 		}
 		if len(list) == 0 {
 			return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "no HelmRelease or App on %s deploys %s", w.installation, strings.Join(result.Charts, ", "))
 		}
-		if err := w.outcome(list); err != nil {
-			return err
+		outcome := w.outcome(list)
+		if outcome != nil {
+			// A selector may still be the one from before the GitOps merge.
+			// Give it the same budget as the rollout to start following.
+			if agentcli.Exit(outcome) != agentcli.ExitNotApplicable || !slices.ContainsFunc(list, func(d Deployment) bool { return d.State == StateNotFollowing }) {
+				return outcome
+			}
 		}
-		if pendingDeployments(list) == nil {
+		pending := pendingDeployments(list)
+		if outcome == nil && pending == nil {
 			if unknown := unknownDeployments(list); unknown != nil {
 				return agentcli.NewExitError(agentcli.ExitNotApplicable, VerdictRolloutUnknown, "%s is applied on %s, whether it runs cannot be told: %s", w.target(), w.installation, strings.Join(unknown, "; "))
 			}
@@ -206,19 +257,29 @@ func (w *Waiter) Wait(ctx context.Context, result *Result) error {
 		// A revision's objects become worth a request one after another
 		// (a HelmRelease once its values are rendered): each is asked
 		// once, when it is.
-		if w.reconcile && (!reconciled || w.revision != "") {
+		if w.reconcile && pending != nil && (!reconciled || w.revision != "") {
 			if err := w.requestReconciles(ctx, list); err != nil {
 				return err
 			}
 			reconciled = true
 		}
-		for _, d := range pendingDeployments(list) {
+		for _, d := range pending {
 			w.progress.Printf("%s: %s", d.id(), d.Message)
 		}
-		if !w.clock.Now().Add(w.clock.Scaled(interval)).Before(deadline) {
+		if outcome != nil {
+			w.progress.Printf("waiting for a deployment to follow %s on %s; GitOps may not have applied the version selector yet", w.target(), w.installation)
+		}
+		left := deadline.Sub(w.clock.Now())
+		if left <= 0 {
+			if outcome != nil {
+				return outcome
+			}
 			return w.timeoutErr(list)
 		}
-		if err := w.clock.Sleep(ctx, interval); err != nil {
+		// Sleep only to the deadline when the next poll would overshoot it,
+		// rather than ending the wait up to one poll interval early.
+		pause := min(interval, time.Duration(float64(left)/w.clock.Scale()))
+		if err := w.clock.Sleep(ctx, pause); err != nil {
 			return err
 		}
 		interval = min(2*interval, IntervalCeiling)
@@ -265,10 +326,11 @@ func (w *Waiter) missingHelmReleases(list []Deployment) []string {
 	return missing
 }
 
-// outcome is the error of a poll that ends the wait early: a failed
-// deployment (exit 1), or none that follows the version (exit 3). A
-// deployment that will not follow (a workload cluster's App pinned to an
-// older version, a HelmRelease on another range) is reported and warned
+// outcome is the error of a poll: a failed deployment (exit 1), or none
+// that follows the version (exit 3, deferred until the timeout when a
+// selector may still change). A deployment that will not follow (a workload
+// cluster's App pinned to an older version, a HelmRelease on another range)
+// is reported and warned
 // about, and the wait goes on for the others.
 func (w *Waiter) outcome(list []Deployment) error {
 	for _, d := range list {

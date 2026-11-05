@@ -1,7 +1,9 @@
-# CircleCI pipelines at the job level: `devctl ci jobs` and `devctl ci rerun`
+# CircleCI pipelines at the job level: `devctl ci jobs`, `devctl ci job` and `devctl ci rerun`
 
 ```nohighlight
 devctl ci jobs <owner/repo> <pipeline number|id>
+devctl ci job <owner/repo> <job number> [--step-output] [--lines <n>]
+devctl ci job <job URL> [--step-output] [--lines <n>]
 devctl ci rerun <owner/repo> <workflow id> [--from-failed] [--cancel]
 ```
 
@@ -58,6 +60,58 @@ devctl ci jobs giantswarm/devctl 3885
 }
 ```
 
+## `ci job`: steps and output of one job
+
+One job is read by its number in the project, the number its page
+(`https://circleci.com/gh/<owner>/<repo>/<number>`), a CircleCI commit status and `ci jobs` show: its
+name, status, page and times, every step (a parallel step once per action) with its status and times,
+and in `job.logTail` the last lines (`--lines`, 200 by default) of the output of its failed steps, led
+by the lines from its first failure when that lies before them, without terminal control sequences. It
+is the tail `devctl pr wait --failed-log` reads, for a job of any pipeline: a tag's, a branch's, one no
+pull request waits on. The CircleCI login is used in devctl's process only, a step's output is read
+from its signed URL without it, so a session reads a failed job without a token of its own, a browser
+or the CircleCI UI. Output CircleCI does not answer is `job.logError`; the steps still stand.
+
+Use `--step-output` to include output from **every** step, successful ones included. Each action
+gets `outputHead` and `outputTail`, the first and last `--lines` lines (200 each by default), with
+terminal controls removed. The excerpts overlap for short output. A step whose output cannot be
+read gets `outputError`; the other steps are still read. Empty output and steps without an output
+URL have no excerpts. An absent excerpt does not prove a scan ran.
+
+A nancy step can read `success` even when the scanner could not answer. Its output says
+`Error: guide API request failed` or `NOT SCANNED`, while a completed scan prints its audited and
+vulnerable dependency counts. Read that evidence without the UI:
+
+```nohighlight
+devctl ci job giantswarm/devctl 7781 --step-output
+```
+
+Look for `Check if dependencies have known security vulnerabilities` in `job.steps`: its status
+stays as CircleCI reported it, and its excerpts distinguish the outage from a completed scan.
+`job.logTail` continues to contain only failed steps' output.
+
+The job can also be named by the URL a CircleCI commit status links, alone. A GitHub App pipeline's
+status links `https://app.circleci.com/workflow/<id>/job/<id>`, which names neither the project nor the
+number: the command reads the workflow for its project and finds the job's number among its jobs. A job
+that has not started has no number yet and is not applicable (exit 3).
+
+```nohighlight
+devctl ci job giantswarm/agent-toolchains-lab 7 | jq -r .job.logTail
+```
+
+```json
+{
+  "command": "ci job", "schemaVersion": 1, "exitCode": 0, "verdict": "listed", "reason": "", "warnings": [],
+  "repository": "giantswarm/agent-toolchains-lab",
+  "job": {"number": 7, "name": "push-go", "status": "failed", "url": "https://circleci.com/gh/giantswarm/agent-toolchains-lab/7",
+          "pipelineId": "137d83a2-…", "workflowId": "3f96b11b-…",
+          "startedAt": "2026-10-22T23:25:44.983Z", "stoppedAt": "2026-10-22T23:25:47.057Z",
+          "steps": [{"name": "Checkout code", "index": 0, "status": "success", "startedAt": "…", "endedAt": "…"},
+                    {"name": "Build multi-arch image (pushed to all registries unless push=false)", "index": 0, "status": "failed", "startedAt": "…", "endedAt": "…"}],
+          "logTail": "Building for platforms: linux/amd64\nNo valid registry/tag combinations found for push. Exiting.\n\nExited with code exit status 1\n"}
+}
+```
+
 ## `ci rerun`: one workflow, once an hour
 
 One workflow is rerun: every job of it, or with `--from-failed` its failed jobs and the jobs that
@@ -111,9 +165,11 @@ A run of the name newer than the one given is named in `warnings`; the rerun is 
 |---|---|---|
 | 0 | `green` | the rerun started; `rerunId` and `rerunUrl` are the new workflow |
 | 2 | `timeout` | `--cancel`: the workflow still reads running two minutes after the cancel |
+| 2 | `transient` | a read exhausted its bounded retry window; the reason names the attempts, elapsed time and last API or network failure |
 | 3 | `not_applicable` | no such workflow, or one of another repository |
 | 5 | `refused` | a rerun of the workflow's name within the hour, a workflow still running without `--cancel`, or a rerun CircleCI refused (the reason carries its message) |
 | 7 | `usage` | wrong usage or a tooling failure |
 | 8 | `auth_required` | no CircleCI login, or one without Write access (`devctl auth login --circleci-only`) |
+| 13 | `remote_error` | A CircleCI request failed. The command line was valid; the reason preserves the service error. Existing timeout and post-merge outcomes take precedence. |
 
-`ci jobs` exits 0 (`listed`), 3 (no such pipeline of the repository), 7 or 8.
+`ci jobs` exits 0 (`listed`), 2 (`transient`), 3 (no such pipeline of the repository), 7, 8 or 13 (`remote_error`).

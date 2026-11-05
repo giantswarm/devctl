@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -89,8 +90,8 @@ func Default() Config {
 // code to leave with: the program's, or 8 without a usable login and 7 when
 // the program is not found or the chain of calls loops ([MaxChain]), each
 // with one line on stderr naming the cause.
-// gh acting on a repository of an owner outside [AppOwners] runs without the
-// token, on the person's own gh login.
+// gh acting on a repository of an owner outside [AppOwners], or uploading a
+// file ([GHAttaches]), runs without the token, on the person's own gh login.
 func Run(ctx context.Context, c Config, name string, args []string) int {
 	path, err := LookPath(name, c.Path, c.Self)
 	if err != nil {
@@ -104,8 +105,8 @@ func Run(ctx context.Context, c Config, name string, args []string) int {
 	}
 	argv := append([]string{name}, args...)
 	if strings.TrimSuffix(filepath.Base(name), ".exe") == "gh" {
-		if owner := GHOwner(args, environ, c.Remotes); owner != "" && !AppOwners[owner] {
-			return c.run(path, argv, without(environ, EnvToken))
+		if owner := GHOwner(args, environ, c.Remotes); (owner != "" && !AppOwners[owner]) || GHAttaches(args) {
+			return c.run(path, argv, withoutGHTokens(environ))
 		}
 	}
 	token, err := c.Token(ctx, MinValidity)
@@ -125,7 +126,7 @@ func Run(ctx context.Context, c Config, name string, args []string) int {
 func chained(environ []string, path, self string) ([]string, error) {
 	var chain []string
 	for _, kv := range environ {
-		if v, ok := strings.CutPrefix(kv, EnvChain+"="); ok && v != "" {
+		if v, ok := envValue(kv, EnvChain); ok && v != "" {
 			chain = filepath.SplitList(v)
 		}
 	}
@@ -157,11 +158,18 @@ func Environ(environ []string, token string) []string {
 func without(environ []string, name string) []string {
 	out := make([]string, 0, len(environ)+1)
 	for _, kv := range environ {
-		if !strings.HasPrefix(kv, name+"=") {
+		if _, ok := envValue(kv, name); !ok {
 			out = append(out, kv)
 		}
 	}
 	return out
+}
+
+// envValue matches environment names using the host's rules. Windows keeps
+// their spelling but compares names without case sensitivity.
+func envValue(kv, name string) (string, bool) {
+	key, value, ok := strings.Cut(kv, "=")
+	return value, ok && (key == name || runtime.GOOS == "windows" && strings.EqualFold(key, name))
 }
 
 // LookPath is the program name names: a path as given, a bare name the first
@@ -172,8 +180,12 @@ func without(environ []string, name string) []string {
 // executable of that name on path that is not self.
 func LookPath(name, path, self string) (string, error) {
 	selfResolved := resolve(self)
+	return lookPath(name, path, func(candidate string) bool { return resolve(candidate) == selfResolved })
+}
+
+func lookPath(name, path string, isDevctl func(string) bool) (string, error) {
 	if strings.ContainsRune(name, filepath.Separator) || strings.ContainsRune(name, '/') {
-		if resolve(name) == selfResolved {
+		if isDevctl(name) {
 			return "", fmt.Errorf("%s is devctl itself", name)
 		}
 		if !executable(name) {
@@ -191,7 +203,7 @@ func LookPath(name, path, self string) (string, error) {
 			if !executable(candidate) {
 				continue
 			}
-			if resolve(candidate) == selfResolved {
+			if isDevctl(candidate) {
 				past = len(found)
 				continue
 			}

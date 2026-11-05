@@ -73,6 +73,8 @@ func TestValidateEntries(t *testing.T) {
 		{name: "taken-name", template: TemplateGo, verdict: VerdictTaken, fields: []string{"name"}},
 		{name: "renamed-name", template: TemplateGo, verdict: VerdictTaken, fields: []string{"name"}},
 		{name: "no-ci-jobs", template: TemplateMinimal, verdict: VerdictFree, fields: []string{"gen.ci.generate"}},
+		// The per-image pipeline is a job whatever the language.
+		{name: "multi-image-generated", template: TemplateMinimal, verdict: VerdictFree},
 		{name: "align-opt-in", template: TemplateGo, verdict: VerdictFree},
 		{name: "align-not-bool", template: TemplateGo, verdict: VerdictFree, fields: []string{"align"}},
 		{name: "agent-merge-opt-out", template: TemplateGo, verdict: VerdictFree},
@@ -85,6 +87,8 @@ func TestValidateEntries(t *testing.T) {
 		{name: "template-content-generated", template: TemplateGo, verdict: VerdictFree, fields: []string{"gen.ci.templateContent"}},
 		{name: "maintenance-branches", template: TemplateMinimal, verdict: VerdictFree},
 		{name: "maintenance-branches-no-fork", template: TemplateGo, verdict: VerdictFree, fields: []string{"gen.ci.maintenanceBranches"}},
+		{name: "patch-candidates", template: TemplateGo, verdict: VerdictFree},
+		{name: "patch-candidates-legacy", template: TemplateGo, verdict: VerdictFree, fields: []string{"gen.ci.patchCandidates"}},
 	}
 
 	for _, tc := range tests {
@@ -126,7 +130,7 @@ func problemFields(problems []Problem) []string {
 func TestValidateMessagesNameTheReason(t *testing.T) {
 	v, tf := fixtureValidator(t)
 	result, err := v.Validate(context.Background(), Request{TeamFile: tf, Names: []string{
-		"node-ui", "plans-wrong-language", "hello-world-app", "chart-name-mismatch", "internal-visibility", "unknown-field", "unknown-flavour", "taken-name", "renamed-name", "twice", "no-gen", "template-content-generated", "maintenance-branches-no-fork",
+		"node-ui", "plans-wrong-language", "hello-world-app", "chart-name-mismatch", "internal-visibility", "unknown-field", "unknown-flavour", "taken-name", "renamed-name", "twice", "no-gen", "template-content-generated", "maintenance-branches-no-fork", "patch-candidates-legacy",
 	}})
 	require.NoError(t, err)
 
@@ -143,10 +147,11 @@ func TestValidateMessagesNameTheReason(t *testing.T) {
 	require.Contains(t, messages["chart-name-mismatch/gen.ci.chartName"], `must equal the repository name "chart-name-mismatch"`)
 	require.Contains(t, messages["template-content-generated/gen.ci.templateContent"], "contradicts gen.ci.generate: true")
 	require.Contains(t, messages["maintenance-branches-no-fork/gen.ci.maintenanceBranches"], "needs gen.flavours fork")
+	require.Contains(t, messages["patch-candidates-legacy/gen.ci.patchCandidates"], "needs gen.ci.releaseWorkflow auto-release")
 	require.Contains(t, messages["internal-visibility/visibility"], "public")
 	require.Contains(t, messages["internal-visibility/lifecycle"], "archived")
 	require.Equal(t, "not a field of the repositories schema", messages["unknown-field/template"])
-	require.Equal(t, "value must be one of 'app', 'cli', 'cluster-app', 'customer', 'fleet', 'fork', 'generic', 'k8sapi', 'plans'", messages["unknown-flavour/gen.flavours[0]"])
+	require.Equal(t, "value must be one of 'app', 'cli', 'cluster-app', 'customer', 'fleet', 'fork', 'generic', 'k8sapi', 'multi-image', 'plans'", messages["unknown-flavour/gen.flavours[0]"])
 	require.Equal(t, "taken: repository giantswarm/taken-name exists", messages["taken-name/name"])
 	require.Contains(t, messages["renamed-name/name"], "redirects to giantswarm/new-name")
 	require.Contains(t, messages["twice/name"], "declared more than once")
@@ -348,6 +353,7 @@ func TestValidateExistingMode(t *testing.T) {
 		{name: "chart-name-mismatch", template: TemplateChart, verdict: VerdictFree},
 		{name: "Bad_Name", template: TemplateMinimal, verdict: VerdictFree},
 		{name: "no-ci-jobs", template: TemplateMinimal, verdict: VerdictFree},
+		{name: "multi-image-generated", template: TemplateMinimal, verdict: VerdictFree},
 		{name: "taken-name", template: TemplateGo, verdict: VerdictTaken},
 		{name: "renamed-name", template: TemplateGo, verdict: VerdictTaken},
 		// The schema and the file's integrity still refuse: gen, once

@@ -42,6 +42,10 @@ A repository to be used with GitOps containing kubernetes clusters.
 
 `devctl gen workflows` generates the mctl workflows of a `<customer>-management-clusters` repository (`zz_generated.mctl_*.yaml`: cluster init PR, `/init`, `/config`, `/create-mc`, the `mctl/ready-to-merge` gate and the merge and close cascades), running the mctl image tag devctl pins (`vars.MCTL_IMAGE` overrides it). They never run in `giantswarm/template-management-clusters`. The unprefixed copies and `op.env` that `mctl create cmc-repo` wrote are deleted.
 
+## `multi-image`
+
+A repository of images alone, several of them, each with its own release line: one image per `toolchains/<name>/` directory holding a `Dockerfile`, named `giantswarm/<repo>/<name>` and released as `<name>/vX.Y.Z` (giantswarm/agent-toolchains). Declared on its own with `language: generic`, on generated CI with `gen.ci.releaseWorkflow: auto-release` (the default there; `legacy` is refused). `devctl gen circleci` renders its per-image pipeline and `devctl gen workflows` its per-image Auto Release ([details](gen.md#multi-image-repositories)).
+
 ## `plans`
 
 A team plans repository: versioned PRDs, their companion websites and the plan-workflow agent skills (one `<team>-plans` repository per team). Declared on its own (`flavours: [plans]`) with `language: generic` and `gen.ci.generate: false` -- there is no CircleCI for it, the same as `customer`. It derives the template `giantswarm/template-plans`; any other language is refused, the same way language `node` is until its template ships. `devctl gen plans` writes the repository's shared set-up, the `.claude/settings.json` that enables the `gs-plans` plugin ([gen.md](gen.md#generating-a-plans-repositorys-set-up)).

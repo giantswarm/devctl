@@ -189,8 +189,8 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 	b := s.baseline
 	branch := s.branch()
 
-	protection, err := r.classicProtection(ctx, s, branch)
-	if err != nil {
+	protection, known, err := r.classicProtection(ctx, s, sr, branch)
+	if err != nil || !known {
 		return err
 	}
 
@@ -202,7 +202,7 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 	}
 
 	reported, reportedKnown := r.reportedChecks(ctx, s, sr, branch)
-	gates, pipelineKnown, err := r.pipelineGates(ctx, s)
+	gates, pipelineKnown, err := r.gates(ctx, s)
 	if err != nil {
 		return err
 	}
@@ -214,7 +214,7 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 	var changes []string
 	if protection == nil {
 		changes = append(changes, "protect "+branch)
-	} else {
+	} else if r.WriteClassicChecks == nil {
 		if got := protection.GetRequiredPullRequestReviews().GetRequiredApprovingReviewCount(); got != b.RequiredReviews {
 			changes = append(changes, fmt.Sprintf("required reviews %d → %d", got, b.RequiredReviews))
 		}
@@ -246,6 +246,9 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 	}
 
 	return s.plan(sr, strings.Join(changes, "; "), func() error {
+		if r.WriteClassicChecks != nil {
+			return r.WriteClassicChecks(ctx, s.owner, s.name, branch, protection, want)
+		}
 		req := &github.ProtectionRequest{
 			RequiredPullRequestReviews: &github.PullRequestReviewsEnforcementRequest{
 				RequiredApprovingReviewCount: b.RequiredReviews,
@@ -291,8 +294,8 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 	b := s.baseline
 	branch := s.branch()
 
-	classic, err := r.classicProtection(ctx, s, branch)
-	if err != nil {
+	classic, known, err := r.classicProtection(ctx, s, sr, branch)
+	if err != nil || (!known && have == nil) {
 		return err
 	}
 
@@ -306,7 +309,7 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 	current := contexts(from.checks)
 
 	reported, reportedKnown := r.reportedChecks(ctx, s, sr, branch)
-	gates, pipelineKnown, err := r.pipelineGates(ctx, s)
+	gates, pipelineKnown, err := r.gates(ctx, s)
 	if err != nil {
 		return err
 	}
@@ -335,7 +338,7 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 		enforcement: github.RulesetEnforcementActive,
 		include:     []string{defaultBranchRef},
 		pullRequest: !split,
-		checks:      ruleChecks(want, actionsGates(b, s.fields.RequiredChecks), from.checks),
+		checks:      ruleChecks(want, r.actionsGates(b, s.fields.RequiredChecks), from.checks),
 		strict:      b.StrictChecks,
 		noDeletion:  true,
 		noForcePush: true,
@@ -424,7 +427,7 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 // strictness. from is have as stateOfRuleset reads it.
 func (r *Runner) stepRulesetChecks(ctx context.Context, s *run, sr *StepResult, have *github.RepositoryRuleset, from rulesetState, want []string) error {
 	desired := from
-	desired.checks = ruleChecks(want, actionsGates(s.baseline, s.fields.RequiredChecks), from.checks)
+	desired.checks = ruleChecks(want, r.actionsGates(s.baseline, s.fields.RequiredChecks), from.checks)
 	if from.checks == nil {
 		desired.strict = s.baseline.StrictChecks
 	}
@@ -566,16 +569,27 @@ func (r *Runner) writeRulesetTeamRefused(ctx context.Context, s *run, sr *StepRe
 }
 
 // classicProtection reads the classic branch protection of branch, nil when
-// the branch has none.
-func (r *Runner) classicProtection(ctx context.Context, s *run, branch string) (*github.Protection, error) {
+// the branch has none. In check mode a forbidden read is reported unchecked
+// and known is false, so an unreadable protection is never taken for absent.
+// Repair mode requires the read to succeed before planning any migration.
+func (r *Runner) classicProtection(ctx context.Context, s *run, sr *StepResult, branch string) (protection *github.Protection, known bool, err error) {
 	protection, resp, err := r.GitHub.Repositories.GetBranchProtection(ctx, s.owner, s.name, branch)
 	switch {
 	case errors.Is(err, github.ErrBranchNotProtected) || isNotFound(resp, err):
-		return nil, nil
+		return nil, true, nil
+	case s.req.Mode == ModeCheck && isForbidden(err):
+		sr.Findings = append(sr.Findings, Finding{
+			Kind:     FindingUnchecked,
+			Message:  fmt.Sprintf("cannot read classic protection with this token on %s; classic protection check skipped", branch),
+			Fix:      "run with a token that has administration: read permission to check classic protection and any pending migration to rulesets",
+			Advisory: true,
+		})
+		sr.Summary = "classic protection check skipped"
+		return nil, false, nil
 	case err != nil:
-		return nil, err
+		return nil, false, err
 	}
-	return protection, nil
+	return protection, true, nil
 }
 
 // engineRulesets are the engine's rulesets of a repository, read in full,
@@ -600,7 +614,7 @@ type engineRulesets struct {
 // declaration standing. The organization's rulesets are not read.
 func (r *Runner) ownRuleset(ctx context.Context, s *run, sr *StepResult) (engineRulesets, error) {
 	var own engineRulesets
-	list, _, err := r.GitHub.Repositories.GetAllRulesets(ctx, s.owner, s.name, &github.RepositoryListRulesetsOptions{IncludesParents: new(false)})
+	list, err := ListRepositoryRulesets(ctx, r.GitHub, s.owner, s.name)
 	if err != nil {
 		return own, err
 	}
@@ -1018,7 +1032,10 @@ func ruleChecks(want []string, actions map[string]bool, current []*github.RuleSt
 
 // actionsGates are the contexts known to be GitHub Actions checks: the
 // baseline's gates and the entry's declared requiredChecks.
-func actionsGates(b Baseline, declared []string) map[string]bool {
+func (r *Runner) actionsGates(b Baseline, declared []string) map[string]bool {
+	if r.PreserveCheckSources {
+		return nil
+	}
 	return toSet(slices.Concat(b.RequiredChecks, b.RequiredChecksIfReported, declared))
 }
 
@@ -1113,6 +1130,25 @@ func describeActor(a *github.BypassActor, team *github.Team) string {
 		return fmt.Sprintf("team %d on pull requests", a.GetActorID())
 	}
 	return fmt.Sprintf("%s %d (%s)", kind, a.GetActorID(), mode)
+}
+
+// gates returns the contexts required once they have reported: the
+// pipeline's branch-side jobs (known as pipelineGates says) and Heimdall's
+// gatekeeper when the default branch has a tests/e2e directory.
+func (r *Runner) gates(ctx context.Context, s *run) (gates []string, known bool, err error) {
+	gates, known, err = r.pipelineGates(ctx, s)
+	if err != nil {
+		return nil, false, err
+	}
+	_, dir, resp, err := r.GitHub.Repositories.GetContents(ctx, s.owner, s.name, E2ETestsDir, &github.RepositoryContentGetOptions{Ref: s.branch()})
+	switch {
+	case isNotFound(resp, err):
+	case err != nil:
+		return nil, false, fmt.Errorf("%s: %s: %w", s.slug(), E2ETestsDir, err)
+	case dir != nil:
+		gates = append(gates, HeimdallContext)
+	}
+	return gates, known, nil
 }
 
 // pipelineGates reads the pipeline — the request's documents, the

@@ -42,6 +42,7 @@ func newRunner(t *testing.T, routes sequence.Routes, github func(context.Context
 		},
 		endpoints: func() agentcli.Endpoints { return endpoints },
 		clock:     func() (agentcli.Clock, error) { return agentcli.NewClock(0.001, nil), nil },
+		github:    newClients,
 	}
 	return r, stdout, stderr, server
 }
@@ -75,7 +76,7 @@ func green() sequence.Routes {
 			"number": 42, "state": "open", "draft": false, "mergeable_state": "clean", "title": "feat: thing", "node_id": "PR_1",
 			"user": map[string]any{"login": "someone", "type": "User"},
 			"head": map[string]any{"sha": "abc123", "ref": "feature", "repo": map[string]any{"full_name": "o/r"}},
-			"base": map[string]any{"ref": "main", "repo": map[string]any{"full_name": "o/r"}},
+			"base": map[string]any{"ref": "main", "sha": "base123", "repo": map[string]any{"full_name": "o/r"}},
 		}}},
 		"GET /repos/o/r/commits/abc123/check-runs": {{Body: map[string]any{"total_count": 1, "check_runs": []any{
 			map[string]any{"id": 1, "name": "go-build", "status": "completed", "conclusion": "success", "html_url": "https://github.com/o/r/runs/1"},
@@ -89,6 +90,9 @@ func green() sequence.Routes {
 		"GET /repos/o/r/issues/42/comments":           {{Body: []any{}}},
 		"GET /repos/o/r/git/commits/abc123":           {{Body: map[string]any{"sha": "abc123", "committer": map[string]any{"date": "2026-10-01T10:00:00Z"}}}},
 		"GET /repos/o/r/compare/main...abc123":        {{Body: map[string]any{"status": "ahead", "ahead_by": 1, "behind_by": 0}}},
+		"GET /repos/o/r/compare/base123...abc123": {{Body: map[string]any{"total_commits": 1, "commits": []any{
+			map[string]any{"sha": "abc123", "commit": map[string]any{"message": "feat: thing"}},
+		}}}},
 	}
 }
 
@@ -132,6 +136,29 @@ func Test_run_rebaseFlag(t *testing.T) {
 	}
 	if doc := decode(t, stdout); doc["method"] != "rebase" {
 		t.Errorf("--rebase: want method rebase, got %v", doc["method"])
+	}
+}
+
+func Test_run_autosquashRefusal(t *testing.T) {
+	routes := green()
+	routes["GET /repos/o/r/compare/base123...abc123"][0].Body = map[string]any{
+		"total_commits": 1, "commits": []any{map[string]any{
+			"sha": "abc123", "commit": map[string]any{"message": "fixup! fix: thing"},
+		}},
+	}
+	r, stdout, _, server := newRunner(t, routes, loggedIn, &flag{Timeout: time.Minute, Rebase: true, NoReleaseWait: true, AcceptRed: []string{"e2e"}})
+	err := r.run(context.Background(), []string{"o/r", "42"})
+	if agentcli.Exit(err) != agentcli.ExitNotApplicable {
+		t.Fatalf("want exit 3, got %v", err)
+	}
+	doc := decode(t, stdout)
+	if doc["verdict"] != "not_applicable" || doc["exitCode"] != 3.0 || doc["method"] != "rebase" || !strings.Contains(doc["reason"].(string), "abc123 fixup! fix: thing") {
+		t.Errorf("want a history refusal in the command document, got %v", doc)
+	}
+	for _, request := range server.Requests() {
+		if request.Method != http.MethodGet {
+			t.Errorf("a history refusal must not write: %s", request)
+		}
 	}
 }
 

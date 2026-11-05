@@ -21,8 +21,9 @@ const (
 
 // The check states the document shares between check runs and statuses.
 const (
-	statusCompleted = "completed"
-	statusPending   = "pending"
+	statusCompleted   = "completed"
+	statusPending     = "pending"
+	conclusionSuccess = "success"
 	// conclusionActionRequired is a completed check run or Actions run
 	// waiting for a human.
 	conclusionActionRequired = "action_required"
@@ -71,6 +72,9 @@ type CircleCI struct {
 	PipelineID     string     `json:"pipelineId"`
 	PipelineNumber int64      `json:"pipelineNumber"`
 	Workflows      []Workflow `json:"workflows"`
+	// SetupHalted: setup succeeded without a continuation for
+	// setupHaltGrace, and its jobs posted their own successful contexts.
+	SetupHalted bool `json:"setupHalted,omitempty"`
 }
 
 // Workflow is one CircleCI workflow of the pipeline.
@@ -87,17 +91,34 @@ type ActionRun struct {
 	Status     string `json:"status"`
 	Conclusion string `json:"conclusion"`
 	URL        string `json:"url"`
+	// JobsCompleted: the run still reads in progress while every job of it
+	// the head lists has completed, the last one RunSettleGrace ago or longer;
+	// it no longer keeps the head waiting, its jobs are its verdict.
+	JobsCompleted bool `json:"jobsCompleted,omitempty"`
 }
+
+// RunSettleGrace is how long a GitHub Actions run may read in progress after
+// its last listed job completed before the wait counts it finished. GitHub
+// completes a run seconds after its last job, and starts a job behind needs:
+// seconds after the jobs it needs; it has left a run in progress for an hour
+// after its only job succeeded.
+const RunSettleGrace = 5 * time.Minute
 
 // snapshot is what one poll read; evaluate turns it into a verdict.
 type snapshot struct {
+	// now is when the poll read the head; zero never counts a run in
+	// progress finished.
+	now       time.Time
 	headSHA   string
 	checkRuns []*github.CheckRun
 	statuses  []*github.RepoStatus
 	runs      []*github.WorkflowRun
 	// circleci is nil when CircleCI is not consulted for this head.
 	circleci *circleSnapshot
-	required []string
+	// circleJobs are, when CircleCI is read through its commit statuses,
+	// the jobs expected to post one.
+	circleJobs []string
+	required   []string
 	// accepted are the check names whose failure the caller accepts
 	// (--accept-red); a required one is never accepted.
 	accepted map[string]bool
@@ -110,11 +131,16 @@ type circleSnapshot struct {
 	// pipeline is nil while CircleCI has no pipeline for the head revision.
 	pipeline  *circleciclient.Pipeline
 	workflows []circleciclient.Workflow
+	// setupJobs are read only for a possible halted setup, after its grace.
+	setupJobs map[string][]circleciclient.Job
 }
 
 // evaluation is the verdict of one snapshot with the document fields it
 // fills.
 type evaluation struct {
+	// headSHA identifies the complete poll behind timeout diagnostics when
+	// a later poll has only partly read a changed head.
+	headSHA  string
 	checks   []Check
 	actions  []ActionRun
 	circleci *CircleCI
@@ -133,6 +159,9 @@ type evaluation struct {
 	// unfinished names everything the head still waits for, in the words the
 	// document uses at a timeout.
 	unfinished []string
+	// missingContinuation is the completed setup's evidence for the reason
+	// at the deadline; it does not end the wait early or make the head green.
+	missingContinuation string
 	// notRequired names the pending check runs of named apps other than
 	// GitHub Actions and the pending statuses of other CI than CircleCI the
 	// base does not require: the merge box does not wait for them, and
@@ -217,8 +246,13 @@ func (e *evaluation) approvalReason() string {
 //     its workflows listed or their jobs' statuses on GitHub), and the newest
 //     run of each of its workflows is success (not_run counts as skipped);
 //  3. no GitHub Actions run of the head is queued, in progress, waiting or
-//     awaiting approval;
-//  4. every required status context has reported.
+//     awaiting approval; a run in progress whose listed jobs have all
+//     completed RunSettleGrace ago is judged by them (rule 1), as GitHub may
+//     leave it in progress long after;
+//  4. every required status context has reported;
+//  5. when CircleCI is read through its commit statuses, every job the head's
+//     configuration runs has posted one: a job behind requires: posts
+//     nothing until it starts.
 //
 // A failure anywhere is red: at once when the base requires the failed
 // context or nothing it requires is pending or absent, else once the required
@@ -233,7 +267,8 @@ func (e *evaluation) approvalReason() string {
 // Actions runs awaiting approval is approvalOnly: no wait starts them, a
 // member's approval does.
 func evaluate(s snapshot) *evaluation {
-	e := &evaluation{checks: []Check{}, actions: []ActionRun{}, seen: map[string]bool{}}
+	e := &evaluation{headSHA: s.headSHA, checks: []Check{}, actions: []ActionRun{}, seen: map[string]bool{}}
+	e.missingContinuation = missingContinuation(s.circleci, circleStatuses(s.statuses))
 	required := map[string]bool{}
 	for _, name := range s.required {
 		required[name] = true
@@ -300,7 +335,7 @@ func evaluate(s snapshot) *evaluation {
 			check.Status = statusPending
 			e.requiredPending = e.requiredPending || check.Required
 			e.unfinished = append(e.unfinished, fmt.Sprintf("status %s (pending)", name))
-		case state == "success":
+		case state == conclusionSuccess:
 			check.Conclusion = state
 		case s.accepts(name):
 			check.Conclusion = state
@@ -327,13 +362,20 @@ func evaluate(s snapshot) *evaluation {
 		case action.Conclusion == conclusionActionRequired:
 			e.awaitingApproval = append(e.awaitingApproval, action)
 			e.unfinished = append(e.unfinished, fmt.Sprintf("actions run %s (awaiting approval)", action.Name))
+		case jobsCompleted(run, checkRuns, s.now):
+			e.actions[len(e.actions)-1].JobsCompleted = true
 		case workflowRunOpen(action.Status):
 			e.unfinished = append(e.unfinished, fmt.Sprintf("actions run %s (%s)", action.Name, action.Status))
 		}
 	}
 
 	if s.circleci != nil {
-		e.evaluateCircleCI(s.headSHA, s.circleci, circleStatuses(s.statuses), s.accepts)
+		e.evaluateCircleCI(s.now, s.headSHA, s.circleci, s.statuses, s.accepts)
+	}
+	for _, job := range s.circleJobs {
+		if !reported[circleStatusPrefix+job] {
+			e.unfinished = append(e.unfinished, fmt.Sprintf("status %s%s (not posted yet)", circleStatusPrefix, job))
+		}
 	}
 
 	// Settled is judged before the required contexts: with nothing pending,
@@ -378,11 +420,10 @@ func circleStatuses(statuses []*github.RepoStatus) int {
 	return n
 }
 
-// evaluateCircleCI applies rule 2 to the head's pipeline. circleStatuses is
-// how many CircleCI jobs have posted to GitHub: an empty listing or a setup
-// workflow listed on its own is not the pipeline's last word, and GitHub
-// tells whether its continuation has run.
-func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot, circleStatuses int, accepts func(string) bool) {
+// evaluateCircleCI applies rule 2 to the head's pipeline. An empty listing
+// or a setup workflow listed on its own is not the pipeline's last word,
+// and GitHub tells whether its continuation has run.
+func (e *evaluation) evaluateCircleCI(now time.Time, headSHA string, c *circleSnapshot, statuses []*github.RepoStatus, accepts func(string) bool) {
 	if c.pipeline == nil {
 		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline for %s (absent)", headSHA))
 		return
@@ -398,11 +439,13 @@ func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot, circleS
 	}
 	workflows := latestWorkflows(c.workflows)
 	switch {
+	case c.setupHalted(now, statuses):
+		e.circleci.SetupHalted = true
 	case circleciclient.PipelineContinuing(c.pipeline.State):
 		// A finished setup workflow is not the pipeline's last: the continued
 		// workflows post the build's contexts once they exist.
 		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline %d (%s, continuation not created yet)", c.pipeline.Number, c.pipeline.State))
-	case circleStatuses > 1:
+	case circleStatuses(statuses) > 1:
 		// More than one CircleCI job has posted to the head: the build runs or
 		// ran, whatever the listing reads, and the jobs' contexts are its
 		// verdict (rule 1). The listing is read for what it has: a workflow
@@ -468,7 +511,7 @@ func (e *evaluation) unseen(accepted map[string]bool) []string {
 // a merge.
 func checkRunPassed(conclusion string) bool {
 	switch conclusion {
-	case "success", "neutral", "skipped":
+	case conclusionSuccess, "neutral", "skipped":
 		return true
 	}
 	return false
@@ -481,6 +524,30 @@ func workflowRunOpen(status string) bool {
 		return true
 	}
 	return false
+}
+
+// jobsCompleted: the run reads in progress, and the head lists at least one
+// job of it, every one completed (not awaiting a human), the last
+// RunSettleGrace before now or earlier. A queued or waiting run, or one whose
+// jobs are not listed, keeps the wait going.
+func jobsCompleted(run *github.WorkflowRun, checkRuns []headCheckRun, now time.Time) bool {
+	if run.GetStatus() != "in_progress" || now.IsZero() {
+		return false
+	}
+	var last time.Time
+	for _, c := range checkRuns {
+		if c.workflow.GetID() != run.GetID() {
+			continue
+		}
+		completed := c.run.GetCompletedAt().Time
+		if c.run.GetStatus() != statusCompleted || c.run.GetConclusion() == conclusionActionRequired || completed.IsZero() {
+			return false
+		}
+		if completed.After(last) {
+			last = completed
+		}
+	}
+	return !last.IsZero() && !now.Before(last.Add(RunSettleGrace))
 }
 
 // otherApp: the check run is reported by a named app other than GitHub
@@ -537,7 +604,9 @@ type checkRunGroup struct {
 // twice, while the jobs of a matrix, or of several workflows calling one
 // reusable workflow, each count. A check run outside a listed workflow run
 // keeps one run per name: the one started last, and of two started together
-// the one created later.
+// the one created later. A cancellation superseded by a later-started check
+// in another run of the same workflow is ignored even when that workflow
+// run has a lower id; jobs need not start in workflow creation order.
 func currentCheckRuns(runs []*github.CheckRun, workflowRuns []*github.WorkflowRun) []headCheckRun {
 	bySuite := map[int64]*github.WorkflowRun{}
 	for _, run := range workflowRuns {
@@ -549,7 +618,7 @@ func currentCheckRuns(runs []*github.CheckRun, workflowRuns []*github.WorkflowRu
 	groups := map[string]*checkRunGroup{}
 	for _, run := range runs {
 		workflow := bySuite[run.GetCheckSuite().GetID()]
-		if supersededCheckRun(run, workflow, openRuns) {
+		if supersededCheckRun(run, workflow, openRuns) || supersededCancelledCheckRun(run, workflow, runs, bySuite) {
 			continue
 		}
 		key := run.GetName() + "\x00" + workflowKey(workflow)
@@ -581,6 +650,33 @@ func currentCheckRuns(runs []*github.CheckRun, workflowRuns []*github.WorkflowRu
 		return a.GetID() < b.GetID()
 	})
 	return current
+}
+
+// supersededCancelledCheckRun compares job start order across runs of the
+// same workflow. A cancelled matrix job still counts even if another run
+// started later: a same-name check cannot identify which sibling it replaces.
+func supersededCancelledCheckRun(run *github.CheckRun, workflow *github.WorkflowRun, runs []*github.CheckRun, bySuite map[int64]*github.WorkflowRun) bool {
+	if run.GetConclusion() != "cancelled" || workflow == nil {
+		return false
+	}
+	superseded := false
+	for _, other := range runs {
+		if other.GetName() != run.GetName() {
+			continue
+		}
+		otherWorkflow := bySuite[other.GetCheckSuite().GetID()]
+		if otherWorkflow == nil || workflowKey(otherWorkflow) != workflowKey(workflow) {
+			continue
+		}
+		if otherWorkflow.GetID() == workflow.GetID() {
+			if other.GetID() != run.GetID() {
+				return false
+			}
+			continue
+		}
+		superseded = superseded || newerCheckRun(other, run)
+	}
+	return superseded
 }
 
 // newestOpenWorkflowRuns maps each workflow to its newest run for the head

@@ -46,7 +46,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.AppNamespace, "target-namespace", "default", "Kubernetes namespace to deploy the application to")
 
 	// Deployment flags
-	cmd.Flags().DurationVar(&f.Timeout, "timeout", 300*time.Second, "Timeout in seconds to wait for deployment")
+	cmd.Flags().DurationVar(&f.Timeout, "timeout", 300*time.Second, "Timeout for each wait (pull request merge and app deployment), e.g. 5m or 30s")
 }
 
 func (f *flag) Validate() error {
@@ -67,6 +67,9 @@ func (f *flag) Validate() error {
 	}
 	if err := validate.Version("--app-version", f.AppVersion); err != nil {
 		return microerror.Maskf(invalidFlagError, "%s", err)
+	}
+	if f.Timeout <= 0 {
+		return microerror.Maskf(invalidFlagError, "--timeout must be positive")
 	}
 
 	return nil

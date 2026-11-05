@@ -13,6 +13,12 @@ var setupConfigTemplate string
 //go:embed workflows.yml.template
 var workflowsTemplate string
 
+//go:embed multi-image-setup-config.yml.template
+var multiImageSetupConfigTemplate string
+
+//go:embed multi-image-workflows.yml.template
+var multiImageWorkflowsTemplate string
+
 // releaseBranches matches the maintenance branches the generated auto-release
 // workflow tags (release-2.x, release-v3.7.x, ...), as a CircleCI branch
 // filter. Every branch-only job ignores them like main: a merge there is tagged
@@ -27,6 +33,10 @@ const releaseBranches = `/^release-v?[0-9]+(\.[0-9]+)?\.x$/`
 // continues with the result. It carries no repo-specific content -- only the
 // continuation orb pin varies, and only with devctl releases.
 func NewSetupConfigInput(p params.Params) input.Input {
+	if p.MultiImage {
+		return newMultiImageSetupConfigInput(p)
+	}
+
 	i := input.Input{
 		Path:         ".circleci/config.yml",
 		TemplateBody: setupConfigTemplate,
@@ -42,6 +52,10 @@ func NewSetupConfigInput(p params.Params) input.Input {
 // content, derived from the repo's signals. The setup workflow continues the
 // pipeline with this file (plus the optional custom.yml merge).
 func NewWorkflowsInput(p params.Params) input.Input {
+	if p.MultiImage {
+		return newMultiImageWorkflowsInput(p)
+	}
+
 	i := input.Input{
 		Path:         ".circleci/workflows.yml",
 		TemplateBody: workflowsTemplate,
@@ -50,6 +64,7 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"Language":            p.Language,
 			"HasDockerfile":       p.HasDockerfile,
 			"HasApp":              p.HasApp,
+			"PinVersion":          pinVersion(p),
 			"SkipAppCatalog":      p.SkipAppCatalog,
 			"SkipATS":             p.SkipATS,
 			"ATSVersion":          p.ATSVersion,
@@ -59,6 +74,7 @@ func NewWorkflowsInput(p params.Params) input.Input {
 			"ATSPullImages":       p.ATSPullImages,
 			"ATSKindConfig":       p.ATSKindConfig,
 			"ATSResourceClass":    p.ATSResourceClass,
+			"ChartTestRequires":   p.ChartTestRequires,
 			"ATSOnRelease":        p.ATSOnRelease,
 			"ChartName":           p.ChartName,
 			"ChartNameMismatch":   p.ChartNameMismatch,
@@ -116,4 +132,52 @@ func NewWorkflowsInput(p params.Params) input.Input {
 	}
 
 	return i
+}
+
+// pinVersion is true when the workflow builds an image or a chart: it then
+// starts with architect's pin-version job, which resolves the version once
+// and persists it to the workspace, and every image and chart job requires it
+// and builds with that version. Resolved per job, a stable tag landing while
+// the workflow runs (a promote) gives the image and the chart that references
+// it different versions. A template repository's chart job is a render check
+// that publishes nothing, so it resolves its own version as before.
+func pinVersion(p params.Params) bool {
+	return p.HasDockerfile || (p.HasApp && !p.TemplateChart)
+}
+
+// newMultiImageSetupConfigInput emits the .circleci/config.yml of a
+// multi-image repository: a setup workflow that picks the images to build at
+// pipeline runtime (the tag's image, or the images a branch changed) and
+// continues with one copy of the per-image workflow of each, plus the
+// optional custom.yml merge.
+func newMultiImageSetupConfigInput(p params.Params) input.Input {
+	return input.Input{
+		Path:         ".circleci/config.yml",
+		TemplateBody: multiImageSetupConfigTemplate,
+		TemplateData: map[string]interface{}{
+			"ContinuationOrbVersion": p.ContinuationOrbVersion,
+			"DefaultBranch":          p.DefaultBranch,
+			"ImagesDir":              p.ImagesDir,
+		},
+	}
+}
+
+// newMultiImageWorkflowsInput emits the .circleci/workflows.yml of a
+// multi-image repository: the per-image branch and release workflows, with
+// the placeholder __IMAGE__ the setup workflow replaces with each image's
+// name.
+func newMultiImageWorkflowsInput(p params.Params) input.Input {
+	return input.Input{
+		Path:         ".circleci/workflows.yml",
+		TemplateBody: multiImageWorkflowsTemplate,
+		TemplateData: map[string]interface{}{
+			"DefaultBranch":   p.DefaultBranch,
+			"ForcePublic":     p.ForcePublic,
+			"ImageNamePrefix": p.ImageNamePrefix,
+			"ImagePlatforms":  p.ImagePlatforms,
+			"ImagesDir":       p.ImagesDir,
+			"OrbVersion":      p.OrbVersion,
+			"Registry":        p.Registry,
+		},
+	}
 }

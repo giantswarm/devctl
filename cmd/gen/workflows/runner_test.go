@@ -2,6 +2,7 @@ package workflows
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,7 +49,7 @@ func Test_Run_RepoName(t *testing.T) {
 		{
 			name:            "origin remote outside giantswarm",
 			releaseWorkflow: releaseWorkflowAutoRelease,
-			remote:          "git@github.com:teemow/valkey-app.git",
+			remote:          "git@github.com:fixture-person/valkey-app.git",
 			wantErr:         "pass --repo-name <name>",
 		},
 		{
@@ -253,4 +254,189 @@ func Test_Run_FleetMctl(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Test_Run_MultiImage runs the command for a multi-image repository: on
+// auto-release it writes the per-image Auto Release and removes what either
+// single-line flow left (cliff.toml, the legacy trio), without a repository
+// name; the legacy flow is refused.
+func Test_Run_MultiImage(t *testing.T) {
+	t.Run("auto-release", func(t *testing.T) {
+		dir := t.TempDir()
+		git(t, "init", "--quiet", dir)
+		t.Chdir(dir)
+		require.NoError(t, os.MkdirAll(".github/workflows", 0o750))
+		for _, leftover := range []string{"cliff.toml", ".github/workflows/zz_generated.create_release.yaml", ".github/workflows/zz_generated.validate_changelog.yaml"} {
+			require.NoError(t, os.WriteFile(leftover, nil, 0o600))
+		}
+
+		r := &runner{flag: &flag{
+			Flavours:        gen.FlavourSlice{gen.FlavourMultiImage},
+			Language:        "generic",
+			ReleaseWorkflow: releaseWorkflowAutoRelease,
+		}}
+		require.NoError(t, r.Run(&cobra.Command{}, nil))
+
+		got, err := os.ReadFile(".github/workflows/zz_generated.auto_release.yaml")
+		require.NoError(t, err)
+		require.Contains(t, string(got), "Push-based release tagger of a multi-image repository")
+		for _, leftover := range []string{"cliff.toml", ".github/workflows/zz_generated.create_release.yaml", ".github/workflows/zz_generated.validate_changelog.yaml"} {
+			require.NoFileExists(t, leftover)
+		}
+	})
+
+	t.Run("legacy is refused", func(t *testing.T) {
+		f := &flag{
+			Flavours:        gen.FlavourSlice{gen.FlavourMultiImage},
+			ReleaseWorkflow: releaseWorkflowLegacy,
+		}
+		require.ErrorContains(t, f.Validate(), "requires --release-workflow=auto-release")
+	})
+
+	t.Run("patch candidates are refused", func(t *testing.T) {
+		f := &flag{
+			Flavours:        gen.FlavourSlice{gen.FlavourMultiImage},
+			ReleaseWorkflow: releaseWorkflowAutoRelease,
+			PatchCandidates: true,
+		}
+		require.ErrorContains(t, f.Validate(), "no candidates")
+	})
+}
+
+// Test_Run_PullRequestTemplate pins that a repository whose GitHub Releases
+// are the changelog stops being asked for a CHANGELOG.md edit by its pull
+// request template, the rest of the template kept, and that a repository still
+// on the hand-kept file is left alone.
+func Test_Run_PullRequestTemplate(t *testing.T) {
+	const asks = "### Why?\n\nBecause.\n\n### Checklist\n\n- [ ] CHANGELOG.md has been updated (if it exists)\n- [ ] Tests\n"
+	const path = ".github/pull_request_template.md"
+
+	setup := func(t *testing.T, template string) {
+		t.Helper()
+		dir := t.TempDir()
+		git(t, "init", "--quiet", dir)
+		t.Chdir(dir)
+		require.NoError(t, os.MkdirAll(".github/workflows", 0o750))
+		if template != "" {
+			require.NoError(t, os.WriteFile(path, []byte(template), 0o600))
+		}
+	}
+	run := func(t *testing.T, workflow string) {
+		t.Helper()
+		r := &runner{flag: &flag{
+			Flavours:        gen.FlavourSlice{gen.FlavourCLI},
+			Language:        "generic",
+			ReleaseWorkflow: workflow,
+			RepoName:        "x",
+		}, stderr: io.Discard}
+		require.NoError(t, r.Run(&cobra.Command{}, nil))
+	}
+
+	t.Run("auto-release drops the item and keeps the rest", func(t *testing.T) {
+		setup(t, asks)
+		run(t, releaseWorkflowAutoRelease)
+
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, "### Why?\n\nBecause.\n\n### Checklist\n\n- [ ] Tests\n", string(got))
+	})
+
+	t.Run("auto-release drops the line an earlier devctl wrote", func(t *testing.T) {
+		setup(t, "### Checklist\n\nThe pull request title is the release note: the release writes CHANGELOG.md, so do not edit it.\n- [ ] Tests\n")
+		run(t, releaseWorkflowAutoRelease)
+
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, "### Checklist\n\n- [ ] Tests\n", string(got))
+	})
+
+	t.Run("auto-release drops a checklist the item was alone in", func(t *testing.T) {
+		setup(t, "### Why?\n\nBecause.\n\n### Checklist\n\n- [ ] Update changelog in CHANGELOG.md.\n\n### Notes\n\n")
+		run(t, releaseWorkflowAutoRelease)
+
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, "### Why?\n\nBecause.\n\n### Notes\n", string(got))
+	})
+
+	t.Run("a second run changes nothing", func(t *testing.T) {
+		setup(t, asks)
+		run(t, releaseWorkflowAutoRelease)
+		first, err := os.ReadFile(path)
+		require.NoError(t, err)
+		run(t, releaseWorkflowAutoRelease)
+		second, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, string(first), string(second))
+	})
+
+	t.Run("a repository without a template gets none", func(t *testing.T) {
+		setup(t, "")
+		run(t, releaseWorkflowAutoRelease)
+		require.NoFileExists(t, path)
+	})
+
+	t.Run("legacy keeps the item", func(t *testing.T) {
+		setup(t, asks)
+		run(t, releaseWorkflowLegacy)
+
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, asks, string(got))
+	})
+}
+
+// Test_Run_ChangelogPointer pins that a repository on auto-release has its
+// CHANGELOG.md frozen as a pointer at its GitHub Releases, which are the
+// changelog there, and that a repository without the file or still on the
+// hand-kept file is left alone.
+func Test_Run_ChangelogPointer(t *testing.T) {
+	const path = "CHANGELOG.md"
+	const kept = "# Changelog\n\n## [Unreleased]\n\n## [1.0.0] - 2026-01-01\n\n### Added\n\n- First release.\n"
+
+	setup := func(t *testing.T, changelog string) {
+		t.Helper()
+		dir := t.TempDir()
+		git(t, "init", "--quiet", dir)
+		t.Chdir(dir)
+		require.NoError(t, os.MkdirAll(".github/workflows", 0o750))
+		if changelog != "" {
+			require.NoError(t, os.WriteFile(path, []byte(changelog), 0o600))
+		}
+	}
+	run := func(t *testing.T, workflow string) {
+		t.Helper()
+		r := &runner{flag: &flag{
+			Flavours:        gen.FlavourSlice{gen.FlavourCLI},
+			Language:        "generic",
+			ReleaseWorkflow: workflow,
+			RepoName:        "x",
+		}, stderr: io.Discard}
+		require.NoError(t, r.Run(&cobra.Command{}, nil))
+	}
+
+	t.Run("auto-release freezes the file as a pointer", func(t *testing.T) {
+		setup(t, kept)
+		run(t, releaseWorkflowAutoRelease)
+
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Contains(t, string(got), "https://github.com/giantswarm/x/releases\n")
+		require.NotContains(t, string(got), "## [")
+	})
+
+	t.Run("a repository without the file gets none", func(t *testing.T) {
+		setup(t, "")
+		run(t, releaseWorkflowAutoRelease)
+		require.NoFileExists(t, path)
+	})
+
+	t.Run("legacy keeps the file", func(t *testing.T) {
+		setup(t, kept)
+		run(t, releaseWorkflowLegacy)
+
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, kept, string(got))
+	})
 }

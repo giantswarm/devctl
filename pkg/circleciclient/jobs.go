@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/giantswarm/microerror"
@@ -22,6 +23,23 @@ func ProjectSlug(org, repo string) string {
 type PipelineDetail struct {
 	Pipeline
 	ProjectSlug string `json:"project_slug"`
+}
+
+// UnmarshalJSON reads the pipeline through [Pipeline.UnmarshalJSON], which the
+// embedding would otherwise let decode the whole of it, and the project slug
+// beside it.
+func (p *PipelineDetail) UnmarshalJSON(data []byte) error {
+	if err := json.Unmarshal(data, &p.Pipeline); err != nil {
+		return err
+	}
+	var slug struct {
+		ProjectSlug string `json:"project_slug"`
+	}
+	if err := json.Unmarshal(data, &slug); err != nil {
+		return err
+	}
+	p.ProjectSlug = slug.ProjectSlug
+	return nil
 }
 
 // GetPipeline returns the pipeline of id; IsNotFound when CircleCI knows
@@ -45,12 +63,16 @@ func (c *Client) GetProjectPipeline(ctx context.Context, org, repo string, numbe
 }
 
 // ProjectJob is one job as the project's job endpoint answers it: its
-// number, name and status, and the pipeline and workflow it ran in.
+// number, name, status, page and times, and the pipeline and workflow it ran
+// in.
 type ProjectJob struct {
-	Number   int64  `json:"number"`
-	Name     string `json:"name"`
-	Status   string `json:"status"`
-	Pipeline struct {
+	Number    int64     `json:"number"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	WebURL    string    `json:"web_url"`
+	StartedAt time.Time `json:"started_at"`
+	StoppedAt time.Time `json:"stopped_at"`
+	Pipeline  struct {
 		ID string `json:"id"`
 	} `json:"pipeline"`
 	LatestWorkflow struct {
@@ -161,6 +183,16 @@ func (c *Client) JobSteps(ctx context.Context, org, repo string, number int64) (
 		}
 	}
 	return steps, nil
+}
+
+// StepOutput reads the messages of any step, including a successful one,
+// from its signed output URL without sending the API token.
+func (c *Client) StepOutput(ctx context.Context, outputURL string) (string, error) {
+	var out strings.Builder
+	if err := c.stepOutput(ctx, outputURL, &out); err != nil {
+		return "", microerror.Mask(err)
+	}
+	return out.String(), nil
 }
 
 // LastOutputAt reads a step's output at outputURL and returns the time of

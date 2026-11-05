@@ -4,7 +4,7 @@
   "type": "array",
   "items": {
     "type": "object",
-    "description": "One repository of the team whose file the entry lives in. The entry is the request for the repository and its desired state: what it declares (settings, branch protection, CircleCI, description, visibility, lifecycle, generated files) is what the automation keeps true. There is no template field; the template a repository is created from is derived from componentType, gen.flavours and gen.language.",
+    "description": "One repository of the team whose file the entry lives in. The entry is the request for the repository and its desired state: what it declares (settings, branch protection, description, visibility, lifecycle, generated files) is what the automation keeps true; that a CircleCI GitHub App pipeline builds it is checked, and a person sets the pipeline up. There is no template field; the template a repository is created from is derived from componentType, gen.flavours and gen.language.",
     "required": [
       "name",
       "componentType"
@@ -19,6 +19,13 @@
         "type": "boolean",
         "default": false,
         "description": "The repository's opt-in to alignment. With true the reconciler changes the repository to its declared set-up and the company baseline on every trigger: a merged change of this entry, Align now, the nightly. Without it every run is a check -- the drift in the run's summary, the artifact and the inventory, nothing changed on GitHub or CircleCI. A repository created by the automation (devctl repo create, the Repositories page, the Repo Manager) is declared with align: true: its creation is the opt-in. An existing repository opts in when its team adds the field to its entry in a pull request the team reviews; a lifecycle change carries it. The team's channel file teams/team-<name>.yaml names the team's channels and holds no opt-in."
+      },
+      "protection": {
+        "type": "string",
+        "enum": [
+          "baseline"
+        ],
+        "description": "With baseline a customer-flavour repository opts into the protection step: the company baseline and the devctl ruleset with its bypass actors (unless agentMerge: false), on the customer's own default branch. Without this field customer repositories keep their own protection. Other flavours always get the baseline. align: true is still needed for the reconciler to repair instead of only checking."
       },
       "agentMerge": {
         "type": "boolean",
@@ -114,7 +121,7 @@
         "properties": {
           "flavours": {
             "type": "array",
-            "description": "devctl flavours of the repository (see devctl docs/flavours.md), passed to every 'devctl gen' the sync runs. 'customer' repositories get the generated GitHub workflows plus a generated renovate.json5 extending the giantswarm base preset, and no CircleCI. 'fork' is a fork line, a repository that carries an upstream release plus the carried patches on the branch its defaultBranch declares: nothing is generated for it, the scaffold and CODEOWNERS steps are skipped on it, every other step runs as declared, and the settings step keeps rebase merges on (merge commits as the repository has them): the carried patches land by rebase merge, one upstream-ready commit each. Requires devctl v8.78.0+. 'plans' is a team plans repository -- versioned PRDs, their companion websites and the plan-workflow agent skills -- declared on its own with language 'generic' and no generated CI (a 'generic' beside it changes nothing): it derives the template giantswarm/template-plans, and 'devctl gen plans' writes its .claude/settings.json enabling the gs-plans plugin (other settings kept). Requires devctl with 'gen plans' for the settings file.",
+            "description": "devctl flavours of the repository (see devctl docs/flavours.md), passed to every 'devctl gen' the sync runs. 'customer' repositories get the generated GitHub workflows plus a generated renovate.json5 extending the giantswarm base preset, and no CircleCI. 'fork' is a fork line, a repository that carries an upstream release plus the carried patches on the branch its defaultBranch declares: nothing is generated for it, the scaffold and CODEOWNERS steps are skipped on it, every other step runs as declared, and the settings step keeps rebase merges on (merge commits as the repository has them): the carried patches land by rebase merge, one upstream-ready commit each. Requires devctl v8.78.0+. 'plans' is a team plans repository -- versioned PRDs, their companion websites and the plan-workflow agent skills -- declared on its own with language 'generic' and no generated CI (a 'generic' beside it changes nothing): it derives the template giantswarm/template-plans, and 'devctl gen plans' writes its .claude/settings.json enabling the gs-plans plugin (other settings kept). Requires devctl with 'gen plans' for the settings file. 'multi-image' is a repository of images alone, one per toolchains/<name>/ directory holding a Dockerfile, each released as its own <name>/vX.Y.Z line: declared on its own with language 'generic' and generated CI on the auto-release workflow (legacy is refused); 'devctl gen circleci' renders its per-image pipeline and 'devctl gen workflows' its per-image Auto Release. Requires devctl with the multi-image flavour.",
             "items": {
               "type": "string",
               "enum": [
@@ -126,6 +133,7 @@
                 "fork",
                 "generic",
                 "k8sapi",
+                "multi-image",
                 "plans"
               ],
               "minItems": 1
@@ -217,6 +225,10 @@
               "maintenanceBranches": {
                 "type": "boolean",
                 "description": "On a fork line (flavour `fork`) with releaseWorkflow 'auto-release': the maintenance branches release-X.Y cut releases too, each the patches of its own X.Y series, counted from the series' highest stable tag (release candidates first, as on `defaultBranch`). align-files renders the workflow on `defaultBranch`; a maintenance branch carries the same rendering. Requires devctl v8.117.0+."
+              },
+              "patchCandidates": {
+                "type": "boolean",
+                "description": "With releaseWorkflow 'auto-release': a patch of the last stable release is cut as a release candidate vX.Y.Z-rc.N too, never tagged stable on its push, so every stable release is a promotion of a proven candidate (`devctl release promote`). For a repository whose consumers follow a semver range that takes its next patch on their own. Requires devctl v8.149.0+."
               },
               "appCatalog": {
                 "type": "string",
@@ -386,7 +398,7 @@
           "production"
         ],
         "default": "production",
-        "description": "Lifecycle stage of the repository; surfaces in the developer portal catalog. 'production' (the default) is a repository in active use. 'deprecated' is a component we decided to phase out: align-files extends the renovate-presets deprecated.json5 preset (disable routine updates, keep only security/vulnerability remediation) for repos whose Renovate config is generated (gen.ci.generate or the customer flavour), every other repo keeps its hand-maintained renovate.json5 (requires devctl v8.26.0+). 'archived' is a repository whose work is over: it is archived on GitHub and its CircleCI project is unfollowed, and the entry stays in the team file as the record (the automation never recreates it and never removes the entry). 'deleted' is a repository that is to be gone: the reconciler unfollows its CircleCI project and deletes it on GitHub -- code, issues, pull requests, releases and packages with it; an organization owner can restore it on GitHub for 90 days -- and the entry stays in the team file as the record of the deletion (never recreated, never removed by the automation). Like an archive it is set in a team-file pull request the owning team reviews."
+        "description": "Lifecycle stage of the repository; surfaces in the developer portal catalog. 'production' (the default) is a repository in active use. 'deprecated' is a component we decided to phase out: align-files extends the renovate-presets deprecated.json5 preset (disable routine updates, keep only security/vulnerability remediation) for repos whose Renovate config is generated (gen.ci.generate or the customer flavour), every other repo keeps its hand-maintained renovate.json5 (requires devctl v8.26.0+). 'archived' is a repository whose work is over: it is archived on GitHub and CircleCI's deploy key is removed from it, and the entry stays in the team file as the record (the automation never recreates it and never removes the entry). 'deleted' is a repository that is to be gone: the reconciler deletes it on GitHub -- code, issues, pull requests, releases and packages with it; an organization owner can restore it on GitHub for 90 days -- and the entry stays in the team file as the record of the deletion (never recreated, never removed by the automation). Like an archive it is set in a team-file pull request the owning team reviews."
       },
       "name": {
         "type": "string",
@@ -453,7 +465,7 @@
         "type": "array",
         "uniqueItems": true,
         "minItems": 1,
-        "description": "Repository rulesets the team keeps beside the engine's 'devctl: default branch', by name: the decision to keep them, recorded where the reconciler reads it. The protection step leaves a ruleset named here alone and silent; one the repository carries and the entry does not name is the advisory finding 'foreign-ruleset', and a name the repository carries no ruleset for the advisory 'declared-ruleset-missing' -- a ruleset deleted on GitHub, or a name that never matched one. Declaring a ruleset hands nothing to the engine: it writes 'devctl: default branch' and no other, so creating, changing and deleting a declared ruleset stays with the team. A ruleset whose enforcement is 'disabled' enforces nothing and is passed over whether declared or not. For the fork lines' 'protect-giantswarm', 'protect-main', 'protect-mirror-main' and 'protect-consumed-branch', which guard the upstream mirror and the consumed branch.",
+        "description": "Repository rulesets the team keeps beside the engine's 'devctl: default branch', by name: the decision to keep them, recorded where the reconciler reads it. The protection step leaves a ruleset named here alone and silent; one the repository carries and the entry does not name is the advisory finding 'foreign-ruleset', and a name the repository carries no ruleset for the advisory 'declared-ruleset-missing' -- a ruleset deleted on GitHub, or a name that never matched one. Declaring a ruleset hands nothing to the engine: it writes 'devctl: default branch' and no other, so creating, changing and deleting a declared ruleset stays with the team. A ruleset whose enforcement is 'disabled' enforces nothing and is passed over whether declared or not. For the fork lines' 'protect-main' and 'protect-mirror-main', which guard the upstream mirror.",
         "items": {
           "type": "string",
           "minLength": 1

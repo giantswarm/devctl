@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -11,6 +12,18 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v93/github"
 )
+
+// GitHub intermittently answers the release list with 200 and no releases at
+// all: an empty list is asked for again this many times, waiting
+// listRetryDelay times the attempt in between.
+var (
+	listRetries    = 2
+	listRetryDelay = 500 * time.Millisecond
+)
+
+// Bound the complete lookup, including pagination and retries, even when
+// the caller supplies no deadline.
+var releaseLookupTimeout = 30 * time.Second
 
 // githubSource is the releases of one GitHub repository, read with the token
 // that Config.GithubToken returns when the first request is made: never when
@@ -66,8 +79,17 @@ func (s *githubSource) newClient(token string) (*github.Client, error) {
 	return github.NewClient(options...)
 }
 
-// ListReleases implements selfupdate.Source.
+// ListReleases implements selfupdate.Source. GitHub intermittently answers
+// the release list with 200 and no releases at all, independently each time:
+// an empty list is asked for again. The latest release, answered reliably, is
+// asked for on its own and added when the list lacks it, so a list
+// that stays empty still finds it. Every list page is read: the latest release
+// need not be the highest version with a binary for this platform. A failed
+// latest lookup is an error only when the list is empty too.
 func (s *githubSource) ListReleases(ctx context.Context, repository selfupdate.Repository) ([]selfupdate.SourceRelease, error) {
+	ctx, cancel := context.WithTimeout(ctx, releaseLookupTimeout)
+	defer cancel()
+
 	owner, repo, err := repository.GetSlug()
 	if err != nil {
 		return nil, err
@@ -76,20 +98,66 @@ func (s *githubSource) ListReleases(ctx context.Context, repository selfupdate.R
 	if err != nil {
 		return nil, err
 	}
-	rels, res, err := client.Repositories.ListReleases(ctx, owner, repo, nil)
-	if res != nil && res.StatusCode == http.StatusNotFound {
-		// No such repository, or not for this token: no release, which
-		// the updater reports as such.
-		return nil, nil
+	var rels []*github.RepositoryRelease
+	opts := &github.ListOptions{PerPage: 100}
+	for {
+		page, res, err := client.Repositories.ListReleases(ctx, owner, repo, opts)
+		for retry := 1; err == nil && len(page) == 0 && retry <= listRetries; retry++ {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(time.Duration(retry) * listRetryDelay):
+			}
+			page, res, err = client.Repositories.ListReleases(ctx, owner, repo, opts)
+		}
+		if res != nil && res.StatusCode == http.StatusNotFound && opts.Page == 0 {
+			// No such repository, or not for this token: no release, which
+			// the updater reports as such.
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		rels = append(rels, page...)
+		if res == nil || res.NextPage == 0 {
+			break
+		}
+		opts.Page = res.NextPage
 	}
-	if err != nil {
+	releases := make([]selfupdate.SourceRelease, 0, len(rels)+1)
+	for _, rel := range rels {
+		releases = append(releases, githubRelease{rel})
+	}
+
+	latest, res, err := client.Repositories.GetLatestRelease(ctx, owner, repo)
+	switch {
+	case res != nil && res.StatusCode == http.StatusNotFound:
+		// No release yet.
+		return releases, nil
+	case err != nil && len(releases) == 0:
 		return nil, err
+	case err != nil:
+		return releases, nil
 	}
-	releases := make([]selfupdate.SourceRelease, len(rels))
 	for i, rel := range rels {
-		releases[i] = githubRelease{rel}
+		if rel.GetID() == latest.GetID() {
+			// Assets upload after the release is published. The two reads
+			// can see different upload progress even for the same release:
+			// prefer the latest response, keeping assets only the list saw.
+			merged := *latest
+			merged.Assets = append([]*github.ReleaseAsset(nil), latest.Assets...)
+			for _, asset := range rel.Assets {
+				if !slices.ContainsFunc(merged.Assets, func(a *github.ReleaseAsset) bool {
+					return a.GetID() == asset.GetID() || a.GetName() == asset.GetName()
+				}) {
+					merged.Assets = append(merged.Assets, asset)
+				}
+			}
+			releases[i] = githubRelease{&merged}
+			return releases, nil
+		}
 	}
-	return releases, nil
+	return append(releases, githubRelease{latest}), nil
 }
 
 // DownloadReleaseAsset implements selfupdate.Source.

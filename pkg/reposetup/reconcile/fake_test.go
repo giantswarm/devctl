@@ -30,7 +30,7 @@ import (
 // fakeRepo is one repository's state.
 type fakeRepo struct {
 	owner, name, description string
-	private, archived        bool
+	private, archived, fork  bool
 	topics                   []string
 	hasWiki, hasIssues, hasProjects, allowMerge, allowSquash, allowRebase,
 	allowUpdate, allowAuto, deleteOnMerge bool
@@ -51,24 +51,41 @@ type fakeRepo struct {
 	keysStatus    int // HTTP status of the deploy keys list when not 200
 	release       string
 	releaseAt     time.Time
-	createdAt     time.Time // when the repository was created; a month ago for a seeded one
-	statuses      []string  // commit statuses reported on the head
-	checkRuns     []string  // check runs reported on the head
-	checksStatus  int       // HTTP status of the status and check-run reads when not 200
-	prs           []*github.PullRequest
+	// releases is the release list, newest first, as GitHub lists it;
+	// releasesPage pages it when set.
+	releases     []fakeRelease
+	releasesPage int
+	createdAt    time.Time // when the repository was created; a month ago for a seeded one
+	statuses     []string  // commit statuses reported on the head
+	// refStatuses are the statuses of a ref's commit, a branch or a tag,
+	// newest first: what GET /commits/{ref}/statuses lists.
+	refStatuses  map[string][]fakeStatus
+	checkRuns    []string // check runs reported on the head
+	checksStatus int      // HTTP status of the status and check-run reads when not 200
+	prs          []*github.PullRequest
 	// merged are the pull requests merged before the run, closed, as the
 	// discovery of the reported checks lists them; the statuses and check
 	// runs are served for their heads as for any ref.
-	merged       []*github.PullRequest
-	issues       []*github.Issue            // what GET /repos/{owner}/{repo}/issues lists
-	labels       map[string]*github.Label   // by lower-cased name: GitHub compares label names case-insensitively
-	history      []*github.RepositoryCommit // the commits behind the head of the default branch
-	issuesStatus int                        // HTTP status of the issues list when not 200
-	blobs        map[string][]byte
-	trees        map[string][]*github.TreeEntry
-	commits      map[string]fakeCommit // commit sha → tree sha and message
-	heads        map[string]string     // branch → sha of its head commit
-	seq          int
+	merged []*github.PullRequest
+	// pullsStatus, when set, answers the pull request list with it (403 for
+	// an identity without pull-request read).
+	pullsStatus int
+	// refStatusesStatus answers the statuses of a ref with the code set for
+	// it (403 for an identity without statuses read on that commit).
+	refStatusesStatus map[string]int
+	issues            []*github.Issue            // what GET /repos/{owner}/{repo}/issues lists
+	labels            map[string]*github.Label   // by lower-cased name: GitHub compares label names case-insensitively
+	history           []*github.RepositoryCommit // the commits behind the head of the default branch
+	issuesStatus      int                        // HTTP status of the issues list when not 200
+	blobs             map[string][]byte
+	trees             map[string][]*github.TreeEntry
+	commits           map[string]fakeCommit // commit sha → tree sha and message
+	heads             map[string]string     // branch → sha of its head commit
+	seq               int
+
+	// protectionStatus is the HTTP status of the classic protection read
+	// when not 200 (403 for an integration without administration: read).
+	protectionStatus int
 
 	// releaseSubject is the subject of the commit the release's tag names;
 	// empty leaves the tag's commit unknown (404).
@@ -398,6 +415,7 @@ func (r *fakeRepo) toGitHub() *github.Repository {
 		Owner:                  &github.User{Login: new(r.owner)},
 		Description:            new(r.description),
 		Private:                new(r.private),
+		Fork:                   new(r.fork),
 		Topics:                 r.topics,
 		CreatedAt:              &github.Timestamp{Time: r.createdAt},
 		Archived:               new(r.archived),
@@ -458,6 +476,13 @@ func forbidden(w http.ResponseWriter) {
 
 func decode(r *http.Request, v any) {
 	_ = json.NewDecoder(r.Body).Decode(v)
+}
+
+// fakeRelease is one release of a repository's release list.
+type fakeRelease struct {
+	tag               string
+	at                time.Time
+	draft, prerelease bool
 }
 
 func (f *fakeGitHub) withRepo(h func(w http.ResponseWriter, r *http.Request, repo *fakeRepo)) http.HandlerFunc {
@@ -611,6 +636,29 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		}
 		writeJSON(w, 200, map[string]any{"state": "success", "statuses": statuses})
 	}))
+	// The statuses of a ref's commit. The ref may hold slashes (a
+	// multi-image tag, go/v0.10.0), so the pattern takes the rest of the
+	// path and the handler cuts the suffix.
+	mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{ref...}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		ref, ok := strings.CutSuffix(r.PathValue("ref"), "/statuses")
+		if !ok {
+			notFound(w, "Not Found")
+			return
+		}
+		if code := repo.refStatusesStatus[ref]; code != 0 {
+			writeJSON(w, code, map[string]string{"message": "Resource not accessible by integration"})
+			return
+		}
+		list := repo.refStatuses[ref]
+		out := []map[string]any{}
+		for _, st := range list {
+			out = append(out, map[string]any{
+				"context": st.context, "state": st.state, "target_url": st.targetURL,
+				"created_at": st.at.Format(time.RFC3339), "creator": map[string]string{"login": st.creator},
+			})
+		}
+		writeJSON(w, 200, out)
+	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{sha}/check-runs", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
 		runs := []map[string]string{}
 		for _, c := range repo.checkRuns {
@@ -619,12 +667,19 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]any{"total_count": len(runs), "check_runs": runs})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/pulls", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		if repo.pullsStatus != 0 {
+			writeJSON(w, repo.pullsStatus, map[string]string{"message": "Resource not accessible by integration"})
+			return
+		}
 		var out []*github.PullRequest
 		for _, pr := range append(append([]*github.PullRequest{}, repo.prs...), repo.merged...) {
 			if s := r.URL.Query().Get("state"); s != "" && s != "all" && pr.GetState() != s {
 				continue
 			}
 			if h := r.URL.Query().Get("head"); h != "" && repo.owner+":"+pr.GetHead().GetRef() != h {
+				continue
+			}
+			if b := r.URL.Query().Get("base"); b != "" && pr.GetBase().GetRef() != "" && pr.GetBase().GetRef() != b {
 				continue
 			}
 			out = append(out, pr)
@@ -907,6 +962,10 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]any{"name": r.PathValue("branch")})
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/branches/{branch}/protection", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+		if repo.protectionStatus != 0 {
+			writeJSON(w, repo.protectionStatus, map[string]string{"message": "Resource not accessible by integration"})
+			return
+		}
 		p := repo.protection
 		if p == nil {
 			notFound(w, "Branch not protected")
@@ -1082,7 +1141,25 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 			notFound(w, "Not Found")
 			return
 		}
-		writeJSON(w, 200, map[string]any{"tag_name": repo.release, "created_at": repo.releaseAt.Format(time.RFC3339)})
+		writeJSON(w, 200, map[string]any{"tag_name": repo.release, "created_at": repo.releaseAt.Format(time.RFC3339), "published_at": repo.releaseAt.Format(time.RFC3339)})
+	}))
+	mux.HandleFunc("GET /repos/{owner}/{repo}/releases", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
+		list := repo.releases
+		if size := repo.releasesPage; size > 0 {
+			page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+			page = max(page, 1)
+			start := min((page-1)*size, len(list))
+			end := min(start+size, len(list))
+			if end < len(list) {
+				w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?page=%d>; rel="next"`, r.Host, r.URL.Path, page+1))
+			}
+			list = list[start:end]
+		}
+		out := []map[string]any{}
+		for _, rel := range list {
+			out = append(out, map[string]any{"tag_name": rel.tag, "created_at": rel.at.Format(time.RFC3339), "published_at": rel.at.Format(time.RFC3339), "draft": rel.draft, "prerelease": rel.prerelease})
+		}
+		writeJSON(w, 200, out)
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/actions/workflows/{file}/runs", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		if !f.mayDispatch(r) {
@@ -1111,46 +1188,31 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 	}))
 }
 
-// fakeCircleCI is the CircleCI fake.
+// fakeCircleCI is the CircleCI fake: the read surface of a person's client,
+// a project with its pipeline definitions and their triggers. The engine
+// writes nothing on CircleCI, so every non-GET request is a recorded
+// mutation a test asserts away.
 type fakeCircleCI struct {
-	mu    sync.Mutex
-	login string // the token's user
-	// onFollow runs when a project is followed through the API: CircleCI
-	// installs its GitHub webhook then, for a follow by an admin whose grant
-	// carries the hook scope. Nil models a follow that leaves no hook.
-	onFollow func(org, repo string)
-	// onKey runs when a checkout key of the deploy-key type is created:
-	// CircleCI installs its deploy key on the GitHub repository then.
-	onKey func(org, repo string)
-	// isAdmin says whether the token's user is a GitHub administrator of
-	// the repository: CircleCI takes the follow, the settings and a deploy
-	// key from one only, and answers 403 otherwise. Nil admits every write.
-	isAdmin func(org, repo, login string) bool
-	// keyStatus, when set, is the answer to a deploy key's creation.
-	keyStatus int
+	mu        sync.Mutex
 	projects  map[string]*fakeProject // org/repo
-	workflows map[string][]circleciclient.Workflow
-	jobs      map[string][]circleciclient.Job
 	mutations []string
-	seq       int
-	// pageSize is how many pipelines a page of the pipeline list holds, all
-	// of them when 0; pages records the page tokens the list was read with.
-	pageSize int
-	pages    []string
-	srv      *httptest.Server
+	srv       *httptest.Server
 }
 
+// fakeProject is one CircleCI project: its id and pipeline definitions.
 type fakeProject struct {
-	// following is the token user's follow; unfollowing does not remove
-	// the project.
-	following      bool
-	setupWorkflows bool
-	keys           []circleciclient.CheckoutKey
-	pipelines      []circleciclient.Pipeline
+	id          string
+	definitions []*fakeDefinition
+}
+
+// fakeDefinition is a pipeline definition and its triggers.
+type fakeDefinition struct {
+	def      circleciclient.PipelineDefinition
+	triggers []circleciclient.Trigger
 }
 
 func newFakeCircleCI() *fakeCircleCI {
-	f := &fakeCircleCI{login: "architectbot", projects: map[string]*fakeProject{}, workflows: map[string][]circleciclient.Workflow{}, jobs: map[string][]circleciclient.Job{}}
+	f := &fakeCircleCI{projects: map[string]*fakeProject{}}
 	mux := http.NewServeMux()
 	f.routes(mux)
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1164,127 +1226,56 @@ func newFakeCircleCI() *fakeCircleCI {
 	return f
 }
 
-// circleCIHook is the webhook CircleCI installs on a repository it follows.
-func circleCIHook() *github.Hook {
-	return &github.Hook{ID: new(int64(683979223)), Name: new("web"), Active: new(true), Events: []string{"push", "pull_request"}, Config: &github.HookConfig{URL: new(circleCIWebhookURL), ContentType: new("json")}}
-}
-
-// circleCIDeployKeyID is the id of the deploy key CircleCI adds on the follow.
-const circleCIDeployKeyID = 164277013
-
-// circleCIDeployKey is the deploy key CircleCI adds to a repository it follows.
-func circleCIDeployKey() *github.Key {
-	return &github.Key{ID: new(int64(circleCIDeployKeyID)), Title: new(circleCIDeployKeyTitle), ReadOnly: new(true), Key: new("ssh-rsa AAAAB3NzaC1yc2E circleci")}
-}
-
-// isAdmin is the fake CircleCI's view of the GitHub fake: whether login
-// holds admin on org/repo, directly or through the organization's teams.
-func (f *fakeGitHub) isAdmin(org, repo, login string) bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	permission := f.permission
-	if r, ok := f.repos[org+"/"+repo]; ok {
-		if p, ok := r.collaborators[login]; ok {
-			permission = p
-		}
+// project returns the project of org/repo, created empty (no definition)
+// when the fake does not know it yet.
+func (f *fakeCircleCI) project(org, repo string) *fakeProject {
+	slug := org + "/" + repo
+	if p, ok := f.projects[slug]; ok {
+		return p
 	}
-	return permission == "admin"
-}
-
-// admits answers CircleCI's 403 to a write by a user who is no GitHub
-// administrator of the repository and says whether the write may proceed.
-func (f *fakeCircleCI) admits(w http.ResponseWriter, r *http.Request) bool {
-	if f.isAdmin == nil || f.isAdmin(r.PathValue("org"), r.PathValue("repo"), f.login) {
-		return true
-	}
-	writeJSON(w, 403, map[string]string{"message": "For security purposes only a project's Github administrator may setup Circle."})
-	return false
-}
-
-// installHook is the onFollow of a CircleCI whose follow installs the
-// webhook and CircleCI's deploy key on the GitHub fake's repository.
-func (f *fakeGitHub) installHook(org, repo string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if r, ok := f.repos[org+"/"+repo]; ok {
-		r.hooks = append(r.hooks, circleCIHook())
-		r.deployKeys = append(r.deployKeys, circleCIDeployKey())
-	}
-}
-
-// installDeployKey is the onKey of the CircleCI fake: a checkout key of the
-// deploy-key type puts CircleCI's deploy key on the GitHub fake's
-// repository, once, as CircleCI installs it.
-func (f *fakeGitHub) installDeployKey(org, repo string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	r, ok := f.repos[org+"/"+repo]
-	if !ok {
-		return
-	}
-	for _, k := range r.deployKeys {
-		if k.GetTitle() == circleCIDeployKeyTitle {
-			return
-		}
-	}
-	r.deployKeys = append(r.deployKeys, circleCIDeployKey())
-}
-
-// follow seeds a followed project set up as the baseline wants, its webhook
-// on the repository when the GitHub fake knows it.
-func (f *fakeCircleCI) follow(org, repo string) *fakeProject {
-	if f.onFollow != nil {
-		f.onFollow(org, repo)
-	}
-	p := &fakeProject{following: true, setupWorkflows: true, keys: []circleciclient.CheckoutKey{{Type: "deploy-key", Preferred: true}}}
-	f.projects[org+"/"+repo] = p
+	p := &fakeProject{id: "project-" + org + "-" + repo}
+	f.projects[slug] = p
 	return p
 }
 
-// addPipeline seeds a pipeline for tag, created now, with one workflow of
-// status and, when it failed, one failed job.
-func (f *fakeCircleCI) addPipeline(p *fakeProject, tag, status string) {
-	f.seedPipeline(p, circleciclient.PipelineVCS{Tag: tag}, time.Now(), status)
-}
-
-// seedPipeline seeds a pipeline of vcs created at createdAt, newest first,
-// with one workflow of status and, when it failed, one failed job.
-func (f *fakeCircleCI) seedPipeline(p *fakeProject, vcs circleciclient.PipelineVCS, createdAt time.Time, status string) {
-	f.seq++
-	id := fmt.Sprintf("pipeline-%d", f.seq)
-	p.pipelines = append([]circleciclient.Pipeline{{ID: id, Number: int64(f.seq), State: "created", CreatedAt: createdAt, VCS: vcs}}, p.pipelines...)
-	wfID := id + "-wf"
-	f.workflows[id] = []circleciclient.Workflow{{ID: wfID, Name: "build", Status: status, PipelineNumber: int64(f.seq)}}
-	if circleciclient.WorkflowFailed(status) {
-		f.jobs[wfID] = []circleciclient.Job{{Name: "go-build", Status: "success"}, {Name: "push-to-registries-release", Status: "failed"}}
-	} else {
-		f.jobs[wfID] = []circleciclient.Job{{Name: "go-build", Status: status}}
+// addDefinition adds a definition named name of provider to the project and
+// returns it; trigger, when set, is its one trigger.
+func (p *fakeProject) addDefinition(name, provider string, trigger *circleciclient.Trigger) *fakeDefinition {
+	d := &fakeDefinition{def: circleciclient.PipelineDefinition{
+		ID:           fmt.Sprintf("%s-def-%d", p.id, len(p.definitions)+1),
+		Name:         name,
+		ConfigSource: circleciclient.DefinitionSource{Provider: provider, FilePath: circleciclient.ConfigFile},
+	}}
+	if trigger != nil {
+		d.triggers = append(d.triggers, *trigger)
 	}
+	p.definitions = append(p.definitions, d)
+	return d
 }
 
-// addPipelineFailedIn seeds a failed pipeline for tag, created now, whose one
-// workflow has go-build green and every job of failed red.
-func (f *fakeCircleCI) addPipelineFailedIn(p *fakeProject, tag string, failed ...string) {
-	f.addPipeline(p, tag, "failed")
-	wfID := p.pipelines[0].ID + "-wf"
-	jobs := []circleciclient.Job{{Name: "go-build", Status: "success"}}
-	for _, j := range failed {
-		jobs = append(jobs, circleciclient.Job{Name: j, Status: "failed"})
-	}
-	f.jobs[wfID] = jobs
+// addApp seeds the project of a GitHub App pipeline as `devctl repo
+// follow-circleci` leaves it: the implicit OAuth definition without a
+// trigger beside the GitHub App definition with its all-pushes trigger.
+func (f *fakeCircleCI) addApp(org, repo string) *fakeProject {
+	p := f.project(org, repo)
+	p.addDefinition(repo, circleciclient.ProviderGitHubOAuth, nil)
+	trigger := circleciclient.AllPushesTrigger("1")
+	p.addDefinition("build", circleciclient.ProviderGitHubApp, &trigger)
+	return p
 }
 
-// rerun seeds a rerun of the newest pipeline's workflow: a second workflow
-// of the same name, newer, of status, with every job of that status.
-func (f *fakeCircleCI) rerun(p *fakeProject, status string) {
-	id := p.pipelines[0].ID
-	wfID := fmt.Sprintf("%s-wf%d", id, len(f.workflows[id])+1)
-	f.workflows[id] = append(f.workflows[id], circleciclient.Workflow{ID: wfID, Name: "build", Status: status, PipelineNumber: p.pipelines[0].Number, CreatedAt: time.Now()})
-	f.jobs[wfID] = []circleciclient.Job{{Name: "go-build", Status: status}, {Name: "push-to-registries-release", Status: status}}
+// addOAuth seeds a project that builds through its OAuth definition: the
+// implicit definition with an enabled trigger.
+func (f *fakeCircleCI) addOAuth(org, repo string) *fakeProject {
+	p := f.project(org, repo)
+	p.addDefinition(repo, circleciclient.ProviderGitHubOAuth, &circleciclient.Trigger{
+		EventSource: circleciclient.DefinitionSource{Provider: circleciclient.ProviderGitHubOAuth},
+	})
+	return p
 }
 
-func (f *fakeCircleCI) withProject(h func(w http.ResponseWriter, r *http.Request, p *fakeProject)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (f *fakeCircleCI) routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/v2/project/gh/{org}/{repo}", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		p, ok := f.projects[r.PathValue("org")+"/"+r.PathValue("repo")]
@@ -1292,116 +1283,79 @@ func (f *fakeCircleCI) withProject(h func(w http.ResponseWriter, r *http.Request
 			notFound(w, "Project not found")
 			return
 		}
-		h(w, r, p)
+		writeJSON(w, 200, circleciclient.Project{Slug: "gh/" + r.PathValue("org") + "/" + r.PathValue("repo"), Name: r.PathValue("repo"), ID: p.id})
+	})
+	mux.HandleFunc("GET /api/v2/projects/{id}/pipeline-definitions", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		items := []circleciclient.PipelineDefinition{}
+		for _, p := range f.projects {
+			if p.id == r.PathValue("id") {
+				for _, d := range p.definitions {
+					items = append(items, d.def)
+				}
+			}
+		}
+		writeJSON(w, 200, map[string]any{"items": items, "next_page_token": nil})
+	})
+	mux.HandleFunc("GET /api/v2/projects/{id}/pipeline-definitions/{def}/triggers", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		items := []circleciclient.Trigger{}
+		for _, p := range f.projects {
+			if p.id != r.PathValue("id") {
+				continue
+			}
+			for _, d := range p.definitions {
+				if d.def.ID == r.PathValue("def") {
+					items = append(items, d.triggers...)
+				}
+			}
+		}
+		writeJSON(w, 200, map[string]any{"items": items})
+	})
+}
+
+// circleCIDeployKeyID is the id of the deploy key an OAuth follow leaves on
+// the GitHub repository.
+const circleCIDeployKeyID = 164277013
+
+// circleCIDeployKey is the deploy key CircleCI adds to a repository an OAuth
+// project builds.
+func circleCIDeployKey() *github.Key {
+	return &github.Key{ID: new(int64(circleCIDeployKeyID)), Title: new(circleCIDeployKeyTitle), ReadOnly: new(true), Key: new("ssh-rsa AAAAB3NzaC1yc2E circleci")}
+}
+
+// jobState is a CircleCI job and the state of its status.
+type jobState struct{ job, state string }
+
+// addTagBuild seeds the statuses of the build of tag as the CircleCI GitHub
+// App posts them: workflow's first status two seconds after the release was
+// published (publishedAt), the jobs' own states a few seconds apart.
+func (r *fakeRepo) addTagBuild(tag, workflow string, publishedAt time.Time, jobs ...jobState) {
+	for i, j := range jobs {
+		r.addStatus(tag, j.job, j.state, workflow, CircleCIAppLogin, publishedAt.Add(time.Duration(2+i)*time.Second))
 	}
 }
 
-func (f *fakeCircleCI) routes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/v2/me", func(w http.ResponseWriter, _ *http.Request) {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		writeJSON(w, 200, circleciclient.User{ID: "user-1", Login: f.login, Name: f.login})
-	})
-	mux.HandleFunc("POST /api/v1.1/project/github/{org}/{repo}/follow", func(w http.ResponseWriter, r *http.Request) {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		if !f.admits(w, r) {
-			return
-		}
-		slug := r.PathValue("org") + "/" + r.PathValue("repo")
-		if _, ok := f.projects[slug]; !ok {
-			f.projects[slug] = &fakeProject{} // CircleCI's defaults: no setup workflows, no key yet
-		}
-		f.projects[slug].following = true
-		if f.onFollow != nil {
-			f.onFollow(r.PathValue("org"), r.PathValue("repo"))
-		}
-		writeJSON(w, 200, map[string]any{"followed": true})
-	})
-	// The v1.1 route of the user's unfollow: it does not remove the
-	// project, as on CircleCI.
-	mux.HandleFunc("POST /api/v1.1/project/github/{org}/{repo}/unfollow", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
-		p.following = false
-		writeJSON(w, 200, map[string]any{"followed": false})
-	}))
-	mux.HandleFunc("GET /api/v1.1/project/github/{org}/{repo}/settings", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
-		writeJSON(w, 200, map[string]any{"following": p.following, "has_usable_key": len(p.keys) > 0})
-	}))
-	mux.HandleFunc("GET /api/v2/project/gh/{org}/{repo}", f.withProject(func(w http.ResponseWriter, r *http.Request, _ *fakeProject) {
-		writeJSON(w, 200, circleciclient.Project{Slug: "gh/" + r.PathValue("org") + "/" + r.PathValue("repo"), Name: r.PathValue("repo")})
-	}))
-	mux.HandleFunc("GET /api/v2/project/gh/{org}/{repo}/settings", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
-		writeJSON(w, 200, map[string]any{"advanced": map[string]any{"setup_workflows": p.setupWorkflows, "autocancel_builds": true}})
-	}))
-	mux.HandleFunc("PATCH /api/v2/project/gh/{org}/{repo}/settings", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
-		if !f.admits(w, r) {
-			return
-		}
-		var in circleciclient.ProjectSettings
-		decode(r, &in)
-		if in.Advanced.SetupWorkflows != nil {
-			p.setupWorkflows = *in.Advanced.SetupWorkflows
-		}
-		writeJSON(w, 200, map[string]any{"advanced": map[string]any{"setup_workflows": p.setupWorkflows}})
-	}))
-	mux.HandleFunc("GET /api/v2/project/gh/{org}/{repo}/checkout-key", f.withProject(func(w http.ResponseWriter, _ *http.Request, p *fakeProject) {
-		keys := p.keys
-		if keys == nil {
-			keys = []circleciclient.CheckoutKey{}
-		}
-		writeJSON(w, 200, map[string]any{"items": keys, "next_page_token": nil})
-	}))
-	mux.HandleFunc("POST /api/v2/project/gh/{org}/{repo}/checkout-key", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
-		if !f.admits(w, r) {
-			return
-		}
-		if f.keyStatus != 0 {
-			writeJSON(w, f.keyStatus, map[string]string{"message": "Error creating deploy key"})
-			return
-		}
-		var in map[string]string
-		decode(r, &in)
-		k := circleciclient.CheckoutKey{Type: in["type"], Preferred: true, Fingerprint: "aa:bb", CreatedAt: time.Now()}
-		p.keys = append(p.keys, k)
-		if in["type"] == circleciclient.KeyTypeDeployKey && f.onKey != nil {
-			f.onKey(r.PathValue("org"), r.PathValue("repo"))
-		}
-		writeJSON(w, 201, k)
-	}))
-	mux.HandleFunc("GET /api/v2/project/gh/{org}/{repo}/pipeline", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
-		// The page token is the offset of the page's first pipeline.
-		token := r.URL.Query().Get("page-token")
-		f.pages = append(f.pages, token)
-		from, _ := strconv.Atoi(token)
-		items := p.pipelines[min(from, len(p.pipelines)):]
-		var next any
-		if f.pageSize > 0 && len(items) > f.pageSize {
-			items = items[:f.pageSize]
-			next = strconv.Itoa(from + f.pageSize)
-		}
-		if items == nil {
-			items = []circleciclient.Pipeline{}
-		}
-		writeJSON(w, 200, map[string]any{"items": items, "next_page_token": next})
-	}))
-	mux.HandleFunc("POST /api/v2/project/gh/{org}/{repo}/pipeline", f.withProject(func(w http.ResponseWriter, r *http.Request, p *fakeProject) {
-		var in struct {
-			Tag string `json:"tag"`
-		}
-		decode(r, &in)
-		f.addPipeline(p, in.Tag, "success")
-		writeJSON(w, 201, p.pipelines[0])
-	}))
-	mux.HandleFunc("GET /api/v2/pipeline/{id}/workflow", func(w http.ResponseWriter, r *http.Request) {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		writeJSON(w, 200, map[string]any{"items": f.workflows[r.PathValue("id")]})
-	})
-	mux.HandleFunc("GET /api/v2/workflow/{id}/job", func(w http.ResponseWriter, r *http.Request) {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		writeJSON(w, 200, map[string]any{"items": f.jobs[r.PathValue("id")]})
-	})
+// fakeStatus is one commit status of a ref, as GitHub lists it.
+type fakeStatus struct {
+	context, state, targetURL, creator string
+	at                                 time.Time
+}
+
+// addStatus seeds a CircleCI-style status on ref (a branch or a tag): job is
+// the CircleCI job's name, workflow the workflow its target URL names,
+// creator the login that posted it. Statuses are listed newest first.
+func (r *fakeRepo) addStatus(ref, job, state, workflow, creator string, at time.Time) {
+	if r.refStatuses == nil {
+		r.refStatuses = map[string][]fakeStatus{}
+	}
+	s := fakeStatus{context: CircleCIContextPrefix + job, state: state, creator: creator, at: at,
+		targetURL: "https://app.circleci.com/workflow/" + workflow + "/job/" + job}
+	list := append(r.refStatuses[ref], s)
+	sort.SliceStable(list, func(i, j int) bool { return list[i].at.After(list[j].at) })
+	r.refStatuses[ref] = list
 }
 
 // scaffoldFiles is what the fake renderer renders and what a seeded

@@ -81,6 +81,24 @@ func workflowRun(id int64, name, status, conclusion string) *github.WorkflowRun 
 	return run
 }
 
+// stuckJobDone is when the only job of giantswarm/devctl-mcp-proof's Actions
+// run 39827025949 completed; GitHub left the run in progress for an hour after.
+var stuckJobDone = time.Date(2026, 10, 22, 17, 57, 4, 0, time.UTC)
+
+// stuckRun is that run as it read while it stayed in progress.
+func stuckRun() *github.WorkflowRun {
+	run := ofWorkflow(workflowRun(39827025949, "pre-commit", "in_progress", ""), 1, 107944062674)
+	run.RunStartedAt = &github.Timestamp{Time: stuckJobDone.Add(-37 * time.Second)}
+	return run
+}
+
+// stuckJob is the check run of that run's job, completed at completed.
+func stuckJob(name, status, conclusion string, completed time.Time) *github.CheckRun {
+	run := inSuite(ofApp(checkRun(119992893079, name, status, conclusion, completed.Add(-34*time.Second)), actionsApp), 107944062674)
+	run.CompletedAt = &github.Timestamp{Time: completed}
+	return run
+}
+
 func circle(state string, workflows ...circleciclient.Workflow) *circleSnapshot {
 	return &circleSnapshot{
 		project:   "github/o/r",
@@ -498,6 +516,65 @@ func Test_evaluate(t *testing.T) {
 			skipFieldChecks: true,
 		},
 		{
+			name: "giantswarm/devctl-mcp-proof run 39827025949: in progress an hour after its only job succeeded, judged by the job: green",
+			snapshot: snapshot{
+				now:       stuckJobDone.Add(30 * time.Minute),
+				checkRuns: []*github.CheckRun{stuckJob("pre-commit", "completed", "success", stuckJobDone)},
+				runs:      []*github.WorkflowRun{stuckRun()},
+				required:  []string{"pre-commit"},
+			},
+			wantGreen: true,
+			wantChecks: []Check{
+				{Name: "pre-commit", ID: 119992893079, Workflow: "pre-commit", Source: SourceCheckRun, Status: "completed", Conclusion: "success", URL: "https://github.com/o/r/runs/pre-commit", Required: true},
+			},
+			wantActions: []ActionRun{
+				{Name: "pre-commit", RunID: 39827025949, Status: "in_progress", URL: "https://github.com/o/r/actions/runs/pre-commit", JobsCompleted: true},
+			},
+		},
+		{
+			name: "a run in progress whose only job completed less than the grace ago: still waited for",
+			snapshot: snapshot{
+				now:       stuckJobDone.Add(RunSettleGrace - time.Second),
+				checkRuns: []*github.CheckRun{stuckJob("pre-commit", "completed", "success", stuckJobDone)},
+				runs:      []*github.WorkflowRun{stuckRun()},
+			},
+			wantUnfinished:  []string{"actions run pre-commit (in_progress)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a run in progress with one job done long ago and one still queued: both waited for",
+			snapshot: snapshot{
+				now: stuckJobDone.Add(time.Hour),
+				checkRuns: []*github.CheckRun{
+					stuckJob("pre-commit", "completed", "success", stuckJobDone),
+					inSuite(ofApp(checkRun(119992893080, "test", "queued", "", stuckJobDone), actionsApp), 107944062674),
+				},
+				runs: []*github.WorkflowRun{stuckRun()},
+			},
+			wantUnfinished:  []string{"check test (queued)", "actions run pre-commit (in_progress)"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a run in progress with its only job failed long ago: red, and judged by the job",
+			snapshot: snapshot{
+				now:       stuckJobDone.Add(time.Hour),
+				checkRuns: []*github.CheckRun{stuckJob("pre-commit", "completed", "failure", stuckJobDone)},
+				runs:      []*github.WorkflowRun{stuckRun()},
+			},
+			wantRed:         []string{"check pre-commit concluded failure"},
+			skipFieldChecks: true,
+		},
+		{
+			name: "a queued run whose listed jobs completed long ago: still waited for",
+			snapshot: snapshot{
+				now:       stuckJobDone.Add(time.Hour),
+				checkRuns: []*github.CheckRun{stuckJob("pre-commit", "completed", "success", stuckJobDone)},
+				runs:      []*github.WorkflowRun{ofWorkflow(workflowRun(39827025949, "pre-commit", "queued", ""), 1, 107944062674)},
+			},
+			wantUnfinished:  []string{"actions run pre-commit (queued)"},
+			skipFieldChecks: true,
+		},
+		{
 			name: "a setup workflow done, its continuation pending, a required context absent: pending, not never reported",
 			snapshot: snapshot{
 				statuses: []*github.RepoStatus{status("ci/circleci: setup", "success")},
@@ -662,6 +739,118 @@ func Test_evaluate(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.wantCircleCI, e.circleci); diff != "" {
 				t.Errorf("circleci:\n%s", diff)
+			}
+		})
+	}
+}
+
+func Test_evaluate_cancelledCheckSupersession(t *testing.T) {
+	// In the reported incident the cancelled job belonged to the higher-ID
+	// workflow run, but the passing job actually started later.
+	started := time.Date(2026, 11, 2, 6, 52, 4, 0, time.UTC)
+	name := "semantic-pull-request / Validate PR title"
+	cancelled := inSuite(checkRun(125137577525, name, "completed", "cancelled", started), 112198936963)
+	passed := inSuite(checkRun(125137583682, name, "completed", "success", started.Add(3*time.Second)), 112198936353)
+	cancelledWorkflow := ofWorkflow(workflowRun(41402634717, "semantic-pull-request", "completed", "cancelled"), 366354474, 112198936963)
+	passedWorkflow := ofWorkflow(workflowRun(41402634492, "semantic-pull-request", "completed", "success"), 366354474, 112198936353)
+
+	for _, tc := range []struct {
+		name      string
+		checks    []*github.CheckRun
+		workflows []*github.WorkflowRun
+		wantGreen bool
+		wantRed   bool
+		wantIDs   []int64
+	}{
+		{
+			name:      "later passing job in a lower-ID workflow run supersedes cancellation",
+			checks:    []*github.CheckRun{cancelled, passed},
+			workflows: []*github.WorkflowRun{cancelledWorkflow, passedWorkflow},
+			wantGreen: true,
+			wantIDs:   []int64{passed.GetID()},
+		},
+		{
+			name:      "passing job listed first still supersedes cancellation",
+			checks:    []*github.CheckRun{passed, cancelled},
+			workflows: []*github.WorkflowRun{passedWorkflow, cancelledWorkflow},
+			wantGreen: true,
+			wantIDs:   []int64{passed.GetID()},
+		},
+		{
+			name: "later pending job supersedes cancellation but still waits",
+			checks: []*github.CheckRun{
+				cancelled, inSuite(checkRun(passed.GetID(), name, "in_progress", "", started.Add(3*time.Second)), 112198936353),
+			},
+			workflows: []*github.WorkflowRun{
+				cancelledWorkflow, ofWorkflow(workflowRun(passedWorkflow.GetID(), "semantic-pull-request", "in_progress", ""), 366354474, 112198936353),
+			},
+			wantIDs: []int64{passed.GetID()},
+		},
+		{
+			name: "jobs started together use the later check run ID",
+			checks: []*github.CheckRun{
+				cancelled, inSuite(checkRun(passed.GetID(), name, "completed", "success", started), 112198936353),
+			},
+			workflows: []*github.WorkflowRun{cancelledWorkflow, passedWorkflow},
+			wantGreen: true,
+			wantIDs:   []int64{passed.GetID()},
+		},
+		{
+			name:      "only cancelled job remains red",
+			checks:    []*github.CheckRun{cancelled},
+			workflows: []*github.WorkflowRun{cancelledWorkflow},
+			wantRed:   true,
+			wantIDs:   []int64{cancelled.GetID()},
+		},
+		{
+			name: "cancellation started after the passing job remains red",
+			checks: []*github.CheckRun{
+				inSuite(checkRun(cancelled.GetID(), name, "completed", "cancelled", started.Add(time.Minute)), 112198936963), passed,
+			},
+			workflows: []*github.WorkflowRun{cancelledWorkflow, passedWorkflow},
+			wantRed:   true,
+			wantIDs:   []int64{cancelled.GetID()},
+		},
+		{
+			name: "a passing matrix sibling does not supersede cancellation",
+			checks: []*github.CheckRun{
+				cancelled, inSuite(checkRun(passed.GetID(), name, "completed", "success", started.Add(3*time.Second)), 112198936963),
+			},
+			workflows: []*github.WorkflowRun{cancelledWorkflow},
+			wantRed:   true,
+			wantIDs:   []int64{cancelled.GetID(), passed.GetID()},
+		},
+		{
+			name: "a later check in another run does not hide a cancelled matrix job",
+			checks: []*github.CheckRun{
+				cancelled, passed,
+				inSuite(checkRun(passed.GetID()+1, name, "completed", "success", started.Add(time.Minute)), 112198936963),
+			},
+			workflows: []*github.WorkflowRun{cancelledWorkflow, passedWorkflow},
+			wantRed:   true,
+			wantIDs:   []int64{cancelled.GetID(), passed.GetID() + 1},
+		},
+		{
+			name:   "a separate workflow with the same name does not supersede cancellation",
+			checks: []*github.CheckRun{cancelled, passed},
+			workflows: []*github.WorkflowRun{
+				cancelledWorkflow, ofWorkflow(workflowRun(passedWorkflow.GetID(), "semantic-pull-request", "completed", "success"), 2, 112198936353),
+			},
+			wantRed: true,
+			wantIDs: []int64{cancelled.GetID(), passed.GetID()},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := evaluate(snapshot{checkRuns: tc.checks, runs: tc.workflows, required: []string{name}})
+			if e.green() != tc.wantGreen || (len(e.red) > 0) != tc.wantRed {
+				t.Errorf("want green=%v red=%v, got green=%v red=%q unfinished=%q", tc.wantGreen, tc.wantRed, e.green(), e.red, e.unfinished)
+			}
+			var ids []int64
+			for _, check := range e.checks {
+				ids = append(ids, check.ID)
+			}
+			if diff := cmp.Diff(tc.wantIDs, ids); diff != "" {
+				t.Errorf("check run IDs (-want +got):\n%s", diff)
 			}
 		})
 	}

@@ -24,7 +24,9 @@ jobs are candidates: the generated workflows.yml and the repository's own
 custom.yml, or a hand-kept config.yml when there is no generated pipeline,
 read from the repository's .circleci, or from --circleci-dir when the
 pipeline was just generated and is not pushed yet. A scheduled or
-conditional workflow and an approval job are no candidates.
+conditional workflow and an approval job are no candidates. A repository with a
+tests/e2e directory has Heimdall's gatekeeper, 'Heimdall - PR Gatekeeper',
+as one more candidate.
 
 The command removes nothing it was not told to: a context already required
 stays, whether it reported or not and whatever system reports it, unless
@@ -33,7 +35,9 @@ whose job that pipeline does not have.
 
 --checks names are required whatever reported, --checks-if-reported names
 once they have reported, --remove names never. Without --update the drift
-is printed and nothing changes. The branch's reviews, admin enforcement
+is printed and nothing changes. Check names do not select a reporting App:
+existing source pins stay, and new checks have no explicit source pin.
+The branch's reviews, admin enforcement
 and "up to date" (strict) setting are left as they are; the branch must
 already be protected, by classic branch protection or by the ruleset
 'devctl: default branch', of which only the required_status_checks rule

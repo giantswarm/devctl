@@ -1,6 +1,8 @@
 package setup
 
 import (
+	"regexp"
+
 	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
 
@@ -72,7 +74,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.DefaultBranch, "default-branch", "main", "Default branch name")
 	cmd.Flags().BoolVar(&f.DisableBranchProtection, "disable-branch-protection", false, "Disable default branch protection")
 	cmd.Flags().StringSliceVar(&f.Checks, "checks", nil, "Check context names for branch protection. Default will add all auto-detected checks, this can be disabled by passing an empty string. Overrides \"--checks-filter\"")
-	cmd.Flags().StringVar(&f.ChecksFilter, "checks-filter", "aliyun|validate-changelog|check-values-schema", "Provide a regex to filter checks. Checks matching the regex will be ignored. Empty string disables filter (all checks are accepted).")
+	cmd.Flags().StringVar(&f.ChecksFilter, "checks-filter", "aliyun|validate-changelog|^check-values-schema$", "Provide a regex to filter checks. Checks matching the regex will be ignored. Empty string disables filter (all checks are accepted).")
 
 	// Renovate
 	cmd.Flags().BoolVar(&f.SetupRenovate, "renovate", true, "Check that the Renovate installation covers the repo; a missing repo is reported with the fix, the installation is edited by an organization owner.")
@@ -81,5 +83,13 @@ func (f *flag) Init(cmd *cobra.Command) {
 }
 
 func (f *flag) Validate() error {
-	return microerror.Mask(engine.ValidateOutput(f.Output))
+	if err := engine.ValidateOutput(f.Output); err != nil {
+		return microerror.Mask(err)
+	}
+	if f.Checks == nil && f.ChecksFilter != "" {
+		if _, err := regexp.Compile(f.ChecksFilter); err != nil {
+			return microerror.Maskf(invalidFlagError, "--checks-filter %q: %v", f.ChecksFilter, err)
+		}
+	}
+	return nil
 }

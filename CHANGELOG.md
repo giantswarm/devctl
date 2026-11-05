@@ -9,6 +9,138 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- The devctl chart's opt-in `networkPolicy.enabled` renders a Cilium egress policy for DNS, GitHub, the registries
+  and catalogs, and the Dex token endpoint and API server of every installation. It uses the same endpoints as
+  `--installations`, including overrides, so adding an installation needs only one values change.
+
+### Fixed
+
+- `gen makefile`: `make build-docker` builds `<binary>-linux-<arch>` for the host architecture ([giantswarm/giantswarm#38805](https://github.com/giantswarm/giantswarm/issues/38805)).
+- Concurrent updates to `DEVCTL_KEYRING_FILE` preserve changes to every identity and readers see complete records.
+- CircleCI waits read every workflow page, so a failed or running workflow on a later page is no longer missed.
+
+- Bulk PR approval targets the checked commit, and direct merges and Align branch updates
+  require that head so a concurrent push cannot substitute unchecked code.
+- The bulk PR approval commands require readable commit statuses and every page of check runs;
+  a green status no longer hides a failed or pending Actions check.
+- `gen dependabot` detects root Python requirements, Pipfile, setup.cfg and pyproject manifests.
+
+- `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
+  last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
+  branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
+  those reads, the step reports the finding `unchecked`, naming what it could not read, instead of
+  `circleci-pipeline-missing`. A pipeline whose
+  workflows ignore the default branch (`branches: ignore: main`, as on envoy-gateway-app and ingress-nginx-app) was
+  reported `circleci-pipeline-missing`, and so non-converged, although CircleCI builds its pull requests and tags.
+
+### Changed
+
+- CircleCI without a shared identity: new repositories build on a CircleCI GitHub App pipeline created by the person
+  who asks for them, and the reconciler writes nothing on CircleCI
+  ([giantswarm/giantswarm#38799](https://github.com/giantswarm/giantswarm/issues/38799)).
+  - `repo follow-circleci` sets a repository up on a GitHub App pipeline with your CircleCI login (Write access). It is
+    idempotent: it creates `<repository>-app` and an `all-pushes` trigger when they are missing, switches setup workflows
+    on when they are off, runs the default
+    branch and every unbuilt release (the newest of each multi-image line), and waits for green. `--migrate` deletes the OAuth pipeline's triggers. It
+    replaces the follow that repaired `circleci-webhook-missing`.
+  - `repo watch` takes that step for the creator once the reconciler has set the repository up (`--circleci=false`
+    skips it). When the set-up ran the first release, whose tag came before the pipeline, the watch ends on that run,
+    read with the person's CircleCI login. `repo create` prints the `repo watch` to run, in JSON too.
+  - The engine's circleci step is check-only: a GitHub App pipeline present is `ok`, otherwise the finding
+    `circleci-pipeline-missing` (replacing `circleci-webhook-missing`) names `repo follow-circleci`. A repository built
+    by an OAuth follow, alone or beside a GitHub App pipeline, is the advisory finding `circleci-oauth-follow` with
+    the `--migrate` fix: it builds today, so it does not keep the run from converging. It reads the
+    project's pipeline definitions with a person's CircleCI login, and without one who posted the CircleCI statuses
+    of the newest of the default branch's last 5 commits that carries any. The follow, the temporary admin grant,
+    setup workflows, checkout keys and the webhook check are gone, and so are the unfollow on archive and delete.
+  - The release step reads the GitHub App pipeline's statuses on the release tag's commit, on GitHub: the setup
+    workflows started after the release and the workflows each one continues into. It never triggers (GitHub App
+    pipelines carry no `vcs` in CircleCI's API). A missed tag build (`missed-tag-build`) names `repo follow-circleci`.
+    A tag built by an OAuth follow alone is skipped, not verified: its statuses name jobs, not workflows.
+  - The generated auto-release workflows (single and multi-image) watch for the tag's CircleCI statuses with
+    `GITHUB_TOKEN` (`statuses: read`) instead of reading and triggering pipelines with `CIRCLECI_API_TOKEN`. A
+    commit without any CircleCI status, or with an OAuth follow's only, warns; a missed tag fails, naming the
+    person's fix.
+
+- `gen precommit` and `gen workflows`: the generated `pre-commit`, `chart-tests`, `check-values-schema`,
+  `check-readme-links`, `gitleaks` and `semantic-pull-request` workflows group runs by workflow and pull request
+  number (falling back to ref) and cancel superseded runs only on `pull_request` events, leaving `main`/`master`
+  pushes, `merge_group`, scheduled and manual runs untouched.
+- `pr wait`, `pr merge` (`--timeout`, `--release-timeout`), `release wait` and `rollout wait --release-timeout` default to
+  60 minutes instead of 30. The `serve` tools keep a 30 minute default within their 55 minute cap.
+- The generated auto-release, changelog validation, helm-docs and pre-commit workflows run on `ubuntu-26.04`
+  instead of `ubuntu-24.04`. The generated `renovate.json5` disables Renovate's runner updates in
+  `.github/workflows/zz_generated.*`, which align-files regenerates.
+
+### Added
+
+- `ci job --step-output` includes the first and last lines of every step's output, including
+  successful steps, so a soft-passed nancy scanner outage is visible without the CircleCI UI.
+  `--lines` bounds each excerpt (200 by default); unreadable output is reported per step.
+
+- `ci job` takes the URL a CircleCI commit status links, alone, including a GitHub App pipeline's
+  `app.circleci.com/workflow/<id>/job/<id>`, which it resolves to the project and job number through the workflow.
+
+- `gen workflows --reservation-support` (app flavour only, off by default) generates
+  `zz_generated.reservation_command.yaml`, which sends `/deploy`, `/undeploy` and `/extend` pull request comments and
+  pull request closes to giantswarm/mc-reservations with an app token scoped to that repository, minted from the
+  `MC_RESERVATIONS_DISPATCH_CLIENT_ID` and `MC_RESERVATIONS_DISPATCH_APP_KEY` org secrets.
+
+- `gen circleci` and `gen workflows`: the `multi-image` flavour, a repository of several images, one per
+  `toolchains/<name>/` directory holding a `Dockerfile`, each released as its own `<name>/vX.Y.Z` line (giantswarm/agent-toolchains).
+  The setup job reads the image directories at pipeline runtime: a branch pushes an amd64 dev image of each image it
+  changed (every image when it changed a file under `toolchains/` outside them), a tag `<name>/vX.Y.Z` publishes that
+  image multi-arch to gsoci after the repository's `check-image` job when `.circleci/custom.yml` defines one.
+  `--release-workflow auto-release`, the only one it takes, tags each image changed since its latest tag from the
+  pushed commit's subject and makes sure CircleCI built every tag; `cliff.toml` is removed.
+
+- `ci job <owner/repo> <job number> [--lines <n>]`: one CircleCI job, one JSON document: its status, page and times,
+  every step with its status and times, and the last lines (200 by default) of its failed steps' output without
+  control sequences, the tail `pr wait --failed-log` reads, for a job of any pipeline. It takes the `devctl auth
+  login` CircleCI login in devctl's process; a step's output is read from its signed URL without it.
+- `devctl serve`: `reservation_reserve`, `reservation_list`, `reservation_extend` and `reservation_release`, the
+  `devctl reservation` commands as the person, `reservation_list` read-only. They take no `user`: the holder is the
+  login of the person's grant. Each call works on a shallow clone of the GitOps repository's `main` of its own,
+  removed when it ends, with the person's token as its git credential and the person (login, noreply address) as the
+  commits' author, and answers the command's JSON in devctl's envelope: another holder's reservation and a push the
+  repository refuses are `refused` (exit 5), a missing cluster, app or reservation `not_applicable` (exit 3). The
+  image carries `git`.
+- Any command: the word `Error` of a failure is red, and the word `Warning` is yellow, when stderr is a terminal and `NO_COLOR` is unset.
+- `reservation reserve`: points one management cluster's copy of one collection app at the dev builds of one branch for 10 hours (`--duration` up to 7 days, or the cluster's lower `reservations.giantswarm.io/max-duration`). It writes a Kustomize component with a second `OCIRepository` following the branch's dev tags, records the holder in the cluster's `configmap-reservations.yaml`, renders the cluster's collections to check the reservation really is in effect, and pushes one commit. `--exclusive` locks the whole cluster. The app is found by the chart its source object serves (`--app` overrides). Repeating the same reservation refreshes its window. `--pull-request` must be `owner/repo#number` in `reserve`, `extend` and `release`; a failed run leaves the checkout clean; promoting to `--exclusive` for another branch or pull request is refused. `--user` must be a GitHub login (or an app's `name[bot]`) in `reserve`, `extend`, `release` and `reap`.
+- `reservation release`: undoes what `reserve` wrote for one app on one cluster in one commit, and fails when the app holds no reservation there. With `--pull-request` and no `--cluster` it releases everything that pull request holds, and a pull request that holds nothing is not an error. `--app` and `--app-dir` are refused together, and without `--cluster`.
+- `reservation extend`: resets the expiry of every reservation a pull request holds across the enabled clusters; `--user` makes that user the holder.
+- `reservation reap`: releases every expired reservation of every enabled cluster, and one whose pull request's branch was renamed (needs a GitHub token from `authstore.ResolveGitHub`; without one it releases only the expired ones). It prints one tab-separated line per release.
+- `reservation list`: prints the reservations of a cluster, each marked `active`, or `expired` when it is past its expiry and `reap` has not swept it yet.
+- `reservation` commands work only on a synced GitOps checkout (`--gitops-dir`, or `$UMBRELLA_TARGET_DIR/cmc/<repo>`), never clone and never read the Kubernetes API. The checkout must be a clean `main`; devctl fetches and fast-forwards it first. Commits use the git identity of whoever runs devctl, never `--user`. A rejected push is fetched, reset and rerun up to 5 times. `--user` defaults to the login of the GitHub token. `--output json` prints the result as JSON. `--dry-run` (all but `list`) makes the commits, shows them on stderr and resets the checkout, pushing nothing. `--duration` takes Go durations of whole minutes (`4h30m`) or whole days (`2d`). `--cluster`, `--user` and `--pull-request` are checked strictly before any work.
+- `devctl serve`: `rollout_wait`, `devctl rollout wait` in one call kept alive by progress, read-only (no
+  reconcile). It reads the installation's management cluster as the person: muster's forwarded Dex token is exchanged
+  at the installation's Dex (RFC 8693) for a token the cluster's API accepts, so the cluster answers by the person's
+  access; no kubeconfig, no credential of a cluster. `--installations` names each installation's API, Dex and exchange
+  client; the chart's `installations` values render it from a base domain and mount the hub muster's
+  `<name>-token-exchange-credentials`, and add `dex-k8s-authenticator` to the `MCPServer`'s `requiredAudiences`.
+  The release-then-rollout wait moved from the CLI's runner into `rolloutwait.Release`, which both share.
+
+- `repo reconcile`, `repo setup`, `repo checks`: a repository with a `tests/e2e` directory requires Heimdall's gatekeeper check once it has reported.
+- `devctl serve`: `pr_merge`, `devctl pr merge` in one call kept alive by progress (the wait for green, the merge with
+  the judged head as the expected head, the release wait) with the CLI's refusals and document, its merges listed by
+  `pr_merge_status`. A pull request merged already answers its merge and release state instead of exit 3, and a
+  second call while one runs waits for it, so nothing merges twice; exits 6 and 9 stay distinct. `release_promote`
+  behind `--release-promote`. Neither carries the read-only annotation. The CLI keeps exit 3 for a merged pull
+  request; its merge engine takes any `prmerge.GitHub`, and `pkg/prmerge/prmergetest` is its in-process test double.
+- `devctl serve`: the read-only agent-facing commands as MCP tools over streamable HTTP (`/mcp`): `pr_wait`,
+  `pr_merge_status` and `release_wait`, each with the read-only annotation. A tool answers the command's document,
+  devctl's envelope included, as structured content; the exit code is a field and the call is an MCP error only for
+  `auth_required`. A wait is one call that sends `notifications/progress` on the caller's `progressToken` every
+  `--progress-interval` (10s) until its verdict; a wait without a `progressToken` is refused at once, verdict
+  `progress_token_required` (exit 7). The server has no version gate, keychain, on-disk state, SIGHUP handling or
+  `DEVCTL_TIME_SCALE`; it reads no CircleCI, and until the platform hands it a person's GitHub token every call that
+  reads GitHub is `auth_required`.
+- `gen workflows --patch-candidates` (team file: `gen.ci.patchCandidates: true`): a patch of the last stable release
+  is cut as a release candidate `vX.Y.Z-rc.N` too, on the default branch and on a fork line's maintenance branches,
+  never tagged stable on its push, for a repository whose consumers take its next patch on their own. Every stable
+  release is a promotion. Opt-in: a repository without it keeps the patch fast path.
+- `devctl release promote --branch <branch>`, for one repository: promotes the candidate of that branch instead of the
+  default branch's, a fork line's maintenance branch `release-X.Y` cutting the candidates of its own series.
 - `gen workflows` flavour `fleet`: the mctl workflows of a management-clusters repository (`zz_generated.mctl_*.yaml`, mctl image pinned to 0.1.16), replacing the copies and `op.env` `mctl create cmc-repo` wrote.
 - `devctl release rerun` cancels a tag workflow running longer than `--wedged-after` (2h; `0` turns it off), its
   jobs hung on CircleCI's side, waits for the cancel to land and reruns it from failed, from start where CircleCI
@@ -18,6 +150,52 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen workflows` flavour `fleet`: for customer installations the mctl merge gate fails, and the merge cascade does not
+  land the installations PR, while its `<installation>/cluster.yaml` lacks `slack.support`, `accountEngineer` or
+  `accountEngineersHandle` or holds mctl's `FILL_IN_` placeholders; the `/config` comment asks to fill them in, and
+  the `/create-mc` prompt lists `mctl validate-config`'s warnings (giantswarm/giantswarm#38847).
+- `gen workflows` flavour `fleet`: mctl image pinned to 0.6.0.
+- `gen workflows`: the customer repositories' `add_customer_board_automation` workflow passes the
+  `giantswarm-project-automation` App's `PROJECT_AUTOMATION_CLIENT_ID` and `PROJECT_AUTOMATION_PRIVATE_KEY` to
+  `issue-to-customer-board.yaml` instead of architectbot's `ISSUE_AUTOMATION` token (giantswarm/giantswarm#38800).
+- `gen makefile --language go` and `gen precommit --language go`: `make lint` and the `golangci-lint` hook pass no
+  `-E` linter flags; the linters live in the repository's golangci-lint configuration, so a bare `golangci-lint run`
+  lints with the same set. Both commands write `.golangci.yaml` (gosec and goconst on top of the standard set,
+  issues uncapped) when the repository has none, and add gosec and goconst (govet too when `linters.default`
+  replaces the standard set) to `linters.enable` of a repository's own `.golangci.yml` or `.golangci.yaml` that
+  neither enables nor disables them, leaving the rest of the file as it is. A TOML or JSON configuration, or a flow
+  style `linters` or `linters.enable`, fails generation naming the linters to enable.
+
+- `reservation`: a refusal names the holder's pull request and says when the holder is an exclusive reservation
+  that locks every app on the cluster. With `--output json`, `reserve` adds `replaced`, the expired reservation of
+  another branch or pull request it took over, and every `extend` entry adds `scope` and `commit`.
+
+- `gen circleci`: the generated pipelines pin architect orb 10.15.1. Its executor runs architect 8.6.20 (Go 1.27.3),
+  which carries the `crypto/x509` fix for the eMudhra intermediate CA compromise of October 2026 (GO-2026-6809), so
+  `go-build` produces binaries the sbom-advisory-operator's `go-stdlib` rule accepts instead of flagging every image
+  built on Go 1.27.2. Its `push-to-app-catalog` pushes the git catalog with the architect GitHub App's token instead of
+  catalogbot's SSH key, and gives up at once on a push the catalog refuses (a throttling 403 is still retried), so the
+  job needs the architect context.
+- `devctl serve` names the caller from the person's GitHub grant (`GET /user`, kept five minutes), not from the ID
+  token muster forwards: logs carry `login` and `userId`, metrics `login` and `user_id` instead of `subject`. A tool
+  call without a grant GitHub accepts, `pr_merge_status` included, is `auth_required` marked `grant_required`. The
+  chart ignores `identity`.
+
+- `devctl serve`: a blocking tool (`pr_wait`, `pr_merge`, `release_wait`, `release_promote`) called without a
+  `progressToken`, as through muster's `call_tool` or `muster call`, is no longer refused with
+  `progress_token_required`: it answers within `--no-progress-timeout` (20s) with the verdict reached by then,
+  `timeout` (exit 2) while pending, and a warning saying how to go on. `pr_merge` merges only a head it judged green
+  in that time; a merge whose release is not confirmed yet is exit 9, and calling again merges nothing twice. Without
+  a grant such a call is `auth_required`. A call with a `progressToken` blocks as before. The chart's
+  `noProgressTimeout` sets the flag.
+
+- `prwait.Config.GitHub` is the `prwait.GitHub` interface `*githubclient.Client` satisfies, and the `pr wait` and
+  `pr merge status` documents are `prwait.Document` and `mergejob.StatusDocument`, shared by the CLI and the server.
+- The agent-facing engines (`pr wait`, `pr merge`, `release wait`, `release promote`, `rollout wait`) take clients built
+  from tokens their caller hands in: `releasewait.NewSources`, `releasepromote.NewSources` (each from `Credentials`) and
+  `rolloutwait.NewClient` (a `rest.Config`, a bearer token for one). The keychain, docker keychain, kubeconfig and tsh
+  wiring moved out of the engine packages into the CLI's `internal/laptop`; `releasewait.RegistryProber` with no
+  `Keychain` reads the private registry anonymously. The laptop commands and their documents are unchanged.
 - `gen workflows` flavour `fleet`: mctl image pinned to 0.2.1.
 - `devctl release promote` follows the Auto Release run each dispatch started until it concludes, at most
   `--follow-timeout` (20m): a run the repository's stable gate refuses, or that fails otherwise, is `refused`
@@ -36,6 +214,107 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `gen circleci`: a workflow that builds an image or a chart resolves its version once. It starts with the architect
+  orb's `pin-version` job (orb 10.16.7), which every image and chart job requires, and the chart jobs attach the
+  workspace it persists `.pipeline_version` to; a stable tag landing mid-workflow (a promote) no longer gives the image
+  and the chart that references it different versions (giantswarm/backstage#3260). A workflow without an image or a
+  published chart (a binary, a node library, a template repository) and the multi-image pipeline, whose workflows
+  resolve the version in one job each, only move to the new orb.
+- `pr wait`, `pr merge` and every other lookup of a CircleCI pipeline by revision or tag (`release wait`, `pr rerun`)
+  find the pipeline in a project CircleCI builds through its GitHub App. Such a pipeline has no `vcs`, so `pr wait`
+  never found the head's and ran out its timeout (exit 2), even with every CircleCI job green and only Actions runs
+  awaiting approval left (exit 4). When `vcs` is absent, the revision, branch and tag are read from
+  `trigger_parameters.git`.
+- Update `golang.org/x/net` to v0.62.0 for CVE-2026-78661. The `nancy` scan failed on it, so the v8.161.1 release build
+  attached no binaries.
+- `gen precommit`: `zz_generated.app-platform.values.yaml` declares the values the platform injects besides the
+  common cluster values, so a chart whose schema closes the root or `global` no longer fails with
+  `values-schema-violation` on them: `externalDNSIP` (private and vSphere clusters), `helm` (the management cluster
+  itself), `managementCluster` (catalog config) and `global.podSecurityStandards` (legacy `psp-removal-patch`
+  extraConfig). `global` stays open unless the chart annotates its own `global` with `additionalProperties: false`,
+  which keeps it closed for everything else
+  ([external-dns-app#521](https://github.com/giantswarm/external-dns-app/pull/521)).
+- `docs/gen.md`: a job of the repository's own that must not run on a release candidate, the krew index update of a
+  CLI among them, filters on stable tags (`/^v\d+\.\d+\.\d+$/`) before the repository moves to `auto-release`
+  ([#2652](https://github.com/giantswarm/devctl/issues/2652)).
+- `release wait`: a tag pipeline a later CircleCI listing no longer names is read again instead of judging the
+  tag's CI from its commit's statuses, so the wait no longer ends available while that pipeline's workflows run; when
+  the statuses are the verdict, `pipeline` lists them, the pending ones in `unfinished`. Exit 0 never comes with an
+  `unfinished` entry ([#2574](https://github.com/giantswarm/devctl/issues/2574)).
+
+- `reservation reap`: release a reservation whose pull request is closed or merged, with the reason `closed`, so a
+  lost close event no longer keeps the cluster reserved until the reservation expires.
+
+- `release create`: the test-catalog rewrite for dev versions is now reversed when an app/component is back on a
+  plain release version (`cluster-test` → `cluster`, `default-test` → default), so test catalogs no longer linger
+  after dev builds are replaced. CI dev-build versions (e.g. `2.12.2-r5aa25357t20261024082658h446cfd7`) are now
+  also detected as dev versions, so their catalogs are rewritten to the test variants automatically.
+- `DEVCTL_KEYRING_FILE`: `docs/auth.md`, the other command docs and the code comments state the same behaviour, a JSON
+  file read from the environment when a command starts and created with mode 0600 on first write, in place of the OS
+  keychain; unset or empty keeps the keychain
+  ([#2704](https://github.com/giantswarm/devctl/issues/2704)).
+- `pr rerun`, `release rerun`: the examples in `--help` and `docs/pr-rerun.md` call `devctl pr wait` and
+  `devctl release wait` directly
+  ([#2616](https://github.com/giantswarm/devctl/issues/2616)).
+- `pr wait` and `pr merge --accept-red`: a base branch without classic branch protection no longer ends the wait
+  with exit 7 "branch is not protected"; the required status checks of the rulesets in effect on it count like
+  those of branch protection, and a branch guarded by neither requires none, as before
+  ([#2989](https://github.com/giantswarm/devctl/issues/2989)).
+
+- `pr wait` and `pr merge`: an Actions run that GitHub leaves `in_progress` after every job of it completed no
+  longer holds the wait until its timeout; five minutes after its last job completed, its jobs are its verdict, and
+  `actions[]` marks it `jobsCompleted` ([#2956](https://github.com/giantswarm/devctl/issues/2956)).
+
+- `repo reconcile` and giantswarm-repo-manager: the release step of a `multi-image` entry verifies GitHub's latest
+  release first. A skip (no CircleCI client, project not followed) names it, and the summary leads with it before
+  the other image lines, so the manager's clientless step reads the release its inventory read instead of reporting
+  the alphabetically first line as not the latest.
+- `gen workflows` and `gen circleci`, `multi-image` flavour: a shared file or directory under `toolchains/` that a
+  commit removes counts as a change. The Auto Release diffs each image against its last tag on all of `toolchains/`
+  but the other images' directories (those holding a `Dockerfile` at HEAD or at that tag), so removing shared build
+  files releases every image and removing an image releases none of the others; a branch that removes shared build
+  files builds every image's dev image.
+
+- `release wait`, and so `pr merge` after the merge: a `multi-image` repository's `<image>/vX.Y.Z` release is
+  followed. Given as the version, or as the one image tag on a pull request's merge commit, it is followed with its
+  image `giantswarm/<repo>/<image>:<X.Y.Z>`. A merge commit carrying the tags of several images ends with exit 11
+  (`ambiguous_release`), naming each tag to wait for.
+- `repo reconcile` and giantswarm-repo-manager: the release step of a `multi-image` entry verifies the newest
+  `<name>/vX.Y.Z` release of every image line against its tag pipeline instead of skipping GitHub's latest release
+  as not a `vX.Y.Z` tag; a red or missed image release is a finding naming its tag. Drafts, pre-releases and tags
+  outside the grammar belong to no line.
+- `repo create`, `repo validate` and the creation rules: a `multi-image` entry with `gen.ci.generate: true` is
+  accepted whatever its language, its per-image pipeline being the CircleCI job, and `repo create` declares it with
+  generated CI.
+- `version update`, `version check` and the version check before every command find the latest release while GitHub
+  answers its release list with no release at all, which it does intermittently: an empty list is asked for again
+  twice, and the latest release, asked for on its own, is added when the list lacks it. go-selfupdate v1.6.7 carries
+  the same fix for its own GitHub source.
+- `rollout wait --pr` of a configuration change follows the HelmReleases a Kustomization changed with the merge
+  commit: the HelmRelease itself (until helm-controller observed its new generation), a ConfigMap or Secret of its
+  `valuesFrom` or its chart source (until it deployed after kustomize-controller wrote them). A management-clusters
+  pull request that changed a HelmRelease's values ConfigMap was `rolled_out` as soon as the Kustomization applied it.
+- `rollout wait --pr --helmrelease` of a configuration change no Konfiguration renders finds the named HelmRelease in
+  any namespace instead of exit 3; the exit 3 for a name nothing answers to says how many HelmReleases it looked
+  through, in all namespaces of the context.
+- `rollout wait`: the HelmReleases a release renders (a meta chart's components) are among its workloads, rolled out
+  once helm-controller observed their generation and they are Ready, dependencies included; a failed one is exit 1.
+  Each poll lists a resource once.
+- `devctl pr merge` refuses (exit 5) while a reviewer's `CHANGES_REQUESTED` review is still their latest verdict:
+  a newer commit, an author reply or the reviewer's later `COMMENTED` review no longer clears it, only the same
+  reviewer's `APPROVED` review or the review's dismissal. The reason names the reviewer and links the review;
+  `unansweredReviews[]` marks it `standing: true`.
+- The `gh` link (`devctl auth exec -- gh`) runs `gh issue|pr` with `--attach` on the person's own `gh` login: GitHub's
+  file upload endpoint refuses the App user token, which `gh` reported as "attaching files requires write access to the
+  repository" for a person with push access. The person's login also no longer sees a `$GITHUB_TOKEN` of the agent's
+  environment.
+- Builds on Go 1.27.3 (`toolchain go1.27.3`), which fixes the standard library vulnerability GO-2026-6809 that
+  govulncheck reports for Go 1.27.2.
+- `devctl release promote --version` accepts the bare version `X.Y.Z-rc.N`, as `devctl release wait` does, besides the
+  tag `vX.Y.Z-rc.N`.
+- The auto-release workflow skips a candidate number that a tag off the branch already holds. Such a tag is a
+  candidate tagged by hand on a pull request's branch to prove it, whose commits a rebase merge then rewrote. Before,
+  the workflow cut that tag name again, and GitHub attached the new release to the old tag's commit.
 - `gen workflows` flavour `fleet`: the mctl merge gate no longer calls `getOctokit`, which `actions/github-script@v7` does not provide; the step crashed before posting `mctl/ready-to-merge`.
 - `release create`: end the updated `releases.json` with a trailing newline.
 - The Auto-release workflow's unconventional-subject warning accepts every type git-cliff parses (letters,
@@ -47,6 +326,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   no longer pushed out of the tail. A failure already within the tail prints as before.
 
 ### Removed
+
+- The devctl chart's `identity` value, ignored since the server names the caller from the GitHub grant.
+
+- `devctl serve`: `--oidc-issuer`, `--oidc-audience` and `--oidc-ca-file`; the chart no longer mounts an issuer CA.
 
 - The CHANGELOG cut: `devctl changelog cut` and `check`, the Auto-release workflow's job that opened, approved
   and auto-merged a `docs(changelog)` cut pull request after every release, and the generated
@@ -523,14 +806,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- Renovate bumps the tool versions pinned in the generator's Makefile templates. A custom manager reads the standard
-  `# renovate:` annotation in `pkg/gen/input/**/*.mk.template`, which no other manager matched, so
-  `HELM_UNITTEST_VERSION` in `Makefile.gen.app.mk.template` sat unbumped since #2570.
-
-## [8.139.9-rc.1] - 2026-10-15
-
-### Fixed
-
+- Renovate bumps the tool versions pinned in the generator's templates. A custom manager reads the standard
+  `# renovate:` annotation in `pkg/gen/input/**/*.template`, which no other manager matched, so
+  `HELM_UNITTEST_VERSION` in `Makefile.gen.app.mk.template` sat unbumped since #2570. The kind, Kubernetes and
+  Kyverno pins of the kyverno-policy flavour carry that annotation now, in place of the `# repository:` comments,
+  which matched nothing either: `Makefile.gen.chainsaw.mk` and `test-kyverno-policies-with-chainsaw.yaml` change in
+  every kyverno-policy repo on the next align-files run.
 - `gen workflows`: `sync_from_upstream.yaml` sets `permissions: {}` at the workflow level, and `auto_release.yaml`
   grants its permissions on the `tag` job instead of the workflow, so no job inherits more than it is given.
 
@@ -1619,7 +1900,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `pr wait` and `pr merge` add a hint to a pull request's "not found" naming the devctl GitHub App login's reach
   ([#2436](https://github.com/giantswarm/devctl/issues/2436)): the App is installed on the giantswarm organization
   only, and GitHub answers 404 rather than 403 for a private repository the token cannot read, so a personal
-  repository's pull request (`teemow/dotfiles#20`) looked exactly like one that does not exist. Both commands read no
+  repository's pull request looked exactly like one that does not exist. Both commands read no
   environment override (`pkg/authstore.RequireGitHub`, never `ResolveGitHub`), so the hint names the cause without
   suggesting a variable that would have no effect on them (`authstore.GitHubAppOnlyNotFoundHint`, unlike `deploy`'s
   and `release create`'s `GitHubNotFoundHint`).

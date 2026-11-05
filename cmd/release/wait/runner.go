@@ -21,12 +21,15 @@ type runner struct {
 	// gate is versiongate.Check: an outdated devctl ends the run in the
 	// document.
 	gate func(noCache bool) error
-	// open is releasewait.OpenSources; tests inject clients over mocks.
-	open func(ctx context.Context, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*releasewait.Sources, error)
+	// open is laptop.ReleaseWaitSources; tests inject clients over mocks.
+	open func(ctx context.Context, owner string, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*releasewait.Sources, error)
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	return r.run(cmd.Context(), args)
+	agentcli.IgnoreHangup()
+	ctx, stop := agentcli.InterruptContext(cmd.Context())
+	defer stop()
+	return r.run(ctx, args)
 }
 
 // FlagError reports a flag cobra could not parse like any other wrong call:
@@ -45,7 +48,7 @@ func (r *runner) run(ctx context.Context, args []string) error {
 		repository = args[0]
 	}
 	doc := newDocument(repository)
-	err := r.wait(ctx, args, &doc)
+	err := agentcli.Interrupted(ctx, r.wait(ctx, args, &doc))
 	return agentcli.Report(r.stdout, &doc, agentcli.VerdictAvailable, err)
 }
 
@@ -91,8 +94,8 @@ func (r *runner) wait(ctx context.Context, args []string, doc *releasewait.Docum
 	// A read that fails in transit or with a 5xx is sent again, not taken
 	// as the wait's outcome.
 	retrying := &agentcli.Retrying{Clock: clock, Progress: progress, Warn: doc.Warn}
-	progress.Printf("reading the GitHub token from the keychain")
-	c, err := r.open(ctx, endpoints, retrying, doc.Warn)
+	progress.Printf("reading the GitHub login for %s", owner)
+	c, err := r.open(ctx, owner, endpoints, retrying, doc.Warn)
 	if err != nil {
 		return err
 	}
@@ -122,6 +125,9 @@ func (r *runner) wait(ctx context.Context, args []string, doc *releasewait.Docum
 		return err
 	}
 	err = waiter.Wait(ctx, &doc.Result)
+	if recordErr := releasewait.RecordPublishStatus(ctx, c.Client, doc.Result, err); recordErr != nil {
+		doc.Warn(recordErr.Error())
+	}
 	prwait.PrintFailedJobs(r.stderr, doc.FailedJobs)
 	return err
 }

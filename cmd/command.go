@@ -14,11 +14,14 @@ import (
 	"github.com/giantswarm/devctl/v8/cmd/completion"
 	"github.com/giantswarm/devctl/v8/cmd/deploy"
 	"github.com/giantswarm/devctl/v8/cmd/gen"
+	"github.com/giantswarm/devctl/v8/cmd/nancy"
 	"github.com/giantswarm/devctl/v8/cmd/pr"
 	"github.com/giantswarm/devctl/v8/cmd/release"
 	"github.com/giantswarm/devctl/v8/cmd/replace"
 	"github.com/giantswarm/devctl/v8/cmd/repo"
+	"github.com/giantswarm/devctl/v8/cmd/reservation"
 	"github.com/giantswarm/devctl/v8/cmd/rollout"
+	"github.com/giantswarm/devctl/v8/cmd/serve"
 	"github.com/giantswarm/devctl/v8/cmd/version"
 	"github.com/giantswarm/devctl/v8/pkg/project"
 )
@@ -98,6 +101,11 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	nancyCmd, err := nancy.New(nancy.Config{Stderr: config.Stderr, Stdout: config.Stdout})
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
 	var prCmd *cobra.Command
 	{
 		c := pr.Config{
@@ -139,6 +147,14 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	var serveCmd *cobra.Command
+	{
+		serveCmd, err = serve.New(serve.Config{Stderr: config.Stderr})
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
 	var replaceCmd *cobra.Command
 	{
 		c := replace.Config{
@@ -162,6 +178,20 @@ func New(config Config) (*cobra.Command, error) {
 		}
 
 		repoCmd, err = repo.New(c)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+	}
+
+	var reservationCmd *cobra.Command
+	{
+		c := reservation.Config{
+			Logger: config.Logger,
+			Stderr: config.Stderr,
+			Stdout: config.Stdout,
+		}
+
+		reservationCmd, err = reservation.New(c)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -221,11 +251,14 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(completionCmd)
 	c.AddCommand(deployCmd)
 	c.AddCommand(genCmd)
+	c.AddCommand(nancyCmd)
 	c.AddCommand(prCmd)
 	c.AddCommand(releaseCmd)
 	c.AddCommand(replaceCmd)
 	c.AddCommand(rolloutCmd)
+	c.AddCommand(serveCmd)
 	c.AddCommand(repoCmd)
+	c.AddCommand(reservationCmd)
 	c.AddCommand(versionCmd)
 
 	guardUsage(c)

@@ -6,9 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/internal/laptop"
 	"github.com/giantswarm/devctl/v8/internal/versiongate"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
-	"github.com/giantswarm/devctl/v8/pkg/releasepromote"
 )
 
 const (
@@ -26,7 +26,9 @@ giantswarm/github whose release model is auto-release (releaseWorkflow,
 defaulting from gen.ci.generate), in the giantswarm organization. Pass
 exactly one of the two.
 
-For each repository, on its default branch:
+For each repository, on its default branch (--branch names another, for one
+repository: a fork line's maintenance branch release-X.Y, whose candidates
+are its own series'):
   1. The workflow file must be there (else not_auto_release) and carry the
      step "Resolve the candidate to promote" of devctl v8.102.0 or later
      (else outdated_workflow: an older workflow's release-type stable tags
@@ -40,16 +42,20 @@ For each repository, on its default branch:
      is taken. The command reads releases, not tags: a candidate tag whose
      GitHub release was deleted, or is a draft, is not seen, while the
      workflow stops on it.
-     With --version vX.Y.Z-rc.N, for exactly one repository, the candidate
-     is that one instead of the highest: a published pre-release newer than
-     the highest stable release and reachable from the default branch, else
-     failed. The workflow must take its version input, else
+     With --version vX.Y.Z-rc.N (or the bare X.Y.Z-rc.N), for exactly one
+     repository, the candidate is that one instead of the highest: a
+     published pre-release newer than the highest stable release and
+     reachable from the default branch, else failed. The workflow must take its version input, else
      outdated_workflow. This promotes a candidate that is built while a
      later one is still building, or the one proven live: the stable tag
      lands on that candidate's commit whatever was cut after it. The
      candidates cut after it on the default branch are named in later[]
      and in the message, as not in the release.
-  3. The combined commit status of the candidate's commit: with at least one
+  3. UPGRADE.md at the candidate's commit must have no line starting with
+     "## Next", including an empty section (else failed). Land the rename
+     to "## vX.Y.Z" first, then promote a new candidate containing it.
+     A missing UPGRADE.md is allowed; an unreadable one is failed.
+  4. The combined commit status of the candidate's commit: with at least one
      status and a state other than success, not_built. No status at all
      counts as built, as in the workflow. A failed CircleCI status of a job
      the release does not require (sync-china-registry) is judged as
@@ -58,10 +64,10 @@ For each repository, on its default branch:
      A not_built entry names in newestBuilt, and in its message, the
      highest other candidate since the stable release that is built:
      promote it with --version, or wait for the refused one.
-  4. The workflow is dispatched on the default branch with
+  5. The workflow is dispatched on the default branch with
      release-type: stable, and with --version also version: the candidate
      (dispatched; would_dispatch with --dry-run).
-  5. Once every repository is dispatched, the run each dispatch started is
+  6. Once every repository is dispatched, the run each dispatch started is
      followed until it concludes, at most --follow-timeout (20m). The
      workflow resolves the candidate again, checks it, runs the
      repository's stable gate (.github/release-gate.custom.sh) and tags the
@@ -75,6 +81,10 @@ For each repository, on its default branch:
      --no-follow returns right after the dispatch.
 
 Repeated repositories are promoted once.
+
+With --dry-run, a network or 5xx failure is retried once after one second.
+Each attempt is limited to two seconds, including reading the response body.
+A failed repository read names the request URL and last cause in its message.
 
 A dispatched repository's release is built from its tag by CircleCI; follow
 it with
@@ -99,8 +109,8 @@ Exit codes:
      names them
   7  usage or tooling: neither or both of repositories and --team, a
      malformed owner/repo, a negative --follow-timeout, --version not of
-     the form vX.Y.Z-rc.N or not
-     with exactly one repository, or a team without a team file, before
+     the form vX.Y.Z-rc.N or X.Y.Z-rc.N or not with exactly one repository, --branch not with exactly one
+     repository, or a team without a team file, before
      any repository is read
   8  authentication required: run ` + "`devctl auth login --github-only`" + `
 
@@ -117,6 +127,7 @@ Examples:
   devctl release promote giantswarm/devctl --dry-run
   devctl release promote giantswarm/devctl giantswarm/klaus
   devctl release promote giantswarm/devctl --version v1.2.3-rc.14
+  devctl release promote giantswarm/substrate --branch release-1.16 --version v1.16.5-rc.1
   devctl release promote --team team-bumblebee --progress`
 )
 
@@ -140,7 +151,7 @@ func New(config Config) (*cobra.Command, error) {
 		flag:   f,
 		stderr: config.Stderr,
 		stdout: config.Stdout,
-		open:   releasepromote.OpenSources,
+		open:   laptop.ReleasePromoteSources,
 	}
 
 	c := &cobra.Command{
