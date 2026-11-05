@@ -14,9 +14,7 @@ import (
 	"github.com/giantswarm/microerror"
 )
 
-func getChinaFlatcarRelease(config Config, version string) (map[string]string, error) {
-	ctx := context.Background()
-
+func getChinaFlatcarRelease(ctx context.Context, config Config, version string) (map[string]string, error) {
 	cfg, err := awsconfig.LoadDefaultConfig(ctx,
 		awsconfig.WithRegion(config.ChinaBucketRegion),
 		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(config.ChinaAWSAccessKeyID, config.ChinaAWSSecretAccessKey, "")),

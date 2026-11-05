@@ -189,7 +189,7 @@ const (
 // can hold .nvmrc on the docker datasource in its own renovate config.
 //
 // renovate: datasource=docker depName=cimg/node
-const DefaultNodeImageVersion = "24.21.0"
+const DefaultNodeImageVersion = "24.22.2"
 
 // DefaultNodeTestTarget is the package.json script the Node job runs for the
 // verify phase when a repo does not override it. The repo composes
@@ -416,6 +416,12 @@ type Config struct {
 	// without SkipATS); rejected otherwise, since the value would silently
 	// render nothing.
 	ATSResourceClass string
+	// ChartTestRequires adds repo-owned workflow job names to the branch
+	// execute-chart-tests dependencies. The runner reads these from
+	// .circleci/config.custom.yml's chart_tests.requires. The named jobs must
+	// run on the same branches in custom.yml's build workflow. Release tests
+	// retain their own dependencies. Requires the branch chart-test job.
+	ChartTestRequires []string
 	// HasDockerfile selects the image pipeline. The runner derives this from
 	// the presence of a Dockerfile in the repo.
 	HasDockerfile bool
@@ -730,6 +736,9 @@ const (
 // image names), ImagePlatforms (of the release build), ForcePublic and
 // ImagePrivateOnly. The language selects nothing: the images are the build.
 func newMultiImage(config Config) (*CircleCI, error) {
+	if len(config.ChartTestRequires) > 0 {
+		return nil, microerror.Maskf(invalidConfigError, "chart_tests.requires requires the chart-test job (app flavour without SkipATS, not a template or multi-image repository)")
+	}
 	if config.Flavours.Contains(gen.FlavourApp) || config.Flavours.Contains(gen.FlavourCLI) {
 		return nil, microerror.Maskf(invalidConfigError, "the %s flavour is a repository of images alone: it does not combine with the %s or %s flavour", gen.FlavourMultiImage, gen.FlavourApp, gen.FlavourCLI)
 	}
@@ -854,6 +863,19 @@ func New(config Config) (*CircleCI, error) {
 	}
 	if config.ChartReleaseGateJob != "" && (!hasApp || templateChart) {
 		return nil, microerror.Maskf(invalidConfigError, "ChartReleaseGateJob requires the chart release push (app flavour, not a template repository)")
+	}
+	var chartTestRequires []string
+	if len(config.ChartTestRequires) > 0 && (!hasApp || config.SkipATS || templateChart) {
+		return nil, microerror.Maskf(invalidConfigError, "chart_tests.requires requires the chart-test job (app flavour without SkipATS, not a template repository)")
+	}
+	for _, job := range config.ChartTestRequires {
+		if strings.TrimSpace(job) == "" || strings.TrimSpace(job) != job || strings.ContainsAny(job, "\r\n") || job == "execute-chart-tests" {
+			return nil, microerror.Maskf(invalidConfigError, "chart_tests.requires must name nonempty workflow jobs other than execute-chart-tests, without leading/trailing whitespace or line breaks; got %q", job)
+		}
+		if job == "build-chart" || (job == "push-to-registries" && hasDockerfile && config.BranchPublish) || slices.Contains(chartTestRequires, job) {
+			continue
+		}
+		chartTestRequires = append(chartTestRequires, job)
 	}
 	if config.ATSResourceClass != "" {
 		if !hasApp || config.SkipATS || templateChart {
@@ -1048,6 +1070,7 @@ func New(config Config) (*CircleCI, error) {
 			ATSPullImages:          strings.Join(atsPullImages, " "),
 			ATSKindConfig:          atsKindConfig,
 			ATSResourceClass:       config.ATSResourceClass,
+			ChartTestRequires:      chartTestRequires,
 			ATSOnRelease:           config.ATSOnRelease,
 			ChartName:              chartName,
 			ChartNameMismatch:      chartNameMismatch,
@@ -1136,6 +1159,13 @@ func (c *CircleCI) ATSInputs() []input.Input {
 	}
 
 	return ats.CreateATS(c.params.ATSKindCluster)
+}
+
+// ATSConfig returns the starter configuration for the selected ATS version.
+// The caller emits it only when ATSInputs is nonempty and the repository has
+// no configuration of its own.
+func (c *CircleCI) ATSConfig() input.Input {
+	return ats.CreateConfig(c.params.ATSKindCluster)
 }
 
 // atsCreatesKindCluster decides from the app-test-suite container tag whether

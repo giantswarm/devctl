@@ -7,7 +7,60 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The devctl chart's opt-in `networkPolicy.enabled` renders a Cilium egress policy for DNS, GitHub, the registries
+  and catalogs, and the Dex token endpoint and API server of every installation. It uses the same endpoints as
+  `--installations`, including overrides, so adding an installation needs only one values change.
+
+### Fixed
+
+- `gen makefile`: `make build-docker` builds `<binary>-linux-<arch>` for the host architecture ([giantswarm/giantswarm#38805](https://github.com/giantswarm/giantswarm/issues/38805)).
+- Concurrent updates to `DEVCTL_KEYRING_FILE` preserve changes to every identity and readers see complete records.
+- CircleCI waits read every workflow page, so a failed or running workflow on a later page is no longer missed.
+
+- Bulk PR approval targets the checked commit, and direct merges and Align branch updates
+  require that head so a concurrent push cannot substitute unchecked code.
+- The bulk PR approval commands require readable commit statuses and every page of check runs;
+  a green status no longer hides a failed or pending Actions check.
+- `gen dependabot` detects root Python requirements, Pipfile, setup.cfg and pyproject manifests.
+
+- `repo reconcile`'s circleci step without a CircleCI token also reads the latest release's tag and the heads of the
+  last 3 pull requests merged into the default branch, newest first by publish and merge time, when the default
+  branch's last 5 commits carry no CircleCI status. When nothing is found and GitHub refused one of
+  those reads, the step reports the finding `unchecked`, naming what it could not read, instead of
+  `circleci-pipeline-missing`. A pipeline whose
+  workflows ignore the default branch (`branches: ignore: main`, as on envoy-gateway-app and ingress-nginx-app) was
+  reported `circleci-pipeline-missing`, and so non-converged, although CircleCI builds its pull requests and tags.
+
 ### Changed
+
+- CircleCI without a shared identity: new repositories build on a CircleCI GitHub App pipeline created by the person
+  who asks for them, and the reconciler writes nothing on CircleCI
+  ([giantswarm/giantswarm#38799](https://github.com/giantswarm/giantswarm/issues/38799)).
+  - `repo follow-circleci` sets a repository up on a GitHub App pipeline with your CircleCI login (Write access). It is
+    idempotent: it creates `<repository>-app` and an `all-pushes` trigger when they are missing, switches setup workflows
+    on when they are off, runs the default
+    branch and every unbuilt release (the newest of each multi-image line), and waits for green. `--migrate` deletes the OAuth pipeline's triggers. It
+    replaces the follow that repaired `circleci-webhook-missing`.
+  - `repo watch` takes that step for the creator once the reconciler has set the repository up (`--circleci=false`
+    skips it). When the set-up ran the first release, whose tag came before the pipeline, the watch ends on that run,
+    read with the person's CircleCI login. `repo create` prints the `repo watch` to run, in JSON too.
+  - The engine's circleci step is check-only: a GitHub App pipeline present is `ok`, otherwise the finding
+    `circleci-pipeline-missing` (replacing `circleci-webhook-missing`) names `repo follow-circleci`. A repository built
+    by an OAuth follow, alone or beside a GitHub App pipeline, is the advisory finding `circleci-oauth-follow` with
+    the `--migrate` fix: it builds today, so it does not keep the run from converging. It reads the
+    project's pipeline definitions with a person's CircleCI login, and without one who posted the CircleCI statuses
+    of the newest of the default branch's last 5 commits that carries any. The follow, the temporary admin grant,
+    setup workflows, checkout keys and the webhook check are gone, and so are the unfollow on archive and delete.
+  - The release step reads the GitHub App pipeline's statuses on the release tag's commit, on GitHub: the setup
+    workflows started after the release and the workflows each one continues into. It never triggers (GitHub App
+    pipelines carry no `vcs` in CircleCI's API). A missed tag build (`missed-tag-build`) names `repo follow-circleci`.
+    A tag built by an OAuth follow alone is skipped, not verified: its statuses name jobs, not workflows.
+  - The generated auto-release workflows (single and multi-image) watch for the tag's CircleCI statuses with
+    `GITHUB_TOKEN` (`statuses: read`) instead of reading and triggering pipelines with `CIRCLECI_API_TOKEN`. A
+    commit without any CircleCI status, or with an OAuth follow's only, warns; a missed tag fails, naming the
+    person's fix.
 
 - `gen precommit` and `gen workflows`: the generated `pre-commit`, `chart-tests`, `check-values-schema`,
   `check-readme-links`, `gitleaks` and `semantic-pull-request` workflows group runs by workflow and pull request
@@ -20,6 +73,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `.github/workflows/zz_generated.*`, which align-files regenerates.
 
 ### Added
+
+- `ci job --step-output` includes the first and last lines of every step's output, including
+  successful steps, so a soft-passed nancy scanner outage is visible without the CircleCI UI.
+  `--lines` bounds each excerpt (200 by default); unreadable output is reported per step.
+
+- `ci job` takes the URL a CircleCI commit status links, alone, including a GitHub App pipeline's
+  `app.circleci.com/workflow/<id>/job/<id>`, which it resolves to the project and job number through the workflow.
 
 - `gen workflows --reservation-support` (app flavour only, off by default) generates
   `zz_generated.reservation_command.yaml`, which sends `/deploy`, `/undeploy` and `/extend` pull request comments and
@@ -90,6 +150,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- `gen workflows` flavour `fleet`: for customer installations the mctl merge gate fails, and the merge cascade does not
+  land the installations PR, while its `<installation>/cluster.yaml` lacks `slack.support`, `accountEngineer` or
+  `accountEngineersHandle` or holds mctl's `FILL_IN_` placeholders; the `/config` comment asks to fill them in, and
+  the `/create-mc` prompt lists `mctl validate-config`'s warnings (giantswarm/giantswarm#38847).
+- `gen workflows` flavour `fleet`: mctl image pinned to 0.6.0.
 - `gen workflows`: the customer repositories' `add_customer_board_automation` workflow passes the
   `giantswarm-project-automation` App's `PROJECT_AUTOMATION_CLIENT_ID` and `PROJECT_AUTOMATION_PRIVATE_KEY` to
   `issue-to-customer-board.yaml` instead of architectbot's `ISSUE_AUTOMATION` token (giantswarm/giantswarm#38800).
@@ -1835,7 +1900,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `pr wait` and `pr merge` add a hint to a pull request's "not found" naming the devctl GitHub App login's reach
   ([#2436](https://github.com/giantswarm/devctl/issues/2436)): the App is installed on the giantswarm organization
   only, and GitHub answers 404 rather than 403 for a private repository the token cannot read, so a personal
-  repository's pull request (`teemow/dotfiles#20`) looked exactly like one that does not exist. Both commands read no
+  repository's pull request looked exactly like one that does not exist. Both commands read no
   environment override (`pkg/authstore.RequireGitHub`, never `ResolveGitHub`), so the hint names the cause without
   suggesting a variable that would have no effect on them (`authstore.GitHubAppOnlyNotFoundHint`, unlike `deploy`'s
   and `release create`'s `GitHubNotFoundHint`).

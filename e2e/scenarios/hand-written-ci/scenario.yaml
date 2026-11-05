@@ -26,6 +26,8 @@ github:
           - {name: Dockerfile, path: Dockerfile, type: file}
           - {name: Dockerfile.sidecar, path: Dockerfile.sidecar, type: file}
           - {name: main.go, path: main.go, type: file}
+    "GET /repos/giantswarm/e2e-hand/contents/.github/workflows/zz_generated.auto_release.yaml?ref=bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55":
+      - body: {type: file, name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, sha: c0ffee, encoding: base64, content: b246IHB1c2gK}
     "GET /repos/giantswarm/e2e-hand/contents/.github/workflows?ref=bb22cc33dd44ee55ff66aa11bb22cc33dd44ee55":
       - body:
           - {name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, type: file}
