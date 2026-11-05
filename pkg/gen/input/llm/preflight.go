@@ -446,6 +446,17 @@ func (p *preflight) lstat(name string) (fs.FileInfo, error) {
 	return info, microerror.Mask(err)
 }
 
+// readRegular returns the content of name if it is a regular file, and nil
+// otherwise.
+func (p *preflight) readRegular(name string) ([]byte, error) {
+	info, err := p.lstat(name)
+	if err != nil || info == nil || !info.Mode().IsRegular() {
+		return nil, microerror.Mask(err)
+	}
+	content, err := os.ReadFile(p.path(name))
+	return content, microerror.Mask(err)
+}
+
 func (p *preflight) path(name string) string {
 	return filepath.Join(p.root, filepath.FromSlash(name))
 }
