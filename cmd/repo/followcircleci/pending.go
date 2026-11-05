@@ -1,0 +1,175 @@
+package followcircleci
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/giantswarm/microerror"
+
+	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
+	"github.com/giantswarm/devctl/v8/pkg/authstore"
+	"github.com/giantswarm/devctl/v8/pkg/circleciapp"
+	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup/manager"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
+)
+
+// Outcome is what happened to one pending repository.
+type Outcome string
+
+const (
+	// OutcomeCreated: the pass created the GitHub App pipeline or its trigger.
+	OutcomeCreated Outcome = "created"
+	// OutcomeAlreadySetUp: the pipeline and its trigger were in place.
+	OutcomeAlreadySetUp Outcome = "already-set-up"
+	// OutcomeRefused: CircleCI refused the person the write.
+	OutcomeRefused Outcome = "refused"
+	// OutcomeSkipped: the pass stopped before the repository.
+	OutcomeSkipped Outcome = "skipped"
+	// OutcomeFailed: the set-up failed for another reason; the next pass
+	// tries again.
+	OutcomeFailed Outcome = "failed"
+)
+
+// listTimeout bounds the inventory read.
+const listTimeout = 60 * time.Second
+
+// pendingLimit is how many pending repositories one pass reads.
+const pendingLimit = 100
+
+// RunRef is one pipeline run the set-up started.
+type RunRef struct {
+	Ref      string `json:"ref"`
+	Pipeline int64  `json:"pipeline"`
+}
+
+// Entry is one pending repository and what the pass did to it.
+type Entry struct {
+	Repository string   `json:"repository"`
+	Outcome    Outcome  `json:"outcome"`
+	Reason     string   `json:"reason,omitempty"`
+	Runs       []RunRef `json:"runs,omitempty"`
+}
+
+// Summary is a pass over the pending repositories.
+type Summary struct {
+	Pending      int     `json:"pending"`
+	Repositories []Entry `json:"repositories"`
+}
+
+// pendingPass sets up the GitHub App pipeline of every repository of the
+// person's teams that the inventory reports circleci-pipeline-missing for.
+type pendingPass struct {
+	open   client.Opener
+	openCI func(ctx context.Context, owner string, warn func(string)) (circleciapp.GitHub, circleciapp.CircleCI, error)
+	warn   func(string)
+}
+
+func (p *pendingPass) run(ctx context.Context) (*Summary, error) {
+	repos, err := p.pending(ctx)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	summary := &Summary{Pending: len(repos), Repositories: []Entry{}}
+	type clients struct {
+		gh circleciapp.GitHub
+		ci circleciapp.CircleCI
+	}
+	opened := map[string]clients{}
+	var failed []string
+	for i, slug := range repos {
+		owner, repo, _ := strings.Cut(slug, "/")
+		c, ok := opened[owner]
+		if !ok {
+			gh, ci, err := p.openCI(ctx, owner, p.warnf)
+			if err != nil {
+				skip(summary, repos[i:], "no usable CircleCI login")
+				return summary, microerror.Mask(err)
+			}
+			c = clients{gh: gh, ci: ci}
+			opened[owner] = c
+		}
+		report, err := circleciapp.Setup(ctx, c.ci, c.gh, owner, repo, circleciapp.Options{})
+		switch {
+		case circleciclient.IsForbidden(err):
+			cause := fmt.Sprintf("CircleCI refused to create the pipeline of %s; when your login granted Write already, a repository admin has to run `devctl repo follow-circleci %s`", slug, slug)
+			summary.Repositories = append(summary.Repositories, Entry{Repository: slug, Outcome: OutcomeRefused, Reason: "CircleCI refused the write (403)"})
+			skip(summary, repos[i+1:], "the pass stopped at a refused write")
+			return summary, microerror.Mask(authstore.CircleCIWriteRequired(cause))
+		case err != nil && ctx.Err() != nil:
+			skip(summary, repos[i:], "the pass ran out of time")
+			return summary, microerror.Mask(ctx.Err())
+		case err != nil:
+			summary.Repositories = append(summary.Repositories, Entry{Repository: slug, Outcome: OutcomeFailed, Reason: err.Error()})
+			failed = append(failed, slug)
+			continue
+		}
+		summary.Repositories = append(summary.Repositories, entry(slug, report))
+	}
+	if len(failed) > 0 {
+		return summary, microerror.Maskf(pendingFailedError, "the set-up of %s failed; the reasons are in the list", strings.Join(failed, ", "))
+	}
+	return summary, nil
+}
+
+// skip records repos as skipped for reason.
+func skip(summary *Summary, repos []string, reason string) {
+	for _, slug := range repos {
+		summary.Repositories = append(summary.Repositories, Entry{Repository: slug, Outcome: OutcomeSkipped, Reason: reason})
+	}
+}
+
+// pending lists the repositories of the person's teams waiting for a
+// CircleCI pipeline: declared, active, not archived, still on GitHub.
+func (p *pendingPass) pending(ctx context.Context) ([]string, error) {
+	session, err := p.open(ctx)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	callCtx, cancel := context.WithTimeout(ctx, listTimeout)
+	defer cancel()
+	payload, err := session.Call(callCtx, manager.ToolListRepositories, map[string]any{
+		"scope":     "mine",
+		"finding":   string(reconcile.FindingCircleCIPipelineMissing),
+		"lifecycle": "active",
+		"archived":  false,
+		"limit":     pendingLimit,
+	})
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	listing, err := client.Decode[manager.Listing](manager.ToolListRepositories, payload)
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	var repos []string
+	for _, row := range listing.Repositories {
+		if row.Team == "" || row.Lifecycle != "active" || row.Archived || row.Gone {
+			continue
+		}
+		if _, _, ok := strings.Cut(row.Repository, "/"); !ok {
+			continue
+		}
+		repos = append(repos, row.Repository)
+	}
+	return repos, nil
+}
+
+func (p *pendingPass) warnf(w string) {
+	if w != "" && p.warn != nil {
+		p.warn(w)
+	}
+}
+
+func entry(slug string, report *circleciapp.Report) Entry {
+	e := Entry{Repository: slug, Outcome: OutcomeAlreadySetUp}
+	if report.Result != nil && (report.Result.CreatedDefinition || report.Result.CreatedTrigger) {
+		e.Outcome = OutcomeCreated
+	}
+	for _, run := range report.Runs {
+		e.Runs = append(e.Runs, RunRef{Ref: run.Ref.String(), Pipeline: run.Pipeline.Number})
+	}
+	return e
+}

@@ -13,3 +13,7 @@ var redError = &microerror.Error{
 var timeoutError = &microerror.Error{
 	Kind: "timeoutError",
 }
+
+var pendingFailedError = &microerror.Error{
+	Kind: "pendingFailedError",
+}
