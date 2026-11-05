@@ -45,12 +45,21 @@ type Report struct {
 
 // Preflight checks the repository at root before any LLM output is written.
 func Preflight(ctx context.Context, root string, mode Mode) (Report, error) {
-	p := &preflight{root: root, mode: mode}
-	if err := p.run(ctx); err != nil {
+	p, err := inspect(ctx, root, mode)
+	if err != nil {
 		return Report{}, microerror.Mask(err)
 	}
-	slices.SortStableFunc(p.report.Findings, func(a, b Finding) int { return strings.Compare(a.Path, b.Path) })
 	return p.report, nil
+}
+
+// inspect checks the repository at root and records its layout.
+func inspect(ctx context.Context, root string, mode Mode) (*preflight, error) {
+	p := &preflight{root: root, mode: mode, claudeContents: map[string][]byte{}}
+	if err := p.run(ctx); err != nil {
+		return nil, microerror.Mask(err)
+	}
+	slices.SortStableFunc(p.report.Findings, func(a, b Finding) int { return strings.Compare(a.Path, b.Path) })
+	return p, nil
 }
 
 const (
@@ -74,7 +83,19 @@ type preflight struct {
 	report Report
 	// names caches directory listings, by directory.
 	names map[string][]string
+
+	// The layout found, for planning a migration.
+	agentsState    agentsState
+	agentsContent  []byte
+	claudeContents map[string][]byte
+	// source is the Claude file whose content moves to a missing AGENTS.md.
+	source       string
+	claudeSkills dirState
+	skillEntries []skillEntry
 }
+
+// instructionFiles are the root instruction files gen llm handles.
+var instructionFiles = []string{agentsFile, claudeFile, dotClaudeFile}
 
 // knownNames are the names gen llm uses in each directory, to find variants
 // that differ only in case.
@@ -121,6 +142,7 @@ func (p *preflight) run(ctx context.Context) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	p.agentsState = agentsFileState
 
 	var instructions []string
 	if agentsFileState != agentsAbsent {
@@ -137,6 +159,12 @@ func (p *preflight) run(ctx context.Context) error {
 		}
 		if holds {
 			instructions = append(instructions, name)
+		}
+	}
+
+	if p.mode == MigrationMode && agentsFileState == agentsAbsent {
+		if err := p.checkSource(); err != nil {
+			return microerror.Mask(err)
 		}
 	}
 
@@ -174,6 +202,24 @@ const (
 	dirRejected
 )
 
+// checkSource picks the Claude file whose content moves to the missing
+// AGENTS.md, and reports devctl-managed markers in it that the merge cannot
+// handle.
+func (p *preflight) checkSource() error {
+	for _, name := range []string{claudeFile, dotClaudeFile} {
+		content, ok := p.claudeContents[name]
+		if !ok {
+			continue
+		}
+		p.source = name
+		if _, problem := file.CheckManagedBlock(content); problem != "" {
+			p.add(name, problem, file.ManagedBlockFix)
+		}
+		return nil
+	}
+	return nil
+}
+
 // checkDir reports a directory that gen llm writes into but that is a link or
 // not a directory.
 func (p *preflight) checkDir(name string) (dirState, error) {
@@ -200,6 +246,9 @@ func (p *preflight) checkClaudeSkills(sharedSkills dirState) error {
 	info, err := p.lstat(claudeSkillsDir)
 	if err != nil || info == nil {
 		return microerror.Mask(err)
+	}
+	if info.IsDir() {
+		p.claudeSkills = dirPresent
 	}
 	switch {
 	case info.Mode()&fs.ModeSymlink != 0:
@@ -245,6 +294,7 @@ func (p *preflight) checkClaudeSkills(sharedSkills dirState) error {
 			if path.Join(claudeSkillsDir, filepath.ToSlash(target)) != shared {
 				p.add(entry, fmt.Sprintf("is a link to %s", target), fmt.Sprintf("replace it with the skill directory or a link to ../../%s", shared))
 			}
+			p.skillEntries = append(p.skillEntries, skillEntry{name: name, isLink: true})
 		case !info.IsDir():
 			fix := "remove it"
 			if !strings.HasPrefix(name, ".") {
@@ -257,6 +307,7 @@ func (p *preflight) checkClaudeSkills(sharedSkills dirState) error {
 			if i >= 0 {
 				p.add(entry, fmt.Sprintf("has the same name as %s", path.Join(agentsSkillsDir, sharedNames[i])), "keep only one of the two skills")
 			}
+			p.skillEntries = append(p.skillEntries, skillEntry{name: name})
 		}
 	}
 	return nil
@@ -363,8 +414,10 @@ func (p *preflight) checkAgentsFile() (agentsState, error) {
 		p.add(agentsFile, problem, file.ManagedBlockFix)
 		return agentsUnusable, nil
 	case hasBlock:
+		p.agentsContent = content
 		return agentsWithBlock, nil
 	}
+	p.agentsContent = content
 	return agentsWithoutBlock, nil
 }
 
@@ -390,6 +443,11 @@ func (p *preflight) checkClaudeFile(name string) (bool, error) {
 		p.add(name, "is not a regular file", "remove or rename it")
 		return false, nil
 	}
+	content, err := os.ReadFile(p.path(name))
+	if err != nil {
+		return false, microerror.Mask(err)
+	}
+	p.claudeContents[name] = content
 	return true, nil
 }
 

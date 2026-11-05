@@ -127,7 +127,11 @@ func TestCommandDryRunReportsFindingsWithoutChanges(t *testing.T) {
 			name:  "migration of the same repository",
 			files: map[string]string{"CLAUDE.md": "Run make test.\n"},
 			args:  []string{"--migrate-instructions"},
-			want:  []string{"gen llm would proceed: no findings"},
+			want: []string{
+				"gen llm would make these changes:\n" +
+					"- move the content of CLAUDE.md to AGENTS.md, below the devctl-managed block\n" +
+					"- replace CLAUDE.md with an import of AGENTS.md\n",
+			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
