@@ -4,9 +4,14 @@ Giant Swarm repositories are declared, not clicked together: one entry in the ow
 `repositories/<team>.yaml` of [giantswarm/github](https://github.com/giantswarm/github) is the
 desired state, and the reconciler creates and keeps the repository as declared. The `repo` commands
 are the laptop's client of that engine and of giantswarm-repo-manager -- the same validation, the same
-dry run, the same pull request the Repositories page and the Repo Manager agent produce. `create` runs
-the engine locally with the devctl App login and `reconcile` with your own token; `validate` and the
-other verbs call the manager through muster as you (`validate --local` runs the engine locally).
+dry run, the same pull request the Repositories page and the Repo Manager agent produce. `create --dry-run`,
+`validate` and the other manager verbs call it through muster as you; `create` without `--dry-run` runs
+the engine locally with the devctl App login and `reconcile` with your own token. `create --dry-run --local`
+and `validate --local` run devctl's own engine.
+
+A read-only manager call (get, list, validate or watch) that muster answers with a retryable `interrupted` during a rolling update is retried once
+after one second, within the command's context. A non-retryable error or a failed retry is reported as before.
+Writes and unknown tools are not retried: their outcome may be unknown, so check the effect before repeating them.
 
 ## `devctl repo create`
 
@@ -18,7 +23,7 @@ devctl repo create --team bumblebee --name my-service \
   --description "What it does" --visibility public
 ```
 
-The command
+Without `--dry-run`, the command
 
 1. reads the team's file from `giantswarm/github` at `main` (an unknown team ends here),
 2. renders the entry and places it alphabetically among the team's entries -- the rest of the file is
@@ -47,7 +52,21 @@ ends on that run, read with your CircleCI login: ready when it is green, failed 
 red pipeline otherwise. Nobody is load-bearing for the pipeline afterwards.
 
 The output names the pull request; `--output json` prints the dry run and the pull request URL as one
-document. `--dry-run` prints the dry run and opens nothing.
+document. `--dry-run` asks giantswarm-repo-manager's `validate_repository` through muster for its
+creation preview and opens nothing. It sends the new declaration and owning team, using the same
+arguments as the manager's `create_repository`: the manager's engine, schema, name check and review
+notices decide the verdict. `--output json` keeps the complete manager answer under `dryRun`, including
+its author, findings and creation plan. A refusal of the planned pull request also exits non-zero.
+Sign in with `devctl auth login --muster-only`; a missing login or failed manager call is returned
+without falling back to local validation.
+
+`--dry-run --local` uses the existing local validation described above, with the devctl GitHub App
+login or the token in `--github-token-envvar`. It needs no muster login. An organisation other than
+`giantswarm` (`--owner`) takes this explicit local mode for a dry run.
+
+Opening a declaration pull request requires `--owner giantswarm` (the default): its destination is
+`giantswarm/github`, whose reconciler creates Giant Swarm repositories. Another `--owner` can be checked
+with `--dry-run --local`; it cannot redirect the declaration to another organisation.
 
 ### A refusal, a rerun
 
@@ -103,6 +122,11 @@ generated before the field was set, is the finding `renovate-declared-off`: the 
 it or sets `enabled: false` in it. Without the field, or with `true`, the repository gets its generated configuration
 and the step checks that Renovate scans it.
 
+For a GitHub fork, the Renovate step first checks that `renovate.json` itself enables fork processing. Otherwise it
+reports `renovate-not-scanned`, names Renovate's fork check and directs the team to `devctl gen renovate --flavour fork`.
+A configuration with `enabled: false` stays disabled. The step selects the first configuration in Renovate's order:
+`renovate.json`, `renovate.jsonc`, `renovate.json5`, then the `.github/` equivalents and `.renovaterc` variants.
+
 The template is derived, not chosen: `language: go` gives `giantswarm/template`; the `plans` flavour
 with `language: generic` gives `giantswarm/template-plans` and refuses any other language, the same
 way `language: node` is refused until its template ships; `language: generic` with the `app` flavour
@@ -112,6 +136,12 @@ produce a chart (`app`, `cluster-app`) and whose template has no chart of its ow
 with the `app` flavour -- gets the chart of `giantswarm/template-app` at `helm/<name>` beside the
 template, with `.abs/main.yaml` pointing at it, the name substituted and the team annotation set, so
 the first release's chart job builds; the dry run names it on the `chart:` line.
+
+During scaffold creation, empty maps in the template's chart values receive
+`# @schema additionalProperties: true`, so labels, annotations and other map values accept
+keys when their schema is generated. Maps with an existing `@schema` annotation keep it.
+Structured objects still reject undeclared fields. This applies to the initial scaffold;
+maps added to an existing chart need their own schema annotation.
 
 The scaffold is the template's tree with its placeholders replaced, in one pass that handles both
 token forms the templates carry. `giantswarm/template`, the Go service template, carries the
@@ -145,6 +175,29 @@ The devctl GitHub App login (`devctl auth login`); a token in `--github-token-en
 organisation's teams and writes the pull request's branch to `giantswarm/github`; the pull request is
 yours. The repository is created by the reconciler's App, never with this token.
 
+## `devctl repo owner`
+
+The supported way to find a repository's declared owning team before a merge or review request is
+the team-file lookup:
+
+```nohighlight
+devctl repo owner devctl
+devctl repo owner giantswarm/devctl --output json
+```
+
+Text output is the GitHub team slug, such as `team-bumblebee`. JSON includes `repository`, `team`
+and `source`, the URL of the declaring `repositories/<team>.yaml` in `giantswarm/github` at `main`.
+The command reads those files directly with the devctl GitHub App login (Contents read), using
+the same lookup as `pr merge`'s team-file policy. It needs no muster session. The normal explicit
+GitHub token environment overrides apply; see [authentication](auth.md).
+
+This is declared ownership, not a list of all teams with access or proof that GitHub's grants have
+converged. Only `giantswarm` repositories are described by this inventory; another owner is refused
+before authentication or any request. An undeclared repository, an unreadable inventory or a malformed
+team file fails without printing an owner. There is no fallback to a person's token or to
+`GET /repos/{owner}/{repo}/teams`: that endpoint requires Administration read, which the agent App
+does not carry. The reconciler checks live grants using its separate administration installation token.
+
 ## The manager's verbs: one subcommand per tool of giantswarm-repo-manager
 
 giantswarm-repo-manager keeps the inventory of the org's repositories and lands every team-file change
@@ -174,6 +227,10 @@ and nothing runs locally in its place.
 | `repo set-lifecycle <repo> deprecated\|archived\|deleted` | `set_lifecycle` | the lifecycle set; `deleted` needs `--confirm <repo>`; the way back from `archived` is `repo update <repo> --unset lifecycle`, whose reconciler run unarchives the repository and sets it up again |
 | `repo approve <pull-request>` | `approve_change` | the approving review as you after the team check, and the merge (or the auto-merge); what the Slack ask's button does |
 | `repo align <repo> [--team T]` | `align_repository` | Align now in the mode the entry decides: `align` (the reconciler dispatched), `opt-in` (the pull request that sets `align: true`), `check` (an undeclared repository checked from the team); `--dry-run` shows the plan first |
+
+`repo watch` ignores SIGHUP and reads no stdin, so it outlives a closed terminal, SSH session or
+harness. It finishes with the same outcome as in the foreground; `--output json` prints the final
+repository document.
 
 `--reason` on the writes goes into the pull request body and the ask. The dry run of a write prints the
 entry before and after, the pull request (title, branch, files, who opens it) and the ask and notice with
@@ -335,9 +392,10 @@ merges on and its merge commits as they are: its carried patches land one upstre
 re-pin merges upstream's history; the rest of the baseline applies to it as everywhere. A customer
 repository (flavour `customer`) and an app catalog (`componentType: appcatalog`, whose index GitHub Pages
 serves from the default branch, `master` on the older catalogs) keep their own default branch: it is never
-renamed, the protection step protects it, and `devctl repo status` names it. The six merge settings and the squash title
-reach `GET /repos/{owner}/{repo}` for an admin identity only; a read identity reads them through GraphQL
-and, when that fails too, reports them as the finding `unchecked` rather than as drift.
+renamed, the protection step protects it when enabled, and `devctl repo status` names it. The six merge
+settings and the squash title reach `GET /repos/{owner}/{repo}` for an admin identity only; a read
+identity reads them through GraphQL and, when that fails too, reports them as the finding `unchecked`
+rather than as drift.
 
 ### The protection step
 
@@ -355,7 +413,26 @@ that pull request, and the generated jobs are required once they have reported a
 either, the hand-kept `.circleci/config.yml` names the repository's own jobs: candidates on the same
 reported-only rule, but a hand-kept pipeline removes no CircleCI context. A scheduled or conditional workflow
 and an approval job are never candidates. A customer repository (flavour `customer`) keeps its own
-protection.
+protection unless its entry declares `protection: baseline`. With that declaration the protection step
+applies the same baseline and rulesets as for other flavours, on the customer's own default branch;
+CircleCI, CODEOWNERS and release steps stay skipped. `align: true` is still needed for automatic repair;
+without it the reconciler only checks. For example:
+
+```yaml
+- name: customer-gitops
+  componentType: customer
+  align: true
+  protection: baseline
+  gen:
+    flavours: [customer]
+    language: generic
+    ci:
+      generate: false
+```
+
+The live schema in giantswarm/github must admit `protection` before a team file can use it; the schema
+shipped here defines the field. A repair run with the devctl App id writes the ruleset and removes
+classic protection; a subsequent check reports `protection ok` once the repository converges.
 
 The protection is one repository ruleset, `devctl: default branch`, active on
 `~DEFAULT_BRANCH` so a rename or a fork line's declared branch needs no change: the same rules, a GitHub
@@ -432,6 +509,13 @@ written. A repository without the ruleset yet keeps its classic branch protectio
 it always was (administrators bound too, `enforce_admins`), with the advisory finding `rulesets-not-enabled`
 naming the run that writes the ruleset; it does not keep the repository from converging.
 
+In check mode (`repo reconcile --dry-run`), a 403 reading classic branch protection is the advisory
+finding `unchecked`: `cannot read classic protection with this token`. The classic protection check is
+skipped, while an existing ruleset is still compared and any drift reported. Without an existing ruleset,
+the step plans no protection changes from the unknown classic protection. A token with
+`administration: read` can complete that check. Repair mode still fails on the forbidden read, so it
+cannot migrate or remove classic protection it could not inspect.
+
 The `catalog` step dispatches the catalog and mapping workflows of the catalog repository, which needs an
 Actions permission there. `--dispatch-token-envvar` names a second token for those two calls (listing the
 workflow's runs, dispatching it) when the GitHub token's identity has none -- the reconciler passes its
@@ -455,3 +539,39 @@ the remote team-file source (`reposetup.Remote.Overrides`) lists the override di
 and reads only the overrides it names. A differing file gets one pull request from `reposetup/codeowners` with the
 desired file; while it is open the step reports it and changes nothing. A fork line and a customer repository have no
 codeowners step.
+
+## `reposetup` library: `Person` memberships
+
+In v8.140.0, `Remote.Person(ctx, owner, teams...)` changed from listing every team the caller belongs to
+in `owner` to checking only the supplied team slugs. An old `remote.Person(ctx, owner)` call still compiles,
+but now reads only the login and returns empty `Teams` and `Unread`; passing a nil or empty slice does the
+same. This is a behavior change for library consumers, introduced by commit
+[`24690c0409331e7c8ea392b985ca333d4a255a69`](https://github.com/giantswarm/devctl/commit/24690c0409331e7c8ea392b985ca333d4a255a69).
+
+For a creation guard, pass the owning team and `reposetup.FallbackTeam` explicitly, check the returned
+error, and supply both `person.Teams` and `person.Unread` to the validator as `AuthorTeams` and
+`AuthorTeamsUnread`. `Teams` contains active memberships only. A pending membership or a membership 404
+is not active; an unreadable team (403/404), or a membership 403, belongs to `Unread`, so the guard can
+report unknown membership. Unexpected API errors are returned to the caller.
+
+For a complete membership list (for example, a scope named `mine`), use the GitHub client's
+`Teams.ListUserTeams`, follow every page, and filter by organisation. `Remote.Teams` lists team files,
+not the caller's memberships.
+
+### Caller audit, 2026-11-04
+
+Paginated GitHub code searches for `"github.com/giantswarm/devctl/v8/pkg/reposetup" org:giantswarm` and
+`reposetup org:giantswarm language:Go` found the following importers on indexed default branches visible
+to the audit. Their source was inspected at the linked commits; no live team or account operation was run.
+
+| Checked repository | Result |
+|---|---|
+| [giantswarm/devctl](https://github.com/giantswarm/devctl/blob/f4b312bbb50d8ce8b54c66dcd36616f2ecb673b9/cmd/repo/create/runner.go) | The only production `Remote.Person` call, in `repo create`, explicitly supplies the owning and fallback teams and forwards `Teams` and `Unread` to the validator. No migration needed. |
+| [giantswarm/giantswarm-repo-manager](https://github.com/giantswarm/giantswarm-repo-manager/blob/cf48cdd3a82ca519884d29aa4b7e91b0870fe092/internal/tools/person.go) | All Go sources were checked: no `Remote.Person` call remains. `userTeams` lists every page of the caller's teams and filters by organisation for scope `mine` and the guards. Already fixed by https://github.com/giantswarm/giantswarm-repo-manager/pull/236, commit `cc5caf09872391be48f6fdfd19c4e0e701342142`. |
+
+The broader search also found `giantswarm/marge` and `giantswarm/beekeeper`; their matches were branch-name
+strings in code and fixtures, not imports. The
+[giantswarm/github validation workflow](https://github.com/giantswarm/github/blob/8b032a0cb52d0ecdc361921dbe83f9120dd06f7e/.github/workflows/validate-repo-yaml.yaml)
+uses the devctl CLI, reads memberships itself, and passes `--author-team`; it does not call `Remote.Person`.
+No additional affected caller was found, so no new downstream fix was filed. The search does not cover
+unindexed branches or repositories inaccessible to the audit.

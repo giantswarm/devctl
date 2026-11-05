@@ -456,31 +456,38 @@ func (c *Client) SetRepositoryWebhooks(ctx context.Context, repository *github.R
 
 	underlyingClient := c.GetUnderlyingClient(ctx)
 
-	hooks, _, err := underlyingClient.Repositories.ListHooks(ctx, owner, repo, &github.ListOptions{PerPage: 50})
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
 	c.logger.Debugf("Checking for existing webhook\n")
-	for _, existingHook := range hooks {
+	opt := &github.ListOptions{PerPage: 50}
+	for {
+		hooks, resp, err := underlyingClient.Repositories.ListHooks(ctx, owner, repo, opt)
+		if err != nil {
+			return microerror.Mask(err)
+		}
 
-		if *existingHook.Config.URL == *hook.Config.URL {
-			c.logger.Debugf("found existing webhook. ID=%d\n", *existingHook.ID)
+		for _, existingHook := range hooks {
+			if *existingHook.Config.URL == *hook.Config.URL {
+				c.logger.Debugf("found existing webhook. ID=%d\n", *existingHook.ID)
 
-			if c.dryRun {
+				if c.dryRun {
+					return nil
+				}
+
+				hook.ID = existingHook.ID
+
+				hook, _, err = underlyingClient.Repositories.EditHook(ctx, owner, repo, *hook.ID, hook)
+				if err != nil {
+					return microerror.Mask(err)
+				}
+				c.logger.Infof("updated existing webhook. ID=%d\n", *hook.ID)
+
 				return nil
 			}
-
-			hook.ID = existingHook.ID
-
-			hook, _, err = underlyingClient.Repositories.EditHook(ctx, owner, repo, *hook.ID, hook)
-			if err != nil {
-				return microerror.Mask(err)
-			}
-			c.logger.Infof("updated existing webhook. ID=%d\n", *hook.ID)
-
-			return nil
 		}
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
 	}
 
 	c.logger.Debugf("Creating new webhook\n")
@@ -488,7 +495,7 @@ func (c *Client) SetRepositoryWebhooks(ctx context.Context, repository *github.R
 		return nil
 	}
 
-	hook, _, err = underlyingClient.Repositories.CreateHook(ctx, owner, repo, hook)
+	hook, _, err := underlyingClient.Repositories.CreateHook(ctx, owner, repo, hook)
 	if err != nil {
 		return microerror.Mask(err)
 	}

@@ -57,7 +57,7 @@ You are an AI assistant acting as an expert software developer and platform engi
 - Write comprehensive tests and documentation.
 - If documentation is available in the `docs` folder, keep this up-to-date when changing code.
 - Maintain the main README.md file for correctness.
-- If a changelog is available as CHANGELOG.md, add your changes to it.
+- If a changelog is available as CHANGELOG.md, add your changes to it, unless the repository has `.github/workflows/zz_generated.auto_release.yaml`: there GitHub Releases are the changelog, written from the pull request titles, and CHANGELOG.md only points at them, so a pull request does not edit it.
 
 ## Release Management
 
@@ -354,7 +354,7 @@ limitations under the License.
 #    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.template
 #
 
-include Makefile.*.mk
+-include Makefile.*.mk
 
 ##@ General
 
@@ -397,7 +397,7 @@ Please visit <https://www.giantswarm.io/responsible-disclosure> for information 
     // Base config - https://github.com/giantswarm/renovate-presets/blob/main/default.json5
     'github>giantswarm/renovate-presets:default.json5',
   ],
-  // Our own bots commit onto Renovate branches. The giantswarm-release
+  // Our automation commits onto Renovate branches. The giantswarm-release
   // GitHub App pushes what the generated workflows produce
   // (zz_generated.helm-docs-regen.yaml, the update-chart and
   // sync-from-upstream flows); taylorbot <dev@giantswarm.io> did so before

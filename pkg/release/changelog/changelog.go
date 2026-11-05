@@ -1,16 +1,19 @@
 package changelog
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"text/template"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
+	"github.com/google/go-github/v93/github"
 )
 
 // Regex patterns used by all Giant Swarm components
@@ -446,11 +449,19 @@ var KnownComponents = map[string]ParseParams{
 func GetRepoName(componentName string) (string, string) {
 	if params, ok := KnownComponents[componentName]; ok {
 		// e.g. "https://github.com/giantswarm/cluster-autoscaler-app/releases/tag/v{{.Version}}"
-		re := regexp.MustCompile(`github\.com/([^/]+)/([^/]+)`)
-		matches := re.FindStringSubmatch(params.Tag)
-		if len(matches) > 2 {
-			return matches[1], matches[2]
-		}
+		return repoFromURL(params.Tag)
+	}
+	return "", ""
+}
+
+var githubRepoRegex = regexp.MustCompile(`github\.com/([^/]+)/([^/]+)`)
+
+// repoFromURL returns the owner and name of the GitHub repository a URL
+// points into.
+func repoFromURL(u string) (string, string) {
+	matches := githubRepoRegex.FindStringSubmatch(u)
+	if len(matches) > 2 {
+		return matches[1], matches[2]
 	}
 	return "", ""
 }
@@ -481,7 +492,12 @@ type CategorizedChanges struct {
 
 var categoryRegex = regexp.MustCompile(`^###\s+(?:\W+\s+)?(\w+)`)
 
-func ParseChangelog(componentName, currentVersion, endVersion string, extraFilterPatterns ...string) (*Version, error) {
+// ParseChangelog returns the changes of a component from endVersion
+// (exclusive) to currentVersion. It reads them from the component's
+// CHANGELOG.md at the tag, and from its GitHub Releases when that file has no
+// section for currentVersion: a repository on the auto-release flow keeps its
+// changelog on GitHub Releases, and its CHANGELOG.md only points at them.
+func ParseChangelog(githubToken, componentName, currentVersion, endVersion string, extraFilterPatterns ...string) (*Version, error) {
 	params, ok := KnownComponents[componentName]
 	if !ok {
 		return nil, microerror.Mask(fmt.Errorf("unknown component: %s", componentName))
@@ -530,6 +546,17 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
+
+	if componentName == kubernetesComponentName || componentName == "os-tooling" {
+		// Kubernetes is not parsed, and os-tooling's repository is protected:
+		// link to the changelog and stop.
+		return &Version{
+			Name:    currentVersion,
+			Link:    changelogURLBuilder.String(),
+			Content: "",
+		}, nil
+	}
+
 	client := &http.Client{Timeout: 30 * time.Second}
 	response, err := client.Get(changelogURLBuilder.String())
 	if err != nil {
@@ -541,37 +568,21 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
-
-	if componentName == kubernetesComponentName {
-		// Skip parsing Kubernetes
-		return &Version{
-			Name:    currentVersion,
-			Link:    changelogURLBuilder.String(),
-			Content: "",
-		}, nil
+	switch response.StatusCode {
+	case http.StatusOK:
+	case http.StatusNotFound:
+		// A tag without CHANGELOG.md: its GitHub Releases are read below.
+		body = nil
+	default:
+		return nil, microerror.Mask(fmt.Errorf("reading %s: %s", changelogURLBuilder.String(), response.Status))
 	}
-
-	if componentName == "os-tooling" {
-		// Skip parsing os-tooling
-		// protected repo
-		return &Version{
-			Name:    currentVersion,
-			Link:    changelogURLBuilder.String(),
-			Content: "",
-		}, nil
-	}
-
-	// Split changelog into lines
-	lines := strings.Split(string(body), "\n")
-
-	inSection := false
-	compareRange := ""
-	compareLink := ""
 
 	if endVersion == "" {
 		endVersion = currentVersion
 	}
 
+	compareRange := ""
+	compareLink := ""
 	if currentVersion == endVersion {
 		// When there's no previous version or they're the same, link to single release
 		compareRange = fmt.Sprintf("v%s", currentVersion)
@@ -582,19 +593,51 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 		compareLink = fmt.Sprintf("%s/compare/%s", splitBaseURL(params.Tag), compareRange)
 	}
 
-	categorizedChanges := CategorizedChanges{}
-
-	var currentCategory string
-
-	startHeading := fmt.Sprintf("## [%s]", currentVersion)
-	stopHeading := fmt.Sprintf("## [%s]", endVersion)
-
 	endSemVer, err := semver.NewVersion(endVersion)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 
-	for _, line := range lines {
+	filterPatterns := append(append([]string{}, params.FilterPatterns...), extraFilterPatterns...)
+
+	changes, found := parseSections(string(body), currentVersion, endVersion, endSemVer, filterPatterns)
+	if !found {
+		notes, err := releaseNotesAsChangelog(githubToken, params.Tag, currentVersion, endSemVer)
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		changes, found = parseSections(notes, currentVersion, endVersion, endSemVer, filterPatterns)
+	}
+
+	// If we never actually parsed anything, raise the error
+	if !found {
+		return nil, microerror.Mask(fmt.Errorf("version range [%s] not found in changelog nor in GitHub releases", compareRange))
+	}
+
+	return &Version{
+		Name:    compareRange,
+		Link:    compareLink,
+		Content: changes.render(),
+	}, nil
+}
+
+// breakingMarker is how a git-cliff release note on the auto-release flow
+// marks a breaking change in its group.
+const breakingMarker = "[**breaking**]"
+
+// parseSections collects the changes of the "## [<version>]" sections of a
+// Keep-a-Changelog document from currentVersion down to, not including,
+// endVersion. It reports whether the document has a section for
+// currentVersion.
+func parseSections(body, currentVersion, endVersion string, endSemVer *semver.Version, filterPatterns []string) (CategorizedChanges, bool) {
+	categorizedChanges := CategorizedChanges{}
+	inSection := false
+	var currentCategory string
+
+	startHeading := fmt.Sprintf("## [%s]", currentVersion)
+	stopHeading := fmt.Sprintf("## [%s]", endVersion)
+
+	for _, line := range strings.Split(body, "\n") {
 		// Don't trim spaces yet - we need them to detect indentation
 		originalLine := line
 		line = strings.TrimSpace(line)
@@ -620,164 +663,181 @@ func ParseChangelog(componentName, currentVersion, endVersion string, extraFilte
 					break
 				}
 			}
-		}
 
-		// // Continue parsing intermediate versions - don't stop until we hit the actual endVersion.
-		// This allows collecting changes from all versions between currentVersion and endVersion.
-		// For example, when parsing from v1.2.0 to v1.0.0, this will include changes from
-		// v1.1.1, v1.1.0, etc., providing customers with a complete view of all changes.
-		if inSection && strings.HasPrefix(line, "## [") && !strings.Contains(line, stopHeading) {
+			// Continue parsing intermediate versions - don't stop until we hit the actual endVersion.
+			// This allows collecting changes from all versions between currentVersion and endVersion.
+			// For example, when parsing from v1.2.0 to v1.0.0, this will include changes from
+			// v1.1.1, v1.1.0, etc., providing customers with a complete view of all changes.
 			// Reset category when encountering intermediate version headers to ensure
 			// proper categorization of changes from each version section.
 			currentCategory = ""
 			continue
 		}
 
-		if inSection {
-			if matches := categoryRegex.FindStringSubmatch(line); len(matches) > 1 {
-				currentCategory = matches[1]
+		if !inSection {
+			continue
+		}
+
+		if matches := categoryRegex.FindStringSubmatch(line); len(matches) > 1 {
+			currentCategory = matches[1]
+			continue
+		}
+
+		// Use originalLine to preserve indentation for bullet point detection.
+		// Detect sub-bullets: any line starting with 2+ spaces then "- " or "* "
+		// (covers both 2-space and 4-space indentation conventions).
+		trimmedLeft := strings.TrimLeft(originalLine, " \t")
+		indent := len(originalLine) - len(trimmedLeft)
+		if indent >= 2 && (strings.HasPrefix(trimmedLeft, "- ") || strings.HasPrefix(trimmedLeft, "* ")) {
+			item := strings.TrimSpace(trimmedLeft[2:])
+			// Append to the last item in the current category, avoiding duplicates
+			if items := categorizedChanges.category(currentCategory); items != nil && len(*items) > 0 {
+				last := &(*items)[len(*items)-1]
+				subBullet := "\n  - " + item
+				if !strings.Contains(*last, subBullet) {
+					*last += subBullet
+				}
+			}
+		} else if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
+			// Main bullet point
+			item := strings.TrimPrefix(strings.TrimPrefix(line, "- "), "* ")
+			item = strings.TrimSpace(item)
+			if matchesFilterPatterns(item, filterPatterns) {
 				continue
 			}
-
-			// Use originalLine to preserve indentation for bullet point detection.
-			// Detect sub-bullets: any line starting with 2+ spaces then "- " or "* "
-			// (covers both 2-space and 4-space indentation conventions).
-			trimmedLeft := strings.TrimLeft(originalLine, " \t")
-			indent := len(originalLine) - len(trimmedLeft)
-			if indent >= 2 && (strings.HasPrefix(trimmedLeft, "- ") || strings.HasPrefix(trimmedLeft, "* ")) {
-				item := strings.TrimSpace(trimmedLeft[2:])
-				subBullet := "\n  - " + item
-				// Append to the last item in the current category, avoiding duplicates
-				switch currentCategory {
-				case "Breaking":
-					if len(categorizedChanges.Breaking) > 0 && !strings.Contains(categorizedChanges.Breaking[len(categorizedChanges.Breaking)-1], subBullet) {
-						categorizedChanges.Breaking[len(categorizedChanges.Breaking)-1] += subBullet
-					}
-				case "Added":
-					if len(categorizedChanges.Added) > 0 && !strings.Contains(categorizedChanges.Added[len(categorizedChanges.Added)-1], subBullet) {
-						categorizedChanges.Added[len(categorizedChanges.Added)-1] += subBullet
-					}
-				case "Changed":
-					if len(categorizedChanges.Changed) > 0 && !strings.Contains(categorizedChanges.Changed[len(categorizedChanges.Changed)-1], subBullet) {
-						categorizedChanges.Changed[len(categorizedChanges.Changed)-1] += subBullet
-					}
-				case "Deprecated":
-					if len(categorizedChanges.Deprecated) > 0 && !strings.Contains(categorizedChanges.Deprecated[len(categorizedChanges.Deprecated)-1], subBullet) {
-						categorizedChanges.Deprecated[len(categorizedChanges.Deprecated)-1] += subBullet
-					}
-				case "Removed":
-					if len(categorizedChanges.Removed) > 0 && !strings.Contains(categorizedChanges.Removed[len(categorizedChanges.Removed)-1], subBullet) {
-						categorizedChanges.Removed[len(categorizedChanges.Removed)-1] += subBullet
-					}
-				case "Fixed":
-					if len(categorizedChanges.Fixed) > 0 && !strings.Contains(categorizedChanges.Fixed[len(categorizedChanges.Fixed)-1], subBullet) {
-						categorizedChanges.Fixed[len(categorizedChanges.Fixed)-1] += subBullet
-					}
-				case "Security":
-					if len(categorizedChanges.Security) > 0 && !strings.Contains(categorizedChanges.Security[len(categorizedChanges.Security)-1], subBullet) {
-						categorizedChanges.Security[len(categorizedChanges.Security)-1] += subBullet
-					}
-				}
-			} else if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
-				// Main bullet point
-				item := strings.TrimPrefix(strings.TrimPrefix(line, "- "), "* ")
-				item = strings.TrimSpace(item)
-				if matchesFilterPatterns(item, params.FilterPatterns) || matchesFilterPatterns(item, extraFilterPatterns) {
-					continue
-				}
-				switch currentCategory {
-				case "Breaking":
-					categorizedChanges.Breaking = appendUnique(categorizedChanges.Breaking, item)
-				case "Added":
-					categorizedChanges.Added = appendUnique(categorizedChanges.Added, item)
-				case "Changed":
-					categorizedChanges.Changed = appendUnique(categorizedChanges.Changed, item)
-				case "Deprecated":
-					categorizedChanges.Deprecated = appendUnique(categorizedChanges.Deprecated, item)
-				case "Removed":
-					categorizedChanges.Removed = appendUnique(categorizedChanges.Removed, item)
-				case "Fixed":
-					categorizedChanges.Fixed = appendUnique(categorizedChanges.Fixed, item)
-				case "Security":
-					categorizedChanges.Security = appendUnique(categorizedChanges.Security, item)
-				}
+			category := currentCategory
+			if category != "" && strings.Contains(item, breakingMarker) {
+				category = "Breaking"
+			}
+			if items := categorizedChanges.category(category); items != nil {
+				*items = appendUnique(*items, item)
 			}
 		}
 	}
 
-	// If we never actually parsed anything, raise the error
-	if !inSection {
-		return nil, microerror.Mask(fmt.Errorf("version range [%s] not found in changelog", compareRange))
+	return categorizedChanges, inSection
+}
+
+// category returns the list of changes a "### <name>" heading collects into,
+// or nil for a heading no list takes.
+func (c *CategorizedChanges) category(name string) *[]string {
+	switch name {
+	case "Breaking":
+		return &c.Breaking
+	case "Added":
+		return &c.Added
+	case "Changed":
+		return &c.Changed
+	case "Deprecated":
+		return &c.Deprecated
+	case "Removed":
+		return &c.Removed
+	case "Fixed":
+		return &c.Fixed
+	case "Security":
+		return &c.Security
+	}
+	return nil
+}
+
+// render writes the changes as the consolidated changelog of a release note.
+func (c CategorizedChanges) render() string {
+	sections := []struct {
+		heading string
+		items   []string
+	}{
+		{"#### :warning: Breaking Changes", c.Breaking},
+		{"#### Added", c.Added},
+		{"#### Changed", c.Changed},
+		{"#### Deprecated", c.Deprecated},
+		{"#### Removed", c.Removed},
+		{"#### Fixed", c.Fixed},
+		{"#### Security", c.Security},
 	}
 
-	// Build the consolidated changelog
 	var sb strings.Builder
-
-	if len(categorizedChanges.Breaking) > 0 {
-		sb.WriteString("#### :warning: Breaking Changes\n\n")
-		for _, item := range categorizedChanges.Breaking {
+	for _, section := range sections {
+		if len(section.items) == 0 {
+			continue
+		}
+		sb.WriteString(section.heading + "\n\n")
+		for _, item := range section.items {
 			sb.WriteString("- " + item + "\n")
 		}
 		sb.WriteString("\n")
 	}
 
-	if len(categorizedChanges.Added) > 0 {
-		sb.WriteString("#### Added\n\n")
-		for _, item := range categorizedChanges.Added {
-			sb.WriteString("- " + item + "\n")
+	return strings.TrimSpace(sb.String())
+}
+
+// githubAPIURL is the GitHub API the GitHub Releases of a component are read
+// from.
+var githubAPIURL = "https://api.github.com/"
+
+// releaseNotesAsChangelog reads the GitHub Releases of the component whose
+// release page is tagURL and writes the notes of those after endVersion up to
+// currentVersion as a Keep-a-Changelog document, newest first, one
+// "## [<version>]" section each. currentVersion's own release is always in it,
+// also when endVersion is currentVersion: a component new in a release has no
+// previous version. A pre-release other than currentVersion is left out: its
+// notes are cumulative, and the stable release after it carries them.
+func releaseNotesAsChangelog(githubToken, tagURL, currentVersion string, endSemVer *semver.Version) (string, error) {
+	owner, repo := repoFromURL(tagURL)
+	if owner == "" {
+		return "", microerror.Mask(fmt.Errorf("no GitHub repository in %s", tagURL))
+	}
+	current, err := semver.NewVersion(currentVersion)
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
+
+	opts := []github.ClientOptionsFunc{github.WithURLs(&githubAPIURL, nil)}
+	if githubToken != "" {
+		opts = append(opts, github.WithAuthToken(githubToken))
+	}
+	client, err := github.NewClient(opts...)
+	if err != nil {
+		return "", microerror.Mask(err)
+	}
+
+	type note struct {
+		version *semver.Version
+		name    string
+		body    string
+	}
+	var notes []note
+	list := &github.ListOptions{PerPage: 100}
+	for {
+		releases, response, err := client.Repositories.ListReleases(context.Background(), owner, repo, list)
+		if err != nil {
+			return "", microerror.Mask(err)
 		}
-		sb.WriteString("\n")
-	}
-
-	if len(categorizedChanges.Changed) > 0 {
-		sb.WriteString("#### Changed\n\n")
-		for _, item := range categorizedChanges.Changed {
-			sb.WriteString("- " + item + "\n")
+		for _, release := range releases {
+			if release.GetDraft() {
+				continue
+			}
+			version, err := semver.NewVersion(release.GetTagName())
+			if err != nil {
+				continue
+			}
+			if !version.Equal(current) && (!version.GreaterThan(endSemVer) || version.GreaterThan(current) || version.Prerelease() != "") {
+				continue
+			}
+			notes = append(notes, note{version: version, name: strings.TrimPrefix(release.GetTagName(), "v"), body: release.GetBody()})
 		}
-		sb.WriteString("\n")
-	}
-
-	if len(categorizedChanges.Deprecated) > 0 {
-		sb.WriteString("#### Deprecated\n\n")
-		for _, item := range categorizedChanges.Deprecated {
-			sb.WriteString("- " + item + "\n")
+		if response.NextPage == 0 {
+			break
 		}
-		sb.WriteString("\n")
+		list.Page = response.NextPage
 	}
 
-	if len(categorizedChanges.Removed) > 0 {
-		sb.WriteString("#### Removed\n\n")
-		for _, item := range categorizedChanges.Removed {
-			sb.WriteString("- " + item + "\n")
-		}
-		sb.WriteString("\n")
+	sort.Slice(notes, func(i, j int) bool { return notes[i].version.GreaterThan(notes[j].version) })
+
+	var sb strings.Builder
+	for _, n := range notes {
+		fmt.Fprintf(&sb, "## [%s]\n\n%s\n\n", n.name, n.body)
 	}
-
-	if len(categorizedChanges.Fixed) > 0 {
-		sb.WriteString("#### Fixed\n\n")
-		for _, item := range categorizedChanges.Fixed {
-			sb.WriteString("- " + item + "\n")
-		}
-		sb.WriteString("\n")
-	}
-
-	if len(categorizedChanges.Security) > 0 {
-		sb.WriteString("#### Security\n\n")
-		for _, item := range categorizedChanges.Security {
-			sb.WriteString("- " + item + "\n")
-		}
-		sb.WriteString("\n")
-	}
-
-	consolidatedContent := strings.TrimSpace(sb.String())
-
-	currentVersionStruct := Version{
-		Name:    compareRange,
-		Link:    compareLink,
-		Content: consolidatedContent,
-	}
-
-	return &currentVersionStruct, nil
+	return sb.String(), nil
 }
 
 // appendUnique appends item to slice only if it doesn't already exist.

@@ -31,7 +31,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
 	}
-	return microerror.Mask(r.run(context.Background()))
+	return microerror.Mask(r.run(cmd.Context()))
 }
 
 func (r *runner) run(ctx context.Context) error {
@@ -52,11 +52,10 @@ func (r *runner) run(ctx context.Context) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	print(r.stdout, listing)
-	return nil
+	return microerror.Mask(print(r.stdout, listing))
 }
 
-func print(w io.Writer, l *manager.Listing) {
+func print(w io.Writer, l *manager.Listing) error {
 	head := fmt.Sprintf("scope %s", l.Scope)
 	if len(l.Teams) > 0 {
 		head += fmt.Sprintf(" (teams %s, from %s)", strings.Join(l.Teams, ", "), l.TeamsSource)
@@ -65,23 +64,37 @@ func print(w io.Writer, l *manager.Listing) {
 	if l.SweepRunning {
 		head += "; a sweep is running"
 	}
-	fmt.Fprintln(w, head)
+	if _, err := fmt.Fprintln(w, head); err != nil {
+		return err
+	}
 	if l.Note != "" {
-		fmt.Fprintf(w, "note: %s\n", l.Note)
+		if _, err := fmt.Fprintf(w, "note: %s\n", l.Note); err != nil {
+			return err
+		}
 	}
-	sweep.PrintSummary(w, l.Sweep)
+	var summary strings.Builder
+	sweep.PrintSummary(&summary, l.Sweep)
+	if _, err := io.WriteString(w, summary.String()); err != nil {
+		return err
+	}
 	if len(l.Repositories) == 0 {
-		fmt.Fprintln(w, "no repositories match")
-		return
+		_, err := fmt.Fprintln(w, "no repositories match")
+		return err
 	}
-	fmt.Fprintln(w)
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "REPOSITORY\tTEAM\tLIFECYCLE\tRENOVATE\tSET-UP\tLAST PERSON COMMIT\tFINDINGS")
-	for _, row := range l.Repositories {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			row.Repository, dash(row.Team), lifecycle(row), dash(row.Renovate), setup(row), dash(row.LastPersonCommit), dash(strings.Join(row.Findings, ",")))
+	if _, err := fmt.Fprintln(tw, "REPOSITORY\tTEAM\tLIFECYCLE\tRENOVATE\tSET-UP\tLAST PERSON COMMIT\tFINDINGS"); err != nil {
+		return err
 	}
-	_ = tw.Flush()
+	for _, row := range l.Repositories {
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			row.Repository, dash(row.Team), lifecycle(row), dash(row.Renovate), setup(row), dash(row.LastPersonCommit), dash(strings.Join(row.Findings, ","))); err != nil {
+			return err
+		}
+	}
+	return tw.Flush()
 }
 
 func dash(s string) string {

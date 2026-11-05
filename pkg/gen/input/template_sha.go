@@ -4,9 +4,14 @@ import (
 	"io/fs"
 	"runtime/debug"
 	"strings"
+
+	"golang.org/x/mod/module"
 )
 
-const devctlModule = "github.com/giantswarm/devctl/v8"
+const (
+	devctlModule     = "github.com/giantswarm/devctl/v8"
+	defaultModuleRef = "main"
+)
 
 // TemplateSHA is the provenance link a generated file's header carries for
 // the template name: the content of name.sha next to the template, which
@@ -26,24 +31,39 @@ func TemplateSHA(files fs.FS, name string) string {
 
 // moduleRef is the devctl version of the build: the main module's when devctl
 // itself is built, the dependency's when devctl is imported, main otherwise.
+// Pseudo-versions refer to their commit, rather than a nonexistent Git tag.
 func moduleRef() string {
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
-		return "main"
+		return defaultModuleRef
 	}
-	if bi.Main.Path == devctlModule && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
-		return bi.Main.Version
+	return moduleRefFromBuildInfo(bi)
+}
+
+func moduleRefFromBuildInfo(bi *debug.BuildInfo) string {
+	m := &bi.Main
+	if m.Path != devctlModule {
+		m = nil
+		for _, d := range bi.Deps {
+			if d.Path == devctlModule {
+				m = d
+				break
+			}
+		}
 	}
-	for _, d := range bi.Deps {
-		if d.Path != devctlModule {
-			continue
-		}
-		if d.Replace != nil && d.Replace.Version != "" {
-			return d.Replace.Version
-		}
-		if d.Version != "" {
-			return d.Version
-		}
+	if m == nil {
+		return defaultModuleRef
 	}
-	return "main"
+	if m.Replace != nil {
+		m = m.Replace
+	}
+	// An unversioned replacement is local source. Its original requirement's
+	// version does not identify the code that was actually built.
+	if m.Version == "" || m.Version == "(devel)" {
+		return defaultModuleRef
+	}
+	if rev, err := module.PseudoVersionRev(m.Version); err == nil {
+		return rev
+	}
+	return m.Version
 }

@@ -91,6 +91,9 @@ func gitIn(t *testing.T, dir string, args ...string) (string, error) {
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+		// Background maintenance could still write .git when t.TempDir cleans up.
+		"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=gc.auto", "GIT_CONFIG_VALUE_0=0",
+		"GIT_CONFIG_KEY_1=maintenance.auto", "GIT_CONFIG_VALUE_1=false",
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
 		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com",
 	)
@@ -221,6 +224,9 @@ func runStep(t *testing.T, script, dir string, env ...string) (map[string]string
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+		// Background maintenance could still write .git when t.TempDir cleans up.
+		"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=gc.auto", "GIT_CONFIG_VALUE_0=0",
+		"GIT_CONFIG_KEY_1=maintenance.auto", "GIT_CONFIG_VALUE_1=false",
 		"GITHUB_REF_NAME=main",
 		"GITHUB_OUTPUT="+outPath,
 		"GITHUB_STEP_SUMMARY="+filepath.Join(t.TempDir(), "step-summary"),
@@ -347,11 +353,11 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			expectTag: "",
 		},
 		{
-			// `test` is skipped too: a test fixture bump ships nothing.
-			name:      "a test-only push during a cycle releases nothing",
+			// `test` opens no cycle, but can replace a failed candidate.
+			name:      "a test-only push during a cycle cuts the next candidate",
 			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "test(deps): bump a fixture"},
 			next:      "v1.3.0",
-			expectTag: "",
+			expectTag: "v1.3.0-rc.2",
 		},
 		{
 			name:      "a non-conventional push during a cycle releases nothing",
