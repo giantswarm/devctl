@@ -211,9 +211,11 @@ func generateSearchQuery(depName string, prs []*PRInfo) string {
 	// remaining words need not form a phrase in the original title.
 	// Quote each term separately, preserving special characters such as @
 	// in scoped packages while requiring all the normalized words.
+	// Search the same field used for grouping so body and comment mentions
+	// do not admit unrelated dependency updates to the selected batch.
 	terms := strings.Fields(depName)
 	for i, term := range terms {
 		terms[i] = `"` + term + `"`
 	}
-	return strings.Join(terms, " ")
+	return strings.Join(terms, " ") + " in:title"
 }

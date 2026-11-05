@@ -30,9 +30,9 @@ var Readers = []string{
 
 // Main is a TestMain: it checks that the package in the working directory
 // imports none of [Readers], makes every credential store fail on any
-// access, and runs the tests. devctl's keyring file and KUBECONFIG sit below
-// a regular file, so any read, write or lock of them fails; the Docker
-// configuration is malformed and the GitHub token variables are unset.
+// access, and runs the tests. devctl's keyring, its supported identities'
+// lock files and KUBECONFIG are directories; the Docker configuration is
+// malformed and the GitHub token variables are unset.
 func Main(m *testing.M) {
 	os.Exit(run(m))
 }
@@ -62,6 +62,19 @@ func failEveryStore(dir string) error {
 	if err := os.WriteFile(file, nil, 0o600); err != nil {
 		return err
 	}
+	// A path below a regular file is treated as missing on Windows. Existing
+	// directories instead give hard errors when stores open them as files.
+	keyring := filepath.Join(dir, "keyring.json")
+	kubeconfig := filepath.Join(dir, "kubeconfig")
+	paths := []string{keyring, kubeconfig}
+	for _, user := range []string{authstore.UserGitHub, authstore.UserCircleCI, authstore.UserMuster} {
+		paths = append(paths, keyring+"."+user+".lock")
+	}
+	for _, path := range paths {
+		if err := os.Mkdir(path, 0o700); err != nil {
+			return err
+		}
+	}
 	// The registry keychain must find a Docker config: when none exists it
 	// can read Podman credentials instead, or silently answer anonymously.
 	docker := filepath.Join(dir, "docker")
@@ -72,9 +85,9 @@ func failEveryStore(dir string) error {
 		return err
 	}
 	env := map[string]string{
-		agentcli.EnvKeyringFile: filepath.Join(file, "keyring.json"),
+		agentcli.EnvKeyringFile: keyring,
 		"DOCKER_CONFIG":         docker,
-		"KUBECONFIG":            filepath.Join(file, "kubeconfig"),
+		"KUBECONFIG":            kubeconfig,
 	}
 	for key, value := range env {
 		if err := os.Setenv(key, value); err != nil {

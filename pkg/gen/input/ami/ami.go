@@ -47,7 +47,7 @@ func (a *AMI) Boot(ctx context.Context) error {
 }
 
 func (a *AMI) initParams(ctx context.Context) error {
-	amiInfoString, err := getAMIInfoString(a.config)
+	amiInfoString, err := getAMIInfoString(ctx, a.config)
 	if err != nil {
 		return microerror.Mask(err)
 	}

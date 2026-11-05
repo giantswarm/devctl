@@ -11,17 +11,17 @@ func TestGroupRenovatePRsSearchesNormalizedWords(t *testing.T) {
 		{
 			name:  "case 0: connective word removed from group label",
 			title: "Update build and test dependencies",
-			query: `"build" "test" "dependencies"`,
+			query: `"build" "test" "dependencies" in:title`,
 		},
 		{
 			name:  "case 1: conventional prefix retained but update skipped",
 			title: "fix(deps): update monitoring stack",
-			query: `"fix(deps):" "monitoring" "stack"`,
+			query: `"fix(deps):" "monitoring" "stack" in:title`,
 		},
 		{
 			name:  "case 2: version removed between group words",
 			title: "Update Go v1.26.0 toolchain",
-			query: `"Go" "toolchain"`,
+			query: `"Go" "toolchain" in:title`,
 		},
 	}
 

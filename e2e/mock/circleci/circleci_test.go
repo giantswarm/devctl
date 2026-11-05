@@ -67,3 +67,14 @@ func TestUnscriptedRouteIsNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	assert.JSONEq(t, `{"message":"Not Found"}`, body)
 }
+
+func TestStartRefusesMalformedBranchQuery(t *testing.T) {
+	s, err := Start(sequence.Routes{
+		"GET /api/v2/project/gh/o/r/pipeline?branch=feature%zz": {{Body: map[string]any{"items": []any{}}}},
+	})
+	if s != nil {
+		s.Close()
+	}
+	require.ErrorContains(t, err, "branch=feature%zz")
+	assert.Nil(t, s, "a malformed branch must not become a route matching every branch")
+}
