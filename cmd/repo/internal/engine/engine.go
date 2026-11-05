@@ -73,12 +73,13 @@ func GitHubClient(logger *logrus.Logger, tokenEnv string, dryRun bool, transport
 // login` token from the keychain otherwise (never with $CI set). It sends
 // through transport (nil: the default transport; a reconcile.Counter to count
 // the requests). The log names the token's source, never its value. Without a
-// token, or with a keychain that cannot be reached, it returns nil: the steps
-// that need CircleCI are then skipped, which the log says.
+// token, or with a keychain that cannot be reached, it returns nil: the
+// circleci step then reads the CircleCI statuses on GitHub instead, which the
+// log says.
 func CircleCIClient(ctx context.Context, logger *logrus.Logger, tokenEnv string, transport http.RoundTripper) (*circleciclient.Client, error) {
 	token, err := authstore.ResolveCircleCI(ctx, tokenEnv)
 	if errors.Is(err, authstore.ErrAuthRequired) || errors.Is(err, authstore.ErrKeychainUnreachable) {
-		logger.Warnf("no CircleCI token in $%s or the devctl keychain (%s): the CircleCI and release steps are skipped", tokenEnv, err)
+		logger.Infof("no CircleCI token in $%s or the devctl keychain (%s): the circleci step reads the CircleCI statuses on GitHub", tokenEnv, err)
 		return nil, nil
 	}
 	if err != nil {

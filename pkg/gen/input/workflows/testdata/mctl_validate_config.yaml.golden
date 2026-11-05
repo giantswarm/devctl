@@ -20,7 +20,7 @@ permissions:
   pull-requests: write
 
 env:
-  MCTL_IMAGE: ${{ vars.MCTL_IMAGE || 'gsoci.azurecr.io/giantswarm/mctl:0.2.1' }}
+  MCTL_IMAGE: ${{ vars.MCTL_IMAGE || 'gsoci.azurecr.io/giantswarm/mctl:0.6.0' }}
 
 jobs:
   validate-config:
@@ -116,17 +116,28 @@ jobs:
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           INSTALLATION: ${{ steps.install.outputs.name }}
+          MCTL_OUTPUT:  ${{ steps.mctl.outputs.output }}
         with:
           script: |
             const installation = process.env.INSTALLATION;
+            // mctl's "  ⚠ <file>: <reason>" lines.
+            const warnings = (process.env.MCTL_OUTPUT || '').split('\n').map(l => l.trim()).filter(l => l.startsWith('⚠'));
             // Token lets reruns update the comment in place.
             const token = `<!-- mctl-validate-config-ready-${installation} -->`;
             const body = [
               token,
               '### ✅ Config validated — ready to bootstrap',
               '',
-              `All checks passed for **${installation}**.`,
+              `${warnings.length ? 'Checks passed with warnings' : 'All checks passed'} for **${installation}**.`,
               '',
+              ...(warnings.length ? [
+                '⚠️ **Warnings** — the merge gate blocks until these are fixed:',
+                '',
+                '```',
+                ...warnings,
+                '```',
+                '',
+              ] : []),
               'Comment `/create-mc` on this PR when you are ready to start the bootstrap pipeline.',
             ].join('\n');
 

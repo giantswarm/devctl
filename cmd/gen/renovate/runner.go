@@ -24,7 +24,13 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return microerror.Mask(err)
+	}
 
 	err := r.flag.Validate()
 	if err != nil {
@@ -45,7 +51,13 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// The optional repo-owned renovate-custom.json5 is referenced from the
 	// generated config's `extends` when present. Its presence is the signal;
 	// devctl never generates or touches the file itself.
-	_, statErr := os.Stat("renovate-custom.json5")
+	customInfo, statErr := os.Stat("renovate-custom.json5")
+	if statErr != nil && !os.IsNotExist(statErr) {
+		return microerror.Mask(statErr)
+	}
+	if statErr == nil && !customInfo.Mode().IsRegular() {
+		return microerror.Maskf(invalidConfigError, "renovate-custom.json5 must be a regular file")
+	}
 	hasCustomConfig := statErr == nil
 
 	// The repository name only goes into the renovate-custom.json5 extends
@@ -64,20 +76,33 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// flavour writes that file and the other flavours renovate.json5; the
 	// one not written is removed.
 	fork := r.flag.Flavours.Contains(gen.FlavourFork)
-	configFile, staleFile := "renovate.json5", "renovate.json"
+	staleFile := "renovate.json"
 	if fork {
-		configFile, staleFile = staleFile, configFile
+		staleFile = "renovate.json5"
 
 		// A fork line that keeps Renovate off on purpose keeps its opt-out:
 		// the generated config would admit the fork and turn Renovate on.
-		for _, f := range []string{configFile, staleFile} {
-			content, err := os.ReadFile(f) // #nosec G304 -- one of the two fixed Renovate config names
+		// Inspect every config location devctl recognizes: the new root
+		// config would also take precedence over an opt-out below .github
+		// or in a .renovaterc file.
+		for _, f := range pkgrenovate.ConfigPaths {
+			content, err := os.ReadFile(f) // #nosec G304 -- fixed Renovate config names
 			if err != nil && !os.IsNotExist(err) {
 				return microerror.Mask(err)
 			}
 			if pkgrenovate.Disables(content) {
 				return microerror.Maskf(invalidFlagError, "%s turns Renovate off for this fork line (`enabled: false`) and stays as it is: Renovate skips a fork without a renovate.json that sets forkProcessing to \"enabled\" anyway; remove the opt-out first to have the fork line scanned", f)
 			}
+		}
+	} else {
+		// Renovate prefers JSONC to JSON5. Do not report a successful
+		// generation whose configuration Renovate would never read.
+		_, err := os.Stat("renovate.jsonc")
+		if err == nil {
+			return microerror.Maskf(invalidFlagError, "renovate.jsonc takes precedence over generated renovate.json5; move its repo-owned rules to renovate-custom.json5 and remove renovate.jsonc before generating")
+		}
+		if !os.IsNotExist(err) {
+			return microerror.Mask(err)
 		}
 	}
 

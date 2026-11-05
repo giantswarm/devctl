@@ -6,10 +6,10 @@ var invalidArgError = &microerror.Error{
 	Kind: "invalidArgError",
 }
 
-var notFollowedError = &microerror.Error{
-	Kind: "notFollowedError",
+var redError = &microerror.Error{
+	Kind: "redError",
 }
 
-var webhookMissingError = &microerror.Error{
-	Kind: "webhookMissingError",
+var timeoutError = &microerror.Error{
+	Kind: "timeoutError",
 }

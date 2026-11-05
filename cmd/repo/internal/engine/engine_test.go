@@ -35,8 +35,8 @@ func TestCircleCIClient(t *testing.T) {
 			wantClient: true, wantLog: "CircleCI token from $" + DefaultCircleCIEnvVar},
 		{name: "variable only", env: envValue,
 			wantClient: true, wantLog: "CircleCI token from $" + DefaultCircleCIEnvVar},
-		{name: "neither", wantLog: "the CircleCI and release steps are skipped"},
-		{name: "keychain only with CI", keychain: true, ci: true, wantLog: "the CircleCI and release steps are skipped"},
+		{name: "neither", wantLog: "the circleci step reads the CircleCI statuses on GitHub"},
+		{name: "keychain only with CI", keychain: true, ci: true, wantLog: "the circleci step reads the CircleCI statuses on GitHub"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

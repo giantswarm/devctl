@@ -2,7 +2,9 @@ package job
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -59,11 +61,22 @@ func (r *runner) newDocument(args []string) document {
 }
 
 func (r *runner) job(ctx context.Context, args []string, doc *document) error {
-	owner, repo, number, err := agentcli.ParseRepositoryArgument(command, "job number", args)
-	if err != nil {
-		return err
+	byURL := len(args) == 1
+	var owner, repo, number string
+	if byURL && !ci.IsJobURL(args[0]) {
+		return fmt.Errorf("usage: devctl %s <owner/repo> <job number>, or a CircleCI job URL; %q is neither", command, args[0])
 	}
-	doc.Repository = owner + "/" + repo
+	if !byURL {
+		var err error
+		owner, repo, number, err = agentcli.ParseRepositoryArgument(command, "job number", args)
+		if err != nil {
+			return err
+		}
+		doc.Repository = owner + "/" + repo
+		if n, err := strconv.ParseInt(number, 10, 64); err != nil || n <= 0 {
+			return fmt.Errorf("the job number is a positive integer, got %q", number)
+		}
+	}
 	if err := r.flag.Validate(); err != nil {
 		return err
 	}
@@ -78,5 +91,12 @@ func (r *runner) job(ctx context.Context, args []string, doc *document) error {
 	if err != nil {
 		return err
 	}
-	return ci.ReadJob(ctx, circleci, owner, repo, number, r.flag.Lines, doc.JobResult, doc.Warn)
+	if byURL {
+		owner, repo, number, _, err = ci.ResolveJobURL(ctx, circleci, args[0])
+		if err != nil {
+			return err
+		}
+		doc.Repository = owner + "/" + repo
+	}
+	return ci.ReadJob(ctx, circleci, owner, repo, number, ci.JobOptions{Lines: r.flag.Lines, StepOutput: r.flag.StepOutput}, doc.JobResult, doc.Warn)
 }

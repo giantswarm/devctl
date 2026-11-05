@@ -1,7 +1,7 @@
 # The tag pipeline runs and runs, and the registry answers MANIFEST_UNKNOWN
 # for ever: the deadline passes and the wait ends with exit 2, naming the
-# artifacts still missing. Thirty minutes at DEVCTL_TIME_SCALE 0.001 are
-# 1.8 seconds.
+# artifacts still missing. Only the command's sleeps spend the thirty-minute
+# virtual budget; request latency does not.
 description: artifacts that never appear while the pipeline runs end the wait with exit 2 at the deadline
 args: [release, wait, giantswarm/e2e-app, v1.2.3, --timeout, 30m]
 timeout: 20s
@@ -25,6 +25,8 @@ github:
           - {name: Dockerfile, path: Dockerfile, type: file}
           - {name: helm, path: helm, type: dir}
           - {name: main.go, path: main.go, type: file}
+    "GET /repos/giantswarm/e2e-app/contents/.github/workflows/zz_generated.auto_release.yaml?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body: {type: file, name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, sha: c0ffee, encoding: base64, content: b246IHB1c2gK}
     "GET /repos/giantswarm/e2e-app/contents/.github/workflows?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
       - body:
           - {name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, type: file}

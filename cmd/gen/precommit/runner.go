@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -25,7 +26,13 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return microerror.Mask(err)
+	}
 
 	err := r.flag.Validate()
 	if err != nil {
@@ -46,7 +53,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// When --repo-name is not provided, auto-detect it from the local go.mod
 	// module path (e.g. github.com/giantswarm/devctl/v8). This value is used as
 	// the goimports -local prefix in the generated pre-commit config.
-	if r.flag.RepoName == "" && r.flag.Language == "go" {
+	repoName := r.flag.RepoName
+	if repoName == "" && r.flag.Language == "go" {
 		content, err := os.ReadFile("go.mod")
 		if err != nil {
 			return fmt.Errorf("failed to read go.mod (run from repo root or pass --%s): %w", flagRepoName, err)
@@ -60,7 +68,11 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			return fmt.Errorf("go.mod does not declare a module path (missing 'module' directive); alternatively pass --%s", flagRepoName)
 		}
 
-		r.flag.RepoName = mf.Module.Mod.Path
+		repoName = mf.Module.Mod.Path
+	} else if r.flag.Language == "go" && !strings.Contains(repoName, "/") {
+		// The flag still accepts a bare repository name under giantswarm.
+		// The input template consumes the full goimports import prefix.
+		repoName = "github.com/giantswarm/" + repoName
 	}
 
 	var precommitInput *precommit.PreCommit
@@ -68,7 +80,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		c := precommit.Config{
 			Language:         r.flag.Language,
 			Flavors:          r.flag.Flavors,
-			RepoName:         r.flag.RepoName,
+			RepoName:         repoName,
 			K8sSchemaVersion: r.flag.K8sSchemaVersion,
 			GoGenerate:       r.flag.GoGenerate,
 		}
