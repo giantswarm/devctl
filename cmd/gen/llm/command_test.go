@@ -1,6 +1,7 @@
 package llm_test
 
 import (
+	"bytes"
 	"io"
 	"io/fs"
 	"os"
@@ -97,11 +98,71 @@ func TestCommandNonForkReportsBlockedOutput(t *testing.T) {
 	require.Equal(t, before, checkoutContents(t))
 }
 
+func TestCommandDryRunReportsFindingsWithoutChanges(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		files map[string]string
+		args  []string
+		want  []string
+	}{
+		{
+			name: "new repository",
+			want: []string{"gen llm would proceed: no findings"},
+		},
+		{
+			name:  "unmigrated repository",
+			files: map[string]string{"CLAUDE.md": "Run make test.\n"},
+			want: []string{
+				"gen llm would skip this repository:",
+				"CLAUDE.md: holds instructions that are not in a devctl-managed block yet\n  fix: run devctl gen llm --migrate-instructions and review the result",
+			},
+		},
+		{
+			name:  "migration of the same repository",
+			files: map[string]string{"CLAUDE.md": "Run make test.\n"},
+			args:  []string{"--migrate-instructions"},
+			want:  []string{"gen llm would proceed: no findings"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			for name, content := range tc.files {
+				require.NoError(t, os.WriteFile(name, []byte(content), 0o600))
+			}
+			before := checkoutContents(t)
+
+			var stdout bytes.Buffer
+			err := executeCommandTo(t, &stdout, append([]string{"--flavour", "app", "--language", "go", "--dry-run"}, tc.args...)...)
+			require.NoError(t, err)
+
+			for _, want := range tc.want {
+				require.Contains(t, stdout.String(), want)
+			}
+			require.Equal(t, before, checkoutContents(t))
+		})
+	}
+}
+
+// The migration itself is not implemented yet.
+func TestCommandMigrationRequiresDryRun(t *testing.T) {
+	t.Chdir(t.TempDir())
+	before := checkoutContents(t)
+
+	require.ErrorContains(t, executeCommand(t, "--migrate-instructions"), "--dry-run")
+
+	require.Equal(t, before, checkoutContents(t))
+}
+
 func executeCommand(t *testing.T, args ...string) error {
+	t.Helper()
+	return executeCommandTo(t, io.Discard, args...)
+}
+
+func executeCommandTo(t *testing.T, stdout io.Writer, args ...string) error {
 	t.Helper()
 	logger, err := micrologger.New(micrologger.Config{IOWriter: io.Discard})
 	require.NoError(t, err)
-	cmd, err := llm.New(llm.Config{Logger: logger, Stdout: io.Discard, Stderr: io.Discard})
+	cmd, err := llm.New(llm.Config{Logger: logger, Stdout: stdout, Stderr: io.Discard})
 	require.NoError(t, err)
 	cmd.SilenceErrors = true
 	cmd.SilenceUsage = true

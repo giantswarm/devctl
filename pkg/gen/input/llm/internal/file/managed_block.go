@@ -139,15 +139,33 @@ func closesFence(line, fence []byte) bool {
 // any markers other than one begin followed by one end are an error, because
 // replacing a guessed span could overwrite the repository's own instructions.
 func findManagedBlock(content []byte) (start, end int, found bool, err error) {
+	start, end, found, problem := locateManagedBlock(content)
+	if problem != "" {
+		return 0, 0, false, microerror.Maskf(invalidManagedBlockError, "%s; %s", problem, ManagedBlockFix)
+	}
+	return start, end, found, nil
+}
+
+// ManagedBlockFix tells how to repair the markers that CheckManagedBlock
+// reports a problem with.
+const ManagedBlockFix = "keep exactly one begin marker followed by one end marker, or remove both markers to have the block added again"
+
+// CheckManagedBlock reports whether content has a devctl-managed block, or
+// what is wrong with its markers.
+func CheckManagedBlock(content []byte) (found bool, problem string) {
+	_, _, found, problem = locateManagedBlock(content)
+	return found, problem
+}
+
+func locateManagedBlock(content []byte) (start, end int, found bool, problem string) {
 	m := findMarkers(content)
 	begins, ends := m.begins, m.ends
 
-	var problem string
 	switch {
 	case len(begins) == 0 && len(ends) == 0:
-		return 0, 0, false, nil
+		return 0, 0, false, ""
 	case len(begins) == 1 && len(ends) == 1 && begins[0].number < ends[0].number:
-		return begins[0].start, ends[0].end, true, nil
+		return begins[0].start, ends[0].end, true, ""
 	case len(begins) == 1 && len(ends) == 1:
 		problem = fmt.Sprintf("the end marker on line %d comes before the begin marker on line %d", ends[0].number, begins[0].number)
 	case len(begins) == 1 && len(ends) == 0:
@@ -157,8 +175,7 @@ func findManagedBlock(content []byte) (start, end int, found bool, err error) {
 	default:
 		problem = fmt.Sprintf("found %s and %s", countMarkers("begin", begins), countMarkers("end", ends))
 	}
-	return 0, 0, false, microerror.Maskf(invalidManagedBlockError,
-		"%s; keep exactly one begin marker followed by one end marker, or remove both markers to have the block added again", problem)
+	return 0, 0, false, problem
 }
 
 func countMarkers(kind string, lines []markerLine) string {

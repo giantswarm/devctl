@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/giantswarm/microerror"
@@ -50,6 +51,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return nil
 	}
 
+	if r.flag.DryRun {
+		return microerror.Mask(r.dryRun(ctx))
+	}
+
 	var llmInput *llm.LLM
 	{
 		c := llm.Config{
@@ -80,5 +85,30 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
+	return nil
+}
+
+func (r *runner) dryRun(ctx context.Context) error {
+	mode := llm.DefaultMode
+	if r.flag.MigrateInstructions {
+		mode = llm.MigrationMode
+	}
+	report, err := llm.Preflight(ctx, ".", mode)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+
+	if len(report.Findings) == 0 {
+		_, err = fmt.Fprintln(r.stdout, "gen llm would proceed: no findings")
+		return microerror.Mask(err)
+	}
+	if _, err := fmt.Fprintln(r.stdout, "gen llm would skip this repository:"); err != nil {
+		return microerror.Mask(err)
+	}
+	for _, f := range report.Findings {
+		if _, err := fmt.Fprintf(r.stdout, "%s: %s\n  fix: %s\n", f.Path, f.Problem, f.Fix); err != nil {
+			return microerror.Mask(err)
+		}
+	}
 	return nil
 }
