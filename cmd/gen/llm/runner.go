@@ -57,14 +57,20 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	if r.flag.MigrateInstructions {
 		mode = llm.MigrationMode
 	}
-	changes, report, err := llm.Plan(ctx, ".", mode)
+	llmInput, err := llm.New(llm.Config{Language: r.flag.Language})
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	body, err := llmInput.BlockBody()
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	changes, report, err := llm.Plan(ctx, ".", mode, body)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
 	if len(report.Findings) > 0 {
-		// Alignment runs every generator and fails the repository on any
-		// error, so findings are warnings and the command succeeds.
 		out, heading := r.stderr, "gen llm skipped this repository:"
 		if r.flag.DryRun {
 			out, heading = r.stdout, "gen llm would skip this repository:"
@@ -74,27 +80,31 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		for _, f := range report.Findings {
 			fmt.Fprintf(&b, "%s: %s\n  fix: %s\n", f.Path, f.Problem, f.Fix)
 		}
-		_, err = io.WriteString(out, b.String())
-		return microerror.Mask(err)
+		if _, err := io.WriteString(out, b.String()); err != nil {
+			return microerror.Mask(err)
+		}
+		// Alignment runs every generator and fails the repository on any
+		// error, so a skip in default mode is a warning. A migration was
+		// asked for, so a script running it must notice.
+		if mode == llm.MigrationMode && !r.flag.DryRun {
+			return microerror.Maskf(notMigratedError, "the repository was not migrated, see the findings above")
+		}
+		return nil
 	}
 
 	if r.flag.DryRun {
 		var b strings.Builder
-		fmt.Fprintln(&b, "gen llm would make these changes:")
-		for _, step := range changes.Steps() {
-			fmt.Fprintf(&b, "- %s\n", step)
+		if steps := changes.Steps(); len(steps) == 0 {
+			fmt.Fprintln(&b, "gen llm would make no changes")
+		} else {
+			fmt.Fprintln(&b, "gen llm would make these changes:")
+			for _, step := range steps {
+				fmt.Fprintf(&b, "- %s\n", step)
+			}
 		}
 		_, err = io.WriteString(r.stdout, b.String())
 		return microerror.Mask(err)
 	}
 
-	llmInput, err := llm.New(llm.Config{Flavours: r.flag.Flavours, Language: r.flag.Language})
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	body, err := llmInput.BlockBody()
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	return microerror.Mask(changes.Apply(ctx, body))
+	return microerror.Mask(changes.Apply(ctx))
 }

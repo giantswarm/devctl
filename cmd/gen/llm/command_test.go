@@ -102,6 +102,32 @@ func TestCommandSkipsUnmigratedRepository(t *testing.T) {
 	require.Equal(t, before, checkoutContents(t))
 }
 
+// A migration that was asked for and did not happen is an error, so that a
+// script running it notices.
+func TestCommandMigrationFailsWhenSkipped(t *testing.T) {
+	t.Chdir(t.TempDir())
+	require.NoError(t, os.WriteFile("CONTRIBUTING.md", []byte("Contributing.\n"), 0o600))
+	require.NoError(t, os.Symlink("CONTRIBUTING.md", "AGENTS.md"))
+	before := checkoutContents(t)
+
+	var stderr bytes.Buffer
+	err := executeCommandWith(t, io.Discard, &stderr, "--migrate-instructions")
+
+	require.ErrorContains(t, err, "not migrated")
+	require.Contains(t, stderr.String(), "gen llm skipped this repository:\nAGENTS.md: is a link to CONTRIBUTING.md")
+	require.Equal(t, before, checkoutContents(t))
+}
+
+func TestCommandDryRunOfUpToDateRepository(t *testing.T) {
+	t.Chdir(t.TempDir())
+	require.NoError(t, executeCommand(t, "-l", "go"))
+
+	var stdout bytes.Buffer
+	require.NoError(t, executeCommandTo(t, &stdout, "-l", "go", "--dry-run"))
+
+	require.Equal(t, "gen llm would make no changes\n", stdout.String())
+}
+
 func TestCommandMigratesInstructions(t *testing.T) {
 	t.Chdir(t.TempDir())
 	require.NoError(t, os.WriteFile("CLAUDE.md", []byte("Run make test.\n"), 0o600))

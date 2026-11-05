@@ -24,7 +24,7 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.Flags().VarP(gen.NewFlavourSliceFlagValue(&f.Flavours, gen.FlavourSlice{}), flagFlavour, "f", fmt.Sprintf(`The type of project that you want to generate rules for. Possible values: <%s>`, strings.Join(gen.AllFlavours(), "|")))
+	cmd.Flags().VarP(gen.NewFlavourSliceFlagValue(&f.Flavours, gen.FlavourSlice{}), flagFlavour, "f", fmt.Sprintf(`The type of project. Nothing is generated for fork. Possible values: <%s>`, strings.Join(gen.AllFlavours(), "|")))
 	cmd.Flags().StringVarP(&f.Language, flagLanguage, "l", "", "Language of the repo, for language-specific instructions.")
 	cmd.Flags().BoolVar(&f.DryRun, flagDryRun, false, "Print the changes or the findings without changing anything.")
 	cmd.Flags().BoolVar(&f.MigrateInstructions, flagMigrateInstructions, false, "Also move existing agent instructions to AGENTS.md and skills to .agents/skills.")

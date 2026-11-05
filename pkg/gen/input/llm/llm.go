@@ -3,13 +3,11 @@ package llm
 import (
 	"github.com/giantswarm/microerror"
 
-	"github.com/giantswarm/devctl/v8/pkg/gen"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/llm/internal/file"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/llm/internal/params"
 )
 
 type Config struct {
-	Flavours gen.FlavourSlice
 	Language string
 }
 
@@ -20,7 +18,6 @@ type LLM struct {
 func New(config Config) (*LLM, error) {
 	l := &LLM{
 		params: params.Params{
-			Flavours: config.Flavours,
 			Language: config.Language,
 		},
 	}

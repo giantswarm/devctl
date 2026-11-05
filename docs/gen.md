@@ -293,12 +293,14 @@ Both modes check the repository before they change anything. Each problem is pri
 - malformed devctl-managed markers, for example an end marker without a begin marker;
 - an `AGENTS.md` that is a link, which would put the block into another file;
 - a Claude file that links anywhere other than `AGENTS.md`;
-- `.claude`, `.agents` or `.agents/skills` as links or files;
+- `.claude`, `.agents` or `.agents/skills` as links or files, and `.claude/skills` as a file or a link to anywhere other than `../.agents/skills`;
 - names that differ only in case, such as `agents.md`;
 - outputs that Git would ignore, such as an `AGENTS.md` or `.claude/` entry in `.gitignore`: a commit with `git add -A` would leave them out;
 - entries in `.claude/skills` that cannot move: loose files, links elsewhere, and skills with the same name in `.agents/skills`.
 
-Add `--dry-run` to see the changes, or the findings, without changing anything.
+In default mode the command still succeeds, so that an alignment run goes on with the other generators. With `--migrate-instructions` it fails after printing the findings, because the migration that was asked for did not happen.
+
+Add `--dry-run` to see the changes, or the findings, without changing anything. A repository that is up to date gets `gen llm would make no changes`.
 
 ### Your own Claude instructions
 

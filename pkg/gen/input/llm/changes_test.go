@@ -125,10 +125,10 @@ func migrate(t *testing.T, root string) {
 
 func apply(t *testing.T, root string, mode llm.Mode) {
 	t.Helper()
-	changes, report, err := llm.Plan(t.Context(), root, mode)
+	changes, report, err := llm.Plan(t.Context(), root, mode, testBody)
 	require.NoError(t, err)
 	require.Empty(t, report.Findings)
-	require.NoError(t, changes.Apply(t.Context(), testBody))
+	require.NoError(t, changes.Apply(t.Context()))
 }
 
 // readTree returns the files in root by slash path, and a link as "-> target".
@@ -227,7 +227,7 @@ func TestMigration_Steps(t *testing.T) {
 	})
 	writeLinks(t, root, map[string]string{".claude/skills/b": "../../.agents/skills/b"})
 
-	migration, report, err := llm.Plan(t.Context(), root, llm.MigrationMode)
+	migration, report, err := llm.Plan(t.Context(), root, llm.MigrationMode, testBody)
 	require.NoError(t, err)
 	require.Empty(t, report.Findings)
 	require.Equal(t, []string{
@@ -246,21 +246,20 @@ func TestMigration_BlockedRepositoryIsUnchanged(t *testing.T) {
 	writeLinks(t, root, map[string]string{"AGENTS.md": "CONTRIBUTING.md", "CLAUDE.md": "AGENTS.md"})
 	before := readTree(t, root)
 
-	migration, report, err := llm.Plan(t.Context(), root, llm.MigrationMode)
+	migration, report, err := llm.Plan(t.Context(), root, llm.MigrationMode, testBody)
 	require.NoError(t, err)
 	require.Equal(t, []string{"AGENTS.md"}, findingPaths(t, report))
 	require.Empty(t, migration.Steps())
 	require.Equal(t, before, readTree(t, root))
 }
 
-func TestMigration_FailureBeforeWritingChangesNothing(t *testing.T) {
+func TestMigration_InvalidBlockChangesNothing(t *testing.T) {
 	root := newCheckout(t)
 	writeFiles(t, root, map[string]string{"CLAUDE.md": "Shared.\n", ".claude/skills/a/SKILL.md": "a\n"})
 	before := readTree(t, root)
 
-	migration, _, err := llm.Plan(t.Context(), root, llm.MigrationMode)
-	require.NoError(t, err)
-	require.Error(t, migration.Apply(t.Context(), "<!-- END devctl-managed -->\n"))
+	_, _, err := llm.Plan(t.Context(), root, llm.MigrationMode, "<!-- END devctl-managed -->\n")
+	require.Error(t, err)
 	require.Equal(t, before, readTree(t, root))
 }
 
@@ -268,7 +267,7 @@ func TestMigration_BrokenMarkersInSource(t *testing.T) {
 	root := newCheckout(t)
 	writeFiles(t, root, map[string]string{"CLAUDE.md": "Intro.\n<!-- END devctl-managed -->\n"})
 
-	migration, report, err := llm.Plan(t.Context(), root, llm.MigrationMode)
+	migration, report, err := llm.Plan(t.Context(), root, llm.MigrationMode, testBody)
 	require.NoError(t, err)
 	require.Equal(t, []string{"CLAUDE.md"}, findingPaths(t, report))
 	require.Equal(t, "the end marker on line 2 has no begin marker", report.Findings[0].Problem)
@@ -279,12 +278,12 @@ func TestMigration_SourceChangedSincePlan(t *testing.T) {
 	root := newCheckout(t)
 	writeFiles(t, root, map[string]string{"CLAUDE.md": "Shared.\n"})
 
-	migration, _, err := llm.Plan(t.Context(), root, llm.MigrationMode)
+	migration, _, err := llm.Plan(t.Context(), root, llm.MigrationMode, testBody)
 	require.NoError(t, err)
 	writeFiles(t, root, map[string]string{"CLAUDE.md": "Shared, edited.\n"})
 	before := readTree(t, root)
 
-	require.ErrorContains(t, migration.Apply(t.Context(), testBody), "CLAUDE.md changed")
+	require.ErrorContains(t, migration.Apply(t.Context()), "CLAUDE.md changed")
 	require.Equal(t, before, readTree(t, root))
 }
 
@@ -369,7 +368,7 @@ func TestChanges_DefaultModeLeavesUnmigratedRepositories(t *testing.T) {
 	writeFiles(t, root, map[string]string{"CLAUDE.md": "Shared.\n", legacyBase: "old\n"})
 	before := readTree(t, root)
 
-	changes, report, err := llm.Plan(t.Context(), root, llm.DefaultMode)
+	changes, report, err := llm.Plan(t.Context(), root, llm.DefaultMode, testBody)
 	require.NoError(t, err)
 	require.Equal(t, []string{"CLAUDE.md"}, findingPaths(t, report))
 	require.Empty(t, changes.Steps())
@@ -380,11 +379,95 @@ func TestChanges_StepsForLegacyRulesAndLink(t *testing.T) {
 	root := newCheckout(t)
 	writeFiles(t, root, map[string]string{legacyBase: "old\n", ".agents/skills/a/SKILL.md": "a\n"})
 
-	changes, _, err := llm.Plan(t.Context(), root, llm.DefaultMode)
+	changes, _, err := llm.Plan(t.Context(), root, llm.DefaultMode, testBody)
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		"create AGENTS.md with the devctl-managed block",
 		"create .claude/skills as a link to ../.agents/skills",
 		"delete " + legacyBase,
 	}, changes.Steps())
+}
+
+// The cleanup must not reach outside the repository through a link.
+func TestChanges_LinkedLegacyDirectoriesAreLeftAlone(t *testing.T) {
+	for link, target := range map[string]string{".cursor": "shared", ".cursor/rules": "../shared/rules"} {
+		t.Run(link, func(t *testing.T) {
+			root := newCheckout(t)
+			writeFiles(t, root, map[string]string{
+				"shared/rules/zz_generated.base-llm-rules.mdc": "Shared.\n",
+				"shared/zz_generated.base-llm-rules.mdc":       "Shared.\n",
+			})
+			writeLinks(t, root, map[string]string{link: target})
+
+			apply(t, root, llm.DefaultMode)
+
+			tree := readTree(t, root)
+			require.Equal(t, "Shared.\n", tree["shared/rules/zz_generated.base-llm-rules.mdc"])
+			require.Equal(t, "-> "+target, tree[link])
+		})
+	}
+}
+
+func TestChanges_UpToDateRepositoryHasNoSteps(t *testing.T) {
+	for _, mode := range []llm.Mode{llm.DefaultMode, llm.MigrationMode} {
+		root := newCheckout(t)
+		writeFiles(t, root, map[string]string{"CLAUDE.md": "Shared.\n", ".claude/skills/a/SKILL.md": "a\n"})
+		migrate(t, root)
+
+		changes, report, err := llm.Plan(t.Context(), root, mode, testBody)
+		require.NoError(t, err)
+		require.Empty(t, report.Findings)
+		require.Empty(t, changes.Steps(), "mode %d", mode)
+	}
+}
+
+func TestChanges_EmptyClaudeFilesHoldNoInstructions(t *testing.T) {
+	testCases := []struct {
+		name  string
+		mode  llm.Mode
+		files map[string]string
+		want  map[string]string
+	}{
+		{
+			name:  "default mode",
+			mode:  llm.DefaultMode,
+			files: map[string]string{"CLAUDE.md": "\n"},
+			want:  map[string]string{"AGENTS.md": testBlock + "\n## This repository\n", "CLAUDE.md": "@AGENTS.md\n"},
+		},
+		{
+			name:  "migration mode moves the file with content",
+			mode:  llm.MigrationMode,
+			files: map[string]string{"CLAUDE.md": " \n", ".claude/CLAUDE.md": "Claude only.\n"},
+			want:  map[string]string{"AGENTS.md": testBlock + "\nClaude only.\n", "CLAUDE.md": "@AGENTS.md\n"},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := newCheckout(t)
+			writeFiles(t, root, tc.files)
+
+			apply(t, root, tc.mode)
+			require.Equal(t, tc.want, readTree(t, root))
+		})
+	}
+}
+
+func TestChanges_AgentsChangedSincePlan(t *testing.T) {
+	for name, files := range map[string]map[string]string{
+		"edited":  {"AGENTS.md": "<!-- BEGIN devctl-managed -->\n- old\n<!-- END devctl-managed -->\n"},
+		"created": {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := newCheckout(t)
+			writeFiles(t, root, files)
+
+			changes, _, err := llm.Plan(t.Context(), root, llm.DefaultMode, testBody)
+			require.NoError(t, err)
+			writeFiles(t, root, map[string]string{"AGENTS.md": "Local, edited.\n"})
+			before := readTree(t, root)
+
+			require.ErrorContains(t, changes.Apply(t.Context()), "AGENTS.md changed")
+			require.Equal(t, before, readTree(t, root))
+		})
+	}
 }

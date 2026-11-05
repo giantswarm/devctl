@@ -51,7 +51,7 @@ func TestPreflight_DefaultMode(t *testing.T) {
 			root := newCheckout(t)
 			writeFiles(t, root, tc.files)
 
-			report, err := llm.Preflight(t.Context(), root, llm.DefaultMode)
+			report, err := check(t, root, llm.DefaultMode)
 			require.NoError(t, err)
 			require.Equal(t, tc.want, findingPaths(t, report))
 		})
@@ -63,7 +63,7 @@ func TestPreflight_MalformedMarkers(t *testing.T) {
 		root := newCheckout(t)
 		writeFiles(t, root, map[string]string{"AGENTS.md": "Intro.\n<!-- END devctl-managed -->\n"})
 
-		report, err := llm.Preflight(t.Context(), root, mode)
+		report, err := check(t, root, mode)
 		require.NoError(t, err)
 		require.Equal(t, []string{"AGENTS.md"}, findingPaths(t, report))
 		require.Equal(t, "the end marker on line 2 has no begin marker", report.Findings[0].Problem)
@@ -121,7 +121,7 @@ func TestPreflight_Links(t *testing.T) {
 				writeFiles(t, root, tc.files)
 				writeLinks(t, root, tc.links)
 
-				report, err := llm.Preflight(t.Context(), root, mode)
+				report, err := check(t, root, mode)
 				require.NoError(t, err)
 				require.Equal(t, tc.want, findingPaths(t, report))
 			})
@@ -139,7 +139,7 @@ func TestPreflight_AgentsNotADirectory(t *testing.T) {
 				root := newCheckout(t)
 				writeFiles(t, root, map[string]string{name: "x\n", ".claude/skills/a/SKILL.md": "a\n"})
 
-				report, err := llm.Preflight(t.Context(), root, mode)
+				report, err := check(t, root, mode)
 				require.NoError(t, err)
 				require.Equal(t, want, findingPaths(t, report), "mode %d", mode)
 			})
@@ -159,7 +159,7 @@ func TestPreflight_CaseVariants(t *testing.T) {
 			".Agents/x":         "x\n",
 		})
 
-		report, err := llm.Preflight(t.Context(), root, mode)
+		report, err := check(t, root, mode)
 		require.NoError(t, err)
 		require.Equal(t, []string{".Agents", ".claude/Claude.md", "agents.md"}, findingPaths(t, report))
 		require.Contains(t, report.Findings[2].Problem, "AGENTS.md")
@@ -232,7 +232,7 @@ func TestPreflight_ClaudeSkills(t *testing.T) {
 				writeFiles(t, root, tc.files)
 				writeLinks(t, root, tc.links)
 
-				report, err := llm.Preflight(t.Context(), root, mode)
+				report, err := check(t, root, mode)
 				require.NoError(t, err)
 				require.Equal(t, want, findingPaths(t, report), "mode %d", mode)
 			})
@@ -248,7 +248,7 @@ func TestPreflight_LooseFileFix(t *testing.T) {
 		root := newCheckout(t)
 		writeFiles(t, root, map[string]string{".claude/skills/" + file: "x\n"})
 
-		report, err := llm.Preflight(t.Context(), root, llm.MigrationMode)
+		report, err := check(t, root, llm.MigrationMode)
 		require.NoError(t, err)
 		require.Len(t, report.Findings, 1)
 		require.Equal(t, fix, report.Findings[0].Fix)
@@ -309,7 +309,7 @@ func TestPreflight_IgnoredOutputs(t *testing.T) {
 				git(t, root, append([]string{"add", "-f", "--"}, tc.tracked...)...)
 			}
 
-			report, err := llm.Preflight(t.Context(), root, llm.DefaultMode)
+			report, err := check(t, root, llm.DefaultMode)
 			require.NoError(t, err)
 			require.Equal(t, tc.want, findingPaths(t, report))
 		})
@@ -322,7 +322,7 @@ func TestPreflight_GitFailure(t *testing.T) {
 	root := newCheckout(t)
 	writeFiles(t, root, map[string]string{".git/config": "[broken\n"})
 
-	_, err := llm.Preflight(t.Context(), root, llm.DefaultMode)
+	_, err := check(t, root, llm.DefaultMode)
 	require.ErrorContains(t, err, "bad config line 1")
 }
 
@@ -330,9 +330,16 @@ func TestPreflight_OutsideGitCheckout(t *testing.T) {
 	root := isolatedDir(t)
 	writeFiles(t, root, map[string]string{".gitignore": "AGENTS.md\n"})
 
-	report, err := llm.Preflight(t.Context(), root, llm.DefaultMode)
+	report, err := check(t, root, llm.DefaultMode)
 	require.NoError(t, err)
 	require.Empty(t, report.Findings)
+}
+
+// check returns the findings of planning the changes to root in mode.
+func check(t *testing.T, root string, mode llm.Mode) (llm.Report, error) {
+	t.Helper()
+	_, report, err := llm.Plan(t.Context(), root, mode, testBody)
+	return report, err
 }
 
 // newCheckout returns an empty Git checkout, as alignment runs in one.

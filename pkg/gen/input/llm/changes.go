@@ -3,7 +3,9 @@ package llm
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -25,8 +27,15 @@ type Changes struct {
 	root    string
 	planned bool
 
-	// agents is the content of an existing AGENTS.md with instructions.
-	agents []byte
+	// agents is the content of an existing AGENTS.md with instructions, and
+	// agentsAfter the content it gets.
+	agents, agentsAfter []byte
+	// agentsBefore is the content of AGENTS.md when the changes were
+	// planned, and agentsExisted whether there was one.
+	agentsBefore   []byte
+	agentsExisted  bool
+	agentsHadBlock bool
+	writeAgents    bool
 	// source is the Claude file whose content moves to AGENTS.md.
 	source *plannedFile
 	// importers are the Claude files that keep their content and gain an
@@ -71,9 +80,10 @@ var agentsImports = map[string]string{
 	dotClaudeFile: "../" + agentsFile,
 }
 
-// Plan plans the changes to the repository at root in mode. A repository
-// with findings gets no changes.
-func Plan(ctx context.Context, root string, mode Mode) (Changes, Report, error) {
+// Plan plans the changes to the repository at root in mode, with body as the
+// content of the devctl-managed block. A repository with findings gets no
+// changes. All new content is prepared here, before anything is written.
+func Plan(ctx context.Context, root string, mode Mode, body string) (Changes, Report, error) {
 	p, err := inspect(ctx, root, mode)
 	if err != nil {
 		return Changes{}, Report{}, microerror.Mask(err)
@@ -82,27 +92,50 @@ func Plan(ctx context.Context, root string, mode Mode) (Changes, Report, error) 
 		return Changes{}, p.report, nil
 	}
 
-	m := Changes{root: root, planned: true, agents: p.agentsContent}
+	m := Changes{
+		root:           root,
+		planned:        true,
+		agents:         p.agentsContent,
+		agentsBefore:   p.agentsRaw,
+		agentsExisted:  p.agentsExists,
+		agentsHadBlock: p.agentsState == agentsWithBlock,
+	}
 	for _, name := range []string{claudeFile, dotClaudeFile} {
 		content, ok := p.claudeContents[name]
-		switch {
-		case !ok:
-		case name == p.source:
+		if !ok {
+			continue
+		}
+		if name == p.source {
 			m.source = &plannedFile{name: name, before: content}
-		default:
-			if after := file.AddImport(content, agentsImports[name]); !bytes.Equal(after, content) {
-				m.importers = append(m.importers, plannedFile{name: name, before: content, after: after})
-			}
+			continue
+		}
+		// A file without instructions of its own becomes the import alone.
+		after := file.AddImport(content, agentsImports[name])
+		if isBlank(content) {
+			after = []byte("@" + agentsImports[name] + "\n")
+		}
+		if !bytes.Equal(after, content) {
+			m.importers = append(m.importers, plannedFile{name: name, before: content, after: after})
 		}
 	}
 	if p.claudeSkills == dirPresent {
 		m.skills, m.linkSkills = p.skillEntries, true
 	}
+	base := m.agents
+	if m.source != nil {
+		base = file.MoveInstructions(m.source.before, path.Dir(m.source.name), m.exists, instructionFiles)
+	}
+	if m.agentsAfter, err = file.MergeManagedBlock(base, body); err != nil {
+		return Changes{}, Report{}, microerror.Mask(err)
+	}
+	m.writeAgents = !m.agentsExisted || !bytes.Equal(m.agentsAfter, m.agentsBefore)
+
 	m.createSkillsLink = p.sharedSkills == dirPresent && !p.claudeSkillsExists
-	for _, name := range legacyRules {
-		// A path under a file is missing too.
-		if info, err := os.Lstat(m.path(name)); err == nil && info.Mode().IsRegular() {
-			m.legacy = append(m.legacy, name)
+	if m.realDir(legacyDirs[1]) && m.realDir(legacyDirs[0]) {
+		for _, name := range legacyRules {
+			if info, err := os.Lstat(m.path(name)); err == nil && info.Mode().IsRegular() {
+				m.legacy = append(m.legacy, name)
+			}
 		}
 	}
 	return m, Report{}, nil
@@ -115,6 +148,7 @@ func (m Changes) Steps() []string {
 	}
 	var steps []string
 	switch {
+	case !m.writeAgents:
 	case m.source != nil:
 		steps = append(steps, fmt.Sprintf("move the content of %s to AGENTS.md, below the devctl-managed block", m.source.name))
 		if m.source.name == claudeFile {
@@ -122,8 +156,10 @@ func (m Changes) Steps() []string {
 		} else {
 			steps = append(steps, fmt.Sprintf("delete %s", m.source.name))
 		}
+	case m.agentsHadBlock:
+		steps = append(steps, "update the devctl-managed block in AGENTS.md")
 	case m.agents != nil:
-		steps = append(steps, "add or update the devctl-managed block in AGENTS.md")
+		steps = append(steps, "add the devctl-managed block to AGENTS.md")
 	default:
 		steps = append(steps, "create AGENTS.md with the devctl-managed block")
 	}
@@ -150,17 +186,24 @@ func (m Changes) Steps() []string {
 	return steps
 }
 
-// Apply migrates the repository, with body as the content of the
-// devctl-managed block. It stops before the first write if a file it changes
-// is no longer as planned or the content cannot be prepared, and writes
-// AGENTS.md before it changes the file whose content moved there.
-func (m Changes) Apply(ctx context.Context, body string) error {
+// Apply makes the planned changes. It stops before the first write if a file
+// it changes is no longer as planned, and writes AGENTS.md before it changes
+// the file whose content moved there.
+func (m Changes) Apply(ctx context.Context) error {
 	if !m.planned {
 		return microerror.Maskf(executionFailedError, "the changes were not planned or have findings")
 	}
 	planned := m.importers
 	if m.source != nil {
 		planned = append([]plannedFile{*m.source}, planned...)
+	}
+	current, err := os.ReadFile(m.path(agentsFile))
+	switch {
+	case errors.Is(err, fs.ErrNotExist) && !m.agentsExisted:
+	case err != nil && !errors.Is(err, fs.ErrNotExist):
+		return microerror.Mask(err)
+	case err != nil || !m.agentsExisted || !bytes.Equal(current, m.agentsBefore):
+		return microerror.Maskf(executionFailedError, "%s changed since the changes were planned", agentsFile)
 	}
 	for _, f := range planned {
 		current, err := os.ReadFile(m.path(f.name))
@@ -172,16 +215,10 @@ func (m Changes) Apply(ctx context.Context, body string) error {
 		}
 	}
 
-	base := m.agents
-	if m.source != nil {
-		base = file.MoveInstructions(m.source.before, path.Dir(m.source.name), m.exists, instructionFiles)
+	var inputs []input.Input
+	if m.writeAgents {
+		inputs = append(inputs, m.output(agentsFile, m.agentsAfter))
 	}
-	agents, err := file.MergeManagedBlock(base, body)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	inputs := []input.Input{m.output(agentsFile, agents)}
 	for _, f := range m.importers {
 		inputs = append(inputs, m.output(f.name, f.after))
 	}
@@ -254,6 +291,12 @@ func (m Changes) moveSkills() error {
 		return microerror.Mask(err)
 	}
 	return microerror.Mask(os.Symlink(claudeSkillsTarget, m.path(claudeSkillsDir)))
+}
+
+// realDir reports whether name is a directory, not a link to one.
+func (m Changes) realDir(name string) bool {
+	info, err := os.Lstat(m.path(name))
+	return err == nil && info.IsDir()
 }
 
 func (m Changes) exists(rel string) bool {

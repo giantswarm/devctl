@@ -43,15 +43,6 @@ type Report struct {
 	Findings []Finding
 }
 
-// Preflight checks the repository at root before any LLM output is written.
-func Preflight(ctx context.Context, root string, mode Mode) (Report, error) {
-	p, err := inspect(ctx, root, mode)
-	if err != nil {
-		return Report{}, microerror.Mask(err)
-	}
-	return p.report, nil
-}
-
 // inspect checks the repository at root and records its layout.
 func inspect(ctx context.Context, root string, mode Mode) (*preflight, error) {
 	p := &preflight{root: root, mode: mode, claudeContents: map[string][]byte{}}
@@ -85,8 +76,11 @@ type preflight struct {
 	names map[string][]string
 
 	// The layout found, for planning a migration.
-	agentsState    agentsState
-	agentsContent  []byte
+	agentsState   agentsState
+	agentsContent []byte
+	// agentsRaw is the content of a regular AGENTS.md, also an empty one.
+	agentsRaw      []byte
+	agentsExists   bool
 	claudeContents map[string][]byte
 	// source is the Claude file whose content moves to a missing AGENTS.md.
 	source       string
@@ -212,7 +206,7 @@ const (
 func (p *preflight) checkSource() error {
 	for _, name := range []string{claudeFile, dotClaudeFile} {
 		content, ok := p.claudeContents[name]
-		if !ok {
+		if !ok || isBlank(content) {
 			continue
 		}
 		p.source = name
@@ -222,6 +216,12 @@ func (p *preflight) checkSource() error {
 		return nil
 	}
 	return nil
+}
+
+// isBlank reports whether content holds nothing but whitespace, which the
+// merge treats like a missing file.
+func isBlank(content []byte) bool {
+	return len(bytes.TrimSpace(content)) == 0
 }
 
 // checkDir reports a directory that gen llm writes into but that is a link or
@@ -409,8 +409,8 @@ func (p *preflight) checkAgentsFile() (agentsState, error) {
 	if err != nil {
 		return agentsUnusable, microerror.Mask(err)
 	}
-	// The merge treats such a file as new.
-	if len(bytes.TrimSpace(content)) == 0 {
+	p.agentsRaw, p.agentsExists = content, true
+	if isBlank(content) {
 		return agentsAbsent, nil
 	}
 	hasBlock, problem := file.CheckManagedBlock(content)
@@ -453,7 +453,7 @@ func (p *preflight) checkClaudeFile(name string) (bool, error) {
 		return false, microerror.Mask(err)
 	}
 	p.claudeContents[name] = content
-	return true, nil
+	return !isBlank(content), nil
 }
 
 func (p *preflight) checkCaseVariants(dir string) error {
