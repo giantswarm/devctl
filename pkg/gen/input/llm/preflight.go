@@ -91,7 +91,10 @@ type preflight struct {
 	// source is the Claude file whose content moves to a missing AGENTS.md.
 	source       string
 	claudeSkills dirState
-	skillEntries []skillEntry
+	// claudeSkillsExists is true for any .claude/skills, also a link.
+	claudeSkillsExists bool
+	sharedSkills       dirState
+	skillEntries       []skillEntry
 }
 
 // instructionFiles are the root instruction files gen llm handles.
@@ -129,6 +132,7 @@ func (p *preflight) run(ctx context.Context) error {
 			return microerror.Mask(err)
 		}
 	}
+	p.sharedSkills = sharedSkills
 	if claude == dirPresent {
 		if err := p.checkCaseVariants(claudeDir); err != nil {
 			return microerror.Mask(err)
@@ -247,6 +251,7 @@ func (p *preflight) checkClaudeSkills(sharedSkills dirState) error {
 	if err != nil || info == nil {
 		return microerror.Mask(err)
 	}
+	p.claudeSkillsExists = true
 	if info.IsDir() {
 		p.claudeSkills = dirPresent
 	}

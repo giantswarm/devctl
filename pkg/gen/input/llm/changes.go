@@ -15,12 +15,13 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/llm/internal/file"
 )
 
-// Migration moves a repository's existing agent instructions and skills to
-// AGENTS.md and .agents/skills. Claude instructions with no AGENTS.md to go
-// with are the repository's instructions: their content moves to AGENTS.md.
-// A root CLAUDE.md is left as an import of AGENTS.md, a .claude/CLAUDE.md is
+// Changes brings a repository's agent instructions to the devctl-managed
+// block in AGENTS.md. In migration mode, it also moves existing instructions
+// and skills: Claude instructions with no AGENTS.md to go with are the
+// repository's instructions, so their content moves to AGENTS.md. A root
+// CLAUDE.md is left as an import of AGENTS.md, a .claude/CLAUDE.md is
 // deleted. Claude files that keep their own content import AGENTS.md.
-type Migration struct {
+type Changes struct {
 	root    string
 	planned bool
 
@@ -37,7 +38,20 @@ type Migration struct {
 	skills []skillEntry
 	// linkSkills replaces the .claude/skills directory with a link.
 	linkSkills bool
+	// createSkillsLink creates the missing .claude/skills link to existing
+	// shared skills.
+	createSkillsLink bool
+
+	// legacy are the generated rules that AGENTS.md replaces.
+	legacy []string
 }
+
+// legacyRules are the files that gen llm generated before AGENTS.md, and
+// legacyDirs their directories, removed once empty.
+var (
+	legacyRules = []string{".cursor/rules/zz_generated.base-llm-rules.mdc", ".cursor/rules/zz_generated.go-llm-rules.mdc"}
+	legacyDirs  = []string{".cursor/rules", ".cursor"}
+)
 
 // plannedFile is a file the migration changes, with its content when it was
 // planned and the content it gets.
@@ -57,18 +71,18 @@ var agentsImports = map[string]string{
 	dotClaudeFile: "../" + agentsFile,
 }
 
-// PlanMigration plans the migration of the repository at root. A repository
-// with findings gets no migration.
-func PlanMigration(ctx context.Context, root string) (Migration, Report, error) {
-	p, err := inspect(ctx, root, MigrationMode)
+// Plan plans the changes to the repository at root in mode. A repository
+// with findings gets no changes.
+func Plan(ctx context.Context, root string, mode Mode) (Changes, Report, error) {
+	p, err := inspect(ctx, root, mode)
 	if err != nil {
-		return Migration{}, Report{}, microerror.Mask(err)
+		return Changes{}, Report{}, microerror.Mask(err)
 	}
 	if len(p.report.Findings) > 0 {
-		return Migration{}, p.report, nil
+		return Changes{}, p.report, nil
 	}
 
-	m := Migration{root: root, planned: true, agents: p.agentsContent}
+	m := Changes{root: root, planned: true, agents: p.agentsContent}
 	for _, name := range []string{claudeFile, dotClaudeFile} {
 		content, ok := p.claudeContents[name]
 		switch {
@@ -84,11 +98,18 @@ func PlanMigration(ctx context.Context, root string) (Migration, Report, error) 
 	if p.claudeSkills == dirPresent {
 		m.skills, m.linkSkills = p.skillEntries, true
 	}
+	m.createSkillsLink = p.sharedSkills == dirPresent && !p.claudeSkillsExists
+	for _, name := range legacyRules {
+		// A path under a file is missing too.
+		if info, err := os.Lstat(m.path(name)); err == nil && info.Mode().IsRegular() {
+			m.legacy = append(m.legacy, name)
+		}
+	}
 	return m, Report{}, nil
 }
 
 // Steps describes the changes Apply makes.
-func (m Migration) Steps() []string {
+func (m Changes) Steps() []string {
 	if !m.planned {
 		return nil
 	}
@@ -120,6 +141,12 @@ func (m Migration) Steps() []string {
 	if m.linkSkills {
 		steps = append(steps, fmt.Sprintf("replace %s with a link to %s", claudeSkillsDir, claudeSkillsTarget))
 	}
+	if m.createSkillsLink {
+		steps = append(steps, fmt.Sprintf("create %s as a link to %s", claudeSkillsDir, claudeSkillsTarget))
+	}
+	for _, name := range m.legacy {
+		steps = append(steps, fmt.Sprintf("delete %s", name))
+	}
 	return steps
 }
 
@@ -127,9 +154,9 @@ func (m Migration) Steps() []string {
 // devctl-managed block. It stops before the first write if a file it changes
 // is no longer as planned or the content cannot be prepared, and writes
 // AGENTS.md before it changes the file whose content moved there.
-func (m Migration) Apply(ctx context.Context, body string) error {
+func (m Changes) Apply(ctx context.Context, body string) error {
 	if !m.planned {
-		return microerror.Maskf(executionFailedError, "the migration was not planned or has findings")
+		return microerror.Maskf(executionFailedError, "the changes were not planned or have findings")
 	}
 	planned := m.importers
 	if m.source != nil {
@@ -141,7 +168,7 @@ func (m Migration) Apply(ctx context.Context, body string) error {
 			return microerror.Mask(err)
 		}
 		if !bytes.Equal(current, f.before) {
-			return microerror.Maskf(executionFailedError, "%s changed since the migration was planned", f.name)
+			return microerror.Maskf(executionFailedError, "%s changed since the changes were planned", f.name)
 		}
 	}
 
@@ -168,11 +195,33 @@ func (m Migration) Apply(ctx context.Context, body string) error {
 	if err := gen.Execute(ctx, inputs...); err != nil {
 		return microerror.Mask(err)
 	}
+	if err := m.moveSkills(); err != nil {
+		return microerror.Mask(err)
+	}
+	if m.createSkillsLink {
+		if err := os.MkdirAll(m.path(claudeDir), 0o755); err != nil { // #nosec G301 -- a directory of the repository
+			return microerror.Mask(err)
+		}
+		if err := os.Symlink(claudeSkillsTarget, m.path(claudeSkillsDir)); err != nil {
+			return microerror.Mask(err)
+		}
+	}
 
-	return microerror.Mask(m.moveSkills())
+	// The legacy rules go last, once their replacement is in place. Their
+	// directories go only if nothing else is left in them.
+	var deletions []input.Input
+	for _, name := range m.legacy {
+		deletions = append(deletions, input.Input{Path: m.path(name), Delete: true})
+	}
+	if len(m.legacy) > 0 {
+		for _, dir := range legacyDirs {
+			deletions = append(deletions, input.Input{Path: m.path(dir), Delete: true})
+		}
+	}
+	return microerror.Mask(gen.Execute(ctx, deletions...))
 }
 
-func (m Migration) output(name string, content []byte) input.Input {
+func (m Changes) output(name string, content []byte) input.Input {
 	return input.Input{
 		Path:           m.path(name),
 		SkipRegenCheck: true,
@@ -182,7 +231,7 @@ func (m Migration) output(name string, content []byte) input.Input {
 
 // moveSkills moves the skill directories to .agents/skills and replaces
 // .claude/skills with a link to it.
-func (m Migration) moveSkills() error {
+func (m Changes) moveSkills() error {
 	if !m.linkSkills {
 		return nil
 	}
@@ -207,11 +256,11 @@ func (m Migration) moveSkills() error {
 	return microerror.Mask(os.Symlink(claudeSkillsTarget, m.path(claudeSkillsDir)))
 }
 
-func (m Migration) exists(rel string) bool {
+func (m Changes) exists(rel string) bool {
 	_, err := os.Stat(m.path(rel))
 	return err == nil
 }
 
-func (m Migration) path(name string) string {
+func (m Changes) path(name string) string {
 	return filepath.Join(m.root, filepath.FromSlash(name))
 }

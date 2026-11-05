@@ -11,12 +11,25 @@ import (
 
 const (
 	name             = "llm"
-	shortDescription = `Generates rules for LLM assistants.`
-	longDescription  = `Generates rules for LLM assistants.
+	shortDescription = `Generates instructions for coding agents in AGENTS.md.`
+	longDescription  = `Generates instructions for coding agents in AGENTS.md.
 
 devctl gen llm --flavour app --language go
 
-A base rule set is always generated. Some flavour- and language-specific rule sets are also supported.
+Writes Giant Swarm's shared instructions into a devctl-managed block at the
+top of AGENTS.md. The rest of the file holds the repository's own
+instructions, which take precedence. Claude files get an import of AGENTS.md,
+.claude/skills links to .agents/skills, and the .cursor/rules files that
+earlier versions generated are deleted.
+
+A repository with instructions that are not in a devctl-managed block yet is
+left unchanged, with a warning. Migrate it with --migrate-instructions, which
+moves the content of CLAUDE.md or .claude/CLAUDE.md to AGENTS.md and the
+skills in .claude/skills to .agents/skills. Check the result before
+committing it.
+
+Use --dry-run to see the changes or the reasons for skipping first. See
+docs/gen.md for details.
 `
 )
 
