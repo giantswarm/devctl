@@ -84,6 +84,15 @@ func TestMigration_Instructions(t *testing.T) {
 			},
 		},
 		{
+			name:  "a moved .claude/CLAUDE.md does not import AGENTS.md through a link",
+			files: map[string]string{".claude/CLAUDE.md": "@../CLAUDE.md\n\nClaude only.\n"},
+			links: map[string]string{"CLAUDE.md": "AGENTS.md"},
+			want: map[string]string{
+				"AGENTS.md": testBlock + "\nClaude only.\n",
+				"CLAUDE.md": "-> AGENTS.md",
+			},
+		},
+		{
 			name:  "a link to the missing AGENTS.md is kept",
 			links: map[string]string{"CLAUDE.md": "AGENTS.md"},
 			want: map[string]string{
@@ -113,7 +122,7 @@ func migrate(t *testing.T, root string) {
 	migration, report, err := llm.PlanMigration(t.Context(), root)
 	require.NoError(t, err)
 	require.Empty(t, report.Findings)
-	require.NoError(t, migration.Apply(testBody))
+	require.NoError(t, migration.Apply(t.Context(), testBody))
 }
 
 // readTree returns the files in root by slash path, and a link as "-> target".
@@ -245,6 +254,30 @@ func TestMigration_FailureBeforeWritingChangesNothing(t *testing.T) {
 
 	migration, _, err := llm.PlanMigration(t.Context(), root)
 	require.NoError(t, err)
-	require.Error(t, migration.Apply("<!-- END devctl-managed -->\n"))
+	require.Error(t, migration.Apply(t.Context(), "<!-- END devctl-managed -->\n"))
+	require.Equal(t, before, readTree(t, root))
+}
+
+func TestMigration_BrokenMarkersInSource(t *testing.T) {
+	root := newCheckout(t)
+	writeFiles(t, root, map[string]string{"CLAUDE.md": "Intro.\n<!-- END devctl-managed -->\n"})
+
+	migration, report, err := llm.PlanMigration(t.Context(), root)
+	require.NoError(t, err)
+	require.Equal(t, []string{"CLAUDE.md"}, findingPaths(t, report))
+	require.Equal(t, "the end marker on line 2 has no begin marker", report.Findings[0].Problem)
+	require.Empty(t, migration.Steps())
+}
+
+func TestMigration_SourceChangedSincePlan(t *testing.T) {
+	root := newCheckout(t)
+	writeFiles(t, root, map[string]string{"CLAUDE.md": "Shared.\n"})
+
+	migration, _, err := llm.PlanMigration(t.Context(), root)
+	require.NoError(t, err)
+	writeFiles(t, root, map[string]string{"CLAUDE.md": "Shared, edited.\n"})
+	before := readTree(t, root)
+
+	require.ErrorContains(t, migration.Apply(t.Context(), testBody), "CLAUDE.md changed")
 	require.Equal(t, before, readTree(t, root))
 }
