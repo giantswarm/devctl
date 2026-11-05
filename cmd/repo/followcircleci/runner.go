@@ -11,6 +11,8 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
+	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/circleciapp"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
@@ -21,9 +23,11 @@ type runner struct {
 	stdout io.Writer
 	stderr io.Writer
 	// The seams tests replace: the clients, the clock.
-	open     func(ctx context.Context, owner string, warn func(string)) (circleciapp.GitHub, circleciapp.CircleCI, error)
-	sleep    func(ctx context.Context, d time.Duration) error
-	interval time.Duration
+	open func(ctx context.Context, owner string, warn func(string)) (circleciapp.GitHub, circleciapp.CircleCI, error)
+	// openSession reaches giantswarm-repo-manager, for --pending.
+	openSession client.Opener
+	sleep       func(ctx context.Context, d time.Duration) error
+	interval    time.Duration
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -31,7 +35,35 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if err := r.validate(args); err != nil {
+		if r.flag.JSON() {
+			doc := pendingDocument{Envelope: agentcli.NewEnvelope(command, time.Now())}
+			return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, agentcli.FlagError(command, err))
+		}
+		return microerror.Mask(err)
+	}
+	if r.flag.Pending {
+		return r.runPending(ctx)
+	}
 	return microerror.Mask(r.run(ctx, args[0]))
+}
+
+// validate checks the arguments: one repository, or --pending.
+func (r *runner) validate(args []string) error {
+	if err := r.flag.Validate(); err != nil {
+		return microerror.Mask(err)
+	}
+	switch {
+	case r.flag.Pending && len(args) > 0:
+		return microerror.Maskf(invalidArgError, "--pending takes no repository")
+	case r.flag.Pending && r.flag.Migrate:
+		return microerror.Maskf(invalidArgError, "--migrate is for one repository, not --pending")
+	case !r.flag.Pending && len(args) != 1:
+		return microerror.Maskf(invalidArgError, "expected [OWNER/]REPOSITORY, or --pending")
+	case !r.flag.Pending && r.flag.JSON():
+		return microerror.Maskf(invalidArgError, "--output json is for --pending")
+	}
+	return nil
 }
 
 func (r *runner) run(ctx context.Context, arg string) error {

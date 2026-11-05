@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
 	"github.com/giantswarm/devctl/v8/pkg/circleciapp"
 )
 
@@ -73,7 +74,9 @@ type Config struct {
 }
 
 type flag struct {
+	client.Flags
 	Migrate bool
+	Pending bool
 	Wait    bool
 	Timeout time.Duration
 }
@@ -88,24 +91,27 @@ func New(config Config) (*cobra.Command, error) {
 
 	f := &flag{}
 	r := &runner{
-		flag:     f,
-		stdout:   config.Stdout,
-		stderr:   config.Stderr,
-		open:     circleciapp.OpenAsPerson,
-		sleep:    sleep,
-		interval: pollInterval,
+		flag:        f,
+		stdout:      config.Stdout,
+		stderr:      config.Stderr,
+		open:        circleciapp.OpenAsPerson,
+		openSession: client.Open,
+		sleep:       sleep,
+		interval:    pollInterval,
 	}
 
 	c := &cobra.Command{
-		Use:   fmt.Sprintf("%s [OWNER/]REPOSITORY", name),
+		Use:   fmt.Sprintf("%s [OWNER/]REPOSITORY | --pending", name),
 		Short: shortDesc,
 		Long:  longDesc,
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MaximumNArgs(1),
 		RunE:  r.Run,
 	}
 	c.Flags().BoolVar(&f.Migrate, "migrate", false, "Also delete the OAuth pipeline's triggers, so a push builds once, on the GitHub App pipeline.")
 	c.Flags().BoolVar(&f.Wait, "wait", true, "Wait for the runs the command starts to settle.")
 	c.Flags().DurationVar(&f.Timeout, "timeout", defaultTimeout, "How long to wait for the runs.")
+	c.Flags().BoolVar(&f.Pending, "pending", false, "Instead of one repository, set up every repository of your teams the inventory reports circleci-pipeline-missing for, without waiting for the runs.")
+	f.Flags.Init(c)
 	return c, nil
 }
 

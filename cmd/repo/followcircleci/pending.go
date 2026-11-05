@@ -9,6 +9,7 @@ import (
 	"github.com/giantswarm/microerror"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
+	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/circleciapp"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
@@ -109,7 +110,9 @@ func (p *pendingPass) run(ctx context.Context) (*Summary, error) {
 		summary.Repositories = append(summary.Repositories, entry(slug, report))
 	}
 	if len(failed) > 0 {
-		return summary, microerror.Maskf(pendingFailedError, "the set-up of %s failed; the reasons are in the list", strings.Join(failed, ", "))
+		// A failed set-up is CircleCI's or GitHub's answer: the next pass
+		// may succeed.
+		return summary, &agentcli.RemoteError{Err: microerror.Maskf(pendingFailedError, "the set-up of %s failed; the next pass tries again", strings.Join(failed, ", "))}
 	}
 	return summary, nil
 }
