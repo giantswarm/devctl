@@ -32,6 +32,14 @@ func TestPreflight_DefaultMode(t *testing.T) {
 			files: map[string]string{"AGENTS.md": managedBlock + "\n## This repository\n", "CLAUDE.md": "@AGENTS.md\n"},
 		},
 		{
+			name:  "a block after a byte order mark",
+			files: map[string]string{"AGENTS.md": "\ufeff" + managedBlock},
+		},
+		{
+			name:  "an AGENTS.md with only whitespace is new",
+			files: map[string]string{"AGENTS.md": "\n  \n"},
+		},
+		{
 			name:  "AGENTS.md without a block needs migration",
 			files: map[string]string{"AGENTS.md": "Run make test.\n"},
 			want:  []string{"AGENTS.md"},
@@ -40,7 +48,7 @@ func TestPreflight_DefaultMode(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
+			root := newCheckout(t)
 			writeFiles(t, root, tc.files)
 
 			report, err := llm.Preflight(t.Context(), root, llm.DefaultMode)
@@ -52,7 +60,7 @@ func TestPreflight_DefaultMode(t *testing.T) {
 
 func TestPreflight_MalformedMarkers(t *testing.T) {
 	for _, mode := range []llm.Mode{llm.DefaultMode, llm.MigrationMode} {
-		root := t.TempDir()
+		root := newCheckout(t)
 		writeFiles(t, root, map[string]string{"AGENTS.md": "Intro.\n<!-- END devctl-managed -->\n"})
 
 		report, err := llm.Preflight(t.Context(), root, mode)
@@ -75,6 +83,10 @@ func TestPreflight_Links(t *testing.T) {
 			name:  "Claude files may link to AGENTS.md",
 			files: migrated,
 			links: map[string]string{"CLAUDE.md": "AGENTS.md", ".claude/CLAUDE.md": "../AGENTS.md"},
+		},
+		{
+			name:  "a link to a missing AGENTS.md holds no instructions",
+			links: map[string]string{"CLAUDE.md": "AGENTS.md"},
 		},
 		{
 			name:  "a linked AGENTS.md would put the block into another file",
@@ -105,7 +117,7 @@ func TestPreflight_Links(t *testing.T) {
 	for _, tc := range testCases {
 		for _, mode := range []llm.Mode{llm.DefaultMode, llm.MigrationMode} {
 			t.Run(tc.name, func(t *testing.T) {
-				root := t.TempDir()
+				root := newCheckout(t)
 				writeFiles(t, root, tc.files)
 				writeLinks(t, root, tc.links)
 
@@ -117,12 +129,30 @@ func TestPreflight_Links(t *testing.T) {
 	}
 }
 
+func TestPreflight_AgentsNotADirectory(t *testing.T) {
+	for _, name := range []string{".agents", ".agents/skills"} {
+		for mode, want := range map[llm.Mode][]string{
+			llm.DefaultMode:   {name, ".claude/skills"},
+			llm.MigrationMode: {name},
+		} {
+			t.Run(name, func(t *testing.T) {
+				root := newCheckout(t)
+				writeFiles(t, root, map[string]string{name: "x\n", ".claude/skills/a/SKILL.md": "a\n"})
+
+				report, err := llm.Preflight(t.Context(), root, mode)
+				require.NoError(t, err)
+				require.Equal(t, want, findingPaths(t, report), "mode %d", mode)
+			})
+		}
+	}
+}
+
 // On a case-insensitive file system, a case variant would be read and
 // written as the file itself; on a case-sensitive one, a second file would
 // appear next to it.
 func TestPreflight_CaseVariants(t *testing.T) {
 	for _, mode := range []llm.Mode{llm.DefaultMode, llm.MigrationMode} {
-		root := t.TempDir()
+		root := newCheckout(t)
 		writeFiles(t, root, map[string]string{
 			"agents.md":         "Local.\n",
 			".claude/Claude.md": "Local.\n",
@@ -184,12 +214,21 @@ func TestPreflight_ClaudeSkills(t *testing.T) {
 			wantDefault:   []string{".claude/skills"},
 			wantMigration: []string{".claude/skills/c", ".claude/skills/d", ".claude/skills/loose.md"},
 		},
+		{
+			name: "skill names that differ only in case collide",
+			files: map[string]string{
+				".claude/skills/Foo/SKILL.md": "a\n",
+				".agents/skills/foo/SKILL.md": "b\n",
+			},
+			wantDefault:   []string{".claude/skills"},
+			wantMigration: []string{".claude/skills/Foo"},
+		},
 	}
 
 	for _, tc := range testCases {
 		for mode, want := range map[llm.Mode][]string{llm.DefaultMode: tc.wantDefault, llm.MigrationMode: tc.wantMigration} {
 			t.Run(tc.name, func(t *testing.T) {
-				root := t.TempDir()
+				root := newCheckout(t)
 				writeFiles(t, root, tc.files)
 				writeLinks(t, root, tc.links)
 
@@ -198,6 +237,21 @@ func TestPreflight_ClaudeSkills(t *testing.T) {
 				require.Equal(t, want, findingPaths(t, report), "mode %d", mode)
 			})
 		}
+	}
+}
+
+func TestPreflight_LooseFileFix(t *testing.T) {
+	for file, fix := range map[string]string{
+		"inspect.md": "move it to .claude/skills/inspect/SKILL.md or remove it",
+		".DS_Store":  "remove it",
+	} {
+		root := newCheckout(t)
+		writeFiles(t, root, map[string]string{".claude/skills/" + file: "x\n"})
+
+		report, err := llm.Preflight(t.Context(), root, llm.MigrationMode)
+		require.NoError(t, err)
+		require.Len(t, report.Findings, 1)
+		require.Equal(t, fix, report.Findings[0].Fix)
 	}
 }
 
@@ -231,17 +285,26 @@ func TestPreflight_IgnoredOutputs(t *testing.T) {
 			want:  []string{".agents/skills"},
 		},
 		{
+			name:  "ignored skill files",
+			files: map[string]string{".gitignore": "SKILL.md\n"},
+			want:  []string{".agents/skills"},
+		},
+		{
+			name:  "ignored skills directory and files are one finding",
+			files: map[string]string{".gitignore": ".agents/\n"},
+			want:  []string{".agents/skills"},
+		},
+		{
 			name:    "a tracked file is committed anyway",
-			files:   map[string]string{".gitignore": "*.md\n", "AGENTS.md": managedBlock},
+			files:   map[string]string{".gitignore": "AGENTS.md\n", "AGENTS.md": managedBlock},
 			tracked: []string{"AGENTS.md"},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			root := t.TempDir()
+			root := newCheckout(t)
 			writeFiles(t, root, tc.files)
-			git(t, root, "init", "-q")
 			if len(tc.tracked) > 0 {
 				git(t, root, append([]string{"add", "-f", "--"}, tc.tracked...)...)
 			}
@@ -253,13 +316,45 @@ func TestPreflight_IgnoredOutputs(t *testing.T) {
 	}
 }
 
+// Only the absence of a checkout skips the check. Any other Git failure
+// could hide ignored outputs.
+func TestPreflight_GitFailure(t *testing.T) {
+	root := newCheckout(t)
+	writeFiles(t, root, map[string]string{".git/config": "[broken\n"})
+
+	_, err := llm.Preflight(t.Context(), root, llm.DefaultMode)
+	require.ErrorContains(t, err, "bad config line 1")
+}
+
 func TestPreflight_OutsideGitCheckout(t *testing.T) {
-	root := t.TempDir()
+	root := isolatedDir(t)
 	writeFiles(t, root, map[string]string{".gitignore": "AGENTS.md\n"})
 
 	report, err := llm.Preflight(t.Context(), root, llm.DefaultMode)
 	require.NoError(t, err)
 	require.Empty(t, report.Findings)
+}
+
+// newCheckout returns an empty Git checkout, as alignment runs in one.
+func newCheckout(t *testing.T) string {
+	t.Helper()
+	root := isolatedDir(t)
+	git(t, root, "init", "-q")
+	return root
+}
+
+// isolatedDir returns an empty directory in which Git reads neither the
+// developer's configuration and ignore files nor an enclosing repository.
+func isolatedDir(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", home)
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	root := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", filepath.Dir(root))
+	return root
 }
 
 func git(t *testing.T, dir string, args ...string) {

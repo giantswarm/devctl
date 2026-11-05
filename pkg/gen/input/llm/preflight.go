@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -87,72 +88,98 @@ func (p *preflight) run(ctx context.Context) error {
 	if err := p.checkCaseVariants("."); err != nil {
 		return microerror.Mask(err)
 	}
-	claudeDirOK, err := p.checkDir(claudeDir)
+	claude, err := p.checkDir(claudeDir)
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	agentsDirOK, err := p.checkDir(agentsDir)
+	agents, err := p.checkDir(agentsDir)
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	if claudeDirOK {
-		if err := p.checkCaseVariants(claudeDir); err != nil {
-			return microerror.Mask(err)
-		}
-		if err := p.checkClaudeSkills(); err != nil {
-			return microerror.Mask(err)
-		}
+	sharedSkills := dirRejected
+	if agents != dirRejected {
+		sharedSkills = dirAbsent
 	}
-	if agentsDirOK {
+	if agents == dirPresent {
 		if err := p.checkCaseVariants(agentsDir); err != nil {
 			return microerror.Mask(err)
 		}
-		if _, err := p.checkDir(agentsSkillsDir); err != nil {
+		if sharedSkills, err = p.checkDir(agentsSkillsDir); err != nil {
+			return microerror.Mask(err)
+		}
+	}
+	if claude == dirPresent {
+		if err := p.checkCaseVariants(claudeDir); err != nil {
+			return microerror.Mask(err)
+		}
+		if err := p.checkClaudeSkills(sharedSkills); err != nil {
 			return microerror.Mask(err)
 		}
 	}
 
-	agents, err := p.checkAgentsFile()
+	agentsFileState, err := p.checkAgentsFile()
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
 	var instructions []string
-	if agents != agentsAbsent {
+	if agentsFileState != agentsAbsent {
 		instructions = append(instructions, agentsFile)
 	}
 	claudeFiles := []string{claudeFile}
-	if claudeDirOK {
+	if claude == dirPresent {
 		claudeFiles = append(claudeFiles, dotClaudeFile)
 	}
 	for _, name := range claudeFiles {
-		exists, err := p.checkClaudeFile(name)
+		holds, err := p.checkClaudeFile(name)
 		if err != nil {
 			return microerror.Mask(err)
 		}
-		if exists {
+		if holds {
 			instructions = append(instructions, name)
 		}
 	}
 
-	if err := p.checkIgnored(ctx); err != nil {
+	// Git refuses to look beyond a link, and a rejected directory is
+	// reported already.
+	outputs := []ignorable{{query: agentsFile}}
+	if claude != dirRejected {
+		outputs = append(outputs, ignorable{query: claudeSkillsDir})
+	}
+	if sharedSkills != dirRejected {
+		outputs = append(outputs,
+			// The trailing slash makes Git match the path as a directory.
+			ignorable{query: agentsSkillsDir + "/", path: agentsSkillsDir},
+			ignorable{query: agentsSkillsDir + "/skill/SKILL.md", path: agentsSkillsDir, problem: "would hold SKILL.md files that Git ignores, so a commit with git add -A would leave them out"},
+		)
+	}
+	if err := p.checkIgnored(ctx, outputs); err != nil {
 		return microerror.Mask(err)
 	}
 
 	// Migrating an AGENTS.md that cannot be used would not help.
-	needsMigration := (agents == agentsAbsent || agents == agentsWithoutBlock) && len(instructions) > 0
+	needsMigration := (agentsFileState == agentsAbsent || agentsFileState == agentsWithoutBlock) && len(instructions) > 0
 	if p.mode == DefaultMode && needsMigration {
 		p.add(instructions[0], "holds instructions that are not in a devctl-managed block yet", migrateFix)
 	}
 	return nil
 }
 
+type dirState int
+
+const (
+	dirAbsent dirState = iota
+	dirPresent
+	// dirRejected is a path that gen llm cannot use as a directory.
+	dirRejected
+)
+
 // checkDir reports a directory that gen llm writes into but that is a link or
-// not a directory, and returns whether it is a real directory.
-func (p *preflight) checkDir(name string) (bool, error) {
+// not a directory.
+func (p *preflight) checkDir(name string) (dirState, error) {
 	info, err := p.lstat(name)
 	if err != nil || info == nil {
-		return false, microerror.Mask(err)
+		return dirAbsent, microerror.Mask(err)
 	}
 	switch {
 	case info.Mode()&fs.ModeSymlink != 0:
@@ -160,16 +187,16 @@ func (p *preflight) checkDir(name string) (bool, error) {
 	case !info.IsDir():
 		p.add(name, "is not a directory", "remove or rename it")
 	default:
-		return true, nil
+		return dirPresent, nil
 	}
-	return false, nil
+	return dirRejected, nil
 }
 
 // checkClaudeSkills checks that .claude/skills is missing or a link to the
 // shared skills. A directory is moved there in migration mode, as long as
 // every entry is a skill directory without a shared counterpart or a link to
 // the shared skill of the same name.
-func (p *preflight) checkClaudeSkills() error {
+func (p *preflight) checkClaudeSkills(sharedSkills dirState) error {
 	info, err := p.lstat(claudeSkillsDir)
 	if err != nil || info == nil {
 		return microerror.Mask(err)
@@ -196,6 +223,12 @@ func (p *preflight) checkClaudeSkills() error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	var sharedNames []string
+	if sharedSkills == dirPresent {
+		if sharedNames, err = p.list(agentsSkillsDir); err != nil {
+			return microerror.Mask(err)
+		}
+	}
 	for _, name := range names {
 		entry := path.Join(claudeSkillsDir, name)
 		shared := path.Join(agentsSkillsDir, name)
@@ -213,56 +246,77 @@ func (p *preflight) checkClaudeSkills() error {
 				p.add(entry, fmt.Sprintf("is a link to %s", target), fmt.Sprintf("replace it with the skill directory or a link to ../../%s", shared))
 			}
 		case !info.IsDir():
-			p.add(entry, "is a file, not a skill directory", fmt.Sprintf("move it to %s/SKILL.md or remove it", entry[:len(entry)-len(path.Ext(entry))]))
-		default:
-			exists, err := p.exists(shared)
-			if err != nil {
-				return microerror.Mask(err)
+			fix := "remove it"
+			if !strings.HasPrefix(name, ".") {
+				fix = fmt.Sprintf("move it to %s/SKILL.md or remove it", strings.TrimSuffix(entry, path.Ext(name)))
 			}
-			if exists {
-				p.add(entry, fmt.Sprintf("has the same name as %s", shared), "keep only one of the two skills")
+			p.add(entry, "is a file, not a skill directory", fix)
+		default:
+			// On a case-insensitive file system, the move would merge them.
+			i := slices.IndexFunc(sharedNames, func(n string) bool { return strings.EqualFold(n, name) })
+			if i >= 0 {
+				p.add(entry, fmt.Sprintf("has the same name as %s", path.Join(agentsSkillsDir, sharedNames[i])), "keep only one of the two skills")
 			}
 		}
 	}
 	return nil
+}
+
+// ignorable is an output to ask git check-ignore about.
+type ignorable struct {
+	query string
+	// path and problem are reported, by default query and that it is ignored.
+	path, problem string
 }
 
 // checkIgnored reports outputs that Git would ignore. Alignment commits with
 // git add -A, which skips them, so it would commit only part of the change.
 // Outside a Git checkout there is nothing to check.
-func (p *preflight) checkIgnored(ctx context.Context) error {
-	inside := exec.CommandContext(ctx, "git", "rev-parse", "--is-inside-work-tree")
-	inside.Dir = p.root
-	if err := inside.Run(); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) || errors.Is(err, exec.ErrNotFound) {
-			return nil
-		}
-		return microerror.Mask(err)
+func (p *preflight) checkIgnored(ctx context.Context, outputs []ignorable) error {
+	args := []string{"check-ignore", "--"}
+	for _, o := range outputs {
+		args = append(args, o.query)
 	}
-
-	// The trailing slash makes Git match the path as a directory.
-	outputs := []string{agentsFile, claudeSkillsDir, agentsSkillsDir + "/"}
-	cmd := exec.CommandContext(ctx, "git", append([]string{"check-ignore", "--"}, outputs...)...) // #nosec G204 -- fixed arguments, without a shell
+	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- fixed arguments, without a shell
 	cmd.Dir = p.root
+	// Git's messages are matched below.
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	out, err := cmd.Output()
 	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+	switch {
+	case errors.Is(err, exec.ErrNotFound):
 		return nil
-	}
-	if err != nil {
+	case errors.As(err, &exitErr) && exitErr.ExitCode() == 1:
+		return nil
+	case errors.As(err, &exitErr) && strings.Contains(string(exitErr.Stderr), "not a git repository"):
+		return nil
+	case errors.As(err, &exitErr):
+		return microerror.Maskf(executionFailedError, "git check-ignore: %s: %s", err, strings.TrimSpace(string(exitErr.Stderr)))
+	case err != nil:
 		return microerror.Maskf(executionFailedError, "git check-ignore: %s", err)
 	}
+
+	reported := map[string]bool{}
 	for line := range strings.Lines(string(out)) {
-		name := strings.TrimSuffix(strings.TrimSpace(line), "/")
-		p.add(name, "is ignored by Git, so a commit with git add -A would leave it out", "remove the entry that matches it from .gitignore, as shown by git check-ignore -v "+name)
+		query := strings.TrimSpace(line)
+		i := slices.IndexFunc(outputs, func(o ignorable) bool { return o.query == query })
+		if i < 0 {
+			continue
+		}
+		o := outputs[i]
+		if o.path == "" {
+			o.path = query
+		}
+		if o.problem == "" {
+			o.problem = "is ignored by Git, so a commit with git add -A would leave it out"
+		}
+		if reported[o.path] {
+			continue
+		}
+		reported[o.path] = true
+		p.add(o.path, o.problem, "remove the entry that matches it from .gitignore, as shown by git check-ignore -v "+query)
 	}
 	return nil
-}
-
-func (p *preflight) exists(name string) (bool, error) {
-	info, err := p.lstat(name)
-	return info != nil, microerror.Mask(err)
 }
 
 type agentsState int
@@ -299,6 +353,10 @@ func (p *preflight) checkAgentsFile() (agentsState, error) {
 	if err != nil {
 		return agentsUnusable, microerror.Mask(err)
 	}
+	// The merge treats such a file as new.
+	if len(bytes.TrimSpace(content)) == 0 {
+		return agentsAbsent, nil
+	}
 	hasBlock, problem := file.CheckManagedBlock(content)
 	switch {
 	case problem != "":
@@ -311,7 +369,8 @@ func (p *preflight) checkAgentsFile() (agentsState, error) {
 }
 
 // checkClaudeFile reports a Claude instruction file that is neither a regular
-// file nor a link to the root AGENTS.md, and returns whether it exists.
+// file nor a link to the root AGENTS.md, and returns whether it is a regular
+// file, which holds instructions of its own.
 func (p *preflight) checkClaudeFile(name string) (bool, error) {
 	info, err := p.lstat(name)
 	if err != nil || info == nil {
@@ -326,8 +385,10 @@ func (p *preflight) checkClaudeFile(name string) (bool, error) {
 		if filepath.IsAbs(target) || path.Join(path.Dir(name), filepath.ToSlash(target)) != agentsFile {
 			p.add(name, fmt.Sprintf("is a link to %s", target), "replace the link with a regular file or a link to AGENTS.md")
 		}
+		return false, nil
 	case !info.Mode().IsRegular():
 		p.add(name, "is not a regular file", "remove or rename it")
+		return false, nil
 	}
 	return true, nil
 }

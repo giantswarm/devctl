@@ -48,7 +48,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	// A fork line carries its upstream's files: nothing is generated for it.
 	if !r.flag.Flavours.Generates() {
-		return nil
+		if r.flag.DryRun {
+			_, err = fmt.Fprintln(r.stdout, "gen llm would do nothing: nothing is generated for a fork")
+		}
+		return microerror.Mask(err)
 	}
 
 	if r.flag.DryRun {

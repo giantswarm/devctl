@@ -118,6 +118,12 @@ func TestCommandDryRunReportsFindingsWithoutChanges(t *testing.T) {
 			},
 		},
 		{
+			name:  "fork",
+			files: map[string]string{"CLAUDE.md": "Run make test.\n"},
+			args:  []string{"--flavour", "fork"},
+			want:  []string{"gen llm would do nothing: nothing is generated for a fork"},
+		},
+		{
 			name:  "migration of the same repository",
 			files: map[string]string{"CLAUDE.md": "Run make test.\n"},
 			args:  []string{"--migrate-instructions"},

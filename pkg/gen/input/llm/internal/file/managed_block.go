@@ -153,6 +153,7 @@ const ManagedBlockFix = "keep exactly one begin marker followed by one end marke
 // CheckManagedBlock reports whether content has a devctl-managed block, or
 // what is wrong with its markers.
 func CheckManagedBlock(content []byte) (found bool, problem string) {
+	content, _ = bytes.CutPrefix(content, utf8BOM)
 	_, _, found, problem = locateManagedBlock(content)
 	return found, problem
 }
