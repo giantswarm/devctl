@@ -73,22 +73,22 @@ const guardGrace = 2 * time.Second
 // passTimeout or on an interrupt.
 func Auto(executed *cobra.Command, stderr io.Writer) {
 	defer func() { _ = recover() }()
-	if os.Getenv(OptOutEnv) != "" || !follows(executed) {
+	// Checked here as well as in run: before the state path is resolved and
+	// the signal handler set up, for the commands that skip the pass.
+	if off(os.Getenv) || !follows(executed) {
 		return
 	}
 	dir, err := configDir()
 	if err != nil {
 		return
 	}
-	// The process ends after the pass: no Secret Service unlock or delete
-	// prompt for it.
-	authstore.NoPrompt()
 	a := &autoPass{
-		getenv: os.Getenv,
-		state:  filepath.Join(dir, stateFile),
-		now:    time.Now,
-		stderr: stderr,
-		pass:   &pendingPass{open: client.Open, openCI: circleciapp.OpenAsPerson},
+		getenv:   os.Getenv,
+		noPrompt: authstore.NoPrompt,
+		state:    filepath.Join(dir, stateFile),
+		now:      time.Now,
+		stderr:   stderr,
+		pass:     &pendingPass{open: client.Open, openCI: circleciapp.OpenAsPerson},
 	}
 	// An interrupt ends the pass, not the process: the exit code stays the
 	// command's.
@@ -134,10 +134,13 @@ func configDir() (string, error) {
 
 type autoPass struct {
 	getenv func(string) string
-	state  string
-	now    func() time.Time
-	stderr io.Writer
-	pass   *pendingPass
+	// noPrompt refuses keychain prompts for the rest of the process, once
+	// the pass claimed its window.
+	noPrompt func()
+	state    string
+	now      func() time.Time
+	stderr   io.Writer
+	pass     *pendingPass
 }
 
 // autoState is what the pass remembers between commands.
@@ -147,12 +150,17 @@ type autoState struct {
 }
 
 func (a *autoPass) run(ctx context.Context, executed *cobra.Command) {
-	if a.getenv(OptOutEnv) != "" || !follows(executed) {
+	if off(a.getenv) || !follows(executed) {
 		return
 	}
 	now := a.now()
 	if !a.claimRun(now) {
 		return
+	}
+	// The process ends after the pass: no Secret Service unlock or delete
+	// prompt for it.
+	if a.noPrompt != nil {
+		a.noPrompt()
 	}
 
 	var warnings []string
@@ -206,6 +214,12 @@ func (a *autoPass) debug(err error) {
 	if err != nil && logrus.IsLevelEnabled(logrus.DebugLevel) {
 		fmt.Fprintf(a.stderr, "devctl: debug: circleci pending pass: %v\n", err)
 	}
+}
+
+// off says whether the environment turns the pass off: the opt-out, or a CI
+// system, where devctl never reads the keychain.
+func off(getenv func(string) string) bool {
+	return getenv(OptOutEnv) != "" || getenv(authstore.EnvCI) != ""
 }
 
 // follows says whether the pass runs after executed.

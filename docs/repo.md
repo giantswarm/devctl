@@ -401,8 +401,10 @@ seconds longer. It writes on stderr:
 
 Without a muster login, and on any other failure, it says nothing (`--log-level debug` shows why) and
 tries again in six hours. Of two commands finishing together, one runs it. It does not follow `serve`,
-`completion`, `version`, `help`, `auth logout`, `auth exec`, `repo follow-circleci` or a `--help`. Its
-state is `circleci-pending.json` in devctl's configuration directory. Any non-empty value of
+`completion`, `version`, `help`, `auth logout`, `auth exec`, `repo follow-circleci` or a `--help`; it
+does follow `devctl auth login`, within the same six-hour window as any other command. Its state is
+`circleci-pending.json` in devctl's configuration directory. It never runs in CI (`CI` set to any
+non-empty value), where devctl reads no keychain, and any non-empty value of
 `DEVCTL_NO_CIRCLECI_PENDING` (`0` included) turns it off.
 
 ## `devctl repo validate`

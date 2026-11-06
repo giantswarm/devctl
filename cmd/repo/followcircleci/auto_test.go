@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -225,4 +226,26 @@ func TestAuto_ConcurrentCommandsRunOnePass(t *testing.T) {
 	wg.Wait()
 
 	require.Equal(t, []string{"definition new-service-app", "trigger all-pushes", "run branch main"}, f.ci.writes)
+}
+
+func TestAuto_ACIRunHasNoPass(t *testing.T) {
+	f := newAuto(t, newService)
+	f.env[authstore.EnvCI] = "true"
+
+	f.auto.run(t.Context(), commands()["pr wait"])
+
+	require.Empty(t, f.ci.writes)
+	_, err := os.Stat(f.auto.state)
+	require.True(t, os.IsNotExist(err), "a CI run writes no state")
+}
+
+func TestAuto_KeychainPromptsAreRefusedOnlyForAPassThatRuns(t *testing.T) {
+	f := newAuto(t, newService)
+	refused := 0
+	f.auto.noPrompt = func() { refused++ }
+
+	f.auto.run(t.Context(), commands()["pr wait"])
+	f.auto.run(t.Context(), commands()["pr wait"])
+
+	require.Equal(t, 1, refused, "the second command finds the window taken")
 }
