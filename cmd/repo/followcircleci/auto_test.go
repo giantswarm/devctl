@@ -249,3 +249,20 @@ func TestAuto_KeychainPromptsAreRefusedOnlyForAPassThatRuns(t *testing.T) {
 
 	require.Equal(t, 1, refused, "the second command finds the window taken")
 }
+
+func TestAuto_KeychainPromptsAreRefusedBeforeTheFirstKeychainRead(t *testing.T) {
+	f := newAuto(t, newService)
+	refused := false
+	f.auto.noPrompt = func() { refused = true }
+	open := f.auto.pass.open
+	refusedAtOpen := false
+	// The muster login is the pass's first keychain read.
+	f.auto.pass.open = func(ctx context.Context) (*client.Session, error) {
+		refusedAtOpen = refused
+		return open(ctx)
+	}
+
+	f.auto.run(t.Context(), commands()["pr wait"])
+
+	require.True(t, refusedAtOpen)
+}

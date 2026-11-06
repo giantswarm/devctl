@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/giantswarm/devctl/v8/pkg/authstore"
 )
 
 func TestGuard_APanicDoesNotEscape(t *testing.T) {
@@ -44,6 +46,8 @@ func TestGuard_ReturnsWhenInterrupted(t *testing.T) {
 }
 
 func TestAuto_NeverPanicsWithoutAHomeWhenTurnedOff(t *testing.T) {
+	// devctl's own CI sets CI, which would end Auto before what this tests.
+	t.Setenv(authstore.EnvCI, "")
 	t.Setenv("HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv(OptOutEnv, "1")
@@ -51,6 +55,8 @@ func TestAuto_NeverPanicsWithoutAHomeWhenTurnedOff(t *testing.T) {
 }
 
 func TestAuto_NeverPanicsWithoutAHomeAfterASkippedCommand(t *testing.T) {
+	// devctl's own CI sets CI, which would end Auto before what this tests.
+	t.Setenv(authstore.EnvCI, "")
 	t.Setenv("HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
 	require.NotPanics(t, func() { Auto(commands()["version"], &bytes.Buffer{}) })
