@@ -65,12 +65,12 @@ const guardGrace = 2 * time.Second
 // Auto is the automatic pass after a devctl command: at most once every six
 // hours, with the logins the keychain holds and no Secret Service unlock
 // prompt on Linux, it sets up the pending CircleCI pipelines of the person's
-// teams. It never fails: the
-// command's exit code and stdout stay as they are, and stderr carries a line
-// per pipeline it created and, at most once a day, what to do about a login.
-// A panic is swallowed, a locked Linux keychain is skipped (a save may still
-// prompt, and the macOS keychain may ask: [authstore.NoPrompt]), and the pass
-// is abandoned after passTimeout or on an interrupt.
+// teams. It never fails: the command's exit code and stdout stay as they
+// are, and stderr carries a line per pipeline it created and, at most once a
+// day, what to do about a login. A panic is swallowed, a locked Linux
+// keychain is skipped (a save may still prompt, and the macOS keychain or
+// KeePassXC may ask: [authstore.NoPrompt]), and the pass is abandoned after
+// passTimeout or on an interrupt.
 func Auto(executed *cobra.Command, stderr io.Writer) {
 	defer func() { _ = recover() }()
 	if os.Getenv(OptOutEnv) != "" || !follows(executed) {

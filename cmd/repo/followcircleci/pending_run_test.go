@@ -20,11 +20,24 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/reposetup/manager"
 )
 
-func newPendingRunner(m *fakeManager, ci *fakeCircleCI, output string, out *bytes.Buffer) *runner {
+// newPendingRunner is a --pending runner on fake clients writing stdout to
+// out. Under -o json its stderr is its own, and anything on it fails the
+// test: the document is stdout's only output.
+func newPendingRunner(t *testing.T, m *fakeManager, ci *fakeCircleCI, output string, out *bytes.Buffer) *runner {
+	t.Helper()
 	r := newRunner(ci, out)
 	r.flag.Pending = true
 	r.flag.Output = output
 	r.openSession = func(context.Context) (*client.Session, error) { return &client.Session{Caller: m}, nil }
+	if output == client.OutputJSON {
+		var errOut bytes.Buffer
+		r.stderr = &errOut
+		t.Cleanup(func() {
+			if errOut.Len() > 0 {
+				t.Errorf("stderr under -o json: %s", errOut.String())
+			}
+		})
+	}
 	return r
 }
 
@@ -34,7 +47,7 @@ func TestRunPending_PrintsOneLinePerRepository(t *testing.T) {
 	}}
 	var out bytes.Buffer
 
-	err := newPendingRunner(m, &fakeCircleCI{}, client.OutputText, &out).runPending(t.Context())
+	err := newPendingRunner(t, m, &fakeCircleCI{}, client.OutputText, &out).runPending(t.Context())
 
 	require.NoError(t, err)
 	require.Contains(t, out.String(), "giantswarm/new-service: created the GitHub App pipeline, ran branch main (pipeline 1)")
@@ -43,7 +56,7 @@ func TestRunPending_PrintsOneLinePerRepository(t *testing.T) {
 func TestRunPending_NothingPending(t *testing.T) {
 	var out bytes.Buffer
 
-	err := newPendingRunner(&fakeManager{}, &fakeCircleCI{}, client.OutputText, &out).runPending(t.Context())
+	err := newPendingRunner(t, &fakeManager{}, &fakeCircleCI{}, client.OutputText, &out).runPending(t.Context())
 
 	require.NoError(t, err)
 	require.Contains(t, out.String(), "no repository of your teams waits for a CircleCI pipeline")
@@ -61,7 +74,7 @@ func TestRunPending_JSONDocument(t *testing.T) {
 	}}
 	var out bytes.Buffer
 
-	err := newPendingRunner(m, &fakeCircleCI{}, client.OutputJSON, &out).runPending(t.Context())
+	err := newPendingRunner(t, m, &fakeCircleCI{}, client.OutputJSON, &out).runPending(t.Context())
 
 	require.NoError(t, err)
 	var doc document
@@ -78,7 +91,7 @@ func TestRunPending_JSONDocumentOfARefusedWrite(t *testing.T) {
 	}}
 	var out bytes.Buffer
 
-	err := newPendingRunner(m, &fakeCircleCI{refuse: http.StatusForbidden}, client.OutputJSON, &out).runPending(t.Context())
+	err := newPendingRunner(t, m, &fakeCircleCI{refuse: http.StatusForbidden}, client.OutputJSON, &out).runPending(t.Context())
 
 	var exitErr *agentcli.ExitError
 	require.ErrorAs(t, err, &exitErr)
@@ -91,7 +104,7 @@ func TestRunPending_JSONDocumentOfARefusedWrite(t *testing.T) {
 }
 
 func TestRun_PendingTakesNoRepository(t *testing.T) {
-	r := newPendingRunner(&fakeManager{}, &fakeCircleCI{}, client.OutputText, &bytes.Buffer{})
+	r := newPendingRunner(t, &fakeManager{}, &fakeCircleCI{}, client.OutputText, &bytes.Buffer{})
 	require.Error(t, r.validate([]string{"giantswarm/new-service"}))
 	r.flag.Pending = false
 	require.Error(t, r.validate(nil))
@@ -103,7 +116,7 @@ func TestRun_PendingTakesNoRepository(t *testing.T) {
 
 func TestRunPending_WithoutAMusterLoginPrintsOnlyTheError(t *testing.T) {
 	var out bytes.Buffer
-	r := newPendingRunner(&fakeManager{}, &fakeCircleCI{}, client.OutputText, &out)
+	r := newPendingRunner(t, &fakeManager{}, &fakeCircleCI{}, client.OutputText, &out)
 	r.openSession = func(context.Context) (*client.Session, error) {
 		return nil, &authstore.AuthRequiredError{Identity: "muster", Cause: "no token", Hint: "devctl auth login --muster-only"}
 	}
@@ -137,7 +150,7 @@ func TestRunPending_AWrongCallIsADocumentWithAnEmptyList(t *testing.T) {
 func TestRunPending_WarningsGoInTheDocument(t *testing.T) {
 	m := &fakeManager{rows: []manager.Row{{Repository: "giantswarm/new-service", Team: "team-honeybadger"}}}
 	var stdout, stderr bytes.Buffer
-	r := newPendingRunner(m, &fakeCircleCI{}, client.OutputJSON, &stdout)
+	r := newPendingRunner(t, m, &fakeCircleCI{}, client.OutputJSON, &stdout)
 	r.stderr = &stderr
 	r.open = func(_ context.Context, _ string, warn func(string)) (circleciapp.GitHub, circleciapp.CircleCI, error) {
 		warn("your CircleCI login expires in 3 days")
@@ -161,7 +174,7 @@ func (unreachableManager) Call(context.Context, string, map[string]any) (json.Ra
 
 func TestRunPending_AnUnreachableManagerIsARemoteError(t *testing.T) {
 	var stdout bytes.Buffer
-	r := newPendingRunner(&fakeManager{}, &fakeCircleCI{}, client.OutputJSON, &stdout)
+	r := newPendingRunner(t, &fakeManager{}, &fakeCircleCI{}, client.OutputJSON, &stdout)
 	r.openSession = func(context.Context) (*client.Session, error) {
 		return &client.Session{Caller: unreachableManager{}}, nil
 	}
@@ -187,11 +200,14 @@ func execute(t *testing.T, parent *cobra.Command, args ...string) (stdout string
 	var out, errOut bytes.Buffer
 	// Fake clients: a regression that runs the pass never reaches the
 	// person's keychain, inventory or CircleCI.
-	r := newPendingRunner(&fakeManager{}, &fakeCircleCI{}, client.OutputText, &out)
+	r := newPendingRunner(t, &fakeManager{}, &fakeCircleCI{}, client.OutputText, &out)
 	r.stderr = &errOut
 	// The flags' values come from their definitions, as in production.
 	r.flag = &flag{}
 	c := newCommand(r)
+	osArgs := os.Args
+	os.Args = append([]string{"devctl", "repo", c.Name()}, args...)
+	t.Cleanup(func() { os.Args = osArgs })
 	root := c
 	if parent != nil {
 		parent.AddCommand(c)
@@ -199,14 +215,9 @@ func execute(t *testing.T, parent *cobra.Command, args ...string) (stdout string
 		args = append([]string{c.Name()}, args...)
 	}
 	root.SetArgs(args)
+	root.SetOut(&out)
+	root.SetErr(&errOut)
 	root.SilenceErrors, root.SilenceUsage = true, true
-	osArgs := os.Args
-	if parent != nil {
-		os.Args = append([]string{"devctl", "repo"}, args...)
-	} else {
-		os.Args = append([]string{"devctl", "repo", c.Name()}, args...)
-	}
-	t.Cleanup(func() { os.Args = osArgs })
 	_, err = root.ExecuteC()
 	if jsonRequested(args) {
 		require.Empty(t, errOut.String(), "stderr under -o json")
