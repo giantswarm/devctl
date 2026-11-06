@@ -13,7 +13,7 @@ env:
   # renovate: datasource=docker depName=kindest/node
   KUBERNETES_VERSION: v1.33.7
   # renovate: datasource=github-releases depName=giantswarm/kyverno-crds
-  KYVERNO_VERSION: v1.18.0
+  KYVERNO_VERSION: v1.19.2
   HELM_VERSION: 4
 
 permissions: {}
