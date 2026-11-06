@@ -7,17 +7,19 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
-	"github.com/giantswarm/devctl/v8/internal/env"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/circleciapp"
+	"github.com/giantswarm/devctl/v8/pkg/project"
 )
 
 // OptOutEnv turns the automatic pass off when set to anything.
@@ -54,20 +56,75 @@ var skipPath = map[string]bool{
 	"repo follow-circleci": true,
 }
 
+// guardGrace is how long the pass gets past its own timeout to stop before
+// it is abandoned.
+const guardGrace = 2 * time.Second
+
 // Auto is the automatic pass after a devctl command: at most once every six
 // hours, with the logins the keychain holds and never a prompt, it sets up
 // the pending CircleCI pipelines of the person's teams. It never fails: the
 // command's exit code and stdout stay as they are, and stderr carries a line
 // per pipeline it created and, at most once a day, what to do about a login.
+// A panic is swallowed, a keychain that would prompt is skipped, and the
+// pass is abandoned after passTimeout or on an interrupt.
 func Auto(executed *cobra.Command, stderr io.Writer) {
+	defer func() { _ = recover() }()
+	if os.Getenv(OptOutEnv) != "" || !follows(executed) {
+		return
+	}
+	dir, err := configDir()
+	if err != nil {
+		return
+	}
+	// The process ends after the pass: no keychain prompt for it.
+	authstore.NoPrompt()
 	a := &autoPass{
 		getenv: os.Getenv,
-		state:  filepath.Join(env.ConfigDir.Val(), stateFile),
+		state:  filepath.Join(dir, stateFile),
 		now:    time.Now,
 		stderr: stderr,
 		pass:   &pendingPass{open: client.Open, openCI: circleciapp.OpenAsPerson},
 	}
-	a.run(context.Background(), executed)
+	// An interrupt ends the pass, not the process: the exit code stays the
+	// command's.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	guard(ctx, passTimeout, func(ctx context.Context) { a.run(ctx, executed) })
+}
+
+// guard runs fn with a context that ends after timeout and returns when fn
+// does, timeout plus guardGrace has passed or ctx ends, whichever comes
+// first: a keychain call or a lock that ignores the context is abandoned, and
+// the process exit ends it. A panic in fn is swallowed.
+func guard(ctx context.Context, timeout time.Duration, fn func(context.Context)) {
+	passCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() { _ = recover() }()
+		fn(passCtx)
+	}()
+	t := time.NewTimer(timeout + guardGrace)
+	defer t.Stop()
+	select {
+	case <-done:
+	case <-t.C:
+	case <-ctx.Done():
+	}
+}
+
+// configDir is devctl's configuration directory, as [env.ConfigDir] names it,
+// with an error where that panics: no XDG_CONFIG_HOME and no home.
+func configDir() (string, error) {
+	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
+		return filepath.Join(dir, project.Name()), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", project.Name()), nil
 }
 
 type autoPass struct {
@@ -101,8 +158,6 @@ func (a *autoPass) run(ctx context.Context, executed *cobra.Command) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, passTimeout)
-	defer cancel()
 	var warnings []string
 	a.pass.warn = func(w string) { warnings = append(warnings, w) }
 	summary, err := a.pass.run(ctx)

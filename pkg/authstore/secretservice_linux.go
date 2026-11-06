@@ -188,6 +188,9 @@ func (c *secretServiceClient) defaultCollection() (dbus.ObjectPath, error) {
 	if !locked {
 		return collection, nil
 	}
+	if noPrompt.Load() {
+		return "", c.fail("Unlock", collection, ErrKeychainLocked)
+	}
 	// Unlock takes the resolved collection: GNOME Keyring tolerates the alias
 	// path here, oo7-daemon and KeePassXC do not.
 	var unlocked []dbus.ObjectPath

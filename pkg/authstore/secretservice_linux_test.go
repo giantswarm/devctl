@@ -385,3 +385,17 @@ func TestOSKeychainIsSecretService(t *testing.T) {
 		t.Fatalf("osKeychain() = %T, want the Secret Service client", osKeychain())
 	}
 }
+
+func TestSecretServiceLockedCollectionWithoutPrompt(t *testing.T) {
+	f, s := newFakeSecretService(t, func(f *fakeSecretService) { f.locked = true })
+	f.put(t, UserCircleCI, "ccipat_secret")
+	noPrompt.Store(true)
+	t.Cleanup(func() { noPrompt.Store(false) })
+
+	if _, err := s.get(UserCircleCI); !errors.Is(err, ErrKeychainLocked) {
+		t.Fatalf("get = %v, want ErrKeychainLocked", err)
+	}
+	if _, calls := f.snapshot(); hasCall(calls, "Unlock") || hasCall(calls, "Prompt") {
+		t.Fatalf("a locked collection was unlocked without a prompt allowed: %v", calls)
+	}
+}
