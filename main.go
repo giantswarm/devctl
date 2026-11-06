@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd"
+	"github.com/giantswarm/devctl/v8/cmd/repo/followcircleci"
 	"github.com/giantswarm/devctl/v8/internal/termout"
 	"github.com/giantswarm/devctl/v8/pkg/authexec"
 )
@@ -27,7 +28,11 @@ func main() {
 		os.Exit(2)
 	}
 
-	os.Exit(cmd.Execute(rootCommand, os.Stderr))
+	// After the command, the automatic pass over the person's pending CircleCI
+	// pipelines; it never changes the exit code.
+	os.Exit(cmd.ExecuteThen(rootCommand, os.Stderr, func(executed *cobra.Command) {
+		followcircleci.Auto(executed, os.Stderr)
+	}))
 }
 
 func newRootCommand() (*cobra.Command, error) {
