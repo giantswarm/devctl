@@ -10,8 +10,6 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
-	"github.com/giantswarm/devctl/v8/pkg/gen"
-	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/llm"
 )
 
@@ -55,75 +53,58 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		return microerror.Mask(err)
 	}
 
-	if r.flag.DryRun {
-		return microerror.Mask(r.dryRun(ctx))
+	mode := llm.DefaultMode
+	if r.flag.MigrateInstructions {
+		mode = llm.MigrationMode
 	}
-
-	var llmInput *llm.LLM
-	{
-		c := llm.Config{
-			Flavours: r.flag.Flavours,
-			Language: r.flag.Language,
-		}
-
-		llmInput, err = llm.New(c)
-		if err != nil {
-			return microerror.Mask(err)
-		}
+	llmInput, err := llm.New(llm.Config{Flavours: r.flag.Flavours, Language: r.flag.Language})
+	if err != nil {
+		return microerror.Mask(err)
 	}
-
-	inputs := []input.Input{
-		llmInput.BaseLLMRules(),
+	body, err := llmInput.BlockBody()
+	if err != nil {
+		return microerror.Mask(err)
 	}
-
-	// Add additional rules files for different flavours and languages
-	if r.flag.Language == "go" {
-		inputs = append(inputs, llmInput.GoLLMRules())
-	}
-
-	err = gen.Execute(
-		ctx,
-		inputs...,
-	)
+	changes, report, err := llm.Plan(ctx, ".", mode, body)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
-	return nil
-}
-
-func (r *runner) dryRun(ctx context.Context) error {
-	var report llm.Report
-	var steps []string
-	if r.flag.MigrateInstructions {
-		migration, migrationReport, err := llm.PlanMigration(ctx, ".")
-		if err != nil {
-			return microerror.Mask(err)
+	if len(report.Findings) > 0 {
+		out, heading := r.stderr, "gen llm skipped this repository:"
+		if r.flag.DryRun {
+			out, heading = r.stdout, "gen llm would skip this repository:"
 		}
-		report, steps = migrationReport, migration.Steps()
-	} else {
-		var err error
-		report, err = llm.Preflight(ctx, ".", llm.DefaultMode)
-		if err != nil {
-			return microerror.Mask(err)
-		}
-	}
-
-	var out strings.Builder
-	switch {
-	case len(report.Findings) > 0:
-		out.WriteString("gen llm would skip this repository:\n")
+		var b strings.Builder
+		fmt.Fprintln(&b, heading)
 		for _, f := range report.Findings {
-			fmt.Fprintf(&out, "%s: %s\n  fix: %s\n", f.Path, f.Problem, f.Fix)
+			fmt.Fprintf(&b, "%s: %s\n  fix: %s\n", f.Path, f.Problem, f.Fix)
 		}
-	case len(steps) > 0:
-		out.WriteString("gen llm would make these changes:\n")
-		for _, step := range steps {
-			fmt.Fprintf(&out, "- %s\n", step)
+		if _, err := io.WriteString(out, b.String()); err != nil {
+			return microerror.Mask(err)
 		}
-	default:
-		out.WriteString("gen llm would proceed: no findings\n")
+		// Alignment runs every generator and fails the repository on any
+		// error, so a skip in default mode is a warning. A migration was
+		// asked for, so a script running it must notice.
+		if mode == llm.MigrationMode && !r.flag.DryRun {
+			return microerror.Maskf(notMigratedError, "the repository was not migrated, see the findings above")
+		}
+		return nil
 	}
-	_, err := io.WriteString(r.stdout, out.String())
-	return microerror.Mask(err)
+
+	if r.flag.DryRun {
+		var b strings.Builder
+		if steps := changes.Steps(); len(steps) == 0 {
+			fmt.Fprintln(&b, "gen llm would make no changes")
+		} else {
+			fmt.Fprintln(&b, "gen llm would make these changes:")
+			for _, step := range steps {
+				fmt.Fprintf(&b, "- %s\n", step)
+			}
+		}
+		_, err = io.WriteString(r.stdout, b.String())
+		return microerror.Mask(err)
+	}
+
+	return microerror.Mask(changes.Apply(ctx))
 }
