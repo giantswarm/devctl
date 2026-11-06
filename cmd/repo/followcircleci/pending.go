@@ -22,7 +22,9 @@ import (
 type Outcome string
 
 const (
-	// OutcomeCreated: the pass created the GitHub App pipeline or its trigger.
+	// OutcomeCreated: the pass wrote the set-up: the GitHub App pipeline, or
+	// on one that existed its trigger or the project's setup workflows (the
+	// reason says which).
 	OutcomeCreated Outcome = "created"
 	// OutcomeAlreadySetUp: the pipeline and its trigger were in place.
 	OutcomeAlreadySetUp Outcome = "already-set-up"
@@ -223,8 +225,19 @@ func (p *pendingPass) warnf(w string) {
 
 func entry(slug string, report *circleciapp.Report) Entry {
 	e := Entry{Repository: slug, Outcome: OutcomeAlreadySetUp}
-	if report.Result != nil && (report.Result.CreatedDefinition || report.Result.CreatedTrigger) {
+	if r := report.Result; r != nil && r.Changed() {
+		// Any write is the pass's: a definition, a trigger or a setting.
 		e.Outcome = OutcomeCreated
+		if !r.CreatedDefinition {
+			var did []string
+			if r.CreatedTrigger {
+				did = append(did, "added its all-pushes trigger")
+			}
+			if r.EnabledSetupWorkflows {
+				did = append(did, "switched the project's setup workflows on")
+			}
+			e.Reason = "the pipeline existed; " + strings.Join(did, ", ")
+		}
 	}
 	for _, run := range report.Runs {
 		e.Runs = append(e.Runs, RunRef{Ref: run.Ref.String(), Pipeline: run.Pipeline.Number})

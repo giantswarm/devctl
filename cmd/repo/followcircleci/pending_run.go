@@ -77,6 +77,9 @@ func describe(e Entry) string {
 	switch e.Outcome {
 	case OutcomeCreated:
 		what = "created the GitHub App pipeline"
+		if e.Reason != "" {
+			what = e.Reason
+		}
 	case OutcomeAlreadySetUp:
 		what = "set up already"
 	default:

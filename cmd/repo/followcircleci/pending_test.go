@@ -240,3 +240,27 @@ func TestPending_WarnsWhenTheListIsCut(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"130 repositories of your teams wait for a CircleCI pipeline; this pass reads the first 100"}, warnings)
 }
+
+// setupWorkflowsOff is a project set up already, with its setup workflows
+// switched off.
+type setupWorkflowsOff struct{ *fakeCircleCI }
+
+func (setupWorkflowsOff) GetProjectSettings(context.Context, string, string) (*circleciclient.ProjectSettings, error) {
+	off := false
+	return &circleciclient.ProjectSettings{Advanced: circleciclient.AdvancedSettings{SetupWorkflows: &off}}, nil
+}
+
+func TestPending_ASwitchedSettingIsAChange(t *testing.T) {
+	m := &fakeManager{rows: []manager.Row{{Repository: "giantswarm/mcp-template", Team: "team-honeybadger"}}}
+	ci := &fakeCircleCI{setUp: true}
+	p := newPending(m, ci)
+	p.openCI = func(context.Context, string, func(string)) (circleciapp.GitHub, circleciapp.CircleCI, error) {
+		return fakeGitHub{}, setupWorkflowsOff{ci}, nil
+	}
+
+	summary, err := p.run(t.Context())
+
+	require.NoError(t, err)
+	require.Equal(t, OutcomeCreated, summary.Repositories[0].Outcome)
+	require.Equal(t, "the pipeline existed; switched the project's setup workflows on", summary.Repositories[0].Reason)
+}
