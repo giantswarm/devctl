@@ -56,10 +56,20 @@ func TestAuto_NeverPanicsWithoutAHomeAfterASkippedCommand(t *testing.T) {
 	require.NotPanics(t, func() { Auto(commands()["version"], &bytes.Buffer{}) })
 }
 
-func TestAuto_NoHomeIsNoPass(t *testing.T) {
+func TestConfigDir_NoHomeIsAnError(t *testing.T) {
 	t.Setenv("HOME", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
-	var stderr bytes.Buffer
-	require.NotPanics(t, func() { Auto(commands()["pr wait"], &stderr) })
-	require.Empty(t, stderr.String())
+
+	_, err := configDir()
+
+	require.Error(t, err)
+}
+
+func TestConfigDir_FollowsXDG(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/xdg")
+
+	dir, err := configDir()
+
+	require.NoError(t, err)
+	require.Equal(t, "/xdg/devctl", dir)
 }

@@ -304,3 +304,42 @@ func (f refusingRun) RunPipeline(ctx context.Context, owner, repo, definitionID 
 	}
 	return f.fakeCircleCI.RunPipeline(ctx, owner, repo, definitionID, ref)
 }
+
+// cancelAfterFirst is CircleCI whose context ends once the first
+// repository's pipeline is created, as a pass running out of time.
+type cancelAfterFirst struct {
+	*fakeCircleCI
+	cancel context.CancelFunc
+}
+
+func (f cancelAfterFirst) RunPipeline(ctx context.Context, owner, repo, definitionID string, ref circleciclient.Ref) (*circleciclient.Pipeline, error) {
+	defer f.cancel()
+	return f.fakeCircleCI.RunPipeline(ctx, owner, repo, definitionID, ref)
+}
+
+func (f cancelAfterFirst) GetProject(ctx context.Context, owner, repo string) (*circleciclient.Project, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return f.fakeCircleCI.GetProject(ctx, owner, repo)
+}
+
+func TestPending_RunningOutOfTimeSkipsTheRest(t *testing.T) {
+	m := &fakeManager{rows: []manager.Row{
+		{Repository: "giantswarm/first", Team: "team-honeybadger"},
+		{Repository: "giantswarm/second", Team: "team-honeybadger"},
+		{Repository: "giantswarm/third", Team: "team-honeybadger"},
+	}}
+	ctx, cancel := context.WithCancel(t.Context())
+	ci := &fakeCircleCI{}
+	p := newPending(m, ci)
+	p.openCI = func(context.Context, string, func(string)) (circleciapp.GitHub, circleciapp.CircleCI, error) {
+		return fakeGitHub{}, cancelAfterFirst{fakeCircleCI: ci, cancel: cancel}, nil
+	}
+
+	summary, err := p.run(ctx)
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.Equal(t, []Outcome{OutcomeCreated, OutcomeSkipped, OutcomeSkipped}, outcomes(summary))
+	require.Equal(t, "the pass ran out of time", summary.Repositories[1].Reason)
+}
