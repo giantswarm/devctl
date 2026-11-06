@@ -57,7 +57,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	if r.flag.MigrateInstructions {
 		mode = llm.MigrationMode
 	}
-	llmInput, err := llm.New(llm.Config{Language: r.flag.Language})
+	llmInput, err := llm.New(llm.Config{Flavours: r.flag.Flavours, Language: r.flag.Language})
 	if err != nil {
 		return microerror.Mask(err)
 	}

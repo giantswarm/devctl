@@ -260,7 +260,7 @@ The instructions sit in a block at the top of `AGENTS.md`:
 ## This repository
 ```
 
-devctl owns the block and replaces it on every run. Everything outside it belongs to the repository and is kept byte for byte: put the repository's own instructions below the block, where they take precedence over it. A new `AGENTS.md` gets an empty `## This repository` section for them. The block holds only short rules for every change; Go repositories get one more, for `goimports`. Longer guidance comes from the style guides in [giantswarm/fmt](https://github.com/giantswarm/fmt) and the plugins in [giantswarm/claude-code](https://github.com/giantswarm/claude-code), not from generated skills.
+devctl owns the block and replaces it on every run. Everything outside it belongs to the repository and is kept byte for byte: put the repository's own instructions below the block, where they take precedence over it. A new `AGENTS.md` gets an empty `## This repository` section for them. The block holds only short rules for every change; Go repositories get one more, for `goimports`. It also asks the agent to point Giant Swarm staff once to the plugins of the [giantswarm/claude-code](https://github.com/giantswarm/claude-code) marketplace when their skills are missing: `gs-base` and `gs-dev`, plus `gs-godev` for Go and `gs-appdev` for the `app` flavour. Longer guidance comes from the style guides in [giantswarm/fmt](https://github.com/giantswarm/fmt) and the plugins in [giantswarm/claude-code](https://github.com/giantswarm/claude-code), not from generated skills.
 
 On every run, `gen llm` also:
 

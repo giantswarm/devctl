@@ -21,9 +21,29 @@ var agentsBlock = template.Must(template.New("agents_block").Parse(agentsBlockTe
 // AGENTS.md.
 func AgentsBlockBody(p params.Params) (string, error) {
 	var b strings.Builder
-	err := agentsBlock.Execute(&b, map[string]any{"IsLanguageGo": params.IsLanguageGo(p)})
+	err := agentsBlock.Execute(&b, map[string]any{
+		"IsLanguageGo": params.IsLanguageGo(p),
+		"Plugins":      plugins(p),
+	})
 	if err != nil {
 		return "", microerror.Mask(err)
 	}
 	return b.String(), nil
+}
+
+// plugins lists the plugins of the giantswarm/claude-code marketplace for
+// the repository, as prose.
+func plugins(p params.Params) string {
+	names := []string{"gs-base", "gs-dev"}
+	if params.IsLanguageGo(p) {
+		names = append(names, "gs-godev")
+	}
+	if params.IsFlavourApp(p) {
+		names = append(names, "gs-appdev")
+	}
+	for i, name := range names {
+		names[i] = "`" + name + "`"
+	}
+	last := len(names) - 1
+	return strings.Join(names[:last], ", ") + " and " + names[last]
 }
