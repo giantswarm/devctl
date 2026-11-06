@@ -99,9 +99,8 @@ func New(config Config) (*cobra.Command, error) {
 		config.Stdout = os.Stdout
 	}
 
-	f := &flag{}
 	r := &runner{
-		flag:        f,
+		flag:        &flag{},
 		stdout:      config.Stdout,
 		stderr:      config.Stderr,
 		open:        circleciapp.OpenAsPerson,
@@ -109,7 +108,12 @@ func New(config Config) (*cobra.Command, error) {
 		sleep:       sleep,
 		interval:    pollInterval,
 	}
+	return newCommand(r), nil
+}
 
+// newCommand is the command running r; tests give r fake clients.
+func newCommand(r *runner) *cobra.Command {
+	f := r.flag
 	c := &cobra.Command{
 		Use:   fmt.Sprintf("%s [OWNER/]REPOSITORY | --pending", name),
 		Short: shortDesc,
@@ -126,7 +130,7 @@ func New(config Config) (*cobra.Command, error) {
 	f.Init(c)
 	c.Flags().Lookup("output").Usage = "Output format with --pending: text, or json for the command's document (envelope, pending, repositories)."
 	c.SetFlagErrorFunc(r.FlagError)
-	return c, nil
+	return c
 }
 
 func sleep(ctx context.Context, d time.Duration) error {

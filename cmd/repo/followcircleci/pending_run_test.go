@@ -116,34 +116,22 @@ func TestRunPending_WithoutAMusterLoginPrintsOnlyTheError(t *testing.T) {
 }
 
 func TestRunPending_AFlagErrorIsADocument(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	c, err := New(Config{Stdout: &stdout, Stderr: &stderr})
-	require.NoError(t, err)
-	c.SetArgs([]string{"--pending", "-o", "json", "--timeout", "soon"})
-	c.SilenceErrors, c.SilenceUsage = true, true
-
-	err = c.Execute()
+	stdout, err := execute(t, nil, "--pending", "-o", "json", "--timeout", "soon")
 
 	var exitErr *agentcli.ExitError
 	require.ErrorAs(t, err, &exitErr)
 	require.Equal(t, agentcli.ExitUsage, exitErr.Code)
 	var doc document
-	require.NoError(t, json.Unmarshal(stdout.Bytes(), &doc))
+	require.NoError(t, json.Unmarshal([]byte(stdout), &doc))
 	require.Equal(t, agentcli.VerdictUsage, doc.Verdict)
-	require.Contains(t, stdout.String(), `"repositories": []`)
+	require.Contains(t, stdout, `"repositories": []`)
 }
 
 func TestRunPending_AWrongCallIsADocumentWithAnEmptyList(t *testing.T) {
-	var stdout bytes.Buffer
-	c, err := New(Config{Stdout: &stdout, Stderr: &bytes.Buffer{}})
-	require.NoError(t, err)
-	c.SetArgs([]string{"--pending", "-o", "json", "giantswarm/new-service"})
-	c.SilenceErrors, c.SilenceUsage = true, true
+	stdout, _ := execute(t, nil, "--pending", "-o", "json", "giantswarm/new-service")
 
-	_ = c.Execute()
-
-	require.Contains(t, stdout.String(), `"repositories": []`)
-	require.Contains(t, stdout.String(), `"verdict": "usage"`)
+	require.Contains(t, stdout, `"repositories": []`)
+	require.Contains(t, stdout, `"verdict": "usage"`)
 }
 
 func TestRunPending_WarningsGoInTheDocument(t *testing.T) {
@@ -186,27 +174,20 @@ func TestRunPending_AnUnreachableManagerIsARemoteError(t *testing.T) {
 }
 
 func TestRunPending_AFlagErrorBeforeOutputIsADocumentToo(t *testing.T) {
-	var stdout bytes.Buffer
-	c, err := New(Config{Stdout: &stdout, Stderr: &bytes.Buffer{}})
-	require.NoError(t, err)
-	args := []string{"--pending", "--nope", "-o", "json"}
-	c.SetArgs(args)
-	c.SilenceErrors, c.SilenceUsage = true, true
-	osArgs := os.Args
-	os.Args = append([]string{"devctl", "repo", "follow-circleci"}, args...)
-	t.Cleanup(func() { os.Args = osArgs })
+	stdout, _ := execute(t, nil, "--pending", "--nope", "-o", "json")
 
-	_ = c.Execute()
-
-	require.Contains(t, stdout.String(), `"verdict": "usage"`)
+	require.Contains(t, stdout, `"verdict": "usage"`)
 }
 
 // execute runs the command with args as devctl would, os.Args included.
 func execute(t *testing.T, parent *cobra.Command, args ...string) (stdout string, err error) {
 	t.Helper()
 	var out bytes.Buffer
-	c, err := New(Config{Stdout: &out, Stderr: &bytes.Buffer{}})
-	require.NoError(t, err)
+	// Fake clients: a regression that runs the pass never reaches the
+	// person's keychain, inventory or CircleCI.
+	r := newPendingRunner(&fakeManager{}, &fakeCircleCI{}, client.OutputText, &out)
+	r.flag = &flag{}
+	c := newCommand(r)
 	root := c
 	if parent != nil {
 		parent.AddCommand(c)
@@ -217,6 +198,9 @@ func execute(t *testing.T, parent *cobra.Command, args ...string) (stdout string
 	root.SilenceErrors, root.SilenceUsage = true, true
 	osArgs := os.Args
 	os.Args = append([]string{"devctl", "repo"}, args...)
+	if parent == nil {
+		os.Args = append([]string{"devctl", "repo", c.Name()}, args...)
+	}
 	t.Cleanup(func() { os.Args = osArgs })
 	_, err = root.ExecuteC()
 	return out.String(), err
