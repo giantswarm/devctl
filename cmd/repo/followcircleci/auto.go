@@ -185,7 +185,7 @@ func notice(err error) string {
 	var authErr *authstore.AuthRequiredError
 	if errors.As(err, &authErr) {
 		msg := authErr.Error()
-		if authErr.Identity == "CircleCI" && !strings.Contains(msg, "grant Write") {
+		if authErr.Identity == authstore.IdentityCircleCI && !strings.Contains(msg, "grant Write") {
 			msg += " On CircleCI's consent page, grant Write access."
 		}
 		return msg

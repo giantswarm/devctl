@@ -399,3 +399,17 @@ func TestSecretServiceLockedCollectionWithoutPrompt(t *testing.T) {
 		t.Fatalf("a locked collection was unlocked without a prompt allowed: %v", calls)
 	}
 }
+
+func TestSecretServiceDeletePromptWithoutPrompt(t *testing.T) {
+	f, s := newFakeSecretService(t, func(f *fakeSecretService) { f.promptOnDelete = true })
+	f.put(t, UserMuster, "secret")
+	noPrompt.Store(true)
+	t.Cleanup(func() { noPrompt.Store(false) })
+
+	if err := s.delete(UserMuster); !errors.Is(err, ErrKeychainLocked) {
+		t.Fatalf("delete = %v, want ErrKeychainLocked", err)
+	}
+	if _, calls := f.snapshot(); hasCall(calls, "Prompt") {
+		t.Fatalf("a prompt ran without a prompt allowed: %v", calls)
+	}
+}

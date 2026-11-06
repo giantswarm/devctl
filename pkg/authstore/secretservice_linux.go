@@ -249,6 +249,9 @@ func (c *secretServiceClient) completePrompt(call string, on, prompt dbus.Object
 	if prompt == nullPath {
 		return nil
 	}
+	if noPrompt.Load() {
+		return c.fail(call, on, ErrKeychainLocked)
+	}
 	completed := ifacePrompt + ".Completed"
 	match := []dbus.MatchOption{dbus.WithMatchObjectPath(prompt), dbus.WithMatchInterface(ifacePrompt), dbus.WithMatchMember("Completed")}
 	if err := c.conn.AddMatchSignal(match...); err != nil {
