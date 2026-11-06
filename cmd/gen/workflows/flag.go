@@ -12,6 +12,7 @@ import (
 
 const (
 	flagCheckSecrets                  = "check-secrets"
+	flagChartTests                    = "chart-tests"
 	flagCheckReadmeLinks              = "check-readme-links"
 	flagFlavour                       = "flavour"
 	flagLanguage                      = "language"
@@ -35,6 +36,7 @@ const (
 
 type flag struct {
 	CheckSecrets                  bool
+	ChartTests                    bool
 	CheckReadmeLinks              bool
 	Flavours                      gen.FlavourSlice
 	Language                      string
@@ -55,6 +57,7 @@ type flag struct {
 
 func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.CheckSecrets, flagCheckSecrets, true, "If true, also generate a secret-scanning workflow. Possible values: true (default), false.")
+	cmd.Flags().BoolVar(&f.ChartTests, flagChartTests, true, "If true, also generate the chart_tests workflow, which runs the chart unit tests on pull requests. Only valid for app flavour. Possible values: true (default), false.")
 	cmd.Flags().BoolVar(&f.CheckReadmeLinks, flagCheckReadmeLinks, true, "If true, also generate the check_readme_links workflow, which checks the links in README.md on pull requests and weekly. Only valid for app flavor. Possible values: true (default), false.")
 	cmd.Flags().VarP(gen.NewFlavourSliceFlagValue(&f.Flavours, gen.FlavourSlice{}), flagFlavour, "f", fmt.Sprintf(`The type of project that you want to generate the workflows for. Possible values: <%s>`, strings.Join(gen.AllFlavours(), "|")))
 	cmd.Flags().StringVarP(&f.Language, flagLanguage, "l", "", "Language of the repo, for generating additional language-specific workflows, like vulnerability remediation.")
