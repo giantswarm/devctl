@@ -270,6 +270,8 @@ On every run, `gen llm` also:
 
 Nothing is generated for the [`fork` flavour](flavours.md).
 
+`AGENTS.md` and `.agents/skills` cover instructions and skills only. Hooks, permissions and MCP servers stay in each agent's own configuration, such as `.claude/settings.json` or `.mcp.json`; `gen llm` neither generates nor moves them. Tooling shared across repositories ships as a plugin in [giantswarm/claude-code](https://github.com/giantswarm/claude-code).
+
 ### Repositories with existing instructions
 
 A repository whose `AGENTS.md`, `CLAUDE.md` or `.claude/CLAUDE.md` has instructions outside a devctl-managed block, or whose skills are in a `.claude/skills` directory, needs a migration first. Until then, `gen llm` leaves the repository unchanged and prints a warning that says so; the command still succeeds, so the rest of an alignment run is not affected. Migrate it with:
