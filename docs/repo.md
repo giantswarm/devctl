@@ -360,7 +360,7 @@ Instead of one repository, `--pending` sets up every repository of your teams th
 reports `circleci-pipeline-missing` for: giantswarm-repo-manager's `list_repositories` with scope
 `mine` (the teams you are a member of on GitHub, not every repository you administer), keeping the
 declared repositories in production (no `lifecycle` declared, or `production`), unarchived and still on
-GitHub. It runs the steps above on each without `--migrate` and does not wait for the runs. CircleCI
+GitHub. It runs the steps above on each without `--migrate` and does not wait for the runs (it refuses `--wait` and `--timeout`). CircleCI
 refusing a write (403) marks that repository `refused` and the others go on. When nothing could be
 written, the login most likely granted Read only: exit 8 asks for `devctl auth login --circleci-only`
 granting Write. When other repositories were written, CircleCI refuses you that repository (you are no
@@ -368,7 +368,8 @@ admin of it): exit 5 names the `devctl repo follow-circleci <repository>` a repo
 other failure of one repository is reported, the others go on, and the exit is 13, as for a manager that
 cannot be reached. It needs the muster login too (`devctl auth login --muster-only`). It reads the
 first 100 repositories the manager lists, by name, and warns when more match; devctl drops the
-repositories not in production after that cut.
+repositories not in production after that cut. A repository whose pipeline is created and whose
+first run CircleCI then refuses is reported `refused`, and counts as nothing written.
 
 `--output json` prints the command's envelope (`command`, `exitCode`, `verdict`, `reason`,
 `warnings`) with `pending`, the number of pending repositories, and `repositories[]`: each with
@@ -383,13 +384,13 @@ After any devctl command, at most once every six hours, devctl runs the same pas
 repository created through the Dev Portal or the Repo Manager agent gets its pipeline without anyone
 typing a command. It uses the logins the keychain already holds and never opens a browser. A locked
 keychain is skipped on Linux instead of prompting to unlock it; saving a refreshed token still may
-prompt, since the old one is spent. On macOS the
-keychain may still ask, most often for each devctl item after a devctl upgrade (a new binary), or when
-the login keychain is locked; so may KeePassXC's per-item confirmation on Linux. The pass is abandoned after about 20 seconds, or on Ctrl-C, and does not wait for the runs.
-It never changes the exit code or the stdout of the command you ran, and it runs after agent-facing
-commands and `--output json` too: their document stays alone on stdout. A caller that merges stderr into
-stdout (`2>&1`) sees the pass's lines among it, and once every six hours a command can take up to about
-22 seconds longer. It writes on stderr:
+prompt, since the old one is spent. On macOS the keychain may still ask, most often for each devctl item
+after a devctl upgrade (a new binary), or when the login keychain is locked; so may KeePassXC's per-item
+confirmation on Linux. The pass is abandoned after about 20 seconds, or on Ctrl-C, and does not wait for
+the runs. It never changes the exit code or the stdout of the command you ran, and it runs after
+agent-facing commands and `--output json` too: their document stays alone on stdout. A caller that
+merges stderr into stdout (`2>&1`) sees the pass's lines among it, and once every six hours a command
+can take up to about 22 seconds longer. It writes on stderr:
 
 - a line per pipeline it created, setting it changed or run it started;
 - at most once a day, when repositories wait, one line naming them and what to do: the CircleCI or

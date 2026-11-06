@@ -58,7 +58,7 @@ the inventory reports circleci-pipeline-missing for (giantswarm-repo-manager's
 list, scope mine; declared, in production, unarchived), set up without --migrate and
 without waiting; --output json prints its document. After any devctl command,
 at most once every six hours, devctl runs that pass by itself, quietly, with
-the logins the keychain holds; any value of DEVCTL_NO_CIRCLECI_PENDING turns it off.
+the logins the keychain holds; any non-empty value of DEVCTL_NO_CIRCLECI_PENDING turns it off.
 
 Examples:
   devctl repo follow-circleci my-service
@@ -120,8 +120,8 @@ func New(config Config) (*cobra.Command, error) {
 		RunE: r.Run,
 	}
 	c.Flags().BoolVar(&f.Migrate, "migrate", false, "Also delete the OAuth pipeline's triggers, so a push builds once, on the GitHub App pipeline.")
-	c.Flags().BoolVar(&f.Wait, "wait", true, "Wait for the runs the command starts to settle.")
-	c.Flags().DurationVar(&f.Timeout, "timeout", defaultTimeout, "How long to wait for the runs.")
+	c.Flags().BoolVar(&f.Wait, "wait", true, "Wait for the runs the command starts to settle; one repository only, --pending never waits.")
+	c.Flags().DurationVar(&f.Timeout, "timeout", defaultTimeout, "How long to wait for the runs; one repository only.")
 	c.Flags().BoolVar(&f.Pending, "pending", false, "Instead of one repository, set up every repository of your teams the inventory reports circleci-pipeline-missing for, without waiting for the runs.")
 	f.Init(c)
 	c.Flags().Lookup("output").Usage = "Output format with --pending: text, or json for the command's document (envelope, pending, repositories)."
