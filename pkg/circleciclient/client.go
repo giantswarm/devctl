@@ -393,16 +393,26 @@ func (c *Client) ListPipelineWorkflows(ctx context.Context, pipelineID string) (
 	}
 }
 
-// ListWorkflowJobs returns the jobs of a workflow, retrying an authenticated
+// ListWorkflowJobs returns every page of the jobs of a workflow, retrying an authenticated
 // 404 anonymously for workflows readable through the public API.
 func (c *Client) ListWorkflowJobs(ctx context.Context, workflowID string) ([]Job, error) {
-	var out struct {
-		Items []Job `json:"items"`
+	var out []Job
+	base := "/api/v2/workflow/" + url.PathEscape(workflowID) + "/job"
+	path := base
+	for {
+		var page struct {
+			Items         []Job  `json:"items"`
+			NextPageToken string `json:"next_page_token"`
+		}
+		if err := c.readPublicJob(ctx, path, &page); err != nil {
+			return nil, microerror.Mask(err)
+		}
+		out = append(out, page.Items...)
+		if page.NextPageToken == "" {
+			return out, nil
+		}
+		path = base + "?page-token=" + url.QueryEscape(page.NextPageToken)
 	}
-	if err := c.readPublicJob(ctx, "/api/v2/workflow/"+url.PathEscape(workflowID)+"/job", &out); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return out.Items, nil
 }
 
 // RerunWorkflowFromFailed reruns the failed jobs of a finished workflow and

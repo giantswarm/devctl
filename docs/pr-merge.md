@@ -467,7 +467,7 @@ The document of the merge of [#2368](https://github.com/giantswarm/devctl/pull/2
   },
   "actions": [],
   "mergeCommitSha": "c0621f88454b753c64ab264b2e39a9bcf15873c7",
-  "mergedBy": "teemow",
+  "mergedBy": "fixture-person",
   "method": "squash",
   "branchDeleted": true,
   "enqueued": false,

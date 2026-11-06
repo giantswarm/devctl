@@ -47,7 +47,7 @@ func TestSchemaRegenerationAdvice(t *testing.T) {
 		},
 		{
 			name: "case 4: literal shell characters in an override",
-			args: []string{"--language=go", "--repo-name=example's $(printf injected) `printf expanded`", "--flavors=helmchart"},
+			args: []string{"--language=go", "--repo-name=github.com/giantswarm/example's $(printf injected) `printf expanded`", "--flavors=helmchart"},
 		},
 	}
 	for _, tc := range testCases {

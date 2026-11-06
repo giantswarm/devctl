@@ -25,7 +25,13 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return microerror.Mask(err)
+	}
 
 	err := r.flag.Validate()
 	if err != nil {
@@ -159,7 +165,9 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	if r.flag.Flavours.Contains(gen.FlavourApp) {
 		inputs = append(inputs, workflowsInput.CheckValuesSchema())
-		inputs = append(inputs, workflowsInput.ChartTests())
+		if r.flag.ChartTests {
+			inputs = append(inputs, workflowsInput.ChartTests())
+		}
 		if r.flag.CheckReadmeLinks {
 			inputs = append(inputs, workflowsInput.CheckReadmeLinks())
 		}
@@ -210,6 +218,42 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	if r.flag.PublishTechdocs {
 		inputs = append(inputs, workflowsInput.PublishTechdocsInput())
+	}
+
+	// An omitted input leaves an old workflow active. Retire only the known
+	// generated workflows that no longer match this run's flags or flavours.
+	// Keep configuration files (such as zizmor.base.yml) and unrelated
+	// workflows, including ones another generator prefixes zz_generated.
+	optional := []input.Input{
+		workflowsInput.FixVulnerabilities(),
+		workflowsInput.Gitleaks(),
+		workflowsInput.CheckValuesSchema(),
+		workflowsInput.ChartTests(),
+		workflowsInput.CheckReadmeLinks(),
+		workflowsInput.HelmDocsRegen(),
+		workflowsInput.ReservationCommand(),
+		workflowsInput.UpdateChart(),
+		workflowsInput.SyncFromUpstream(),
+		workflowsInput.DispatchUpdateChartEvents(""),
+		workflowsInput.TestKyvernoPoliciesWithChainsaw(),
+		workflowsInput.AddCustomerBoardAutomation(),
+		workflowsInput.ClusterAppDocumentationValidation(),
+		workflowsInput.ClusterAppSchemaValidation(),
+		workflowsInput.HelmRenderDiff(),
+		workflowsInput.RunOSSFScorecard(),
+		workflowsInput.AnalyzeGithubActions(),
+		workflowsInput.ClusterAppValuesValidationUsingSchema(),
+		workflowsInput.PublishTechdocsInput(),
+	}
+	optional = append(optional, workflowsInput.Mctl()...)
+	selected := make(map[string]bool, len(inputs))
+	for _, in := range inputs {
+		selected[in.Path] = true
+	}
+	for _, in := range optional {
+		if !selected[in.Path] {
+			inputs = append(inputs, input.Input{Path: in.Path, Delete: true})
+		}
 	}
 
 	err = gen.Execute(
