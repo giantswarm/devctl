@@ -9,12 +9,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- `devctl repo follow-circleci --pending` sets up the CircleCI GitHub App pipeline of every repository of your teams
+  that reports `circleci-pipeline-missing`, with `--output json`. After any devctl command, at most once every six
+  hours, devctl runs the same pass with the logins the keychain holds, so repositories created through the Dev Portal
+  or the Repo Manager agent build without anyone running `follow-circleci`. It never changes the command's exit code
+  or stdout, never runs in CI (`CI` set), and any non-empty `DEVCTL_NO_CIRCLECI_PENDING` turns it off.
+- `gen workflows --chart-tests=false` (`gen.chartTests: false` in a team file) keeps `zz_generated.chart_tests.yaml`
+  out of an app repository and retires an existing one; on by default.
 - The devctl chart's opt-in `networkPolicy.enabled` renders a Cilium egress policy for DNS, GitHub, the registries
   and catalogs, and the Dex token endpoint and API server of every installation. It uses the same endpoints as
   `--installations`, including overrides, so adding an installation needs only one values change.
 
 ### Fixed
 
+- `gen makefile`: `make build-docker` builds `<binary>-linux-<arch>` for the host architecture ([giantswarm/giantswarm#38805](https://github.com/giantswarm/giantswarm/issues/38805)).
 - Concurrent updates to `DEVCTL_KEYRING_FILE` preserve changes to every identity and readers see complete records.
 - CircleCI waits read every workflow page, so a failed or running workflow on a later page is no longer missed.
 
@@ -1900,7 +1908,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `pr wait` and `pr merge` add a hint to a pull request's "not found" naming the devctl GitHub App login's reach
   ([#2436](https://github.com/giantswarm/devctl/issues/2436)): the App is installed on the giantswarm organization
   only, and GitHub answers 404 rather than 403 for a private repository the token cannot read, so a personal
-  repository's pull request (`teemow/dotfiles#20`) looked exactly like one that does not exist. Both commands read no
+  repository's pull request looked exactly like one that does not exist. Both commands read no
   environment override (`pkg/authstore.RequireGitHub`, never `ResolveGitHub`), so the hint names the cause without
   suggesting a variable that would have no effect on them (`authstore.GitHubAppOnlyNotFoundHint`, unlike `deploy`'s
   and `release create`'s `GitHubNotFoundHint`).

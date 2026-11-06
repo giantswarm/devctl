@@ -149,6 +149,11 @@ Rebase merges refuse commits whose subjects start with `amend!`, `fixup!` or `sq
 devctl pr merge giantswarm/devctl 2278 --timeout 45m --progress
 ```
 
+For a colleague's commits carried in your own pull request, `--carry-of <original number>` uses
+rebase to preserve their authorship and names their original pull request in `carryOf` in the JSON
+document. Every commit must be verifiably by that colleague; mixed authorship and merge queues are
+refused, and the repository must allow rebase merging. See [carrying a colleague's commits](docs/pr-merge.md#carrying-a-colleagues-commits---carry-of).
+
 ### The agent-facing commands as MCP tools (`devctl serve`)
 
 `devctl serve` serves the agent-facing commands as MCP tools over streamable HTTP at `/mcp`: `pr_wait`, `pr_merge`, `pr_merge_status` and `release_wait` (and `release_promote` with `--release-promote`), the read-only ones with the MCP read-only annotation. A tool answers the command's JSON document as structured content, exit code included; the call is an MCP error only for `auth_required`. A wait is one call kept alive by `notifications/progress` on the caller's `progressToken`, which a gateway such as muster takes to restart its timeout; a wait without one answers within `--no-progress-timeout` (20s) with the verdict it reached, `timeout` while still pending, for the caller to call again. The server acts on GitHub as the person who calls it, with the token handed to it for them, and has no version gate, keychain, on-disk state, SIGHUP handling or `DEVCTL_TIME_SCALE`. See [docs/serve.md](docs/serve.md).
@@ -183,6 +188,8 @@ devctl reservation release --pull-request giantswarm/hello-world#123 --user alic
 ```bash
 make test
 ```
+
+For generated Makefiles and custom lint steps, see [Generating Makefiles](docs/gen.md#generating-makefiles).
 
 The suite includes the end-to-end scenarios under `e2e/`: the built binary against in-process mocks of GitHub,
 CircleCI and the registry, one directory per known incident. See [e2e/README.md](e2e/README.md) for the format

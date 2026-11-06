@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -13,6 +14,8 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
+var repositoryPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$`)
+
 type runner struct {
 	flag   *flag
 	logger *logrus.Logger
@@ -21,7 +24,10 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	err := r.flag.Validate()
 	if err != nil {
@@ -38,7 +44,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
 	s := strings.Split(args[0], "/")
-	if len(s) != 2 {
+	if len(s) != 2 || !repositoryPattern.MatchString(args[0]) || s[1] == "." || s[1] == ".." {
 		return microerror.Maskf(invalidArgError, "expected owner/repo, got %s", args[0])
 	}
 

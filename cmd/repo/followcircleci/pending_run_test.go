@@ -1,0 +1,276 @@
+package followcircleci
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/require"
+
+	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
+	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/authstore"
+	"github.com/giantswarm/devctl/v8/pkg/circleciapp"
+	"github.com/giantswarm/devctl/v8/pkg/reposetup/manager"
+)
+
+// newPendingRunner is a --pending runner on fake clients writing stdout to
+// out. Under -o json its stderr is its own, and anything on it fails the
+// test: the document is stdout's only output.
+func newPendingRunner(t *testing.T, m *fakeManager, ci *fakeCircleCI, output string, out *bytes.Buffer) *runner {
+	t.Helper()
+	r := newRunner(ci, out)
+	r.flag.Pending = true
+	r.flag.Output = output
+	r.openSession = func(context.Context) (*client.Session, error) { return &client.Session{Caller: m}, nil }
+	if output == client.OutputJSON {
+		var errOut bytes.Buffer
+		r.stderr = &errOut
+		t.Cleanup(func() {
+			if errOut.Len() > 0 {
+				t.Errorf("stderr under -o json: %s", errOut.String())
+			}
+		})
+	}
+	return r
+}
+
+func TestRunPending_PrintsOneLinePerRepository(t *testing.T) {
+	m := &fakeManager{rows: []manager.Row{
+		{Repository: "giantswarm/new-service", Team: "team-honeybadger"},
+	}}
+	var out bytes.Buffer
+
+	err := newPendingRunner(t, m, &fakeCircleCI{}, client.OutputText, &out).runPending(t.Context())
+
+	require.NoError(t, err)
+	require.Contains(t, out.String(), "giantswarm/new-service: created the GitHub App pipeline, ran branch main (pipeline 1)")
+}
+
+func TestRunPending_NothingPending(t *testing.T) {
+	var out bytes.Buffer
+
+	err := newPendingRunner(t, &fakeManager{}, &fakeCircleCI{}, client.OutputText, &out).runPending(t.Context())
+
+	require.NoError(t, err)
+	require.Contains(t, out.String(), "no repository of your teams waits for a CircleCI pipeline")
+}
+
+// document is follow-circleci --pending's JSON document as an agent reads it.
+type document struct {
+	agentcli.Envelope
+	Summary
+}
+
+func TestRunPending_JSONDocument(t *testing.T) {
+	m := &fakeManager{rows: []manager.Row{
+		{Repository: "giantswarm/new-service", Team: "team-honeybadger"},
+	}}
+	var out bytes.Buffer
+
+	err := newPendingRunner(t, m, &fakeCircleCI{}, client.OutputJSON, &out).runPending(t.Context())
+
+	require.NoError(t, err)
+	var doc document
+	require.NoError(t, json.Unmarshal(out.Bytes(), &doc))
+	require.Equal(t, "repo follow-circleci", doc.Command)
+	require.Equal(t, agentcli.VerdictGreen, doc.Verdict)
+	require.Equal(t, 1, doc.Pending)
+	require.Equal(t, []Entry{{Repository: "giantswarm/new-service", Outcome: OutcomeCreated, Runs: []RunRef{{Ref: "branch main", Pipeline: 1}}}}, doc.Repositories)
+}
+
+func TestRunPending_JSONDocumentOfARefusedWrite(t *testing.T) {
+	m := &fakeManager{rows: []manager.Row{
+		{Repository: "giantswarm/new-service", Team: "team-honeybadger"},
+	}}
+	var out bytes.Buffer
+
+	err := newPendingRunner(t, m, &fakeCircleCI{refuse: http.StatusForbidden}, client.OutputJSON, &out).runPending(t.Context())
+
+	var exitErr *agentcli.ExitError
+	require.ErrorAs(t, err, &exitErr)
+	require.Equal(t, agentcli.ExitAuthRequired, exitErr.Code)
+	var doc document
+	require.NoError(t, json.Unmarshal(out.Bytes(), &doc))
+	require.Equal(t, agentcli.VerdictAuthRequired, doc.Verdict)
+	require.Contains(t, doc.Reason, "grant Write access")
+	require.Equal(t, []Outcome{OutcomeRefused}, outcomes(&doc.Summary))
+}
+
+func TestRun_PendingTakesNoRepository(t *testing.T) {
+	r := newPendingRunner(t, &fakeManager{}, &fakeCircleCI{}, client.OutputText, &bytes.Buffer{})
+	require.Error(t, r.validate([]string{"giantswarm/new-service"}))
+	r.flag.Pending = false
+	require.Error(t, r.validate(nil))
+	r.flag.Output = client.OutputJSON
+	require.Error(t, r.validate([]string{"giantswarm/new-service"}), "JSON is --pending's")
+	r.flag.Pending, r.flag.Output, r.flag.Migrate = true, client.OutputText, true
+	require.Error(t, r.validate(nil), "--migrate is one repository's")
+}
+
+func TestRunPending_WithoutAMusterLoginPrintsOnlyTheError(t *testing.T) {
+	var out bytes.Buffer
+	r := newPendingRunner(t, &fakeManager{}, &fakeCircleCI{}, client.OutputText, &out)
+	r.openSession = func(context.Context) (*client.Session, error) {
+		return nil, &authstore.AuthRequiredError{Identity: "muster", Cause: "no token", Hint: "devctl auth login --muster-only"}
+	}
+
+	err := r.runPending(t.Context())
+
+	var authErr *authstore.AuthRequiredError
+	require.ErrorAs(t, err, &authErr)
+	require.Empty(t, out.String())
+}
+
+func TestRunPending_AFlagErrorIsADocument(t *testing.T) {
+	stdout, err := execute(t, nil, "--pending", "-o", "json", "--timeout", "soon")
+
+	var exitErr *agentcli.ExitError
+	require.ErrorAs(t, err, &exitErr)
+	require.Equal(t, agentcli.ExitUsage, exitErr.Code)
+	var doc document
+	require.NoError(t, json.Unmarshal([]byte(stdout), &doc))
+	require.Equal(t, agentcli.VerdictUsage, doc.Verdict)
+	require.Contains(t, stdout, `"repositories": []`)
+}
+
+func TestRunPending_AWrongCallIsADocumentWithAnEmptyList(t *testing.T) {
+	stdout, _ := execute(t, nil, "--pending", "-o", "json", "giantswarm/new-service")
+
+	require.Contains(t, stdout, `"repositories": []`)
+	require.Contains(t, stdout, `"verdict": "usage"`)
+}
+
+func TestRunPending_WarningsGoInTheDocument(t *testing.T) {
+	m := &fakeManager{rows: []manager.Row{{Repository: "giantswarm/new-service", Team: "team-honeybadger"}}}
+	var stdout, stderr bytes.Buffer
+	r := newPendingRunner(t, m, &fakeCircleCI{}, client.OutputJSON, &stdout)
+	r.stderr = &stderr
+	r.open = func(_ context.Context, _ string, warn func(string)) (circleciapp.GitHub, circleciapp.CircleCI, error) {
+		warn("your CircleCI login expires in 3 days")
+		return fakeGitHub{}, &fakeCircleCI{}, nil
+	}
+
+	require.NoError(t, r.runPending(t.Context()))
+
+	var doc document
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &doc))
+	require.Equal(t, []string{"your CircleCI login expires in 3 days"}, doc.Warnings)
+	require.Empty(t, stderr.String())
+}
+
+// unreachableManager fails every call as a broken network does.
+type unreachableManager struct{}
+
+func (unreachableManager) Call(context.Context, string, map[string]any) (json.RawMessage, error) {
+	return nil, errors.New("dial tcp: connection refused")
+}
+
+func TestRunPending_AnUnreachableManagerIsARemoteError(t *testing.T) {
+	var stdout bytes.Buffer
+	r := newPendingRunner(t, &fakeManager{}, &fakeCircleCI{}, client.OutputJSON, &stdout)
+	r.openSession = func(context.Context) (*client.Session, error) {
+		return &client.Session{Caller: unreachableManager{}}, nil
+	}
+
+	err := r.runPending(t.Context())
+
+	var exitErr *agentcli.ExitError
+	require.ErrorAs(t, err, &exitErr)
+	require.Equal(t, agentcli.ExitRemoteError, exitErr.Code, stdout.String())
+}
+
+func TestRunPending_AFlagErrorBeforeOutputIsADocumentToo(t *testing.T) {
+	stdout, _ := execute(t, nil, "--pending", "--nope", "-o", "json")
+
+	require.Contains(t, stdout, `"verdict": "usage"`)
+}
+
+// execute runs the command with args as devctl would, os.Args included,
+// and returns its stdout. Whatever it writes on stderr under -o json fails
+// the test: the document is stdout's only output.
+func execute(t *testing.T, parent *cobra.Command, args ...string) (stdout string, err error) {
+	t.Helper()
+	var out, errOut bytes.Buffer
+	// Fake clients: a regression that runs the pass never reaches the
+	// person's keychain, inventory or CircleCI.
+	r := newPendingRunner(t, &fakeManager{}, &fakeCircleCI{}, client.OutputText, &out)
+	r.stderr = &errOut
+	// The flags' values come from their definitions, as in production.
+	r.flag = &flag{}
+	c := newCommand(r)
+	osArgs := os.Args
+	os.Args = append([]string{"devctl", "repo", c.Name()}, args...)
+	t.Cleanup(func() { os.Args = osArgs })
+	root := c
+	if parent != nil {
+		parent.AddCommand(c)
+		root = parent
+		args = append([]string{c.Name()}, args...)
+	}
+	root.SetArgs(args)
+	root.SetOut(&out)
+	root.SetErr(&errOut)
+	root.SilenceErrors, root.SilenceUsage = true, true
+	_, err = root.ExecuteC()
+	if jsonRequested(args) {
+		require.Empty(t, errOut.String(), "stderr under -o json")
+	}
+	return out.String(), err
+}
+
+func TestRun_PendingRefusesTheWaitFlags(t *testing.T) {
+	for _, args := range [][]string{{"--pending", "--wait=false"}, {"--pending", "--timeout", "1m"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			_, err := execute(t, nil, args...)
+			require.True(t, IsInvalidArg(err), "%v", err)
+
+			stdout, _ := execute(t, nil, append(args, "-o", "json")...)
+			require.Contains(t, stdout, `"verdict": "usage"`)
+			require.Contains(t, stdout, "--wait and --timeout")
+		})
+	}
+}
+
+func TestRun_TwoArgumentsUnderJSONAreADocument(t *testing.T) {
+	stdout, _ := execute(t, nil, "giantswarm/a", "giantswarm/b", "--pending", "-o", "json")
+
+	require.Contains(t, stdout, `"verdict": "usage"`)
+	require.Contains(t, stdout, `"repositories": []`)
+}
+
+func TestRun_ATextFlagErrorIsDevctlsUsageError(t *testing.T) {
+	usage := errors.New("devctl's usage error")
+	root := &cobra.Command{Use: "devctl"}
+	root.SetFlagErrorFunc(func(*cobra.Command, error) error { return usage })
+
+	_, err := execute(t, root, "--pending", "--nope")
+
+	require.ErrorIs(t, err, usage)
+}
+
+func TestJSONRequested(t *testing.T) {
+	for args, want := range map[string]bool{
+		"-o json":                  true,
+		"--output json":            true,
+		"-ojson":                   true,
+		"--output=json":            true,
+		"-o=json":                  true,
+		"--pending --nope -o json": true,
+		"-o text":                  false,
+		"-o":                       false,
+		"--pending":                false,
+		"-- -o json":               false,
+		"--nope -- -o json":        false,
+	} {
+		t.Run(args, func(t *testing.T) {
+			require.Equal(t, want, jsonRequested(strings.Fields(args)))
+		})
+	}
+}

@@ -1,6 +1,6 @@
 {
   extends: ["github>giantswarm/renovate-presets:default.json5"],
-  reviewers: ["teemow"],
+  reviewers: ["fixture-person"],
   packageRules: [
     {
       groupName: "jest packages",
