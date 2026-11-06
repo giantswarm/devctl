@@ -382,7 +382,8 @@ login about to expire, are in `warnings`.
 After any devctl command, at most once every six hours, devctl runs the same pass by itself, so a
 repository created through the Dev Portal or the Repo Manager agent gets its pipeline without anyone
 typing a command. It uses the logins the keychain already holds and never opens a browser. A locked
-keychain is skipped on Linux instead of prompting to unlock it or to confirm a write. On macOS the
+keychain is skipped on Linux instead of prompting to unlock it; saving a refreshed token still may
+prompt, since the old one is spent. On macOS the
 keychain may still ask, most often for each devctl item after a devctl upgrade (a new binary), or when
 the login keychain is locked; so may KeePassXC's per-item confirmation on Linux. The pass is abandoned after about 20 seconds, or on Ctrl-C, and does not wait for the runs.
 It never changes the exit code or the stdout of the command you ran, and it runs after agent-facing

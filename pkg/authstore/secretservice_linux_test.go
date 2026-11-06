@@ -33,6 +33,9 @@ type fakeSecretService struct {
 	// promptOnDelete: Item.Delete returns a prompt, as a keyring asking for
 	// confirmation does.
 	promptOnDelete bool
+	// promptOnCreate: Collection.CreateItem returns a prompt, as a keyring
+	// confirming a write does.
+	promptOnCreate bool
 	// noDefault: nothing has the default alias.
 	noDefault bool
 	// failSearch: SearchItems answers a D-Bus error.
@@ -196,11 +199,20 @@ func (f *fakeSecretService) createItem(properties map[string]dbus.Variant, s sec
 		for path, item := range f.items {
 			if item.attributes["service"] == attributes["service"] && item.attributes["username"] == attributes["username"] {
 				f.items[path] = fakeItem{label: label, attributes: attributes, value: s.Value}
-				return path, nullPath, nil
+				return path, f.createPrompt(), nil
 			}
 		}
 	}
-	return f.addLocked(label, attributes, s.Value), nullPath, nil
+	return f.addLocked(label, attributes, s.Value), f.createPrompt(), nil
+}
+
+// createPrompt is CreateItem's prompt: none, or the fake's when
+// promptOnCreate. The caller holds f.mu.
+func (f *fakeSecretService) createPrompt() dbus.ObjectPath {
+	if f.promptOnCreate {
+		return fakePromptPath
+	}
+	return nullPath
 }
 
 // put stores an item directly, the fixture of a keyring that has the record.
@@ -411,5 +423,20 @@ func TestSecretServiceDeletePromptWithoutPrompt(t *testing.T) {
 	}
 	if _, calls := f.snapshot(); hasCall(calls, "Prompt") {
 		t.Fatalf("a prompt ran without a prompt allowed: %v", calls)
+	}
+}
+
+// A write that already happened elsewhere (a refreshed token pair, the old
+// refresh token spent) must land: NoPrompt lets CreateItem's prompt run.
+func TestSecretServiceCreatePromptRunsUnderNoPrompt(t *testing.T) {
+	f, s := newFakeSecretService(t, func(f *fakeSecretService) { f.promptOnCreate = true })
+	noPrompt.Store(true)
+	t.Cleanup(func() { noPrompt.Store(false) })
+
+	if err := s.set(UserGitHub, `{"token":"ghu_refreshed"}`); err != nil {
+		t.Fatalf("set = %v, want the write to land", err)
+	}
+	if _, calls := f.snapshot(); !hasCall(calls, "Prompt") {
+		t.Fatalf("CreateItem's prompt did not run: %v", calls)
 	}
 }
