@@ -179,13 +179,17 @@ func TestRunPending_AFlagErrorBeforeOutputIsADocumentToo(t *testing.T) {
 	require.Contains(t, stdout, `"verdict": "usage"`)
 }
 
-// execute runs the command with args as devctl would, os.Args included.
+// execute runs the command with args as devctl would, os.Args included,
+// and returns its stdout. Whatever it writes on stderr under -o json fails
+// the test: the document is stdout's only output.
 func execute(t *testing.T, parent *cobra.Command, args ...string) (stdout string, err error) {
 	t.Helper()
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 	// Fake clients: a regression that runs the pass never reaches the
 	// person's keychain, inventory or CircleCI.
 	r := newPendingRunner(&fakeManager{}, &fakeCircleCI{}, client.OutputText, &out)
+	r.stderr = &errOut
+	// The flags' values come from their definitions, as in production.
 	r.flag = &flag{}
 	c := newCommand(r)
 	root := c
@@ -197,12 +201,16 @@ func execute(t *testing.T, parent *cobra.Command, args ...string) (stdout string
 	root.SetArgs(args)
 	root.SilenceErrors, root.SilenceUsage = true, true
 	osArgs := os.Args
-	os.Args = append([]string{"devctl", "repo"}, args...)
-	if parent == nil {
+	if parent != nil {
+		os.Args = append([]string{"devctl", "repo"}, args...)
+	} else {
 		os.Args = append([]string{"devctl", "repo", c.Name()}, args...)
 	}
 	t.Cleanup(func() { os.Args = osArgs })
 	_, err = root.ExecuteC()
+	if jsonRequested(args) {
+		require.Empty(t, errOut.String(), "stderr under -o json")
+	}
 	return out.String(), err
 }
 

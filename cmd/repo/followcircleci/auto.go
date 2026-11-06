@@ -63,13 +63,14 @@ var skipPath = map[string]bool{
 const guardGrace = 2 * time.Second
 
 // Auto is the automatic pass after a devctl command: at most once every six
-// hours, with the logins the keychain holds and no unlock prompt, it sets up
-// the pending CircleCI pipelines of the person's teams. It never fails: the
+// hours, with the logins the keychain holds and no Secret Service unlock
+// prompt on Linux, it sets up the pending CircleCI pipelines of the person's
+// teams. It never fails: the
 // command's exit code and stdout stay as they are, and stderr carries a line
 // per pipeline it created and, at most once a day, what to do about a login.
-// A panic is swallowed, a locked keychain is skipped (a save may still
-// prompt: authstore.NoPrompt), and the pass is abandoned after passTimeout
-// or on an interrupt.
+// A panic is swallowed, a locked Linux keychain is skipped (a save may still
+// prompt, and the macOS keychain may ask: [authstore.NoPrompt]), and the pass
+// is abandoned after passTimeout or on an interrupt.
 func Auto(executed *cobra.Command, stderr io.Writer) {
 	defer func() { _ = recover() }()
 	if os.Getenv(OptOutEnv) != "" || !follows(executed) {
@@ -79,7 +80,8 @@ func Auto(executed *cobra.Command, stderr io.Writer) {
 	if err != nil {
 		return
 	}
-	// The process ends after the pass: no unlock or delete prompt for it.
+	// The process ends after the pass: no Secret Service unlock or delete
+	// prompt for it.
 	authstore.NoPrompt()
 	a := &autoPass{
 		getenv: os.Getenv,
