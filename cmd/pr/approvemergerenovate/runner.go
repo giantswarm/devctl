@@ -23,11 +23,12 @@ import (
 )
 
 type runner struct {
-	flag         *flag
-	logger       *logrus.Logger
-	stdout       io.Writer
-	stderr       io.Writer
-	pollInterval time.Duration // zero uses the normal/watch default
+	flag          *flag
+	logger        *logrus.Logger
+	stdout        io.Writer
+	stderr        io.Writer
+	pollInterval  time.Duration // zero uses the normal/watch default
+	notifyContext func(context.Context, ...os.Signal) (context.Context, context.CancelFunc)
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -42,13 +43,10 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	return err
 }
 
-func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (runErr error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
 	token, err := authstore.ResolveGitHub(ctx)
 	if err != nil {
 		return err
@@ -84,8 +82,24 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	// The selector handles terminal interrupts itself. From discovery onward,
 	// signals cancel both the event loop and every worker's API requests.
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	parentCtx := ctx
+	notifyContext := r.notifyContext
+	if notifyContext == nil {
+		notifyContext = signal.NotifyContext
+	}
+	signalCtx, stop := notifyContext(parentCtx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	ctx, cancel := context.WithCancel(signalCtx)
+	defer cancel()
+	defer func() {
+		// A terminal interrupt is a graceful exit. Caller cancellation remains
+		// an error, including when both contexts have been cancelled.
+		if parentCtx.Err() != nil {
+			runErr = parentCtx.Err()
+		} else if signalCtx.Err() != nil {
+			runErr = nil
+		}
+	}()
 
 	if r.flag.DryRun {
 		fmt.Fprintln(r.stdout, "🔍 DRY RUN MODE")
@@ -327,9 +341,10 @@ func (r *runner) selectGroupInteractively(ctx context.Context, githubClient *git
 func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps *pr.PRStatus) {
 	defer func() {
 		if ctx.Err() != nil {
-			// Cancellation cannot undo a merge already acknowledged by GitHub.
+			// Cancellation cannot undo an action already acknowledged by GitHub.
 			status := ps.GetStatus()
-			if status != "Already merged" && !strings.HasPrefix(status, "Merged (") {
+			if status != "Already merged" && !strings.HasPrefix(status, "Merged (") &&
+				!strings.HasPrefix(status, "Approved") && status != "Queued to merge" && status != "Auto-merge enabled" {
 				ps.UpdateStatus("Interrupted")
 			}
 		}

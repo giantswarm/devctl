@@ -1,10 +1,12 @@
 package approvemergerenovate
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -96,9 +98,10 @@ func TestProcessPRCancellationInterruptsWaits(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			done := make(chan struct{})
+			status := &pr.PRStatus{Owner: "one", Repo: "api", Number: 42}
 			go func() {
 				defer close(done)
-				(&runner{flag: &flag{}}).processPR(ctx, client, &pr.PRStatus{Owner: "one", Repo: "api", Number: 42})
+				(&runner{flag: &flag{}}).processPR(ctx, client, status)
 			}()
 			<-reachedWait
 			cancel()
@@ -114,6 +117,16 @@ func TestProcessPRCancellationInterruptsWaits(t *testing.T) {
 			}
 			if mutations.Load() != wantMutations {
 				t.Errorf("mutation count = %d, want %d", mutations.Load(), wantMutations)
+			}
+			if autoMerge {
+				if got := status.GetStatus(); got != "Approved, checking merge status..." {
+					t.Errorf("acknowledged approval lost: %q", got)
+				}
+				var summary bytes.Buffer
+				(&runner{flag: &flag{}, stdout: &summary}).printSummary([]*pr.PRStatus{status})
+				if !strings.Contains(summary.String(), "PRs approved: 1") {
+					t.Errorf("approval missing from summary: %s", summary.String())
+				}
 			}
 		})
 	}
@@ -245,6 +258,54 @@ func TestWatchRunCanCancelWithoutPRs(t *testing.T) {
 	cmd.SetContext(ctx)
 	if err := r.Run(cmd, []string{"dependency"}); !errors.Is(err, context.Canceled) {
 		t.Errorf("error = %v, want cancellation", err)
+	}
+}
+
+func TestRunSignalCancellationIsGraceful(t *testing.T) {
+	for _, phase := range []string{"initial search", "watch", "poll search", "batch worker", "caller and signal"} {
+		t.Run(phase, func(t *testing.T) {
+			parent, cancelParent := context.WithCancel(context.Background())
+			defer cancelParent()
+			signalCtx, interrupt := context.WithCancel(parent)
+			defer interrupt()
+			var searches atomic.Int32
+			var stopped bool
+			r := lifecycleRunner(t, lifecycleTransport(func(req *http.Request) (*http.Response, error) {
+				if req.URL.Path == "/search/issues" {
+					search := searches.Add(1)
+					if phase == "batch worker" {
+						return lifecycleResponse(req, `{"total_count":1,"items":[{"number":42,"html_url":"https://github.com/one/api/pull/42"}]}`)
+					}
+					if phase == "poll search" && search == 1 {
+						return lifecycleResponse(req, `{"total_count":0,"items":[]}`)
+					}
+				}
+				interrupt()
+				if phase == "caller and signal" {
+					cancelParent()
+				}
+				if phase == "watch" {
+					return lifecycleResponse(req, `{"total_count":0,"items":[]}`)
+				}
+				return nil, req.Context().Err()
+			}), phase != "batch worker")
+			r.notifyContext = func(ctx context.Context, signals ...os.Signal) (context.Context, context.CancelFunc) {
+				return signalCtx, func() { stopped = true; interrupt() }
+			}
+			cmd := &cobra.Command{}
+			cmd.SetContext(parent)
+			err := r.Run(cmd, []string{"dependency"})
+			if phase == "caller and signal" {
+				if !errors.Is(err, context.Canceled) {
+					t.Errorf("error = %v, want caller cancellation", err)
+				}
+			} else if err != nil {
+				t.Errorf("signal-only cancellation returned an error: %v", err)
+			}
+			if !stopped {
+				t.Error("signal handler was not unregistered")
+			}
+		})
 	}
 }
 
