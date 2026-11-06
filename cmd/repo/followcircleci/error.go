@@ -17,3 +17,9 @@ var timeoutError = &microerror.Error{
 var pendingFailedError = &microerror.Error{
 	Kind: "pendingFailedError",
 }
+
+// IsPendingFailed asserts pendingFailedError: the set-up of a pending
+// repository failed, and the next pass tries again.
+func IsPendingFailed(err error) bool {
+	return microerror.Cause(err) == pendingFailedError
+}

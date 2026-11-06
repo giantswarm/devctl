@@ -198,7 +198,7 @@ func TestPending_AFailedRepositoryDoesNotStopTheOthers(t *testing.T) {
 
 	summary, err := p.run(t.Context())
 
-	require.Error(t, err)
+	require.True(t, IsPendingFailed(err), "%v", err)
 	require.Equal(t, []Outcome{OutcomeFailed, OutcomeCreated}, outcomes(summary))
 	require.NotEmpty(t, summary.Repositories[0].Reason)
 }

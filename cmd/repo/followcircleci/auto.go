@@ -157,7 +157,7 @@ func (a *autoPass) run(ctx context.Context, executed *cobra.Command) {
 	summary, err := a.pass.run(ctx)
 	if summary == nil {
 		// No list: no muster login, or the manager did not answer.
-		a.debugf(err)
+		a.debug(err)
 		return
 	}
 	for _, e := range summary.Repositories {
@@ -167,7 +167,7 @@ func (a *autoPass) run(ctx context.Context, executed *cobra.Command) {
 	}
 	msg := notice(err)
 	if msg == "" {
-		a.debugf(err)
+		a.debug(err)
 		return
 	}
 	if !a.claimNotice(now) {
@@ -197,9 +197,9 @@ func notice(err error) string {
 	return ""
 }
 
-// debugf writes err on stderr at --log-level debug; stdout, where logrus
+// debug writes err on stderr at --log-level debug; stdout, where logrus
 // writes, belongs to the command.
-func (a *autoPass) debugf(err error) {
+func (a *autoPass) debug(err error) {
 	if err != nil && logrus.IsLevelEnabled(logrus.DebugLevel) {
 		fmt.Fprintf(a.stderr, "devctl: debug: circleci pending pass: %v\n", err)
 	}
@@ -261,12 +261,12 @@ func (a *autoPass) claimNotice(now time.Time) bool {
 // under the state's lock.
 func (a *autoPass) update(change func(*autoState) bool) bool {
 	if err := os.MkdirAll(filepath.Dir(a.state), 0o700); err != nil {
-		a.debugf(err)
+		a.debug(err)
 		return false
 	}
 	unlock, err := lockedfile.MutexAt(a.state + ".lock").Lock()
 	if err != nil {
-		a.debugf(err)
+		a.debug(err)
 		return false
 	}
 	defer unlock()
@@ -275,7 +275,7 @@ func (a *autoPass) update(change func(*autoState) bool) bool {
 		return false
 	}
 	if err := a.save(s); err != nil {
-		a.debugf(err)
+		a.debug(err)
 		return false
 	}
 	return true
