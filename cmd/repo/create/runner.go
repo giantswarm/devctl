@@ -11,6 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup"
@@ -21,20 +22,21 @@ type runner struct {
 	logger *logrus.Logger
 	stdout io.Writer
 	stderr io.Writer
+	open   client.Opener
 }
 
 // output is what the command prints with --output json: the dry run and,
 // once opened, the pull request.
 type output struct {
-	DryRun      *reposetup.Result `json:"dryRun"`
-	PullRequest string            `json:"pullRequest,omitempty"`
+	DryRun      any    `json:"dryRun"`
+	PullRequest string `json:"pullRequest,omitempty"`
 	// Next is the command that follows the repository to readiness and
 	// creates its CircleCI pipeline as the person, once it is set up.
 	Next string `json:"next,omitempty"`
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
@@ -49,6 +51,10 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 func (r *runner) run(ctx context.Context) error {
 	// The dry run is the command's output and stdout is for it alone.
 	r.logger.SetOutput(r.stderr)
+
+	if r.flag.DryRun && !r.flag.Local {
+		return microerror.Mask(r.manager(ctx))
+	}
 
 	var envVars []string
 	if r.flag.GithubTokenEnvVar != "" {
@@ -134,18 +140,21 @@ func (r *runner) run(ctx context.Context) error {
 	}
 	out := output{DryRun: dryRun}
 	if r.flag.Output == outputText {
-		r.printDryRun(teamFile, dryRun)
+		if err := r.printDryRun(dryRun); err != nil {
+			return microerror.Mask(err)
+		}
 	}
 	if !dryRun.Accepted {
-		r.print(out)
+		r.printFailure(out)
 		return microerror.Maskf(refusedError, "%s is refused; the problems name the fields, no pull request was opened", r.flag.Name)
 	}
 	if r.flag.DryRun {
 		if r.flag.Output == outputText {
-			fmt.Fprintln(r.stdout, "dry run: no pull request opened")
+			if _, err := fmt.Fprintln(r.stdout, "dry run: no pull request opened"); err != nil {
+				return microerror.Mask(err)
+			}
 		}
-		r.print(out)
-		return nil
+		return microerror.Mask(r.print(out))
 	}
 
 	spec := reposetup.CreationPullRequest(teamFile, content, dryRun, reposetup.CreatedRepository{})
@@ -160,64 +169,75 @@ func (r *runner) run(ctx context.Context) error {
 		state = "open already"
 	}
 	if err != nil {
-		r.print(out)
+		r.printFailure(out)
 		return microerror.Mask(err)
 	}
 	out.PullRequest = pr.GetHTMLURL()
 	out.Next = fmt.Sprintf("devctl repo watch %s/%s --pull-request %d", r.flag.Owner, r.flag.Name, pr.GetNumber())
 	if r.flag.Output == outputText {
-		fmt.Fprintf(r.stdout, "pull request: %s (%s)\n", out.PullRequest, state)
-		fmt.Fprintf(r.stdout, "next: %s (once merged and set up, it creates the CircleCI pipeline as you)\n", out.Next)
+		if _, err := fmt.Fprintf(r.stdout, "pull request: %s (%s)\n", out.PullRequest, state); err != nil {
+			return microerror.Mask(err)
+		}
+		if _, err := fmt.Fprintf(r.stdout, "next: %s (once merged and set up, it creates the CircleCI pipeline as you)\n", out.Next); err != nil {
+			return microerror.Mask(err)
+		}
 	}
-	r.print(out)
-
-	return nil
+	return microerror.Mask(r.print(out))
 }
 
 // printDryRun writes the dry run as text: the entry as it goes into the
 // team file, the template and the chart added beside it, the name check,
 // the problems and the notices.
-func (r *runner) printDryRun(tf *reposetup.RemoteTeamFile, result *reposetup.Result) {
+func (r *runner) printDryRun(result *reposetup.Result) error {
+	var buf bytes.Buffer
 	entry := result.Entries[0]
-	fmt.Fprintf(r.stdout, "%s/%s in %s of %s (schema: %s)\n\n", r.flag.Owner, entry.Name, tf.Path, tf.Team, result.Schema)
-	fmt.Fprint(r.stdout, entry.Rendered)
-	fmt.Fprintln(r.stdout)
+	fmt.Fprintf(&buf, "%s/%s in %s of %s (schema: %s)\n\n", r.flag.Owner, entry.Name, reposetup.TeamFilePath(result.Team), result.Team, result.Schema)
+	fmt.Fprint(&buf, entry.Rendered)
+	fmt.Fprintln(&buf)
 	if entry.Template != "" {
-		fmt.Fprintf(r.stdout, "template:   %s\n", entry.Template)
+		fmt.Fprintf(&buf, "template:   %s\n", entry.Template)
 	}
 	if entry.Chart != "" {
-		fmt.Fprintf(r.stdout, "chart:      %s at helm/%s\n", entry.Chart, entry.Name)
+		fmt.Fprintf(&buf, "chart:      %s at helm/%s\n", entry.Chart, entry.Name)
 	}
 	check := string(entry.NameCheck.Verdict)
 	if entry.NameCheck.Detail != "" {
 		check += " -- " + entry.NameCheck.Detail
 	}
-	fmt.Fprintf(r.stdout, "name check: %s\n", check)
+	fmt.Fprintf(&buf, "name check: %s\n", check)
 	if entry.Accepted {
-		fmt.Fprintln(r.stdout, "verdict:    accepted")
+		fmt.Fprintln(&buf, "verdict:    accepted")
 	} else {
-		fmt.Fprintln(r.stdout, "verdict:    refused")
+		fmt.Fprintln(&buf, "verdict:    refused")
 		for _, p := range entry.Problems {
-			fmt.Fprintf(r.stdout, "  %s\n", p)
+			fmt.Fprintf(&buf, "  %s\n", p)
 		}
 	}
 	if len(result.Notices) > 0 {
-		fmt.Fprintln(r.stdout, "notices:")
+		fmt.Fprintln(&buf, "notices:")
 		for _, n := range result.Notices {
-			fmt.Fprintf(r.stdout, "  %s: %s\n", n.Kind, n.Message)
+			fmt.Fprintf(&buf, "  %s: %s\n", n.Kind, n.Message)
 		}
 	}
-	fmt.Fprintln(r.stdout)
+	fmt.Fprintln(&buf)
+	_, err := buf.WriteTo(r.stdout)
+	return microerror.Mask(err)
 }
 
 // print writes the JSON output; text output is written as it happens.
-func (r *runner) print(out output) {
+func (r *runner) print(out output) error {
 	if r.flag.Output != outputJSON {
-		return
+		return nil
 	}
 	enc := json.NewEncoder(r.stdout)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(out); err != nil {
+	return microerror.Mask(enc.Encode(out))
+}
+
+// printFailure preserves the primary refusal or remote error when writing
+// its diagnostic output fails as well. The command already exits with an error.
+func (r *runner) printFailure(out output) {
+	if err := r.print(out); err != nil {
 		r.logger.Errorf("writing the output: %v", err)
 	}
 }
