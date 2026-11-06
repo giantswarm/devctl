@@ -114,8 +114,10 @@ func New(config Config) (*cobra.Command, error) {
 		Use:   fmt.Sprintf("%s [OWNER/]REPOSITORY | --pending", name),
 		Short: shortDesc,
 		Long:  longDesc,
-		Args:  cobra.MaximumNArgs(1),
-		RunE:  r.Run,
+		// validate counts the arguments, so a wrong call under -o json is
+		// the document.
+		Args: cobra.ArbitraryArgs,
+		RunE: r.Run,
 	}
 	c.Flags().BoolVar(&f.Migrate, "migrate", false, "Also delete the OAuth pipeline's triggers, so a push builds once, on the GitHub App pipeline.")
 	c.Flags().BoolVar(&f.Wait, "wait", true, "Wait for the runs the command starts to settle.")

@@ -7,8 +7,10 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
@@ -199,8 +201,73 @@ func TestRunPending_AFlagErrorBeforeOutputIsADocumentToo(t *testing.T) {
 	require.Contains(t, stdout.String(), `"verdict": "usage"`)
 }
 
+// execute runs the command with args as devctl would, os.Args included.
+func execute(t *testing.T, parent *cobra.Command, args ...string) (stdout string, err error) {
+	t.Helper()
+	var out bytes.Buffer
+	c, err := New(Config{Stdout: &out, Stderr: &bytes.Buffer{}})
+	require.NoError(t, err)
+	root := c
+	if parent != nil {
+		parent.AddCommand(c)
+		root = parent
+		args = append([]string{c.Name()}, args...)
+	}
+	root.SetArgs(args)
+	root.SilenceErrors, root.SilenceUsage = true, true
+	osArgs := os.Args
+	os.Args = append([]string{"devctl", "repo"}, args...)
+	t.Cleanup(func() { os.Args = osArgs })
+	_, err = root.ExecuteC()
+	return out.String(), err
+}
+
 func TestRun_PendingRefusesTheWaitFlags(t *testing.T) {
-	r := newPendingRunner(&fakeManager{}, &fakeCircleCI{}, client.OutputText, &bytes.Buffer{})
-	r.flag.WaitSet = true
-	require.Error(t, r.validate(nil))
+	for _, args := range [][]string{{"--pending", "--wait=false"}, {"--pending", "--timeout", "1m"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			_, err := execute(t, nil, args...)
+			require.True(t, IsInvalidArg(err), "%v", err)
+
+			stdout, _ := execute(t, nil, append(args, "-o", "json")...)
+			require.Contains(t, stdout, `"verdict": "usage"`)
+			require.Contains(t, stdout, "--wait and --timeout")
+		})
+	}
+}
+
+func TestRun_TwoArgumentsUnderJSONAreADocument(t *testing.T) {
+	stdout, _ := execute(t, nil, "giantswarm/a", "giantswarm/b", "--pending", "-o", "json")
+
+	require.Contains(t, stdout, `"verdict": "usage"`)
+	require.Contains(t, stdout, `"repositories": []`)
+}
+
+func TestRun_ATextFlagErrorIsDevctlsUsageError(t *testing.T) {
+	usage := errors.New("devctl's usage error")
+	root := &cobra.Command{Use: "devctl"}
+	root.SetFlagErrorFunc(func(*cobra.Command, error) error { return usage })
+
+	_, err := execute(t, root, "--pending", "--nope")
+
+	require.ErrorIs(t, err, usage)
+}
+
+func TestJSONRequested(t *testing.T) {
+	for args, want := range map[string]bool{
+		"-o json":                  true,
+		"--output json":            true,
+		"-ojson":                   true,
+		"--output=json":            true,
+		"-o=json":                  true,
+		"--pending --nope -o json": true,
+		"-o text":                  false,
+		"-o":                       false,
+		"--pending":                false,
+		"-- -o json":               false,
+		"--nope -- -o json":        false,
+	} {
+		t.Run(args, func(t *testing.T) {
+			require.Equal(t, want, jsonRequested(strings.Fields(args)))
+		})
+	}
 }

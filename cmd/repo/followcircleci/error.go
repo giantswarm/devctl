@@ -6,6 +6,11 @@ var invalidArgError = &microerror.Error{
 	Kind: "invalidArgError",
 }
 
+// IsInvalidArg asserts invalidArgError: a wrong call.
+func IsInvalidArg(err error) bool {
+	return microerror.Cause(err) == invalidArgError
+}
+
 var redError = &microerror.Error{
 	Kind: "redError",
 }

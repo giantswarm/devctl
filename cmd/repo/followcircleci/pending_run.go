@@ -30,9 +30,13 @@ func newDocument() pendingDocument {
 
 // FlagError reports a flag cobra could not parse as the document under
 // --output json, as the agent-facing commands do.
-func (r *runner) FlagError(_ *cobra.Command, err error) error {
+func (r *runner) FlagError(c *cobra.Command, err error) error {
 	// pflag stops at the first bad flag: an -o json after it is not parsed.
 	if !r.flag.JSON() && !jsonRequested(os.Args[1:]) {
+		// devctl's own handler: the usage line and the pointer to --help.
+		if c.HasParent() {
+			return c.Parent().FlagErrorFunc()(c, err)
+		}
 		return err
 	}
 	doc := newDocument()
