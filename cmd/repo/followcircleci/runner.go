@@ -35,6 +35,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	r.flag.WaitSet = cmd.Flags().Changed("wait") || cmd.Flags().Changed("timeout")
 	if err := r.validate(args); err != nil {
 		if r.flag.JSON() {
 			doc := newDocument()
@@ -58,6 +59,8 @@ func (r *runner) validate(args []string) error {
 		return microerror.Maskf(invalidArgError, "--pending takes no repository")
 	case r.flag.Pending && r.flag.Migrate:
 		return microerror.Maskf(invalidArgError, "--migrate is for one repository, not --pending")
+	case r.flag.Pending && r.flag.WaitSet:
+		return microerror.Maskf(invalidArgError, "--pending does not wait for the runs: --wait and --timeout are for one repository")
 	case !r.flag.Pending && len(args) != 1:
 		return microerror.Maskf(invalidArgError, "expected [OWNER/]REPOSITORY, or --pending")
 	case !r.flag.Pending && r.flag.JSON():

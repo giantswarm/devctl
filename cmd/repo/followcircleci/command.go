@@ -87,6 +87,8 @@ type flag struct {
 	Pending bool
 	Wait    bool
 	Timeout time.Duration
+	// WaitSet says --wait or --timeout was given, which --pending refuses.
+	WaitSet bool
 }
 
 func New(config Config) (*cobra.Command, error) {

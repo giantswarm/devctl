@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -30,11 +31,27 @@ func newDocument() pendingDocument {
 // FlagError reports a flag cobra could not parse as the document under
 // --output json, as the agent-facing commands do.
 func (r *runner) FlagError(_ *cobra.Command, err error) error {
-	if !r.flag.JSON() {
+	// pflag stops at the first bad flag: an -o json after it is not parsed.
+	if !r.flag.JSON() && !jsonRequested(os.Args[1:]) {
 		return err
 	}
 	doc := newDocument()
 	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, agentcli.FlagError(command, err))
+}
+
+// jsonRequested says whether args ask for --output json.
+func jsonRequested(args []string) bool {
+	for i, a := range args {
+		switch {
+		case a == "--":
+			return false
+		case a == "-ojson" || a == "--output=json" || a == "-o=json":
+			return true
+		case (a == "-o" || a == "--output") && i+1 < len(args) && args[i+1] == "json":
+			return true
+		}
+	}
+	return false
 }
 
 // runPending sets up every pending repository of the person's teams.

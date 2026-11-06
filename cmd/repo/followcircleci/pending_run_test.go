@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -180,4 +181,26 @@ func TestRunPending_AnUnreachableManagerIsARemoteError(t *testing.T) {
 	var exitErr *agentcli.ExitError
 	require.ErrorAs(t, err, &exitErr)
 	require.Equal(t, agentcli.ExitRemoteError, exitErr.Code, stdout.String())
+}
+
+func TestRunPending_AFlagErrorBeforeOutputIsADocumentToo(t *testing.T) {
+	var stdout bytes.Buffer
+	c, err := New(Config{Stdout: &stdout, Stderr: &bytes.Buffer{}})
+	require.NoError(t, err)
+	args := []string{"--pending", "--nope", "-o", "json"}
+	c.SetArgs(args)
+	c.SilenceErrors, c.SilenceUsage = true, true
+	osArgs := os.Args
+	os.Args = append([]string{"devctl", "repo", "follow-circleci"}, args...)
+	t.Cleanup(func() { os.Args = osArgs })
+
+	_ = c.Execute()
+
+	require.Contains(t, stdout.String(), `"verdict": "usage"`)
+}
+
+func TestRun_PendingRefusesTheWaitFlags(t *testing.T) {
+	r := newPendingRunner(&fakeManager{}, &fakeCircleCI{}, client.OutputText, &bytes.Buffer{})
+	r.flag.WaitSet = true
+	require.Error(t, r.validate(nil))
 }
