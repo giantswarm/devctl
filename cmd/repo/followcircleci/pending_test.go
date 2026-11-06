@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/require"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
@@ -263,4 +264,43 @@ func TestPending_ASwitchedSettingIsAChange(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, OutcomeCreated, summary.Repositories[0].Outcome)
 	require.Equal(t, "the pipeline existed; switched the project's setup workflows on", summary.Repositories[0].Reason)
+}
+
+// staleDefaultBranch is GitHub with a default branch carrying no status of
+// the App pipeline: the set-up runs it again.
+type staleDefaultBranch struct{ fakeGitHub }
+
+func (staleDefaultBranch) CircleCIStatuses(context.Context, string, string, string) ([]*github.RepoStatus, error) {
+	return nil, nil
+}
+
+func TestPending_ARunStartedProvesWrite(t *testing.T) {
+	m := &fakeManager{rows: []manager.Row{
+		{Repository: "giantswarm/mcp-template", Team: "team-honeybadger"},
+		{Repository: "giantswarm/not-mine-to-admin", Team: "team-honeybadger"},
+	}}
+	ci := &fakeCircleCI{setUp: true}
+	p := newPending(m, ci)
+	p.openCI = func(context.Context, string, func(string)) (circleciapp.GitHub, circleciapp.CircleCI, error) {
+		return staleDefaultBranch{}, refusingRun{refusingRepository{fakeCircleCI: ci, repo: "not-mine-to-admin"}}, nil
+	}
+
+	summary, err := p.run(t.Context())
+
+	require.Equal(t, []Outcome{OutcomeAlreadySetUp, OutcomeRefused}, outcomes(summary))
+	require.NotEmpty(t, summary.Repositories[0].Runs)
+	var exitErr *agentcli.ExitError
+	require.ErrorAs(t, err, &exitErr)
+	require.Equal(t, agentcli.ExitRefused, exitErr.Code, "the run on mcp-template proved the login writes")
+}
+
+// refusingRun refuses the run of the refused repository too: it is set up,
+// so the refusal comes on the run.
+type refusingRun struct{ refusingRepository }
+
+func (f refusingRun) RunPipeline(ctx context.Context, owner, repo, definitionID string, ref circleciclient.Ref) (*circleciclient.Pipeline, error) {
+	if repo == f.repo {
+		return nil, apiError(http.StatusForbidden)
+	}
+	return f.fakeCircleCI.RunPipeline(ctx, owner, repo, definitionID, ref)
 }

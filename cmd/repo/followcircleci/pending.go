@@ -113,7 +113,8 @@ func (p *pendingPass) run(ctx context.Context) (*Summary, error) {
 			continue
 		}
 		e := entry(slug, report)
-		if e.Outcome == OutcomeCreated {
+		// A run started is a write too: it proves the login writes.
+		if e.Outcome == OutcomeCreated || len(e.Runs) > 0 {
 			wrote = true
 		}
 		summary.Repositories = append(summary.Repositories, e)
