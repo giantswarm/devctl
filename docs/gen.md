@@ -186,7 +186,7 @@ devctl gen renovate --language go --flavour fork
 
 ## Generating app test targets
 
-`devctl gen makefile --flavour app` emits `Makefile.gen.app.mk` with `helm-test`
+`devctl gen makefile --flavour app --language go` emits `Makefile.gen.app.mk` with `helm-test`
 for chart unit tests and `ats-test` for app-test-suite cluster tests. `make test`
 includes the unit tests; run the cluster tests explicitly:
 
@@ -224,6 +224,9 @@ CI continues to use `architect/run-tests-with-ats`. Its registry context and
 image publication steps are separate prerequisites: local tests need pullable
 application images, and this target does not copy CI credentials into kind for
 private image pulls. It also leaves the chart build and release steps separate.
+
+A [real-repository validation](validation/ats-test.md) records the generated
+target, built chart, image pins, command and live ATS outcome.
 
 ## Generating a plans repository's set-up
 
