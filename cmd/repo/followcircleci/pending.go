@@ -125,7 +125,9 @@ func skip(summary *Summary, repos []string, reason string) {
 }
 
 // pending lists the repositories of the person's teams waiting for a
-// CircleCI pipeline: declared, active, not archived, still on GitHub.
+// CircleCI pipeline: declared, in production, not archived, still on GitHub.
+// The manager's own lifecycle filter is not asked: its "active" matches no
+// lifecycle declared, not the schema's default "production".
 func (p *pendingPass) pending(ctx context.Context) ([]string, error) {
 	session, err := p.open(ctx)
 	if err != nil {
@@ -134,11 +136,10 @@ func (p *pendingPass) pending(ctx context.Context) ([]string, error) {
 	callCtx, cancel := context.WithTimeout(ctx, listTimeout)
 	defer cancel()
 	payload, err := session.Call(callCtx, manager.ToolListRepositories, map[string]any{
-		"scope":     "mine",
-		"finding":   string(reconcile.FindingCircleCIPipelineMissing),
-		"lifecycle": "active",
-		"archived":  false,
-		"limit":     pendingLimit,
+		"scope":    "mine",
+		"finding":  string(reconcile.FindingCircleCIPipelineMissing),
+		"archived": false,
+		"limit":    pendingLimit,
 	})
 	if err != nil {
 		return nil, microerror.Mask(err)
@@ -149,7 +150,7 @@ func (p *pendingPass) pending(ctx context.Context) ([]string, error) {
 	}
 	var repos []string
 	for _, row := range listing.Repositories {
-		if row.Team == "" || row.Lifecycle != "active" || row.Archived || row.Gone {
+		if row.Team == "" || !live(row.Lifecycle) || row.Archived || row.Gone {
 			continue
 		}
 		if _, _, ok := strings.Cut(row.Repository, "/"); !ok {
@@ -158,6 +159,12 @@ func (p *pendingPass) pending(ctx context.Context) ([]string, error) {
 		repos = append(repos, row.Repository)
 	}
 	return repos, nil
+}
+
+// live says whether a declared lifecycle builds: none declared (the
+// schema's default) or production.
+func live(lifecycle string) bool {
+	return lifecycle == "" || lifecycle == "production"
 }
 
 func (p *pendingPass) warnf(w string) {

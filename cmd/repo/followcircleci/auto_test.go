@@ -74,7 +74,7 @@ func newAuto(t *testing.T, rows ...manager.Row) *autoFixture {
 	return f
 }
 
-var newService = manager.Row{Repository: "giantswarm/new-service", Team: "team-honeybadger", Lifecycle: "active"}
+var newService = manager.Row{Repository: "giantswarm/new-service", Team: "team-honeybadger"}
 
 func TestAuto_SetsUpAfterACommandAndSaysWhatItCreated(t *testing.T) {
 	f := newAuto(t, newService)

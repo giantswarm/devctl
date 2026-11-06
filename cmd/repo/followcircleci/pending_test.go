@@ -38,13 +38,14 @@ func newPending(m *fakeManager, ci *fakeCircleCI) *pendingPass {
 	}
 }
 
-func TestPending_SetsUpTheDeclaredActiveRepositoriesOfYourTeams(t *testing.T) {
+func TestPending_SetsUpTheDeclaredProductionRepositoriesOfYourTeams(t *testing.T) {
 	m := &fakeManager{rows: []manager.Row{
-		{Repository: "giantswarm/new-service", Team: "team-honeybadger", Lifecycle: "active"},
+		{Repository: "giantswarm/new-service", Team: "team-honeybadger"},
+		{Repository: "giantswarm/prod-service", Team: "team-honeybadger", Lifecycle: "production"},
 		{Repository: "giantswarm/old-service", Team: "team-honeybadger", Lifecycle: "deprecated"},
-		{Repository: "giantswarm/nobodys", Lifecycle: "active"},
-		{Repository: "giantswarm/frozen", Team: "team-honeybadger", Lifecycle: "active", Archived: true},
-		{Repository: "giantswarm/vanished", Team: "team-honeybadger", Lifecycle: "active", Gone: true},
+		{Repository: "giantswarm/nobodys"},
+		{Repository: "giantswarm/frozen", Team: "team-honeybadger", Archived: true},
+		{Repository: "giantswarm/vanished", Team: "team-honeybadger", Gone: true},
 	}}
 	ci := &fakeCircleCI{}
 
@@ -53,19 +54,22 @@ func TestPending_SetsUpTheDeclaredActiveRepositoriesOfYourTeams(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "mine", m.args["scope"])
 	require.Equal(t, "circleci-pipeline-missing", m.args["finding"])
-	require.Equal(t, []string{"definition new-service-app", "trigger all-pushes", "run branch main"}, ci.writes)
-	require.Equal(t, &Summary{
-		Pending: 1,
-		Repositories: []Entry{{
-			Repository: "giantswarm/new-service",
-			Outcome:    OutcomeCreated,
-			Runs:       []RunRef{{Ref: "branch main", Pipeline: 1}},
-		}},
-	}, summary)
+	require.NotContains(t, m.args, "lifecycle", "the manager's lifecycle filter knows no production")
+	require.Equal(t, []string{
+		"definition new-service-app", "trigger all-pushes", "run branch main",
+		"definition prod-service-app", "trigger all-pushes", "run branch main",
+	}, ci.writes)
+	require.Equal(t, 2, summary.Pending)
+	require.Equal(t, Entry{
+		Repository: "giantswarm/new-service",
+		Outcome:    OutcomeCreated,
+		Runs:       []RunRef{{Ref: "branch main", Pipeline: 1}},
+	}, summary.Repositories[0])
+	require.Equal(t, "giantswarm/prod-service", summary.Repositories[1].Repository)
 }
 
 func TestPending_ReportsARepositorySetUpAlready(t *testing.T) {
-	m := &fakeManager{rows: []manager.Row{{Repository: "giantswarm/mcp-template", Team: "team-honeybadger", Lifecycle: "active"}}}
+	m := &fakeManager{rows: []manager.Row{{Repository: "giantswarm/mcp-template", Team: "team-honeybadger"}}}
 	ci := &fakeCircleCI{setUp: true}
 
 	summary, err := newPending(m, ci).run(t.Context())
@@ -77,8 +81,8 @@ func TestPending_ReportsARepositorySetUpAlready(t *testing.T) {
 
 func TestPending_ARefusedWriteStopsThePassAndAsksForWrite(t *testing.T) {
 	m := &fakeManager{rows: []manager.Row{
-		{Repository: "giantswarm/first", Team: "team-honeybadger", Lifecycle: "active"},
-		{Repository: "giantswarm/second", Team: "team-honeybadger", Lifecycle: "active"},
+		{Repository: "giantswarm/first", Team: "team-honeybadger"},
+		{Repository: "giantswarm/second", Team: "team-honeybadger"},
 	}}
 	ci := &fakeCircleCI{refuse: http.StatusForbidden}
 
@@ -102,8 +106,8 @@ func outcomes(s *Summary) []Outcome {
 
 func TestPending_WithoutACircleCILoginSkipsEveryRepository(t *testing.T) {
 	m := &fakeManager{rows: []manager.Row{
-		{Repository: "giantswarm/first", Team: "team-honeybadger", Lifecycle: "active"},
-		{Repository: "giantswarm/second", Team: "team-honeybadger", Lifecycle: "active"},
+		{Repository: "giantswarm/first", Team: "team-honeybadger"},
+		{Repository: "giantswarm/second", Team: "team-honeybadger"},
 	}}
 	p := newPending(m, &fakeCircleCI{})
 	p.openCI = func(context.Context, string, func(string)) (circleciapp.GitHub, circleciapp.CircleCI, error) {
@@ -133,8 +137,8 @@ func (f failingProject) GetProject(ctx context.Context, owner, repo string) (*ci
 
 func TestPending_AFailedRepositoryDoesNotStopTheOthers(t *testing.T) {
 	m := &fakeManager{rows: []manager.Row{
-		{Repository: "giantswarm/broken", Team: "team-honeybadger", Lifecycle: "active"},
-		{Repository: "giantswarm/fine", Team: "team-honeybadger", Lifecycle: "active"},
+		{Repository: "giantswarm/broken", Team: "team-honeybadger"},
+		{Repository: "giantswarm/fine", Team: "team-honeybadger"},
 	}}
 	ci := &fakeCircleCI{}
 	p := newPending(m, ci)
@@ -147,4 +151,26 @@ func TestPending_AFailedRepositoryDoesNotStopTheOthers(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, []Outcome{OutcomeFailed, OutcomeCreated}, outcomes(summary))
 	require.NotEmpty(t, summary.Repositories[0].Reason)
+}
+
+func TestPending_ReadsTheManagersRowsAsTheyCome(t *testing.T) {
+	// A declaration without a lifecycle: the manager omits the key.
+	payload := `{"scope":"mine","repositories":[{"repository":"giantswarm/new-service","team":"team-honeybadger","archived":false,"setup":{},"age":"1h"}]}`
+	p := &pendingPass{
+		open: func(context.Context) (*client.Session, error) {
+			return &client.Session{Caller: rawManager(payload)}, nil
+		},
+	}
+
+	repos, err := p.pending(t.Context())
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"giantswarm/new-service"}, repos)
+}
+
+// rawManager answers every call with payload.
+type rawManager string
+
+func (m rawManager) Call(context.Context, string, map[string]any) (json.RawMessage, error) {
+	return json.RawMessage(m), nil
 }

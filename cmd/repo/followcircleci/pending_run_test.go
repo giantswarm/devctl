@@ -25,7 +25,7 @@ func newPendingRunner(m *fakeManager, ci *fakeCircleCI, output string, out *byte
 
 func TestRunPending_PrintsOneLinePerRepository(t *testing.T) {
 	m := &fakeManager{rows: []manager.Row{
-		{Repository: "giantswarm/new-service", Team: "team-honeybadger", Lifecycle: "active"},
+		{Repository: "giantswarm/new-service", Team: "team-honeybadger"},
 	}}
 	var out bytes.Buffer
 
@@ -52,7 +52,7 @@ type document struct {
 
 func TestRunPending_JSONDocument(t *testing.T) {
 	m := &fakeManager{rows: []manager.Row{
-		{Repository: "giantswarm/new-service", Team: "team-honeybadger", Lifecycle: "active"},
+		{Repository: "giantswarm/new-service", Team: "team-honeybadger"},
 	}}
 	var out bytes.Buffer
 
@@ -69,7 +69,7 @@ func TestRunPending_JSONDocument(t *testing.T) {
 
 func TestRunPending_JSONDocumentOfARefusedWrite(t *testing.T) {
 	m := &fakeManager{rows: []manager.Row{
-		{Repository: "giantswarm/new-service", Team: "team-honeybadger", Lifecycle: "active"},
+		{Repository: "giantswarm/new-service", Team: "team-honeybadger"},
 	}}
 	var out bytes.Buffer
 
