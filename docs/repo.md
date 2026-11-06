@@ -359,33 +359,40 @@ devctl repo follow-circleci --pending --output json
 Instead of one repository, `--pending` sets up every repository of your teams that the inventory
 reports `circleci-pipeline-missing` for: giantswarm-repo-manager's `list_repositories` with scope
 `mine` (the teams you are a member of on GitHub, not every repository you administer), keeping the
-declared, `active`, unarchived repositories still on GitHub. It runs the steps above on each without
-`--migrate` and does not wait for the runs. A refused write (403) stops it with exit 8: a Read-only
-login, or CircleCI refusing a member who is no repository admin, in which case a repository admin runs
-`devctl repo follow-circleci <repository>`. Any other failure of one repository is reported and the
-others go on (exit 13). It needs the muster login too (`devctl auth login --muster-only`).
+declared repositories in production (no `lifecycle` declared, or `production`), unarchived and still on
+GitHub. It runs the steps above on each without `--migrate` and does not wait for the runs. CircleCI
+refusing a write (403) marks that repository `refused` and the others go on. When nothing could be
+written, the login most likely granted Read only: exit 8 asks for `devctl auth login --circleci-only`
+granting Write. When other repositories were written, CircleCI refuses you that repository (you are no
+admin of it): exit 5 names the `devctl repo follow-circleci <repository>` a repository admin runs. Any
+other failure of one repository is reported, the others go on, and the exit is 13, as for a manager that
+cannot be reached. It needs the muster login too (`devctl auth login --muster-only`).
 
 `--output json` prints the command's envelope (`command`, `exitCode`, `verdict`, `reason`,
 `warnings`) with `pending`, the number of pending repositories, and `repositories[]`: each with
 `repository`, `outcome` (`created`, `already-set-up`, `refused`, `failed`, `skipped`), `reason` and the
-`runs[]` it started (`ref`, `pipeline`).
+`runs[]` it started (`ref`, `pipeline`). `created` is any write of the set-up: on a pipeline that
+existed, `reason` says which (its trigger, the project's setup workflows). Warnings, such as a CircleCI
+login about to expire, are in `warnings`.
 
 ### The automatic pass
 
 After any devctl command, at most once every six hours, devctl runs the same pass by itself, so a
 repository created through the Dev Portal or the Repo Manager agent gets its pipeline without anyone
-typing a command. It uses the logins the keychain already holds and never prompts or opens a browser;
-it gives up after 20 seconds and does not wait for the runs. It never changes the exit code or the
-stdout of the command you ran. It writes on stderr:
+typing a command. It uses the logins the keychain already holds and never opens a browser. A locked
+keychain is skipped on Linux instead of prompting to unlock it; on macOS a locked login keychain may
+still prompt. The pass is abandoned after about 20 seconds, or on Ctrl-C, and does not wait for the runs.
+It never changes the exit code or the stdout of the command you ran. It writes on stderr:
 
-- a line per pipeline it created or run it started;
-- at most once a day, when repositories wait and the CircleCI login is missing, expired or was refused
-  a write, one line naming them and the fix (`devctl auth login --circleci-only`, granting Write).
+- a line per pipeline it created, setting it changed or run it started;
+- at most once a day, when repositories wait, one line naming them and what to do: the CircleCI or
+  GitHub login that is missing or expired (`devctl auth login`, for CircleCI granting Write), or the
+  repository admin who runs `devctl repo follow-circleci <repository>` for one CircleCI refuses you.
 
 Without a muster login, and on any other failure, it says nothing (`--log-level debug` shows why) and
-tries again in six hours. It does not follow `serve`, `completion`, `version`, `help`, `auth logout`,
-`auth exec`, `repo follow-circleci` or a `--help`. Its state is `circleci-pending.json` in devctl's
-configuration directory. `DEVCTL_NO_CIRCLECI_PENDING=1` turns it off.
+tries again in six hours. Of two commands finishing together, one runs it. It does not follow `serve`,
+`completion`, `version`, `help`, `auth logout`, `auth exec`, `repo follow-circleci` or a `--help`. Its
+state is `circleci-pending.json` in devctl's configuration directory. `DEVCTL_NO_CIRCLECI_PENDING=1` turns it off.
 
 ## `devctl repo validate`
 
