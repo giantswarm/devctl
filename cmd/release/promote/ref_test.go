@@ -119,8 +119,11 @@ func TestRunRefMaintenance(t *testing.T) {
 				require.Equal(t, map[string]any{"release-type": "stable"}, recorder.inputs)
 			}
 			for _, request := range server.Requests() {
-				if strings.Contains(request.Path, "/contents/") {
+				if strings.HasSuffix(request.Path, "/contents/.github/workflows/zz_generated.auto_release.yaml") {
 					require.Equal(t, "release-1.9", request.Query.Get("ref"))
+				}
+				if strings.HasSuffix(request.Path, "/contents/UPGRADE.md") {
+					require.Equal(t, "v1.9.5-rc.10", request.Query.Get("ref"))
 				}
 				if strings.Contains(request.Path, "/compare/") {
 					require.True(t, strings.HasSuffix(request.Path, "...release-1.9"), request.Path)

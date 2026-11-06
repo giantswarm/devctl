@@ -162,7 +162,10 @@ func TestBootCancelsChinaRequest(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		releaseServer()
 		select {
-		case <-done:
+		case err := <-done:
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("Boot returned %v; want context.Canceled", err)
+			}
 		case <-time.After(2 * time.Second):
 			t.Fatal("Boot did not exit after fixture was released")
 		}
