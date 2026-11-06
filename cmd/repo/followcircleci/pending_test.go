@@ -3,12 +3,14 @@ package followcircleci
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
+	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/circleciapp"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
@@ -79,7 +81,7 @@ func TestPending_ReportsARepositorySetUpAlready(t *testing.T) {
 	require.Equal(t, []Entry{{Repository: "giantswarm/mcp-template", Outcome: OutcomeAlreadySetUp}}, summary.Repositories)
 }
 
-func TestPending_ARefusedWriteStopsThePassAndAsksForWrite(t *testing.T) {
+func TestPending_EveryWriteRefusedAsksForWrite(t *testing.T) {
 	m := &fakeManager{rows: []manager.Row{
 		{Repository: "giantswarm/first", Team: "team-honeybadger"},
 		{Repository: "giantswarm/second", Team: "team-honeybadger"},
@@ -93,7 +95,55 @@ func TestPending_ARefusedWriteStopsThePassAndAsksForWrite(t *testing.T) {
 	require.Contains(t, err.Error(), "grant Write access")
 	require.Contains(t, err.Error(), "a repository admin")
 	require.Equal(t, 2, summary.Pending)
-	require.Equal(t, []Outcome{OutcomeRefused, OutcomeSkipped}, outcomes(summary))
+	require.Equal(t, []Outcome{OutcomeRefused, OutcomeRefused}, outcomes(summary))
+}
+
+// refusingRepository is CircleCI refusing the person the pipeline of one
+// repository, as for a member who is no admin of it.
+type refusingRepository struct {
+	*fakeCircleCI
+	repo string
+}
+
+func (f refusingRepository) CreatePipelineDefinition(ctx context.Context, projectID string, def circleciclient.PipelineDefinition) (*circleciclient.PipelineDefinition, error) {
+	if def.Name == circleciapp.DefinitionName(f.repo) {
+		return nil, apiError(http.StatusForbidden)
+	}
+	return f.fakeCircleCI.CreatePipelineDefinition(ctx, projectID, def)
+}
+
+func TestPending_ARefusalDoesNotStopTheOthersAndNamesTheAdmin(t *testing.T) {
+	m := &fakeManager{rows: []manager.Row{
+		{Repository: "giantswarm/aaa-not-mine-to-admin", Team: "team-honeybadger"},
+		{Repository: "giantswarm/zzz-fine", Team: "team-honeybadger"},
+	}}
+	ci := &fakeCircleCI{}
+	p := newPending(m, ci)
+	p.openCI = func(context.Context, string, func(string)) (circleciapp.GitHub, circleciapp.CircleCI, error) {
+		return fakeGitHub{}, refusingRepository{fakeCircleCI: ci, repo: "aaa-not-mine-to-admin"}, nil
+	}
+
+	summary, err := p.run(t.Context())
+
+	require.Equal(t, []Outcome{OutcomeRefused, OutcomeCreated}, outcomes(summary))
+	var authErr *authstore.AuthRequiredError
+	require.False(t, errors.As(err, &authErr), "a write succeeded: the login grants Write")
+	var exitErr *agentcli.ExitError
+	require.ErrorAs(t, err, &exitErr)
+	require.Equal(t, agentcli.ExitRefused, exitErr.Code)
+	require.Contains(t, err.Error(), "a repository admin has to run `devctl repo follow-circleci giantswarm/aaa-not-mine-to-admin`")
+}
+
+func TestPending_AMissingGitHubLoginIsNamed(t *testing.T) {
+	m := &fakeManager{rows: []manager.Row{{Repository: "giantswarm/new-service", Team: "team-honeybadger"}}}
+	p := newPending(m, &fakeCircleCI{})
+	p.openCI = func(context.Context, string, func(string)) (circleciapp.GitHub, circleciapp.CircleCI, error) {
+		return nil, nil, &authstore.AuthRequiredError{Identity: "GitHub", Cause: "no token", Hint: "devctl auth login"}
+	}
+
+	summary, _ := p.run(t.Context())
+
+	require.Equal(t, "no usable GitHub login", summary.Repositories[0].Reason)
 }
 
 func outcomes(s *Summary) []Outcome {

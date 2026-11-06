@@ -13,10 +13,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rogpeppe/go-internal/lockedfile"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
+	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/circleciapp"
 	"github.com/giantswarm/devctl/v8/pkg/project"
@@ -145,16 +147,8 @@ func (a *autoPass) run(ctx context.Context, executed *cobra.Command) {
 	if a.getenv(OptOutEnv) != "" || !follows(executed) {
 		return
 	}
-	state := a.load()
 	now := a.now()
-	if now.Sub(state.LastRun) < passInterval {
-		return
-	}
-	// Claim the window before the pass: a state that cannot be written
-	// would otherwise run the pass after every command.
-	state.LastRun = now
-	if err := a.save(state); err != nil {
-		a.debugf(err)
+	if !a.claimRun(now) {
 		return
 	}
 
@@ -171,26 +165,36 @@ func (a *autoPass) run(ctx context.Context, executed *cobra.Command) {
 			fmt.Fprintf(a.stderr, "devctl: %s: %s\n", e.Repository, describe(e))
 		}
 	}
-	var authErr *authstore.AuthRequiredError
-	if !errors.As(err, &authErr) {
+	msg := notice(err)
+	if msg == "" {
 		a.debugf(err)
 		return
 	}
-	if now.Sub(state.LastNotice) < noticeInterval {
+	if !a.claimNotice(now) {
 		return
 	}
 	for _, w := range warnings {
 		fmt.Fprintf(a.stderr, "devctl: %s\n", w)
 	}
-	msg := authErr.Error()
-	if !strings.Contains(msg, "grant Write") {
-		msg += " On CircleCI's consent page, grant Write access."
-	}
 	fmt.Fprintf(a.stderr, "devctl: %s: %s\n", waiting(summary), msg)
-	state.LastNotice = now
-	if err := a.save(state); err != nil {
-		a.debugf(err)
+}
+
+// notice is what the person can do about err, or empty when only the next
+// pass can: a login to renew, or a repository admin to ask.
+func notice(err error) string {
+	var authErr *authstore.AuthRequiredError
+	if errors.As(err, &authErr) {
+		msg := authErr.Error()
+		if authErr.Identity == "CircleCI" && !strings.Contains(msg, "grant Write") {
+			msg += " On CircleCI's consent page, grant Write access."
+		}
+		return msg
 	}
+	var exitErr *agentcli.ExitError
+	if errors.As(err, &exitErr) && exitErr.Code == agentcli.ExitRefused {
+		return exitErr.Reason
+	}
+	return ""
 }
 
 // debugf writes err on stderr at --log-level debug; stdout, where logrus
@@ -228,6 +232,55 @@ func waiting(s *Summary) string {
 	return fmt.Sprintf("%d %s of your teams %s for a CircleCI pipeline (%s)", len(repos), noun, verb, strings.Join(repos, ", "))
 }
 
+// claimRun takes the six-hour window for this process: under the state's
+// lock, so of two commands finishing together only one runs the pass. A
+// state that cannot be written claims nothing; the pass would otherwise run
+// after every command.
+func (a *autoPass) claimRun(now time.Time) bool {
+	return a.update(func(s *autoState) bool {
+		if now.Sub(s.LastRun) < passInterval && !s.LastRun.After(now) {
+			return false
+		}
+		s.LastRun = now
+		return true
+	})
+}
+
+// claimNotice takes the day's notice, as claimRun the window.
+func (a *autoPass) claimNotice(now time.Time) bool {
+	return a.update(func(s *autoState) bool {
+		if now.Sub(s.LastNotice) < noticeInterval && !s.LastNotice.After(now) {
+			return false
+		}
+		s.LastNotice = now
+		return true
+	})
+}
+
+// update reads the state, applies change and writes it when change says so,
+// under the state's lock.
+func (a *autoPass) update(change func(*autoState) bool) bool {
+	if err := os.MkdirAll(filepath.Dir(a.state), 0o700); err != nil {
+		a.debugf(err)
+		return false
+	}
+	unlock, err := lockedfile.MutexAt(a.state + ".lock").Lock()
+	if err != nil {
+		a.debugf(err)
+		return false
+	}
+	defer unlock()
+	s := a.load()
+	if !change(&s) {
+		return false
+	}
+	if err := a.save(s); err != nil {
+		a.debugf(err)
+		return false
+	}
+	return true
+}
+
 func (a *autoPass) load() autoState {
 	var s autoState
 	b, err := os.ReadFile(a.state)
@@ -245,12 +298,17 @@ func (a *autoPass) save(s autoState) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(a.state), 0o700); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(a.state), stateFile+".*")
+	if err != nil {
 		return err
 	}
-	tmp := a.state + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if _, err := tmp.Write(b); err != nil {
+		_ = tmp.Close()
 		return err
 	}
-	return os.Rename(tmp, a.state)
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), a.state)
 }

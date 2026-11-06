@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -186,4 +187,42 @@ func TestAuto_ARefusedWriteNamesBothFixes(t *testing.T) {
 	require.Contains(t, notice, "grant Write access")
 	require.Contains(t, notice, "a repository admin has to run `devctl repo follow-circleci giantswarm/new-service`")
 	require.Equal(t, 1, strings.Count(notice, "\n"), "one line")
+}
+
+func TestAuto_AMissingGitHubLoginSaysSo(t *testing.T) {
+	f := newAuto(t, newService)
+	f.auto.pass.openCI = func(context.Context, string, func(string)) (circleciapp.GitHub, circleciapp.CircleCI, error) {
+		return nil, nil, &authstore.AuthRequiredError{Identity: "GitHub", Cause: "no token", Hint: "devctl auth login"}
+	}
+
+	f.auto.run(t.Context(), commands()["pr wait"])
+
+	require.Contains(t, f.stderr.String(), "GitHub authentication required")
+	require.NotContains(t, f.stderr.String(), "CircleCI's consent page")
+}
+
+func TestAuto_ARefusalOfANonAdminSaysWhoCanFixIt(t *testing.T) {
+	f := newAuto(t, newService, manager.Row{Repository: "giantswarm/zzz-fine", Team: "team-honeybadger"})
+	f.auto.pass.openCI = func(context.Context, string, func(string)) (circleciapp.GitHub, circleciapp.CircleCI, error) {
+		return fakeGitHub{}, refusingRepository{fakeCircleCI: f.ci, repo: "new-service"}, nil
+	}
+
+	f.auto.run(t.Context(), commands()["pr wait"])
+
+	require.Contains(t, f.stderr.String(), "giantswarm/zzz-fine: created the GitHub App pipeline")
+	require.Contains(t, f.stderr.String(), "1 repository of your teams waits for a CircleCI pipeline (giantswarm/new-service)")
+	require.Contains(t, f.stderr.String(), "a repository admin has to run `devctl repo follow-circleci giantswarm/new-service`")
+}
+
+func TestAuto_ConcurrentCommandsRunOnePass(t *testing.T) {
+	f := newAuto(t, newService)
+	other := *f.auto
+
+	var wg sync.WaitGroup
+	for _, a := range []*autoPass{f.auto, &other} {
+		wg.Go(func() { a.run(t.Context(), commands()["pr wait"]) })
+	}
+	wg.Wait()
+
+	require.Equal(t, []string{"definition new-service-app", "trigger all-pushes", "run branch main"}, f.ci.writes)
 }

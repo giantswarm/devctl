@@ -2,6 +2,7 @@ package followcircleci
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -79,14 +80,15 @@ func (p *pendingPass) run(ctx context.Context) (*Summary, error) {
 		ci circleciapp.CircleCI
 	}
 	opened := map[string]clients{}
-	var failed []string
+	var failed, refused []string
+	wrote := false
 	for i, slug := range repos {
 		owner, repo, _ := strings.Cut(slug, "/")
 		c, ok := opened[owner]
 		if !ok {
 			gh, ci, err := p.openCI(ctx, owner, p.warnf)
 			if err != nil {
-				skip(summary, repos[i:], "no usable CircleCI login")
+				skip(summary, repos[i:], loginReason(err))
 				return summary, microerror.Mask(err)
 			}
 			c = clients{gh: gh, ci: ci}
@@ -95,10 +97,11 @@ func (p *pendingPass) run(ctx context.Context) (*Summary, error) {
 		report, err := circleciapp.Setup(ctx, c.ci, c.gh, owner, repo, circleciapp.Options{})
 		switch {
 		case circleciclient.IsForbidden(err):
-			cause := fmt.Sprintf("CircleCI refused to create the pipeline of %s; when your login granted Write already, a repository admin has to run `devctl repo follow-circleci %s`", slug, slug)
+			// A Read-only login, or a member CircleCI does not let write on
+			// this repository: the others may still work.
 			summary.Repositories = append(summary.Repositories, Entry{Repository: slug, Outcome: OutcomeRefused, Reason: "CircleCI refused the write (403)"})
-			skip(summary, repos[i+1:], "the pass stopped at a refused write")
-			return summary, microerror.Mask(authstore.CircleCIWriteRequired(cause))
+			refused = append(refused, slug)
+			continue
 		case err != nil && ctx.Err() != nil:
 			skip(summary, repos[i:], "the pass ran out of time")
 			return summary, microerror.Mask(ctx.Err())
@@ -107,7 +110,20 @@ func (p *pendingPass) run(ctx context.Context) (*Summary, error) {
 			failed = append(failed, slug)
 			continue
 		}
-		summary.Repositories = append(summary.Repositories, entry(slug, report))
+		e := entry(slug, report)
+		if e.Outcome == OutcomeCreated {
+			wrote = true
+		}
+		summary.Repositories = append(summary.Repositories, e)
+	}
+	if len(refused) > 0 {
+		admin := fmt.Sprintf("a repository admin has to run %s", followCommands(refused))
+		if !wrote {
+			// Nothing written: most likely a login granted Read only.
+			cause := fmt.Sprintf("CircleCI refused to create the pipeline of %s; when your login granted Write already, %s", strings.Join(refused, ", "), admin)
+			return summary, microerror.Mask(authstore.CircleCIWriteRequired(cause))
+		}
+		return summary, agentcli.NewExitError(agentcli.ExitRefused, agentcli.VerdictRefused, "CircleCI refused you the pipeline of %s, while your login writes elsewhere: %s", strings.Join(refused, ", "), admin)
 	}
 	if len(failed) > 0 {
 		// A failed set-up is CircleCI's or GitHub's answer: the next pass
@@ -115,6 +131,25 @@ func (p *pendingPass) run(ctx context.Context) (*Summary, error) {
 		return summary, &agentcli.RemoteError{Err: microerror.Maskf(pendingFailedError, "the set-up of %s failed; the next pass tries again", strings.Join(failed, ", "))}
 	}
 	return summary, nil
+}
+
+// followCommands names the follow-circleci command of each repository.
+func followCommands(repos []string) string {
+	var cmds []string
+	for _, slug := range repos {
+		cmds = append(cmds, fmt.Sprintf("`devctl repo follow-circleci %s`", slug))
+	}
+	return strings.Join(cmds, ", ")
+}
+
+// loginReason is why the pass skipped the repositories when the clients
+// would not open: the login that is missing, or the error.
+func loginReason(err error) string {
+	var authErr *authstore.AuthRequiredError
+	if errors.As(err, &authErr) {
+		return fmt.Sprintf("no usable %s login", authErr.Identity)
+	}
+	return err.Error()
 }
 
 // skip records repos as skipped for reason.
