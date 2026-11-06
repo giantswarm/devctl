@@ -12,7 +12,8 @@
 // whose team-file entry opts out of agent merges (exit 5, naming the
 // field). A reviewer's feedback newer than the head that nobody answered
 // refuses it too (exit 5), read before the wait and again right before
-// the merge. Green lands through the merge
+// the merge. A rebase merge carrying amend!, fixup! or squash! subjects is
+// not applicable (exit 3), even with --accept-red. Green lands through the merge
 // API as a squash or a rebase with the judged head as the expected head
 // (a merge commit where the repository allows only that),
 // then the branch goes through the refs API. A base with a merge queue is
@@ -75,6 +76,9 @@ type Config struct {
 	// rebase on a fork line (a team-file entry with the fork flavour),
 	// squash everywhere else.
 	Method githubclient.MergeMethod
+	// CarryOf identifies the colleague's original pull request in the same
+	// repository. Its author must own every commit being rebased; zero disables it.
+	CarryOf int
 	// UpdateBranch: a head behind its base is updated from the base before
 	// its checks are judged and the new head waited for; behind a strict
 	// base, instead of exit 3.
@@ -115,6 +119,9 @@ type Result struct {
 	// repository allows when it does not allow the default squash: merge
 	// for a merge commit.
 	Method string `json:"method"`
+	// CarryOf names the original pull request and the author whose commits
+	// a carry preserves. Omitted for an ordinary merge.
+	CarryOf *Carry `json:"carryOf,omitempty"`
 	// BranchDeleted: the head branch was deleted after the merge (or was
 	// gone already). False for a head in a fork, which is left alone.
 	BranchDeleted bool `json:"branchDeleted"`
@@ -151,6 +158,7 @@ type Merger struct {
 	// acceptRed is Wait.AcceptRed: the checks the caller accepts red.
 	acceptRed  []string
 	idempotent bool
+	carryOf    int
 }
 
 // New returns a Merger for config.
@@ -178,6 +186,7 @@ func New(config Config) (*Merger, error) {
 		dispatchTo:   config.Dispatch,
 		acceptRed:    config.Wait.AcceptRed,
 		idempotent:   config.Idempotent,
+		carryOf:      config.CarryOf,
 	}
 	if m.clock.Scale() == 0 {
 		m.clock = agentcli.NewClock(1, nil)
@@ -194,6 +203,12 @@ func New(config Config) (*Merger, error) {
 	case githubclient.MergeSquash, githubclient.MergeRebase:
 	default:
 		return nil, microerror.Maskf(invalidConfigError, "%T.Method is squash or rebase, got %q", config, config.Method)
+	}
+	if m.carryOf < 0 || (m.carryOf > 0 && config.Method == githubclient.MergeSquash) {
+		return nil, microerror.Maskf(invalidConfigError, "carryOf must be positive and requires a rebase merge")
+	}
+	if m.carryOf > 0 {
+		m.method, m.methodDefault = githubclient.MergeRebase, false
 	}
 	if m.policy == nil {
 		client, ok := m.github.(*githubclient.Client)
@@ -226,6 +241,7 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 		return result, err
 	}
 	result.HeadSHA, result.BaseRef = pr.GetHead().GetSHA(), pr.GetBase().GetRef()
+	result.Draft = pr.GetDraft()
 	if m.idempotent && pr.GetMerged() {
 		return result, m.mergedAlready(ctx, owner, repo, number, pr, result)
 	}
@@ -243,11 +259,17 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	if err := m.resolveMethod(ctx, owner, repo, verdict, result); err != nil {
 		return result, err
 	}
+	if err := m.guardCommits(ctx, owner, repo, pr, result); err != nil {
+		return result, err
+	}
 	m.progress.Printf("refusals: none; %s by %s", pr.GetHead().GetSHA(), pr.GetUser().GetLogin())
 
 	queued, err := m.github.MergeQueueRequired(ctx, owner, repo, pr.GetBase().GetRef())
 	if err != nil {
 		return result, microerror.Mask(err)
+	}
+	if err := m.guardCarry(ctx, owner, repo, number, pr, result, queued); err != nil {
+		return result, err
 	}
 
 	// The warnings given before the wait (the method the settings chose)
@@ -290,9 +312,13 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 		if err != nil {
 			return result, microerror.Mask(err)
 		}
+		result.Draft = pr.GetDraft()
 		if err := notApplicable(pr); err != nil {
 			return result, err
 		}
+	}
+	if err := m.guardCommits(ctx, owner, repo, pr, result); err != nil {
+		return result, err
 	}
 	for _, w := range m.closingWarnings(ctx, owner, repo, pr.GetBody()) {
 		m.progress.Printf("warning: %s", w)
@@ -304,6 +330,9 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	if err := m.guardReviews(ctx, owner, repo, number, pr, caller, result); err != nil {
 		return result, err
 	}
+	if err := m.guardCarry(ctx, owner, repo, number, pr, result, queued); err != nil {
+		return result, err
+	}
 	if queued {
 		err = m.enqueue(ctx, owner, repo, number, pr, result)
 	} else {
@@ -312,6 +341,8 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	if err != nil {
 		return result, err
 	}
+
+	m.mergedPastReview(result)
 
 	// Merged: the branch, the release, then the dispatch, which runs
 	// whatever the release's outcome and changes none of them.
@@ -325,7 +356,7 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 
 // mergedAlready is the outcome of a pull request merged before the call:
 // the merge commit and its merger as GitHub records them, a warning saying
-// so, and the release wait on that commit, whose exits 6 and 9 stay the
+// so, and the release wait on that commit, whose exits 6, 9 and 14 stay the
 // merge's. Nothing is written: the branch, the dispatch and the merge were
 // the first merge's.
 func (m *Merger) mergedAlready(ctx context.Context, owner, repo string, number int, pr *github.PullRequest, result *Result) error {

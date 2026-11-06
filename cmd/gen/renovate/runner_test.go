@@ -44,8 +44,20 @@ func Test_Run_RepoName(t *testing.T) {
 			wantExtends:  "'github>giantswarm/valkey-app:renovate-custom.json5'",
 		},
 		{
+			name:         "dot-prefixed repository name",
+			repoNameFlag: ".github",
+			customConfig: true,
+			wantExtends:  "'github>giantswarm/.github:renovate-custom.json5'",
+		},
+		{
+			name:         "repository name with all permitted characters",
+			repoNameFlag: "Fixture_repo.name-2",
+			customConfig: true,
+			wantExtends:  "'github>giantswarm/Fixture_repo.name-2:renovate-custom.json5'",
+		},
+		{
 			name:         "origin remote outside giantswarm",
-			remote:       "git@github.com:teemow/valkey-app.git",
+			remote:       "git@github.com:fixture-person/valkey-app.git",
 			customConfig: true,
 			wantErr:      "pass --repo-name <name>",
 		},
@@ -122,7 +134,7 @@ func Test_Run_Fork(t *testing.T) {
 		{
 			name:     "a fork line's opt-out in renovate.json5 stays",
 			flavours: gen.FlavourSlice{gen.FlavourFork},
-			existing: map[string]string{"renovate.json5": "{\n  reviewers: ['teemow'],\n  enabled: false,\n}\n"},
+			existing: map[string]string{"renovate.json5": "{\n  reviewers: ['fixture-person'],\n  enabled: false,\n}\n"},
 			wantErr:  "renovate.json5 turns Renovate off for this fork line",
 		},
 		{
@@ -130,6 +142,23 @@ func Test_Run_Fork(t *testing.T) {
 			flavours: gen.FlavourSlice{gen.FlavourFork},
 			existing: map[string]string{"renovate.json": "{\n  \"enabled\": false\n}\n"},
 			wantErr:  "renovate.json turns Renovate off for this fork line",
+		},
+		{
+			name:     "an enabled root config does not bypass an alternate opt-out",
+			flavours: gen.FlavourSlice{gen.FlavourFork},
+			existing: map[string]string{
+				"renovate.json":         "{\n  \"enabled\": true\n}\n",
+				".github/renovate.json": "{\n  \"enabled\": false\n}\n",
+			},
+			wantErr: ".github/renovate.json turns Renovate off for this fork line",
+		},
+		{
+			name:      "an enabled alternate config does not prevent fork generation",
+			flavours:  gen.FlavourSlice{gen.FlavourFork},
+			existing:  map[string]string{".github/renovate.json": "{\n  \"enabled\": true\n}\n"},
+			wantFile:  "renovate.json",
+			wantGone:  "renovate.json5",
+			wantForks: true,
 		},
 	}
 
@@ -155,6 +184,13 @@ func Test_Run_Fork(t *testing.T) {
 			}
 			require.NoError(t, err)
 
+			for name, content := range tc.existing {
+				if name != tc.wantFile && name != tc.wantGone {
+					got, err := os.ReadFile(name) // #nosec G304 -- the test's own file
+					require.NoError(t, err)
+					require.Equal(t, content, string(got))
+				}
+			}
 			got, err := os.ReadFile(tc.wantFile)
 			require.NoError(t, err)
 			require.NoFileExists(t, tc.wantGone)

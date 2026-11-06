@@ -18,7 +18,7 @@ func TestRepositoryToken(t *testing.T) {
 		return authstore.Token{Source: authstore.SourceKeychain}, nil
 	}
 	person := func(context.Context) (authstore.Token, error) { return authstore.Token{Source: SourceGHLogin}, nil }
-	for owner, want := range map[string]string{"giantswarm": IdentityApp, "teemow": IdentityGH, "kagent-dev": IdentityGH} {
+	for owner, want := range map[string]string{"giantswarm": IdentityApp, "GiantSwarm": IdentityApp, "GIANTSWARM": IdentityApp, "fixture-person": IdentityGH, "kagent-dev": IdentityGH} {
 		token, err := RepositoryToken(context.Background(), owner, app, person)
 		if err != nil {
 			t.Fatal(err)
@@ -89,5 +89,29 @@ func TestPersonGitHub_authRequired(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "gh auth login") || !strings.Contains(err.Error(), "outside giantswarm") {
 			t.Errorf("%s: the reason names the login to run and why: %v", name, err)
 		}
+	}
+}
+
+func TestRealGHPastOtherDevctl(t *testing.T) {
+	dir := t.TempDir()
+	shimBin, linkBin, realBin := filepath.Join(dir, "shim"), filepath.Join(dir, "link"), filepath.Join(dir, "real")
+	for _, bin := range []string{shimBin, linkBin, realBin} {
+		if err := os.Mkdir(bin, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	other := filepath.Join(dir, "devctl")
+	for _, path := range []string{other, filepath.Join(shimBin, "gh"), filepath.Join(realBin, "gh")} {
+		if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o700); err != nil { // nolint:gosec // an executable fixture
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(other, filepath.Join(linkBin, "gh")); err != nil {
+		t.Fatal(err)
+	}
+	path := strings.Join([]string{shimBin, linkBin, realBin}, string(os.PathListSeparator))
+	got, err := realGH(path, filepath.Join(dir, "current-devctl"))
+	if err != nil || got != filepath.Join(realBin, "gh") {
+		t.Fatalf("realGH = %q, %v; want the gh past the other devctl link", got, err)
 	}
 }
