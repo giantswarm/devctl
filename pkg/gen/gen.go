@@ -5,7 +5,6 @@ import (
 	"context"
 	"io/fs"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -15,6 +14,8 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/gen/internal"
 )
 
+// Execute processes inputs in order. If an input fails or ctx is canceled,
+// earlier successful writes remain; later inputs are not started.
 func Execute(ctx context.Context, files ...input.Input) error {
 	for _, f := range files {
 		err := execute(ctx, f)
@@ -27,8 +28,17 @@ func Execute(ctx context.Context, files ...input.Input) error {
 }
 
 func execute(ctx context.Context, file input.Input) error {
+	if err := ctx.Err(); err != nil {
+		return microerror.Mask(err)
+	}
+
 	if file.Delete {
-		_ = os.Remove(file.Path) // Ignore error, file may already be deleted
+		err := os.Remove(file.Path)
+		// Kubernetes API cleanup also removes empty legacy tool directories.
+		// A nonempty directory can contain tools the repository still owns.
+		if err != nil && !os.IsNotExist(err) && !os.IsExist(err) {
+			return microerror.Mask(err)
+		}
 		return nil
 	}
 
@@ -36,7 +46,7 @@ func execute(ctx context.Context, file input.Input) error {
 	// itself is a directory. Error if it is.
 	var fileExists bool
 	{
-		dir := path.Dir(file.Path)
+		dir := filepath.Dir(file.Path)
 		err := os.MkdirAll(dir, 0750)
 		if err != nil {
 			return microerror.Mask(err)
@@ -63,13 +73,17 @@ func execute(ctx context.Context, file input.Input) error {
 		permissions = file.Permissions
 	}
 
-	// Render into a buffer first and only then open (and truncate) the destination. A
-	// File.Generate callback can fail for reasons entirely outside devctl -- e.g. a network
-	// fetch, see values_schema.go -- and opening with O_TRUNC up front would already have
-	// wiped a previously-committed file by the time that failure surfaces, leaving the repo
-	// worse off than before the run. See giantswarm/devctl#2195.
+	// Render completely before starting publication. A Generate callback can
+	// fail outside devctl (for example while fetching schema references), and
+	// previously committed output must survive that failure too.
+	// See https://github.com/giantswarm/devctl/issues/2195.
 	var buf bytes.Buffer
 	if err := internal.Execute(ctx, &buf, file); err != nil {
+		return microerror.Mask(err)
+	}
+
+	// A generator may finish with content after its caller has canceled.
+	if err := ctx.Err(); err != nil {
 		return microerror.Mask(err)
 	}
 
@@ -82,18 +96,7 @@ func execute(ctx context.Context, file input.Input) error {
 			return nil
 		}
 	}
-
-	w, err := os.OpenFile(file.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, permissions)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	defer func() { _ = w.Close() }()
-
-	if _, err := w.Write(buf.Bytes()); err != nil {
-		return microerror.Mask(err)
-	}
-
-	return nil
+	return writeGeneratedFile(file.Path, buf.Bytes(), permissions)
 }
 
 // A build without generated .sha files has only a module tree link. Keep the
@@ -116,6 +119,7 @@ func onlyFallbackProvenanceChanged(existing, rendered []byte) bool {
 // but there are also some exceptions usually when the name is conventional.
 func isRegenerable(path string) bool {
 	base := filepath.Base(path)
+	path = filepath.ToSlash(path)
 
 	switch {
 	case base == "Makefile" || strings.HasPrefix(base, "Makefile.gen."):

@@ -192,7 +192,9 @@ registration:
 3. devctl exchanges the code with the PKCE verifier at `POST /oauth/token`. The result is a standard
    90-day CircleCI API token that works with API v2 (`Circle-Token` header or Bearer).
 
-CircleCI issues no refresh token: log in again before the 90 days are over. Every command warns in
+CircleCI issues no refresh token: log in again before the 90 days are over. A valid login also lets
+devctl set up the CircleCI pipelines your teams' new repositories wait for, after any command (see
+`devctl repo follow-circleci --pending` in [repo.md](repo.md#the-automatic-pass)). Every command warns in
 its JSON `warnings` from seven days before the expiry. Re-running the flow for the same client and
 user atomically revokes the previous token, so a re-login leaves no stale token behind on CircleCI.
 

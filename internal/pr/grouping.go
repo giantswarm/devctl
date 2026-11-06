@@ -209,6 +209,7 @@ func GroupRenovatePRsByRepo(prs []*PRInfo) []*PRGroup {
 func generateSearchQuery(depName string, prs []*PRInfo) string {
 	// Wrap the dependency name in quotes to handle special characters
 	// like @ in scoped packages (e.g., @actions/core, @types/cors)
-	// This ensures GitHub search treats it as a literal string
-	return `"` + depName + `"`
+	// Search the same field used for grouping. Body and comment mentions
+	// must not admit unrelated dependency updates to the selected batch.
+	return `"` + depName + `" in:title`
 }
