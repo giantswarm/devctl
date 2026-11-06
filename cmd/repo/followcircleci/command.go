@@ -58,7 +58,7 @@ the inventory reports circleci-pipeline-missing for (giantswarm-repo-manager's
 list, scope mine; declared, in production, unarchived), set up without --migrate and
 without waiting; --output json prints its document. After any devctl command,
 at most once every six hours, devctl runs that pass by itself, quietly, with
-the logins the keychain holds; DEVCTL_NO_CIRCLECI_PENDING=1 turns it off.
+the logins the keychain holds; any value of DEVCTL_NO_CIRCLECI_PENDING turns it off.
 
 Examples:
   devctl repo follow-circleci my-service

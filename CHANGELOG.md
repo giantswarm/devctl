@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   that reports `circleci-pipeline-missing`, with `--output json`. After any devctl command, at most once every six
   hours, devctl runs the same pass with the logins the keychain holds, so repositories created through the Dev Portal
   or the Repo Manager agent build without anyone running `follow-circleci`. It never changes the command's exit code
-  or stdout; `DEVCTL_NO_CIRCLECI_PENDING=1` turns it off.
+  or stdout; any non-empty `DEVCTL_NO_CIRCLECI_PENDING` turns it off.
 
 - The devctl chart's opt-in `networkPolicy.enabled` renders a Cilium egress policy for DNS, GitHub, the registries
   and catalogs, and the Dex token endpoint and API server of every installation. It uses the same endpoints as
