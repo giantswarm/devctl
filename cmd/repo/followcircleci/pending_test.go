@@ -224,3 +224,19 @@ type rawManager string
 func (m rawManager) Call(context.Context, string, map[string]any) (json.RawMessage, error) {
 	return json.RawMessage(m), nil
 }
+
+func TestPending_WarnsWhenTheListIsCut(t *testing.T) {
+	payload := `{"scope":"mine","matched":130,"shown":100,"repositories":[]}`
+	var warnings []string
+	p := &pendingPass{
+		open: func(context.Context) (*client.Session, error) {
+			return &client.Session{Caller: rawManager(payload)}, nil
+		},
+		warn: func(w string) { warnings = append(warnings, w) },
+	}
+
+	_, err := p.pending(t.Context())
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"130 repositories of your teams wait for a CircleCI pipeline; this pass reads the first 100"}, warnings)
+}

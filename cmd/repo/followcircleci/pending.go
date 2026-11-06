@@ -177,11 +177,14 @@ func (p *pendingPass) pending(ctx context.Context) ([]string, error) {
 		"limit":    pendingLimit,
 	})
 	if err != nil {
-		return nil, microerror.Mask(err)
+		return nil, remote(err)
 	}
 	listing, err := client.Decode[manager.Listing](manager.ToolListRepositories, payload)
 	if err != nil {
-		return nil, microerror.Mask(err)
+		return nil, remote(err)
+	}
+	if listing.Matched > listing.Shown {
+		p.warnf(fmt.Sprintf("%d repositories of your teams wait for a CircleCI pipeline; this pass reads the first %d", listing.Matched, listing.Shown))
 	}
 	var repos []string
 	for _, row := range listing.Repositories {
@@ -194,6 +197,16 @@ func (p *pendingPass) pending(ctx context.Context) ([]string, error) {
 		repos = append(repos, row.Repository)
 	}
 	return repos, nil
+}
+
+// remote is a failed manager call as the remote error it is (exit 13), but
+// an auth error stays one (exit 8).
+func remote(err error) error {
+	var authErr *authstore.AuthRequiredError
+	if errors.As(err, &authErr) {
+		return microerror.Mask(err)
+	}
+	return &agentcli.RemoteError{Err: err}
 }
 
 // live says whether a declared lifecycle builds: none declared (the

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
+	"github.com/giantswarm/devctl/v8/pkg/circleciapp"
 	"github.com/giantswarm/devctl/v8/pkg/reposetup/manager"
 )
 
@@ -108,4 +110,74 @@ func TestRunPending_WithoutAMusterLoginPrintsOnlyTheError(t *testing.T) {
 	var authErr *authstore.AuthRequiredError
 	require.ErrorAs(t, err, &authErr)
 	require.Empty(t, out.String())
+}
+
+func TestRunPending_AFlagErrorIsADocument(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	c, err := New(Config{Stdout: &stdout, Stderr: &stderr})
+	require.NoError(t, err)
+	c.SetArgs([]string{"--pending", "-o", "json", "--timeout", "soon"})
+	c.SilenceErrors, c.SilenceUsage = true, true
+
+	err = c.Execute()
+
+	var exitErr *agentcli.ExitError
+	require.ErrorAs(t, err, &exitErr)
+	require.Equal(t, agentcli.ExitUsage, exitErr.Code)
+	var doc document
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &doc))
+	require.Equal(t, agentcli.VerdictUsage, doc.Verdict)
+	require.Contains(t, stdout.String(), `"repositories": []`)
+}
+
+func TestRunPending_AWrongCallIsADocumentWithAnEmptyList(t *testing.T) {
+	var stdout bytes.Buffer
+	c, err := New(Config{Stdout: &stdout, Stderr: &bytes.Buffer{}})
+	require.NoError(t, err)
+	c.SetArgs([]string{"--pending", "-o", "json", "giantswarm/new-service"})
+	c.SilenceErrors, c.SilenceUsage = true, true
+
+	_ = c.Execute()
+
+	require.Contains(t, stdout.String(), `"repositories": []`)
+	require.Contains(t, stdout.String(), `"verdict": "usage"`)
+}
+
+func TestRunPending_WarningsGoInTheDocument(t *testing.T) {
+	m := &fakeManager{rows: []manager.Row{{Repository: "giantswarm/new-service", Team: "team-honeybadger"}}}
+	var stdout, stderr bytes.Buffer
+	r := newPendingRunner(m, &fakeCircleCI{}, client.OutputJSON, &stdout)
+	r.stderr = &stderr
+	r.open = func(_ context.Context, _ string, warn func(string)) (circleciapp.GitHub, circleciapp.CircleCI, error) {
+		warn("your CircleCI login expires in 3 days")
+		return fakeGitHub{}, &fakeCircleCI{}, nil
+	}
+
+	require.NoError(t, r.runPending(t.Context()))
+
+	var doc document
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &doc))
+	require.Equal(t, []string{"your CircleCI login expires in 3 days"}, doc.Warnings)
+	require.Empty(t, stderr.String())
+}
+
+// unreachableManager fails every call as a broken network does.
+type unreachableManager struct{}
+
+func (unreachableManager) Call(context.Context, string, map[string]any) (json.RawMessage, error) {
+	return nil, errors.New("dial tcp: connection refused")
+}
+
+func TestRunPending_AnUnreachableManagerIsARemoteError(t *testing.T) {
+	var stdout bytes.Buffer
+	r := newPendingRunner(&fakeManager{}, &fakeCircleCI{}, client.OutputJSON, &stdout)
+	r.openSession = func(context.Context) (*client.Session, error) {
+		return &client.Session{Caller: unreachableManager{}}, nil
+	}
+
+	err := r.runPending(t.Context())
+
+	var exitErr *agentcli.ExitError
+	require.ErrorAs(t, err, &exitErr)
+	require.Equal(t, agentcli.ExitRemoteError, exitErr.Code, stdout.String())
 }

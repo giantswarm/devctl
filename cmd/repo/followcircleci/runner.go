@@ -37,7 +37,7 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	}
 	if err := r.validate(args); err != nil {
 		if r.flag.JSON() {
-			doc := pendingDocument{Envelope: agentcli.NewEnvelope(command, time.Now())}
+			doc := newDocument()
 			return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, agentcli.FlagError(command, err))
 		}
 		return microerror.Mask(err)

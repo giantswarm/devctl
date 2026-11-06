@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/giantswarm/microerror"
+	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 )
@@ -21,13 +22,32 @@ type pendingDocument struct {
 	Summary
 }
 
+// newDocument starts --pending's document, with an empty list.
+func newDocument() pendingDocument {
+	return pendingDocument{Envelope: agentcli.NewEnvelope(command, time.Now()), Summary: Summary{Repositories: []Entry{}}}
+}
+
+// FlagError reports a flag cobra could not parse as the document under
+// --output json, as the agent-facing commands do.
+func (r *runner) FlagError(_ *cobra.Command, err error) error {
+	if !r.flag.JSON() {
+		return err
+	}
+	doc := newDocument()
+	return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, agentcli.FlagError(command, err))
+}
+
 // runPending sets up every pending repository of the person's teams.
 func (r *runner) runPending(ctx context.Context) error {
-	started := time.Now()
-	p := &pendingPass{open: r.openSession, openCI: r.open, warn: func(w string) { fmt.Fprintln(r.stderr, w) }}
+	doc := newDocument()
+	warn := func(w string) { fmt.Fprintln(r.stderr, w) }
+	if r.flag.JSON() {
+		// The document is stdout's only output: warnings go in it.
+		warn = doc.Warn
+	}
+	p := &pendingPass{open: r.openSession, openCI: r.open, warn: warn}
 	summary, err := p.run(ctx)
 	if r.flag.JSON() {
-		doc := pendingDocument{Envelope: agentcli.NewEnvelope(command, started), Summary: Summary{Repositories: []Entry{}}}
 		if summary != nil {
 			doc.Summary = *summary
 		}
