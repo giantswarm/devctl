@@ -28,7 +28,7 @@ func TestFlagArgs(t *testing.T) {
 func TestPrint(t *testing.T) {
 	converged, drifted := true, false
 	var out bytes.Buffer
-	print(&out, &manager.Listing{
+	require.NoError(t, print(&out, &manager.Listing{
 		Scope: "mine", Teams: []string{"team-bumblebee"}, TeamsSource: "github", Total: 1790, Matched: 4, Shown: 4, Note: "one of your teams",
 		Repositories: []manager.Row{
 			{Repository: "giantswarm/a", Team: "team-bumblebee", Renovate: "active", LastPersonCommit: "2026-09-01", Setup: manager.RowSetup{Converged: &converged}},
@@ -36,7 +36,7 @@ func TestPrint(t *testing.T) {
 			{Repository: "giantswarm/c", Team: "team-bumblebee", Setup: manager.RowSetup{Refused: true}},
 			{Repository: "giantswarm/d", Archived: true, Setup: manager.RowSetup{}},
 		},
-	})
+	}))
 	text := out.String()
 	require.Contains(t, text, "scope mine (teams team-bumblebee, from github): 4 shown of 4 matched, 1790 in the inventory")
 	require.Contains(t, text, "note: one of your teams")
