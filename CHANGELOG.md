@@ -24,6 +24,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `pr approve-merge-renovate` cancels and drains discovery and PR workers before returning,
   including retry waits, and waits for PRs found while the initial workers finish.
+- `gen makefile`: the chainsaw harness waits for every Kyverno controller after installing Kyverno, not only the admission
+  controller, so a chart that ships a cleanup policy no longer fails `install-policies` with `connection refused` from
+  the cleanup controller's webhook when it comes up a few seconds later.
 - `gen makefile`: `make build-docker` builds `<binary>-linux-<arch>` for the host architecture ([giantswarm/giantswarm#38805](https://github.com/giantswarm/giantswarm/issues/38805)).
 - Concurrent updates to `DEVCTL_KEYRING_FILE` preserve changes to every identity and readers see complete records.
 - CircleCI waits read every workflow page, so a failed or running workflow on a later page is no longer missed.
