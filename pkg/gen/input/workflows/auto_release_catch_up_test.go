@@ -40,6 +40,32 @@ func Test_AutoReleaseCatchUpOrder(t *testing.T) {
 			require.Equal(t, "${{ steps.decide.outputs.target }}", steps[at].Env["TARGET"])
 			require.Equal(t, "${{ secrets.GITHUB_TOKEN }}", steps[at].Env["GH_TOKEN"])
 			require.Equal(t, "${{ github.repository }}", steps[at].Env["GH_REPO"])
+			require.Equal(t, "${{ steps.decide.outputs.tag }}", steps[at].Env["STABLE"])
+			for _, id := range []string{"catch-up-token", "catch-up-pr"} {
+				index := slices.Index(ids, id)
+				require.Greater(t, index, at)
+				require.Equal(t, "steps.catch-up.outputs.prepare == 'true'", steps[index].If)
+			}
+			token := steps[slices.Index(ids, "catch-up-token")]
+			require.Contains(t, token.Uses, "actions/create-github-app-token@")
+			require.Equal(t, "${{ secrets.RELEASE_BOT_CLIENT_ID }}", token.With["client-id"])
+			require.Equal(t, "${{ secrets.RELEASE_BOT_PRIVATE_KEY }}", token.With["private-key"])
+			require.Equal(t, "write", token.With["permission-contents"])
+			require.Equal(t, "write", token.With["permission-pull-requests"])
+			prepare := steps[slices.Index(ids, "catch-up-pr")]
+			require.Equal(t, "${{ steps.catch-up-token.outputs.token }}", prepare.Env["GH_TOKEN"])
+			var checkedOut bool
+			for _, step := range steps {
+				if step.Name == "Check out the catch-up head" {
+					checkedOut = true
+					require.Equal(t, "steps.catch-up.outputs.prepare == 'true'", step.If)
+					require.Equal(t, "${{ steps.catch-up.outputs.head }}", step.With["ref"])
+					require.Equal(t, "${{ steps.catch-up-token.outputs.token }}", step.With["token"])
+					require.Equal(t, step.With["path"], prepare.WorkingDirectory)
+					require.NotEmpty(t, prepare.WorkingDirectory, "preserve the promoted checkout for CircleCI verification")
+				}
+			}
+			require.True(t, checkedOut, "the preparation branch needs the App token to trigger CI")
 
 			var workflow struct {
 				Jobs map[string]struct {
@@ -74,7 +100,7 @@ func Test_AutoReleaseCatchUpAfterPromotingEarlierRC(t *testing.T) {
 	head := strings.TrimSpace(mustGit(t, origin, "rev-parse", "HEAD"))
 	mustGit(t, origin, "tag", stable["tag"], stable["target"])
 	path, calls := catchUpDispatchStub(t)
-	_, log, err = runStep(t, tagJobStep(t, "catch-up").Run, dir, path, "DISPATCH_LOG="+calls, "GH_REPO=giantswarm/example", "TARGET="+stable["target"])
+	_, log, err = runStep(t, tagJobStep(t, "catch-up").Run, dir, path, "DISPATCH_LOG="+calls, "GH_REPO=giantswarm/example", "TARGET="+stable["target"], "STABLE="+stable["tag"])
 	require.NoError(t, err, log)
 	require.Contains(t, log, "feat: merged after rc.4")
 	raw, err := os.ReadFile(calls) // #nosec G304 -- dispatch log path built from t.TempDir
@@ -100,6 +126,105 @@ func Test_AutoReleaseCatchUpAfterPromotingEarlierRC(t *testing.T) {
 	require.Equal(t, head, next["target"])
 	_, log, err = runStep(t, tagJobStep(t, "one-version").Run, nextDir, "TAG="+next["tag"], "TARGET="+head)
 	require.NoError(t, err, log)
+}
+
+// No user commit follows rc.4. Only GitHub's PR and release endpoints are
+// stubbed; the workflow scripts run against real Git and pinned git-cliff.
+func Test_AutoReleaseCatchUpFromTaggedHead(t *testing.T) {
+	requireGitCliff(t)
+	origin := repo(t, "v0.121.0", "feat: proven", "v0.122.0-rc.3", "feat: later candidate", "v0.122.0-rc.4")
+	head := strings.TrimSpace(mustGit(t, origin, "rev-parse", "HEAD"))
+	target := strings.TrimSpace(mustGit(t, origin, "rev-parse", "v0.122.0-rc.3"))
+	mustGit(t, origin, "tag", "v0.122.0", target)
+	dir := filepath.Join(t.TempDir(), "promotion")
+	mustGit(t, origin, "clone", "--no-local", origin, dir)
+	mustGit(t, dir, "checkout", "--detach", target)
+	path, calls := catchUpDispatchStub(t)
+	caught, log, err := runStep(t, tagJobStep(t, "catch-up").Run, dir, path, "DISPATCH_LOG="+calls,
+		"TARGET="+target, "STABLE=v0.122.0")
+	require.NoError(t, err, log)
+	require.Equal(t, "true", caught["prepare"])
+	require.Equal(t, head, caught["head"])
+	_, err = os.Stat(calls)
+	require.ErrorIs(t, err, os.ErrNotExist, "do not dispatch onto the conflicting head")
+
+	bin := t.TempDir()
+	stub := `#!/usr/bin/env bash
+set -euo pipefail
+case "$1 $2" in
+  "pr list") [ ! -f "$PR_LOG" ] || printf '%s\n' 'https://github.com/giantswarm/example/pull/1' ;;
+  "pr create") printf '%s\n' "$@" > "$PR_LOG"; echo 'https://github.com/giantswarm/example/pull/1' ;;
+  "pr view") echo "${PR_STATE:-OPEN}" ;;
+  "pr merge") printf '%s\n' "$@" > "$MERGE_LOG"; exit "${MERGE_EXIT:-0}" ;;
+  "release create")
+    printf '%s\n' "$@" > "$RELEASE_LOG"
+    git -C "$ORIGIN" tag "$3" "$TARGET"
+    ;;
+  *) echo "unexpected gh $*" >&2; exit 2 ;;
+esac
+`
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "gh"), []byte(stub), 0o700)) // #nosec G306 -- test-only executable
+	prLog, mergeLog := filepath.Join(t.TempDir(), "pr"), filepath.Join(t.TempDir(), "merge")
+	env := []string{"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"),
+		"STABLE=v0.122.0", "CATCH_UP_HEAD=" + head, "PR_LOG=" + prLog, "MERGE_LOG=" + mergeLog,
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com"}
+	_, log, err = runStep(t, tagJobStep(t, "catch-up-pr").Run, dir, env...)
+	require.NoError(t, err, log)
+	branch := "release/catch-up-v0.122.0-" + head[:12]
+	prepared := strings.TrimSpace(mustGit(t, origin, "rev-parse", branch))
+	require.NotEqual(t, head, prepared)
+	require.Equal(t, head, strings.TrimSpace(mustGit(t, origin, "rev-parse", prepared+"^")))
+	require.Equal(t, head, strings.TrimSpace(mustGit(t, origin, "rev-parse", "main")), "the workflow never pushes to main")
+	require.Equal(t, ".github/release-catch-up", strings.TrimSpace(mustGit(t, origin, "diff", "--name-only", head, prepared)))
+	raw, err := os.ReadFile(mergeLog) // #nosec G304 -- temporary fixture log
+	require.NoError(t, err)
+	require.Contains(t, string(raw), "--auto\n--squash\n", "merge must wait for required checks")
+	// A push succeeded but PR creation failed: the next run reuses the
+	// remote branch even though its PR lookup still returns nothing.
+	require.NoError(t, os.Remove(prLog))
+	_, log, err = runStep(t, tagJobStep(t, "catch-up-pr").Run, dir, env...)
+	require.NoError(t, err, log)
+	require.Equal(t, prepared, strings.TrimSpace(mustGit(t, origin, "rev-parse", branch)))
+
+	// Reruns reuse the published PR instead of rewriting its branch.
+	_, log, err = runStep(t, tagJobStep(t, "catch-up-pr").Run, dir, env...)
+	require.NoError(t, err, log)
+	require.Equal(t, prepared, strings.TrimSpace(mustGit(t, origin, "rev-parse", branch)))
+	_, log, err = runStep(t, tagJobStep(t, "catch-up-pr").Run, dir, append(env, "PR_STATE=MERGED")...)
+	require.NoError(t, err, log)
+	require.Contains(t, log, "already merged")
+	_, log, err = runStep(t, tagJobStep(t, "catch-up-pr").Run, dir, append(env, "PR_STATE=CLOSED")...)
+	require.Error(t, err, log)
+	require.Contains(t, log, "closed without merging")
+	_, log, err = runStep(t, tagJobStep(t, "catch-up-pr").Run, dir, append(env, "MERGE_EXIT=1")...)
+	require.Error(t, err, "a refused auto-merge must fail catch-up: %s", log)
+
+	// Simulate GitHub merging after required checks. That push triggers the
+	// next run; no user push and no tag-guard exception are needed.
+	mustGit(t, origin, "merge", "--ff-only", branch)
+	nextDir := filepath.Join(t.TempDir(), "next-run")
+	mustGit(t, origin, "clone", "--no-local", origin, nextDir)
+	cliffTomlIn(t, nextDir)
+	computed, log, err := runStep(t, tagJobStepNamed(t, "Compute next version").Run, nextDir)
+	require.NoError(t, err, log)
+	require.Equal(t, "v0.123.0", computed["version"])
+	context, err := os.ReadFile(filepath.Join(nextDir, "cliff-context.json")) // #nosec G304 -- temporary fixture context
+	require.NoError(t, err)
+	require.Contains(t, string(context), "feat: later candidate")
+	require.NotContains(t, string(context), "feat: proven")
+	next, log, err := runStep(t, decideScript(t), nextDir, "NEXT="+computed["version"], "WANT=auto", "CLIFF_CONTEXT=cliff-context.json")
+	require.NoError(t, err, log)
+	require.Equal(t, "v0.123.0-rc.1", next["tag"])
+	require.Equal(t, prepared, next["target"])
+	_, log, err = runStep(t, tagJobStep(t, "one-version").Run, nextDir, "TAG="+next["tag"], "TARGET="+next["target"])
+	require.NoError(t, err, log)
+	_, log, err = runStep(t, tagJobStep(t, "notes").Run, nextDir, "TAG="+next["tag"])
+	require.NoError(t, err, log)
+	releaseLog := filepath.Join(t.TempDir(), "release")
+	_, log, err = runStep(t, tagJobStep(t, "release").Run, nextDir, env[0], "ORIGIN="+origin, "RELEASE_LOG="+releaseLog,
+		"TAG="+next["tag"], "TARGET="+next["target"], "PRERELEASE=true")
+	require.NoError(t, err, log)
+	require.Equal(t, prepared, strings.TrimSpace(mustGit(t, origin, "rev-parse", next["tag"])))
 }
 
 func Test_AutoReleaseCatchUpDispatch(t *testing.T) {
@@ -136,7 +261,7 @@ func Test_AutoReleaseCatchUpDispatch(t *testing.T) {
 				mustGit(t, origin, "branch", "-f", tc.branch, "HEAD")
 			}
 			path, calls := catchUpDispatchStub(t)
-			env := []string{path, "DISPATCH_LOG=" + calls, "GH_REPO=giantswarm/example", "GITHUB_REF_NAME=" + tc.branch, "TARGET=" + target}
+			env := []string{path, "DISPATCH_LOG=" + calls, "GH_REPO=giantswarm/example", "GITHUB_REF_NAME=" + tc.branch, "TARGET=" + target, "STABLE=v1.2.0"}
 			if tc.fail {
 				env = append(env, "DISPATCH_EXIT=1")
 			}

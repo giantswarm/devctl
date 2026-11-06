@@ -325,7 +325,7 @@ For detailed guidelines and examples, always refer to: @https://github.com/giant
 <!--
 DO NOT EDIT. Generated with devctl.
 This file is maintained at:
-https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/base_llm_rules.mdc.template
+https://github.com/giantswarm/devctl/tree/main
 Manual changes will be overwritten.
 -->
 
@@ -362,7 +362,7 @@ When creating or modifying Go files, perform the according check and mitigate an
 <!--
 DO NOT EDIT. Generated with devctl.
 This file is maintained at:
-https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/go_rules.mdc.template
+https://github.com/giantswarm/devctl/tree/main
 Manual changes will be overwritten.
 -->
 
@@ -629,7 +629,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/auto_release.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 # yamllint disable rule:truthy
 # Push-based release tagger + release-page publisher.
@@ -705,7 +705,7 @@ jobs:
     name: Tag
     runs-on: ubuntu-26.04
     permissions:
-      contents: write       # push tags and create the GitHub Release
+      contents: write       # create tags and the GitHub Release
       # git-cliff's GitHub API lookups (commit.remote.pr_number / username
       # in release notes) need PR read access via GITHUB_TOKEN.
       pull-requests: read
@@ -1172,6 +1172,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           TARGET: ${{ steps.decide.outputs.target }}
+          STABLE: ${{ steps.decide.outputs.tag }}
         run: |
           set -euo pipefail
           git fetch --no-tags origin "refs/heads/${GITHUB_REF_NAME}"
@@ -1184,9 +1185,94 @@ jobs:
             echo "${GITHUB_REF_NAME} has no commits after the promoted candidate; nothing to queue."
             exit 0
           fi
+          # A superseded RC on the head cannot acquire another version's
+          # tag. Land a preparation PR through the normal checks instead:
+          # its merge supplies the new commit and triggers auto-release.
+          # Read remote tags, including peeled annotated tags, as the guard
+          # does; the checkout can predate the branch's latest candidate.
+          rc='^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$'
+          tags=$(git ls-remote --tags origin)
+          while read -r sha ref; do
+            tag=${ref#refs/tags/}
+            tag=${tag%'^{}'}
+            if [ "$sha" = "$head" ] && [[ "$tag" =~ $rc ]] && [ "${tag%-rc.*}" = "$STABLE" ]; then
+              echo "${tag} already tags ${head:0:8}; preparing a checked catch-up PR."
+              echo "prepare=true" >> "$GITHUB_OUTPUT"
+              echo "head=$head" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done <<<"$tags"
           echo "Queuing auto-release for commits on ${GITHUB_REF_NAME} after the promoted candidate:"
           git log --format='%h %s' "${TARGET}..${head}"
           gh workflow run zz_generated.auto_release.yaml --ref "$GITHUB_REF_NAME" -f release-type=auto
+
+      # The release App bypasses the review rule for its generated PRs,
+      # never the required checks. Its push/merge triggers CI, unlike a
+      # GITHUB_TOKEN push. No write to the protected branch happens here.
+      - name: Generate the release token for catch-up
+        id: catch-up-token
+        if: steps.catch-up.outputs.prepare == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Check out the catch-up head
+        if: steps.catch-up.outputs.prepare == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.catch-up.outputs.head }}
+          fetch-depth: 0
+          token: ${{ steps.catch-up-token.outputs.token }}
+          # Keep the promoted checkout for its CircleCI verification below.
+          path: .release-catch-up-worktree
+      - name: Prepare a new commit for catch-up through a checked PR
+        id: catch-up-pr
+        if: steps.catch-up.outputs.prepare == 'true'
+        working-directory: .release-catch-up-worktree
+        env:
+          GH_TOKEN: ${{ steps.catch-up-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          STABLE: ${{ steps.decide.outputs.tag }}
+          CATCH_UP_HEAD: ${{ steps.catch-up.outputs.head }}
+          GIT_AUTHOR_NAME: giantswarm-release[bot]
+          GIT_AUTHOR_EMAIL: giantswarm-release[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: giantswarm-release[bot]
+          GIT_COMMITTER_EMAIL: giantswarm-release[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          branch="release/catch-up-${STABLE}-${CATCH_UP_HEAD:0:12}"
+          # A rerun reuses the same PR, including one already merged. Never
+          # rewrite its head or cut a second preparation commit for it.
+          pr=$(gh pr list --head "$branch" --base "$GITHUB_REF_NAME" --state all --json url --jq '.[0].url // empty')
+          if [ -z "$pr" ]; then
+            # The branch push can succeed before PR creation fails. Reuse
+            # that branch on a retry, without a force push.
+            remote=$(git ls-remote --heads origin "refs/heads/${branch}")
+            if [ -z "$remote" ]; then
+              git checkout -q --detach "$CATCH_UP_HEAD"
+              mkdir -p .github
+              printf 'stable=%s\nhead=%s\n' "$STABLE" "$CATCH_UP_HEAD" > .github/release-catch-up
+              git add .github/release-catch-up
+              git commit -m "docs(release): resume releases after ${STABLE}"
+              git push origin "HEAD:refs/heads/${branch}"
+            fi
+            pr=$(gh pr create --head "$branch" --base "$GITHUB_REF_NAME" \
+              --title "docs(release): resume releases after ${STABLE}" \
+              --body "Promotion of ${STABLE} left a superseded candidate on the branch head. This marker gives catch-up its own commit, preserving one version per commit. Merge after required checks; the merge triggers auto-release for the remaining changes.")
+          fi
+          state=$(gh pr view "$pr" --json state --jq .state)
+          if [ "$state" = MERGED ]; then
+            echo "Catch-up PR already merged: ${pr}"
+          elif [ "$state" = OPEN ]; then
+            gh pr merge "$pr" --auto --squash
+            echo "Catch-up waits for the required checks: ${pr}"
+          else
+            echo "::error::Catch-up PR was closed without merging: ${pr}; reopen it to resume releases."
+            exit 1
+          fi
+          echo "Catch-up PR: ${pr}" >> "$GITHUB_STEP_SUMMARY"
 
       # A tag that never reaches CircleCI is a silent failure: the GitHub
       # Release above exists and looks finished, but nothing gets built or
@@ -1295,7 +1381,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/chart_tests.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 name: chart-tests
@@ -1324,7 +1410,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/check_readme_links.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 name: check-readme-links
@@ -1372,7 +1458,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/check_values_schema.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 name: check-values-schema
@@ -1401,7 +1487,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/fix_vulnerabilities.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 name: Fix Go vulnerabilities
@@ -1442,7 +1528,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/gitleaks.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 name: gitleaks
 
@@ -1467,7 +1553,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/precommit/internal/file/pre-commit-action.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 name: pre-commit
 
@@ -1540,7 +1626,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/run_ossf_scorecard.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 # This workflow uses actions that are not certified by GitHub. They are provided
@@ -1583,7 +1669,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/semantic_pull_request.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 name: semantic-pull-request
 
@@ -1658,7 +1744,7 @@ CVE-2019-10743 until=2021-10-17
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/precommit/internal/file/pre-commit-config.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 minimum_pre_commit_version: '2.17'
 default_install_hook_types: [pre-commit, commit-msg]
@@ -2091,7 +2177,7 @@ By making a contribution to this project, I certify that:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 -include Makefile.*.mk
@@ -2118,7 +2204,7 @@ help: ## Display this help.
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.gen.app.mk.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 ##@ App
@@ -2256,7 +2342,7 @@ test: helm-test
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.gen.go.mk.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 APPLICATION    := $(shell go list -m | cut -d '/' -f 3)
@@ -2422,7 +2508,7 @@ Please visit <https://www.giantswarm.io/responsible-disclosure> for information 
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/cliff.toml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 # git-cliff config for the push-based auto-release flow.
 #
@@ -2597,7 +2683,7 @@ go 1.25
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/precommit/internal/file/schema.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 # The generated app-platform file goes first so keys the chart defines itself
@@ -2840,7 +2926,7 @@ registry:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/precommit/internal/file/app-platform-values.yaml.template
+#    https://github.com/giantswarm/devctl/tree/main
 #
 
 # Values the Giant Swarm app platform injects into Apps: flux/app-operator

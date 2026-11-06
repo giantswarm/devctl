@@ -74,7 +74,7 @@ A stable minor or major release is cut only by running the workflow by hand with
 
 #### CHANGELOG.md
 
-On `auto-release` the GitHub Releases are the changelog. Each release's notes are git-cliff's grouping of the pull request titles merged since the previous release (the squash commit subjects), so the pull request title is the entry and nothing writes `CHANGELOG.md`: no release commit, no pull request after a release, no check, and no conflict between parallel pull requests on the file.
+On `auto-release` the GitHub Releases are the changelog. Each release's notes are git-cliff's grouping of the pull request titles merged since the previous release (the squash commit subjects), so the pull request title is the entry and nothing writes `CHANGELOG.md`: no changelog commit or PR after a release, no changelog check, and no conflict between parallel pull requests on the file.
 
 `gen workflows` on `auto-release` freezes an existing `CHANGELOG.md` as a pointer at `https://github.com/giantswarm/<repo>/releases`; its earlier entries stay in the git history and in the file at every earlier tag. It also drops a checklist item asking for a changelog edit from the repository's `.github/pull_request_template.md`, keeping the rest of the template. A repository without either file gets none. A multi-image repository and a fork line keep their `CHANGELOG.md` as it is: the first releases each image on its own tag, the second carries upstream's file.
 
@@ -86,8 +86,18 @@ After a successful promotion, the workflow fetches the release branch again. If 
 candidate, it dispatches `release-type: auto` on that branch, in the same concurrency group, before verifying the
 stable tag's CircleCI build. The queued run uses the new stable as its baseline: features open the next minor
 candidate, fixes take the normal patch path (a candidate with `--patch-candidates`), and skipped commits tag nothing.
-No additional push is needed. A failed stable gate queues nothing. The one-version-per-commit check still applies:
-a branch head already tagged for a different version needs a new commit before another version can be cut.
+No additional user push is needed. A failed stable gate queues nothing. If the branch head already carries an RC
+of the just-promoted version, catch-up opens a release-preparation PR instead of dispatching onto that conflicting
+commit. The PR updates `.github/release-catch-up` with the stable tag and the head it resumes, and arms squash
+auto-merge. Its `docs(release):` title is skipped by git-cliff, so preparation alone spends no version. Its merge supplies a new commit and triggers auto-release; the one-version-per-commit guard stays in
+force. Other branch heads use the direct dispatch path. Retries reuse the preparation branch and PR; a closed,
+unmerged preparation PR fails with its URL rather than silently dropping catch-up.
+
+The preparation path uses the existing giantswarm-release App (`RELEASE_BOT_CLIENT_ID` and
+`RELEASE_BOT_PRIVATE_KEY`, Contents and Pull requests write). Repository auto-merge and the release App's
+review-rule bypass must be enabled by repository reconciliation (`--release-app-id`); required checks still gate
+the PR. Missing App credentials, a refused push/PR/auto-merge, or failing PR checks must be fixed in the automation:
+catch-up never pushes directly to a protected branch or bypasses required checks.
 `devctl release promote --version` refusing an RC older than the last stable lists commits on the branch after that
 stable in `stranded[]` and gives the auto-release dispatch command; a comparison it cannot read is reported as such.
 
