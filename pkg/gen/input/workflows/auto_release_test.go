@@ -19,11 +19,14 @@ import (
 // autoReleaseStep is one step of the tag job as the rendered workflow declares
 // it.
 type autoReleaseStep struct {
-	ID   string            `yaml:"id"`
-	Name string            `yaml:"name"`
-	If   string            `yaml:"if"`
-	Run  string            `yaml:"run"`
-	Env  map[string]string `yaml:"env"`
+	ID               string            `yaml:"id"`
+	Name             string            `yaml:"name"`
+	If               string            `yaml:"if"`
+	Run              string            `yaml:"run"`
+	Env              map[string]string `yaml:"env"`
+	Uses             string            `yaml:"uses"`
+	With             map[string]string `yaml:"with"`
+	WorkingDirectory string            `yaml:"working-directory"`
 }
 
 // tagJobSteps returns the steps of the auto-release tag job from the rendered
