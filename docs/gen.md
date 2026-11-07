@@ -261,6 +261,50 @@ A GitHub fork takes `--flavour fork`. Renovate skips a fork ("Repository is a fo
 devctl gen renovate --language go --flavour fork
 ```
 
+## Generating app test targets
+
+`devctl gen makefile --flavour app --language go` emits `Makefile.gen.app.mk` with `helm-test`
+for chart unit tests and `ats-test` for app-test-suite cluster tests. `make test`
+includes the unit tests; run the cluster tests explicitly:
+
+```nohighlight
+make ats-test ATS_CHART_FILE=build/my-app-1.2.3.tgz
+```
+
+Build the chart first, as CI's separate `build-chart` job does. Without
+`ATS_CHART_FILE`, the target selects the single `*.tgz` below `build/`; missing or
+ambiguous archives fail before creating a cluster. `ATS_CHART_ARCHIVE_PREFIX`
+restricts this discovery, like the orb's `chart_archive_prefix` parameter.
+
+The target requires Docker with host networking and a compatible `kind` on PATH
+(the pinned architect orb installs kind v0.33.0). It creates a temporary kind
+cluster with the same default node image as generated CI, applies
+`.ats/kind-config.yaml` when present, and runs the pinned ATS 1.x image with the
+checkout mounted at `/ats/workdir`, the calling user's UID/GID, and explicit
+chart, kubeconfig, cluster type and Kubernetes version arguments. ATS reads the
+repository's `.ats/main.yaml` (also `.yml`) and tests from the checkout. Each run
+uses its own kubeconfig and cluster name and removes them on success or failure;
+the caller's current context is never used. Repositories with no Python
+(`test_*.py` or `*_test.py`) or Go (`*_test.go`) tests under `tests/ats/` and no
+ATS config print a message and exit successfully before checking tools or
+artifacts. Generated dependency files alone do not count as a suite.
+
+The ATS and kind node image versions carry Renovate annotations. A repository
+with explicit CI pins must match them using `ATS_VERSION` and
+`ATS_KIND_NODE_IMAGE_VERSION` in `Makefile.custom.mk`; `ATS_KIND_NODE_IMAGE`
+overrides the whole node image reference. `ATS_KIND_CONFIG` overrides the kind
+config path (set it empty to disable it), and `ATS_FLAGS` passes additional ATS
+arguments, like the orb's `additional_app-test-suite_flags` parameter. The target
+requires an ATS 1.x suite; legacy 0.x suites must migrate before using it.
+
+CI continues to use `architect/run-tests-with-ats`. Its registry context and
+image publication steps are separate prerequisites: local tests need pullable
+application images, and this target does not copy CI credentials into kind for
+private image pulls. It also leaves the chart build and release steps separate.
+
+A [real-repository validation](validation/ats-test.md) records the generated
+target, built chart, image pins, command and live ATS outcome.
+
 ## Generating a plans repository's set-up
 
 Writes the set-up every team plans repository shares. Nothing is generated without the [`plans` flavour](flavours.md#plans).
