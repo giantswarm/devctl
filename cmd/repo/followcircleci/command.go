@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
 	"github.com/giantswarm/devctl/v8/pkg/circleciapp"
 )
 
@@ -52,8 +53,17 @@ granted Write on the consent page: a Read-only login is refused on the first
 write. GitHub is read as devctl pr wait reads it: the devctl App login for
 giantswarm, your own gh login for every other owner.
 
+With --pending, instead of one repository: every repository of your teams
+the inventory reports circleci-pipeline-missing for (giantswarm-repo-manager's
+list, scope mine; declared, in production, unarchived), set up without --migrate and
+without waiting; --output json prints its document. After any devctl command,
+at most once every six hours, devctl runs that pass by itself, quietly, with
+the logins the keychain holds, never in CI; any non-empty value of
+DEVCTL_NO_CIRCLECI_PENDING turns it off.
+
 Examples:
   devctl repo follow-circleci my-service
+  devctl repo follow-circleci --pending
   devctl repo follow-circleci giantswarm/my-service --migrate
   devctl repo follow-circleci my-service --wait=false`
 )
@@ -73,9 +83,13 @@ type Config struct {
 }
 
 type flag struct {
+	client.Flags
 	Migrate bool
+	Pending bool
 	Wait    bool
 	Timeout time.Duration
+	// WaitSet says --wait or --timeout was given, which --pending refuses.
+	WaitSet bool
 }
 
 func New(config Config) (*cobra.Command, error) {
@@ -86,27 +100,38 @@ func New(config Config) (*cobra.Command, error) {
 		config.Stdout = os.Stdout
 	}
 
-	f := &flag{}
 	r := &runner{
-		flag:     f,
-		stdout:   config.Stdout,
-		stderr:   config.Stderr,
-		open:     circleciapp.OpenAsPerson,
-		sleep:    sleep,
-		interval: pollInterval,
+		flag:        &flag{},
+		stdout:      config.Stdout,
+		stderr:      config.Stderr,
+		open:        circleciapp.OpenAsPerson,
+		openSession: client.Open,
+		sleep:       sleep,
+		interval:    pollInterval,
 	}
+	return newCommand(r), nil
+}
 
+// newCommand is the command running r; tests give r fake clients.
+func newCommand(r *runner) *cobra.Command {
+	f := r.flag
 	c := &cobra.Command{
-		Use:   fmt.Sprintf("%s [OWNER/]REPOSITORY", name),
+		Use:   fmt.Sprintf("%s [OWNER/]REPOSITORY | --pending", name),
 		Short: shortDesc,
 		Long:  longDesc,
-		Args:  cobra.ExactArgs(1),
-		RunE:  r.Run,
+		// validate counts the arguments, so a wrong call under -o json is
+		// the document.
+		Args: cobra.ArbitraryArgs,
+		RunE: r.Run,
 	}
 	c.Flags().BoolVar(&f.Migrate, "migrate", false, "Also delete the OAuth pipeline's triggers, so a push builds once, on the GitHub App pipeline.")
-	c.Flags().BoolVar(&f.Wait, "wait", true, "Wait for the runs the command starts to settle.")
-	c.Flags().DurationVar(&f.Timeout, "timeout", defaultTimeout, "How long to wait for the runs.")
-	return c, nil
+	c.Flags().BoolVar(&f.Wait, "wait", true, "Wait for the runs the command starts to settle; one repository only, --pending never waits.")
+	c.Flags().DurationVar(&f.Timeout, "timeout", defaultTimeout, "How long to wait for the runs; one repository only.")
+	c.Flags().BoolVar(&f.Pending, "pending", false, "Instead of one repository, set up every repository of your teams the inventory reports circleci-pipeline-missing for, without waiting for the runs.")
+	f.Init(c)
+	c.Flags().Lookup("output").Usage = "Output format with --pending: text, or json for the command's document (envelope, pending, repositories)."
+	c.SetFlagErrorFunc(r.FlagError)
+	return c
 }
 
 func sleep(ctx context.Context, d time.Duration) error {

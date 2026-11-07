@@ -269,7 +269,7 @@ func runGoBinaryMake(t *testing.T, dir, target string) ([]byte, error) {
 	}
 	// #nosec G204 -- make and its arguments are controlled offline fixtures
 	cmd := exec.CommandContext(t.Context(), makeBin, "-f", "Makefile.gen.go.mk", target,
-		"APPLICATION=fixture", "MODULE=example.invalid/fixture", "VERSION=1.2.3", "OS=linux",
+		"APPLICATION=fixture", "MODULE=example.invalid/fixture", "VERSION=1.2.3", "OS=linux", "ARCH=amd64",
 		"SOURCES=", "BUILDTIMESTAMP=unused", "GITSHA1=unused", "RACE=")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "PATH="+filepath.Join(dir, "bin"))

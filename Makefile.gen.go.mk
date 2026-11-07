@@ -2,7 +2,7 @@
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/d5ad03a6f805a9758a19a77a0d2214a355df56dc/pkg/gen/input/makefile/internal/file/Makefile.gen.go.mk.template
+#    https://github.com/giantswarm/devctl/blob/2da48e8e991a721cdb632ba78fb4c3cbea2e06f6/pkg/gen/input/makefile/internal/file/Makefile.gen.go.mk.template
 #
 
 PACKAGE_DIR    := ./bin-dist
@@ -14,6 +14,7 @@ MODULE         := $(shell go list -m)
 # main() is usually in `main.go`, but sometimes in `cmd/main.go` (for example in newer kubebuilder projects)
 MAIN_SOURCE    := $(shell if test -e cmd/main.go; then echo cmd/main.go; else echo main.go; fi)
 OS             := $(shell go env GOOS)
+ARCH           := $(shell go env GOARCH)
 SOURCES        := $(shell find . -name '*.go')
 # Older gitsemver releases cannot open a worktree's .git file. Fall back to
 # local version tags; without one, leave VERSION empty so shipping targets fail.
@@ -70,6 +71,10 @@ $(APPLICATION)-darwin-arm64: $(APPLICATION)-v$(VERSION)-darwin-arm64
 	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-linux: $(APPLICATION)-v$(VERSION)-linux-amd64
+	@echo "====> $@"
+	@$(call INSTALL_BINARY,$<,$@)
+
+$(APPLICATION)-linux-amd64: $(APPLICATION)-v$(VERSION)-linux-amd64
 	@echo "====> $@"
 	@$(call INSTALL_BINARY,$<,$@)
 
@@ -208,8 +213,8 @@ test: ## Runs go test with default values (race detector when a C toolchain is a
 	go test -ldflags "$(LDFLAGS)" $(RACE) ./...
 
 .PHONY: build-docker
-build-docker: build-linux ## Builds docker image to registry.
+build-docker: $(APPLICATION)-linux-$(ARCH) ## Builds docker image to registry for the host architecture.
 	$(REQUIRE_VERSION)
 	@echo "====> $@"
-	@$(call INSTALL_BINARY,$(APPLICATION)-linux,$(APPLICATION))
+	@$(call INSTALL_BINARY,$<,$(APPLICATION))
 	docker build -t ${APPLICATION}:${VERSION} .

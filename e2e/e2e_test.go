@@ -190,6 +190,9 @@ func environment(t *testing.T, sc *scenario.Scenario, m *mocks) []string {
 		"DEVCTL_REGISTRY_INSECURE=1",
 		"DEVCTL_MUSTER_URL=" + m.muster.MCPURL(),
 		"DEVCTL_KEYRING_FILE=" + keyring,
+		// The CircleCI pass after a command reads the person's inventory; a
+		// scenario about it sets this empty.
+		"DEVCTL_NO_CIRCLECI_PENDING=1",
 	}
 	for key, value := range sc.Env {
 		env = append(env, key+"="+value)

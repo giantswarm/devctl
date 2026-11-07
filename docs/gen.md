@@ -81,13 +81,33 @@ A stable minor or major release is cut only by running the workflow by hand with
 
 #### CHANGELOG.md
 
-On `auto-release` the GitHub Releases are the changelog. Each release's notes are git-cliff's grouping of the pull request titles merged since the previous release (the squash commit subjects), so the pull request title is the entry and nothing writes `CHANGELOG.md`: no release commit, no pull request after a release, no check, and no conflict between parallel pull requests on the file.
+On `auto-release` the GitHub Releases are the changelog. Each release's notes are git-cliff's grouping of the pull request titles merged since the previous release (the squash commit subjects), so the pull request title is the entry and nothing writes `CHANGELOG.md`: no changelog commit or PR after a release, no changelog check, and no conflict between parallel pull requests on the file.
 
 `gen workflows` on `auto-release` freezes an existing `CHANGELOG.md` as a pointer at `https://github.com/giantswarm/<repo>/releases`; its earlier entries stay in the git history and in the file at every earlier tag. It also drops a checklist item asking for a changelog edit from the repository's `.github/pull_request_template.md`, with its heading when the item was all the section held, keeping the rest of the template. A repository without either file gets none. A multi-image repository and a fork line keep their `CHANGELOG.md` as it is: the first releases each image on its own tag, the second carries upstream's file.
 
 `devctl release create` reads a component's changes from its `CHANGELOG.md` at the tag, and from its GitHub Releases when that file has no section for the version or the tag has no `CHANGELOG.md`: the notes of every release after the previous version up to the new one, its pre-releases left out, since the stable release carries their notes; a component new in the release gets the notes of its own release. Any other failure to read the file fails the command, as before. A note's `[**breaking**]` bullet is listed under the breaking changes.
 
 `cliff.toml`'s `[remote.github].repo` is read from the consuming repo's `origin` git remote URL, its `giantswarm/<repo>` path. A checkout with no origin remote, or one outside `giantswarm`, needs `--repo-name <repo>` instead; without either the command fails rather than silently writing `repo = ""`.
+
+After a successful promotion, the workflow fetches the release branch again. If it has commits after the promoted
+candidate, it dispatches `release-type: auto` on that branch, in the same concurrency group, before verifying the
+stable tag's CircleCI build. The queued run uses the new stable as its baseline: features open the next minor
+candidate, fixes take the normal patch path (a candidate with `--patch-candidates`), and skipped commits tag nothing.
+No additional user push is needed. A failed stable gate queues nothing. If the branch head already carries an RC
+of the just-promoted version, catch-up opens a release-preparation PR instead of dispatching onto that conflicting
+commit. The PR updates `.github/release-catch-up` with the stable tag and the head it resumes, and arms squash
+auto-merge. Its `docs(release):` title is skipped by git-cliff, so preparation alone spends no version.
+Its merge supplies a new commit and triggers auto-release; the one-version-per-commit guard stays in
+force. Other branch heads use the direct dispatch path. Retries reuse the preparation branch and PR; a closed,
+unmerged preparation PR fails with its URL rather than silently dropping catch-up.
+
+The preparation path uses the existing giantswarm-release App (`RELEASE_BOT_CLIENT_ID` and
+`RELEASE_BOT_PRIVATE_KEY`, Contents and Pull requests write). Repository auto-merge and the release App's
+review-rule bypass must be enabled by repository reconciliation (`--release-app-id`); required checks still gate
+the PR. Missing App credentials, a refused push/PR/auto-merge, or failing PR checks must be fixed in the automation:
+catch-up never pushes directly to a protected branch or bypasses required checks.
+`devctl release promote --version` refusing an RC older than the last stable lists commits on the branch after that
+stable in `stranded[]` and gives the auto-release dispatch command; a comparison it cannot read is reported as such.
 
 ### helm-docs regen workflow
 
@@ -111,6 +131,16 @@ devctl gen workflows --flavour app --language generic --helm-docs-regen
 `--reservation-support` (app flavour only, off by default) adds `.github/workflows/zz_generated.reservation_command.yaml`, a self-contained workflow with one job. A pull request comment that starts a line with `/deploy`, `/undeploy` or `/extend`, and a closed pull request, are sent to giantswarm/mc-reservations as a `repository_dispatch`, which reserves a management cluster for the branch's dev build (see `devctl reservation`). The workflow is a pure trigger: it sends only the repository, the pull request number and the comment ID, and mc-reservations re-reads and checks the rest. A job filter skips other comments, bot comments and the close of a fork's pull request, so they start no run. The repository needs the `MC_RESERVATIONS_DISPATCH_CLIENT_ID` and `MC_RESERVATIONS_DISPATCH_APP_KEY` org secrets, and the `mc-reservations-github` App installed, or a command gets no answer.
 
 In giantswarm/github the flag is `gen.reservationSupport: true` on the repository entry.
+
+### Chart tests workflow
+
+The app flavour generates `.github/workflows/zz_generated.chart_tests.yaml`, which runs the chart unit tests (`make helm-test`) on pull requests. A repository whose pipeline runs them elsewhere can leave it out.
+
+`--chart-tests=false` (app flavour only, on by default) keeps the workflow out of a repository. In giantswarm/github that is `gen.chartTests: false` on the repository entry; without it align-files puts the workflow back on every run.
+
+```nohighlight
+devctl gen workflows --flavour app --language generic --chart-tests=false
+```
 
 ### README link check workflow
 
@@ -230,6 +260,50 @@ A GitHub fork takes `--flavour fork`. Renovate skips a fork ("Repository is a fo
 ```nohighlight
 devctl gen renovate --language go --flavour fork
 ```
+
+## Generating app test targets
+
+`devctl gen makefile --flavour app --language go` emits `Makefile.gen.app.mk` with `helm-test`
+for chart unit tests and `ats-test` for app-test-suite cluster tests. `make test`
+includes the unit tests; run the cluster tests explicitly:
+
+```nohighlight
+make ats-test ATS_CHART_FILE=build/my-app-1.2.3.tgz
+```
+
+Build the chart first, as CI's separate `build-chart` job does. Without
+`ATS_CHART_FILE`, the target selects the single `*.tgz` below `build/`; missing or
+ambiguous archives fail before creating a cluster. `ATS_CHART_ARCHIVE_PREFIX`
+restricts this discovery, like the orb's `chart_archive_prefix` parameter.
+
+The target requires Docker with host networking and a compatible `kind` on PATH
+(the pinned architect orb installs kind v0.33.0). It creates a temporary kind
+cluster with the same default node image as generated CI, applies
+`.ats/kind-config.yaml` when present, and runs the pinned ATS 1.x image with the
+checkout mounted at `/ats/workdir`, the calling user's UID/GID, and explicit
+chart, kubeconfig, cluster type and Kubernetes version arguments. ATS reads the
+repository's `.ats/main.yaml` (also `.yml`) and tests from the checkout. Each run
+uses its own kubeconfig and cluster name and removes them on success or failure;
+the caller's current context is never used. Repositories with no Python
+(`test_*.py` or `*_test.py`) or Go (`*_test.go`) tests under `tests/ats/` and no
+ATS config print a message and exit successfully before checking tools or
+artifacts. Generated dependency files alone do not count as a suite.
+
+The ATS and kind node image versions carry Renovate annotations. A repository
+with explicit CI pins must match them using `ATS_VERSION` and
+`ATS_KIND_NODE_IMAGE_VERSION` in `Makefile.custom.mk`; `ATS_KIND_NODE_IMAGE`
+overrides the whole node image reference. `ATS_KIND_CONFIG` overrides the kind
+config path (set it empty to disable it), and `ATS_FLAGS` passes additional ATS
+arguments, like the orb's `additional_app-test-suite_flags` parameter. The target
+requires an ATS 1.x suite; legacy 0.x suites must migrate before using it.
+
+CI continues to use `architect/run-tests-with-ats`. Its registry context and
+image publication steps are separate prerequisites: local tests need pullable
+application images, and this target does not copy CI credentials into kind for
+private image pulls. It also leaves the chart build and release steps separate.
+
+A [real-repository validation](validation/ats-test.md) records the generated
+target, built chart, image pins, command and live ATS outcome.
 
 ## Generating a plans repository's set-up
 
