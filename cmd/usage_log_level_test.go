@@ -12,7 +12,7 @@ import (
 )
 
 func TestExecuteAgentInvalidLogLevel(t *testing.T) {
-	for _, command := range [][]string{{"pr", "wait"}, {"release", "wait"}, {"auth", "status"}, {"ci", "jobs"}, {"rollout", "wait"}} {
+	for _, command := range [][]string{{"pr", testWaitCommandName}, {"release", testWaitCommandName}, {"auth", "status"}, {"ci", "jobs"}, {"rollout", testWaitCommandName}} {
 		t.Run(strings.Join(command, " "), func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			root := newTestRoot(t, &stdout)
