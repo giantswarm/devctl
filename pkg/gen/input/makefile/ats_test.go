@@ -54,6 +54,16 @@ esac
 `
 
 func Test_ATSTest(t *testing.T) {
+	const (
+		smokeTestPath  = "tests/ats/test_smoke.py"
+		noSuiteMessage = "no ATS suite"
+		allStages      = "get create docker delete"
+		chartPath      = "build/chart.tgz"
+		getStage       = "get"
+		createStage    = "create"
+		dockerStage    = "docker"
+	)
+
 	if _, err := exec.LookPath("make"); err != nil {
 		t.Fatal("make is required for the ATS target regression")
 	}
@@ -98,30 +108,30 @@ func Test_ATSTest(t *testing.T) {
 	}{
 		{
 			name:    "case 0: no suite needs no tools or chart",
-			wantMsg: "no ATS suite",
+			wantMsg: noSuiteMessage,
 		},
 		{
 			name:       "case 1: default CI invocation with a suite but no config",
-			files:      []string{"tests/ats/test_smoke.py", "build/nested/chart.tgz"},
-			wantStages: "get create docker delete",
+			files:      []string{smokeTestPath, "build/nested/chart.tgz"},
+			wantStages: allStages,
 		},
 		{
 			name:       "case 2: repo config selects a custom suite and kind shape",
-			files:      []string{".ats/main.yaml", ".ats/kind-config.yaml", "build/chart.tgz"},
-			wantStages: "get create docker delete",
+			files:      []string{".ats/main.yaml", ".ats/kind-config.yaml", chartPath},
+			wantStages: allStages,
 			wantConfig: circleci.ATSKindConfigPath,
 		},
 		{
 			name:       "case 3: main.yml is also an ATS suite signal",
-			files:      []string{".ats/main.yml", "build/chart.tgz"},
-			wantStages: "get create docker delete",
+			files:      []string{".ats/main.yml", chartPath},
+			wantStages: allStages,
 		},
 		{
 			name:       "case 4: explicit archive and late custom overrides",
-			files:      []string{"tests/ats/test_smoke.py", "out/custom chart.tgz", "build/one.tgz", "build/two.tgz", "config/kind config.yaml"},
+			files:      []string{smokeTestPath, "out/custom chart.tgz", "build/one.tgz", "build/two.tgz", "config/kind config.yaml"},
 			args:       []string{"ATS_CHART_FILE=out/custom chart.tgz"},
 			custom:     "ATS_VERSION := 1.0.2\nATS_KIND_NODE_IMAGE := mirror.example/kind:v1.36.4@sha256:abc\nATS_KIND_CONFIG := config/kind config.yaml\nATS_FLAGS := --steps smoke functional\n",
-			wantStages: "get create docker delete",
+			wantStages: allStages,
 			wantConfig: "config/kind config.yaml",
 			wantFlags:  []string{"--steps", "smoke", "functional"},
 			wantImage:  "mirror.example/kind:v1.36.4@sha256:abc",
@@ -129,87 +139,87 @@ func Test_ATSTest(t *testing.T) {
 		},
 		{
 			name:       "case 5: archive prefix selects one chart",
-			files:      []string{"tests/ats/test_smoke.py", "build/other.tgz", "build/selected-1.tgz"},
+			files:      []string{smokeTestPath, "build/other.tgz", "build/selected-1.tgz"},
 			args:       []string{"ATS_CHART_ARCHIVE_PREFIX=selected-"},
-			wantStages: "get create docker delete",
+			wantStages: allStages,
 		},
 		{
 			name:    "case 6: ambiguous build artifacts stop before kind",
-			files:   []string{"tests/ats/test_smoke.py", "build/one.tgz", "build/two.tgz"},
+			files:   []string{smokeTestPath, "build/one.tgz", "build/two.tgz"},
 			wantMsg: "expected one built chart",
 		},
 		{
 			name:    "case 7: missing build stops before kind",
-			files:   []string{"tests/ats/test_smoke.py"},
+			files:   []string{smokeTestPath},
 			wantMsg: "expected one built chart",
 		},
 		{
 			name:    "case 8: missing explicit chart stops before kind",
-			files:   []string{"tests/ats/test_smoke.py"},
+			files:   []string{smokeTestPath},
 			args:    []string{"ATS_CHART_FILE=missing.tgz"},
 			wantMsg: "ATS_CHART_FILE 'missing.tgz' does not exist",
 		},
 		{
 			name:    "case 9: missing explicit kind config stops before kind",
-			files:   []string{"tests/ats/test_smoke.py", "build/chart.tgz"},
+			files:   []string{smokeTestPath, chartPath},
 			args:    []string{"ATS_KIND_CONFIG=missing.yaml"},
 			wantMsg: "ATS_KIND_CONFIG 'missing.yaml' does not exist",
 		},
 		{
 			name:    "case 10: legacy version refuses the incompatible invocation",
-			files:   []string{"tests/ats/test_smoke.py"},
+			files:   []string{smokeTestPath},
 			args:    []string{"ATS_VERSION=0.15.0"},
 			wantMsg: "ats-test requires ATS 1.x",
 		},
 		{
 			name:       "case 11: failed cluster discovery does not delete anything",
-			files:      []string{"tests/ats/test_smoke.py", "build/chart.tgz"},
-			failure:    "get",
-			wantStages: "get",
+			files:      []string{smokeTestPath, chartPath},
+			failure:    getStage,
+			wantStages: getStage,
 			wantMsg:    "Error 11",
 		},
 		{
 			name:       "case 12: an existing cluster is never replaced or deleted",
-			files:      []string{"tests/ats/test_smoke.py", "build/chart.tgz"},
+			files:      []string{smokeTestPath, chartPath},
 			failure:    "collision",
-			wantStages: "get",
+			wantStages: getStage,
 			wantMsg:    "already exists; refusing to replace it",
 		},
 		{
 			name:       "case 13: failed creation cleans up the partial cluster",
-			files:      []string{"tests/ats/test_smoke.py", "build/chart.tgz"},
-			failure:    "create",
+			files:      []string{smokeTestPath, chartPath},
+			failure:    createStage,
 			wantStages: "get create delete",
 			wantMsg:    "Error 13",
 		},
 		{
 			name:       "case 14: ATS failure survives successful cleanup",
-			files:      []string{"tests/ats/test_smoke.py", "build/chart.tgz"},
-			failure:    "docker",
-			wantStages: "get create docker delete",
+			files:      []string{smokeTestPath, chartPath},
+			failure:    dockerStage,
+			wantStages: allStages,
 			wantMsg:    "Error 17",
 		},
 		{
 			name:       "case 15: cleanup failure fails a successful ATS run",
-			files:      []string{"tests/ats/test_smoke.py", "build/chart.tgz"},
+			files:      []string{smokeTestPath, chartPath},
 			failure:    "delete",
-			wantStages: "get create docker delete",
+			wantStages: allStages,
 			wantMsg:    "Error 1",
 		},
 		{
 			name:    "case 16: generated dependency files alone are not a suite",
 			files:   []string{"tests/ats/pyproject.toml", "tests/ats/uv.lock", "tests/ats/Pipfile"},
-			wantMsg: "no ATS suite",
+			wantMsg: noSuiteMessage,
 		},
 		{
 			name:       "case 17: Go suites need no ATS config",
-			files:      []string{"tests/ats/smoke/app_test.go", "build/chart.tgz"},
-			wantStages: "get create docker delete",
+			files:      []string{"tests/ats/smoke/app_test.go", chartPath},
+			wantStages: allStages,
 		},
 		{
 			name:       "case 18: pytest suffix pattern also selects a suite",
-			files:      []string{"tests/ats/smoke/app_test.py", "build/chart.tgz"},
-			wantStages: "get create docker delete",
+			files:      []string{"tests/ats/smoke/app_test.py", chartPath},
+			wantStages: allStages,
 		},
 	}
 
@@ -248,7 +258,7 @@ func Test_ATSTest(t *testing.T) {
 				"LC_ALL=C",
 			)
 			out, err := cmd.CombinedOutput()
-			wantErr := tc.wantMsg != "" && tc.wantMsg != "no ATS suite"
+			wantErr := tc.wantMsg != "" && tc.wantMsg != noSuiteMessage
 			if (err != nil) != wantErr {
 				t.Fatalf("make ats-test: err = %v, want error %v\n%s", err, wantErr, out)
 			}
@@ -266,21 +276,21 @@ func Test_ATSTest(t *testing.T) {
 				tag = circleci.DefaultATSVersion
 			}
 			record := func(args ...string) string { return strings.Join(append(args, "--end--"), "\n") + "\n" }
-			createArgs := []string{"kind", "create", "cluster", "--name", "<cluster>", "--image", nodeImage}
+			createArgs := []string{"kind", createStage, "cluster", "--name", "<cluster>", "--image", nodeImage}
 			if tc.wantConfig != "" {
 				createArgs = append(createArgs, "--config", tc.wantConfig)
 			}
 			createArgs = append(createArgs, "--kubeconfig", "<work>/kube.config", "--wait", "120s")
 			runArgs := []string{
-				"docker", "run", "--rm", "-e", "USE_UID=" + strconv.Itoa(os.Getuid()), "-e", "USE_GID=" + strconv.Itoa(os.Getgid()),
+				dockerStage, "run", "--rm", "-e", "USE_UID=" + strconv.Itoa(os.Getuid()), "-e", "USE_GID=" + strconv.Itoa(os.Getgid()),
 				"-v", dir + ":/ats/workdir", "--network", "host", circleci.ATSImageRegistry + "/giantswarm/app-test-suite:" + tag,
 				"--chart-file", "<work>/chart.tgz", "--cluster-kubeconfig", "<work>/kube.config", "--cluster-type", "kind", "--cluster-version", version,
 			}
 			stages := map[string]string{
-				"get":    record("kind", "get", "clusters"),
-				"create": record(createArgs...),
-				"docker": record(append(runArgs, tc.wantFlags...)...),
-				"delete": record("kind", "delete", "cluster", "--name", "<cluster>", "--kubeconfig", "<work>/kube.config"),
+				getStage:    record("kind", getStage, "clusters"),
+				createStage: record(createArgs...),
+				dockerStage: record(append(runArgs, tc.wantFlags...)...),
+				"delete":    record("kind", "delete", "cluster", "--name", "<cluster>", "--kubeconfig", "<work>/kube.config"),
 			}
 			var want strings.Builder
 			for _, stage := range strings.Fields(tc.wantStages) {

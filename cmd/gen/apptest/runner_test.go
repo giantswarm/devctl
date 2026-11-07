@@ -69,7 +69,8 @@ func Test_Run_CancelsGoSetup(t *testing.T) {
 				t.Error("Go setup kept running after command cancellation")
 				unblock()
 				select {
-				case <-finished:
+				case err := <-finished:
+					require.ErrorIs(t, err, context.Canceled)
 				case <-time.After(5 * time.Second):
 					t.Fatal("fake Go setup did not finish during cleanup")
 				}
