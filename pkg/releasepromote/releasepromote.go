@@ -99,6 +99,12 @@ type Config struct {
 	// own. Its workflow is read, its candidates taken and the workflow
 	// dispatched on it. Empty is the default branch.
 	Branch string
+	// Ref is the default branch or a release-X.Y branch whose workflow
+	// releases that branch. Mutually exclusive with Branch; one repository
+	// only. A maintenance branch's stable baseline is its X.Y series'.
+	Ref string
+	// series scopes an explicitly selected maintenance ref's stable baseline.
+	series string
 	// NotFoundHint is added to GitHub's 404 for a repository: what the
 	// token reaches. Empty adds nothing.
 	NotFoundHint string
@@ -125,6 +131,17 @@ type Config struct {
 func Promote(ctx context.Context, config Config, repositories []string, result *Result) error {
 	if config.GitHub == nil {
 		return usageErr("%T.GitHub must not be empty", config)
+	}
+	if config.Ref != "" {
+		if len(repositories) != 1 || config.Branch != "" {
+			return usageErr("--ref requires exactly one repository and cannot be combined with --branch")
+		}
+		var err error
+		config.series, err = checkRef(ctx, config, repositories[0])
+		if err != nil {
+			return err
+		}
+		config.Branch = config.Ref
 	}
 	first := len(result.Repositories)
 	for _, repository := range repositories {
@@ -190,6 +207,15 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 		if err != nil {
 			return entry.set(StateFailed, "reading the release %s: %v", config.Version, err)
 		}
+	}
+	if config.series != "" {
+		scoped := make([]githubclient.Release, 0, len(releases))
+		for _, release := range releases {
+			if !stablePattern.MatchString(release.Tag) || strings.HasPrefix(release.Tag, "v"+config.series+".") {
+				scoped = append(scoped, release)
+			}
+		}
+		releases = scoped
 	}
 	reachable := func(tag string) (bool, error) {
 		return gh.Reachable(ctx, owner, repo, tag, branch)
