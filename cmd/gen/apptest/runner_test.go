@@ -81,15 +81,16 @@ func Test_Run_CancelsGoSetup(t *testing.T) {
 
 func Test_Run_GoSetupOutcomes(t *testing.T) {
 	const getPath = "/get"
+	const modPath = "/mod"
 
 	for _, tc := range []struct {
 		name string
 		fail string
 		want []string
 	}{
-		{"success", "", []string{getPath, "/mod"}},
+		{"success", "", []string{getPath, modPath}},
 		{"get fails before tidy", "get", []string{getPath}},
-		{"tidy fails", "mod", []string{getPath, "/mod"}},
+		{"tidy fails", "mod", []string{getPath, modPath}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Chdir(t.TempDir())

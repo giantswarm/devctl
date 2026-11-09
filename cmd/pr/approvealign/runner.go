@@ -43,7 +43,12 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
 	}
-	return r.run(ctx, cmd, args)
+	err := r.run(ctx, cmd, args)
+	// An empty or failed search can end the run after cancellation; report the cancellation.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	return err
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {

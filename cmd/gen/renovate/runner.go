@@ -48,9 +48,9 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
 	var err error
 
-	// The optional repo-owned renovate-custom.json5 is referenced from the
-	// generated config's `extends` when present. Its presence is the signal;
-	// devctl never generates or touches the file itself.
+	// devctl initializes the repo-owned renovate-custom.json5 when absent and
+	// preserves it otherwise. An entry that is not a regular file, or one that
+	// cannot be inspected, fails before any output is written.
 	customInfo, statErr := os.Stat("renovate-custom.json5")
 	if statErr != nil && !os.IsNotExist(statErr) {
 		return microerror.Mask(statErr)
@@ -58,14 +58,13 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	if statErr == nil && !customInfo.Mode().IsRegular() {
 		return microerror.Maskf(invalidConfigError, "renovate-custom.json5 must be a regular file")
 	}
-	hasCustomConfig := statErr == nil
 
 	// The repository name only goes into the renovate-custom.json5 extends
 	// entry. Without --repo-name it is read from the origin remote, never
 	// from the directory name: a worktree or a second clone named anything
 	// else would extend a preset Renovate cannot resolve.
 	repoName := r.flag.RepoName
-	if repoName == "" && hasCustomConfig {
+	if repoName == "" {
 		repoName, err = gitremote.RepoName(ctx, ".")
 		if err != nil {
 			return microerror.Maskf(invalidFlagError, "renovate-custom.json5 is extended as github>%s/<name>:renovate-custom.json5, and the repository name cannot be read from the origin remote: %s; pass --%s <name>", gitremote.Owner, err, flagRepoName)
@@ -114,7 +113,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			Reviewers:         r.flag.Reviewers,
 			CircleCIGenerated: r.flag.CircleCIGenerated,
 			RepoName:          repoName,
-			HasCustomConfig:   hasCustomConfig,
+			HasCustomConfig:   true,
 			Deprecated:        r.flag.Deprecated,
 			Extends:           r.flag.Extends,
 			Fork:              fork,
@@ -128,6 +127,13 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	var inputs []input.Input
 	{
+		// Initialize the preset before writing its reference. Unlike the root
+		// config, this path is not regenerable: gen.Execute preserves any
+		// existing repo-owned file, including one edited after initialization.
+		inputs = append(inputs, input.Input{
+			Path:         "renovate-custom.json5",
+			TemplateBody: "// Repo-owned Renovate overrides. Edit this file; devctl preserves it.\n{}\n",
+		})
 		inputs = append(inputs, renovateInput.CreateRenovate())
 	}
 
