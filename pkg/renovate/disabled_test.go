@@ -8,7 +8,7 @@ func TestDisables(t *testing.T) {
 		config string
 		want   bool
 	}{
-		{name: "JSON5 opt-out", config: "{\n  reviewers: ['teemow'],\n  enabled: false,\n}\n", want: true},
+		{name: "JSON5 opt-out", config: "{\n  reviewers: ['fixture-person'],\n  enabled: false,\n}\n", want: true},
 		{name: "JSON opt-out", config: "{\n  \"enabled\": false\n}\n", want: true},
 		{name: "a package rule's enabled: false", config: "{\n  packageRules: [\n    {\n      enabled: false,\n    },\n  ],\n}\n"},
 		{name: "enabled", config: "{\n  enabled: true,\n}\n"},
