@@ -19,11 +19,14 @@ import (
 // autoReleaseStep is one step of the tag job as the rendered workflow declares
 // it.
 type autoReleaseStep struct {
-	ID   string            `yaml:"id"`
-	Name string            `yaml:"name"`
-	If   string            `yaml:"if"`
-	Run  string            `yaml:"run"`
-	Env  map[string]string `yaml:"env"`
+	ID               string            `yaml:"id"`
+	Name             string            `yaml:"name"`
+	If               string            `yaml:"if"`
+	Run              string            `yaml:"run"`
+	Env              map[string]string `yaml:"env"`
+	Uses             string            `yaml:"uses"`
+	With             map[string]string `yaml:"with"`
+	WorkingDirectory string            `yaml:"working-directory"`
 }
 
 // tagJobSteps returns the steps of the auto-release tag job from the rendered
@@ -353,11 +356,11 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			expectTag: "",
 		},
 		{
-			// `test` is skipped too: a test fixture bump ships nothing.
-			name:      "a test-only push during a cycle releases nothing",
+			// `test` opens no cycle, but can replace a failed candidate.
+			name:      "a test-only push during a cycle cuts the next candidate",
 			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "test(deps): bump a fixture"},
 			next:      "v1.3.0",
-			expectTag: "",
+			expectTag: "v1.3.0-rc.2",
 		},
 		{
 			name:      "a non-conventional push during a cycle releases nothing",

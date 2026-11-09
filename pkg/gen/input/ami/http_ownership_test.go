@@ -1,6 +1,7 @@
 package ami
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -33,6 +34,7 @@ func TestReleaseHTTPBodiesAreClosed(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
 		listing       io.Reader
+		listingStatus int
 		releaseStatus int
 		releaseBody   string
 	}{
@@ -40,6 +42,8 @@ func TestReleaseHTTPBodiesAreClosed(t *testing.T) {
 		{name: "missing releases", listing: strings.NewReader(`<a href="1.2.3/">first</a><a href="1.2.4/">second</a>`), releaseStatus: http.StatusForbidden, releaseBody: "unread error page"},
 		{name: "invalid release JSON", listing: strings.NewReader(`<a href="1.2.3/">release</a>`), releaseStatus: http.StatusOK, releaseBody: "invalid JSON"},
 		{name: "listing read error", listing: ownershipReadError{}},
+		{name: "listing server error", listing: strings.NewReader("unread error page"), listingStatus: http.StatusServiceUnavailable},
+		{name: "release server error", listing: strings.NewReader(`<a href="1.2.3/">release</a>`), releaseStatus: http.StatusServiceUnavailable, releaseBody: "unread error page"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var bodies []*ownedHTTPBody
@@ -53,6 +57,9 @@ func TestReleaseHTTPBodiesAreClosed(t *testing.T) {
 				}
 				body := &ownedHTTPBody{Reader: tc.listing}
 				status := http.StatusOK
+				if tc.listingStatus != 0 {
+					status = tc.listingStatus
+				}
 				if strings.HasSuffix(r.URL.Path, ".json") {
 					status, body.Reader = tc.releaseStatus, strings.NewReader(tc.releaseBody)
 				}
@@ -60,7 +67,7 @@ func TestReleaseHTTPBodiesAreClosed(t *testing.T) {
 				return &http.Response{StatusCode: status, Body: body, Header: make(http.Header)}, nil
 			})
 
-			_, _ = getAMIInfoString(Config{Channel: "stable", PrimaryDomain: "fixture.invalid", Arch: "amd64-usr", MinimumVersion: "1.0.0"})
+			_, _ = getAMIInfoString(context.Background(), Config{Channel: "stable", PrimaryDomain: "fixture.invalid", Arch: "amd64-usr", MinimumVersion: "1.0.0"})
 			for i, body := range bodies {
 				if !body.closed {
 					t.Errorf("response body %d still open after scrape returns", i)

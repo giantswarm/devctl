@@ -1,6 +1,7 @@
 package ami
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,7 +13,11 @@ import (
 	"golang.org/x/net/html"
 )
 
-func getAMIInfoString(config Config) (string, error) {
+func getAMIInfoString(ctx context.Context, config Config) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", microerror.Mask(err)
+	}
+
 	existing := map[string]map[string]string{}
 	if config.KeepExisting != "" {
 		// Read versions already defined in file.
@@ -31,7 +36,7 @@ func getAMIInfoString(config Config) (string, error) {
 		url := fmt.Sprintf("https://%s.release.%s/%s/", config.Channel, config.PrimaryDomain, config.Arch)
 		fmt.Println("getting list of releases from", url)
 		var err error
-		versions, err = fetchReleaseVersions(url)
+		versions, err = fetchReleaseVersions(ctx, url)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
@@ -51,15 +56,15 @@ func getAMIInfoString(config Config) (string, error) {
 
 		url := fmt.Sprintf("https://%s.release.%s/%s/%s/flatcar_production_ami_all.json", config.Channel, config.PrimaryDomain, config.Arch, version)
 		fmt.Println("scraping release", version)
-		versionAMI, err := fetchReleaseAMI(url)
+		versionAMI, found, err := fetchReleaseAMI(ctx, url)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
-		if versionAMI == nil {
+		if !found {
 			continue // not found, keep going
 		}
 
-		chinaVersionAMI, err := getChinaFlatcarRelease(config, version)
+		chinaVersionAMI, err := getChinaFlatcarRelease(ctx, config, version)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
@@ -79,6 +84,9 @@ func getAMIInfoString(config Config) (string, error) {
 		mergedAMI[version] = val
 	}
 
+	if err := ctx.Err(); err != nil {
+		return "", microerror.Mask(err)
+	}
 	result, err := json.MarshalIndent(mergedAMI, "", "  ")
 	if err != nil {
 		return "", microerror.Mask(err)
@@ -106,6 +114,9 @@ func scrapeVersions(source io.Reader) ([]string, error) {
 		tt := z.Next()
 		switch tt {
 		case html.ErrorToken:
+			if err := z.Err(); err != io.EOF {
+				return nil, microerror.Mask(err)
+			}
 			return versions, nil
 		case html.StartTagToken:
 			t := z.Token()

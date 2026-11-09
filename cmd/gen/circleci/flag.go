@@ -131,6 +131,13 @@ func (f *flag) Validate() error {
 	if f.RepoName == "" {
 		return microerror.Maskf(invalidFlagError, "--%s must not be empty", flagRepoName)
 	}
+	if f.Language == gen.LanguageNode && f.Flavours.Generates() && !f.Flavours.Contains(gen.FlavourMultiImage) {
+		switch f.PackageManager {
+		case "", circleci.PackageManagerNPM, circleci.PackageManagerYarn, circleci.PackageManagerYarnClassic, circleci.PackageManagerPNPM:
+		default:
+			return microerror.Maskf(invalidFlagError, "--%s must be one of npm, yarn, yarn-classic, pnpm or empty to detect from the lockfile, got %q", flagPackageManager, f.PackageManager)
+		}
+	}
 	if f.ForcePublic && f.ImagePrivateOnly {
 		return microerror.Maskf(invalidFlagError, "--%s and --%s are mutually exclusive", flagForcePublic, flagImagePrivateOnly)
 	}

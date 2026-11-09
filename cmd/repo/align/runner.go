@@ -1,6 +1,7 @@
 package align
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -59,8 +60,9 @@ func (r *runner) run(ctx context.Context, arg string) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	print(r.stdout, repository, dispatch, r.flag.DryRun)
-	return nil
+	output := bufio.NewWriter(r.stdout)
+	print(output, repository, dispatch, r.flag.DryRun)
+	return microerror.Mask(output.Flush())
 }
 
 func print(w io.Writer, repository string, d *manager.Dispatch, dryRun bool) {

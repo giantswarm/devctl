@@ -40,10 +40,13 @@ const CircleCIExpiryWarning = 7 * 24 * time.Hour
 // ErrAuthRequired is what every [*AuthRequiredError] matches with errors.Is.
 var ErrAuthRequired = errors.New("authentication required")
 
+// IdentityCircleCI is [AuthRequiredError.Identity] for the CircleCI login.
+const IdentityCircleCI = "CircleCI"
+
 // The identities as the errors name them, the causes and the hints.
 const (
 	identityGitHub   = "GitHub"
-	identityCircleCI = "CircleCI"
+	identityCircleCI = IdentityCircleCI
 	identityMuster   = "muster"
 
 	causeNoToken = "no token in the keychain"
