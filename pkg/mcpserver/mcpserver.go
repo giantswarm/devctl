@@ -179,7 +179,7 @@ func New(config Config) *Server {
 		metrics:           config.Metrics,
 		logger:            config.Logger,
 	}
-	s.mcp = server.NewMCPServer(Name, config.Version, server.WithToolCapabilities(false), server.WithToolHandlerMiddleware(s.observe))
+	s.mcp = server.NewMCPServer(Name, config.Version, server.WithToolCapabilities(false), server.WithIcons(Icon()), server.WithToolHandlerMiddleware(s.observe))
 	s.mcp.AddTool(prWaitTool(s.noProgressTimeout), s.prWait)
 	s.mcp.AddTool(prMergeTool(s.noProgressTimeout), s.prMerge)
 	s.mcp.AddTool(prMergeStatusTool(), s.prMergeStatus)

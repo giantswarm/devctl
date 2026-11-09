@@ -7,15 +7,14 @@ import (
 	"os"
 
 	"github.com/fatih/color"
-	"github.com/mattn/go-isatty"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
-// Error is "Error", red when w is a terminal.
+// Error is "Error", red when w is an ANSI-capable terminal and NO_COLOR is empty.
 func Error(w io.Writer) string { return paint(w, "Error", color.FgRed) }
 
-// Warning is "Warning", yellow when w is a terminal.
+// Warning is "Warning", yellow when w is an ANSI-capable terminal and NO_COLOR is empty.
 func Warning(w io.Writer) string { return paint(w, "Warning", color.FgYellow) }
 
 // Debug reports whether --log-level on cmd (or a parent) is debug or more.
@@ -28,11 +27,11 @@ func Debug(cmd *cobra.Command) bool {
 	return err == nil && level >= logrus.DebugLevel
 }
 
-// paint colours text only for a terminal and with NO_COLOR unset. color.NoColor
-// is decided from stdout, so it cannot be used for stderr.
+// paint colours text only for an ANSI-capable terminal and with NO_COLOR empty.
+// color.NoColor is decided from stdout, so it cannot be used for stderr.
 func paint(w io.Writer, text string, attr color.Attribute) string {
 	f, ok := w.(*os.File)
-	if !ok || !isatty.IsTerminal(f.Fd()) || os.Getenv("NO_COLOR") != "" {
+	if !ok || !supportsANSI(f.Fd()) || os.Getenv("NO_COLOR") != "" {
 		return text
 	}
 	c := color.New(attr)

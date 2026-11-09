@@ -30,3 +30,17 @@ func TestUndeclaredEntry(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, Fields{Name: "bare"}, fields)
 }
+
+func TestUndeclaredEntryNullRepositoryName(t *testing.T) {
+	for _, name := range []string{"null", "Null", "NULL"} {
+		t.Run(name, func(t *testing.T) {
+			entry := UndeclaredEntry(Undeclared{Name: name})
+			tf, err := ParseTeamFile("", strings.NewReader(entry.Rendered))
+			require.NoError(t, err)
+			require.Len(t, tf.Entries, 1)
+			fields, err := tf.Entries[0].Fields()
+			require.NoError(t, err)
+			require.Equal(t, name, fields.Name, "a repository named null must not decode as YAML null")
+		})
+	}
+}

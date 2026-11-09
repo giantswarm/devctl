@@ -6,8 +6,9 @@ import (
 )
 
 type Input struct {
-	// If delete is true, the file will be deleted if it exists. Allows
-	// for files to be moved/renamed.
+	// Delete removes an existing file or empty directory. Missing paths and
+	// nonempty directories are left alone; other removal errors are returned.
+	// Allows files to be moved/renamed without removing other directory contents.
 	Delete bool
 	// Path is the absolute path of the file to be generated from this
 	// Input.

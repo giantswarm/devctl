@@ -91,9 +91,12 @@ commit_preprocessors = [
 # ships. git-cliff decides the bump from the commits that are NOT skipped: a
 # breaking change bumps the major, `feat` the minor, every other type at least
 # the patch. A skipped commit is left out of the release notes and of the
-# bump, so a push containing only skipped types cuts no release or candidate;
-# the changes ship with the next releasable commit. Use `fix` or `feat` when
-# a dependency or build change needs a release of its own.
+# bump, so a push containing only skipped types outside a candidate cycle
+# computes the current version and the workflow tags nothing; the changes ship
+# with the next releasable commit. During a cycle the workflow lets a new test
+# commit advance an existing candidate without changing its version or notes.
+# Use `fix` or `feat` when a dependency or build change needs a release of its
+# own.
 commit_parsers = [
   { message = "^feat",     group = "Added" },
   { message = "^fix",      group = "Fixed" },

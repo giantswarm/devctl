@@ -18,7 +18,7 @@ func TestRepositoryToken(t *testing.T) {
 		return authstore.Token{Source: authstore.SourceKeychain}, nil
 	}
 	person := func(context.Context) (authstore.Token, error) { return authstore.Token{Source: SourceGHLogin}, nil }
-	for owner, want := range map[string]string{"giantswarm": IdentityApp, "GiantSwarm": IdentityApp, "GIANTSWARM": IdentityApp, "teemow": IdentityGH, "kagent-dev": IdentityGH} {
+	for owner, want := range map[string]string{"giantswarm": IdentityApp, "GiantSwarm": IdentityApp, "GIANTSWARM": IdentityApp, "fixture-person": IdentityGH, "kagent-dev": IdentityGH} {
 		token, err := RepositoryToken(context.Background(), owner, app, person)
 		if err != nil {
 			t.Fatal(err)

@@ -568,9 +568,13 @@ func ParseChangelog(githubToken, componentName, currentVersion, endVersion strin
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
-	if response.StatusCode != http.StatusOK {
+	switch response.StatusCode {
+	case http.StatusOK:
+	case http.StatusNotFound:
 		// A tag without CHANGELOG.md: its GitHub Releases are read below.
 		body = nil
+	default:
+		return nil, microerror.Mask(fmt.Errorf("reading %s: %s", changelogURLBuilder.String(), response.Status))
 	}
 
 	if endVersion == "" {
@@ -773,9 +777,10 @@ var githubAPIURL = "https://api.github.com/"
 // releaseNotesAsChangelog reads the GitHub Releases of the component whose
 // release page is tagURL and writes the notes of those after endVersion up to
 // currentVersion as a Keep-a-Changelog document, newest first, one
-// "## [<version>]" section each. A pre-release other than currentVersion is
-// left out: its notes are cumulative, and the stable release after it carries
-// them.
+// "## [<version>]" section each. currentVersion's own release is always in it,
+// also when endVersion is currentVersion: a component new in a release has no
+// previous version. A pre-release other than currentVersion is left out: its
+// notes are cumulative, and the stable release after it carries them.
 func releaseNotesAsChangelog(githubToken, tagURL, currentVersion string, endSemVer *semver.Version) (string, error) {
 	owner, repo := repoFromURL(tagURL)
 	if owner == "" {
@@ -812,10 +817,10 @@ func releaseNotesAsChangelog(githubToken, tagURL, currentVersion string, endSemV
 				continue
 			}
 			version, err := semver.NewVersion(release.GetTagName())
-			if err != nil || !version.GreaterThan(endSemVer) || version.GreaterThan(current) {
+			if err != nil {
 				continue
 			}
-			if version.Prerelease() != "" && !version.Equal(current) {
+			if !version.Equal(current) && (!version.GreaterThan(endSemVer) || version.GreaterThan(current) || version.Prerelease() != "") {
 				continue
 			}
 			notes = append(notes, note{version: version, name: strings.TrimPrefix(release.GetTagName(), "v"), body: release.GetBody()})

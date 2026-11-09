@@ -1,6 +1,7 @@
 package ami
 
 import (
+	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
 )
 
@@ -44,6 +45,9 @@ func (c *Config) Validate() error {
 	}
 	if c.MinimumVersion == "" {
 		return microerror.Maskf(invalidConfigError, "%T.MinimumVersion must not be empty", c)
+	}
+	if _, err := semver.NewVersion(c.MinimumVersion); err != nil {
+		return microerror.Maskf(invalidConfigError, "%T.MinimumVersion must be a semantic version: %s", c, err)
 	}
 	if c.PrimaryDomain == "" {
 		return microerror.Maskf(invalidConfigError, "%T.PrimaryDomain must not be empty", c)
