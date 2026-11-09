@@ -36,7 +36,7 @@ func init() {
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "--appstatus-hold-pipes" {
-		conn, err := net.DialTimeout("tcp", os.Args[2], time.Second)
+		conn, err := net.DialTimeout("tcp", os.Args[2], time.Second) // #nosec G704 -- the parent test passes its own loopback listener address
 		if err != nil {
 			os.Exit(98)
 		}
@@ -202,7 +202,7 @@ func TestWaitForAppDeploymentContext(t *testing.T) {
 				ctx, cancel = context.WithTimeout(ctx, 150*time.Millisecond)
 				defer cancel()
 			}
-			var stderr io.Writer = io.Discard
+			stderr := io.Writer(io.Discard)
 			if tc.cancelOnWrite {
 				stderr = cancelWriter{cancel: cancel}
 			}
