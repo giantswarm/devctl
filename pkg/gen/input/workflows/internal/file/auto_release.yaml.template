@@ -21,10 +21,6 @@
 #      a candidate flagged as a pre-release
 #   3. checks that CircleCI picked the tag up and triggers the pipeline if
 #      the webhook got lost (repos with a .circleci/config.yml only)
-{{{{- if not .Fork }}}}
-#   4. after a stable release, writes its notes into CHANGELOG.md through a
-#      pull request of its own: pull requests do not edit that file
-{{{{- end }}}}
 #
 {{{{- if .PatchCandidates }}}}
 # A stable vX.Y.Z is cut only by running this workflow by hand with
@@ -34,6 +30,13 @@
 # `release-type: stable`, which promotes the latest release candidate, or
 # the one `version` names: the stable tag lands on that candidate's commit,
 # so what ships is what was tested.
+#
+# Tags and releases are created with the giantswarm-release GitHub App token,
+# so GitHub Actions workflows listening on push.tags or release can start.
+# Requires the App installed on this repository with Contents write and the
+# RELEASE_BOT_CLIENT_ID / RELEASE_BOT_PRIVATE_KEY secrets available to this
+# workflow. Missing or unusable App credentials fail before creating a release;
+# there is no GITHUB_TOKEN fallback, whose events cannot start those workflows.
 #
 # The tag push then triggers downstream publishing (for chart/service/CLI
 # repos, this is the CircleCI architect pipeline firing on the same /^v.*/
@@ -98,13 +101,15 @@ jobs:
     name: Tag
     runs-on: ubuntu-26.04
     permissions:
-      contents: write       # push tags and create the GitHub Release
+      contents: read        # checkout and fetch; the App creates tags/releases
       # git-cliff's GitHub API lookups (commit.remote.pr_number / username
       # in release notes) need PR read access via GITHUB_TOKEN.
       pull-requests: read
       # The stable run reads the commit statuses of the candidate it promotes,
       # and every run with a tag those of the tag's CircleCI build.
       statuses: read
+      # A promotion queues an auto run for commits left on the branch.
+      actions: write
 {{{{- if not .Fork }}}}
     outputs:
       # The stable tag this run released, empty for a candidate or no release.
@@ -321,7 +326,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # Single expensive call: walks commits, queries the GitHub API for
+          # One context read: walks commits, queries the GitHub API for
           # per-commit PR lookups, emits the JSON context for ONLY the bumped
           # release.
           #
@@ -338,16 +343,36 @@ jobs:
           # Without either filter, --bump --context returns the full release
           # history in JSON and the render step below would concatenate every
           # past release into each new release's notes.
+          # GitHub metadata reads can fail on a transient timeout, truncated
+          # response or 5xx. Retry with bounded backoff. Keep stderr in the
+          # log, including the final cause, and replace any partial context
+          # on each attempt before downstream steps can use it.
+          cliff_context() {
+            local try tries=3 status
+            for ((try=1; try<=tries; try++)); do
+              if git-cliff "$@" > cliff-context.json; then
+                return 0
+              else
+                status=$?
+              fi
+              if [ "$try" -eq "$tries" ]; then
+                echo "::error title=git-cliff failed::git-cliff failed after ${tries} attempts (exit ${status}); see its error above." >&2
+                return "$status"
+              fi
+              echo "git-cliff failed (attempt ${try} of ${tries}, exit ${status}); retrying in $((2 ** try))s" >&2
+              sleep $((2 ** try))
+            done
+          }
 {{{{- if .MaintenanceBranches }}}}
           #
           # A maintenance branch bumps the patch alone (LINE_BUMP from the
           # baseline step). A fixed bump moves the version whatever the
           # commits, so a context without a commit git-cliff counts has
           # nothing to release.
-          git-cliff --unreleased --bump "${LINE_BUMP:-auto}" --context > cliff-context.json
+          cliff_context --unreleased --bump "${LINE_BUMP:-auto}" --context
           NEXT=$(jq -r 'if (.[0].commits | length) == 0 then empty else .[0].version // empty end' cliff-context.json)
 {{{{- else }}}}
-          git-cliff --unreleased --bump --context > cliff-context.json
+          cliff_context --unreleased --bump --context
           NEXT=$(jq -r '.[0].version // empty' cliff-context.json)
 {{{{- end }}}}
           echo "next computed: ${NEXT:-<empty>}"
@@ -462,12 +487,19 @@ jobs:
             # cliff-context.json holds exactly the commits git-cliff counted
             # for this release, so intersecting it with the range since the
             # last candidate needs no second copy of cliff.toml's skip rules.
+            # A new conventional `test:` commit is also enough once this
+            # target has a candidate: a test fix must be able to replace a
+            # red candidate. It opens no cycle and changes no version or notes.
             if [ -n "${n}" ]; then
               counted=$(jq -r '.[0].commits[].id' "$CLIFF_CONTEXT")
               since=$(git rev-list "${NEXT}-rc.${n}..HEAD")
               fresh=0
               if [ -n "$counted" ] && [ -n "$since" ]; then
                 fresh=$(printf '%s\n' "$since" | { grep -cxF "$counted" || true; })
+              fi
+              if [ "$fresh" -eq 0 ]; then
+                fresh=$(git log --format='%s' "${NEXT}-rc.${n}..HEAD" \
+                  | { grep -cE '^test(\([^)]*\))?!?: ' || true; })
               fi
               if [ "$fresh" -eq 0 ]; then
                 echo "No releasable commits since ${NEXT}-rc.${n}; skipping tag."
@@ -590,6 +622,17 @@ jobs:
           # create --notes-file expects.
           git-cliff --from-context cliff-context.tagged.json --strip all --output release-notes.md
 
+      # Mint just before publishing, after the release guards have passed.
+      # With owner/repositories unset, the token is scoped to this repository.
+      - name: Generate the giantswarm-release token
+        id: release-token
+        if: steps.decide.outputs.tag != ''
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+
       # Create the tag AND the GitHub Release in one atomic API call. GitHub's
       # release-create endpoint accepts a tag_name + target_commitish and, if
       # the tag doesn't already exist, creates it pointing at that commitish
@@ -606,7 +649,7 @@ jobs:
         id: release
         if: steps.decide.outputs.tag != ''
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.decide.outputs.tag }}
           PRERELEASE: ${{ steps.decide.outputs.prerelease }}
@@ -631,6 +674,122 @@ jobs:
             --notes-file release-notes.md \
             --target "$TARGET" \
             ${flags[@]+"${flags[@]}"}
+
+      # The stable tag is on the promoted candidate, not the branch head.
+      # A push already handled before that tag used the previous stable as
+      # its baseline, so its candidate may now be older than the new stable.
+      # Re-run auto against the branch with the new baseline without waiting
+      # for another push. Fetch the branch again: it may have advanced during
+      # promotion. Queue this before the CircleCI check, whose failure must
+      # not strand commits after an already published stable release.
+      - name: Queue releases for commits after the promoted candidate
+        id: catch-up
+        if: inputs.release-type == 'stable' && steps.release.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TARGET: ${{ steps.decide.outputs.target }}
+          STABLE: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "refs/heads/${GITHUB_REF_NAME}"
+          head=$(git rev-parse 'FETCH_HEAD^{commit}')
+          if ! git merge-base --is-ancestor "$TARGET" "$head"; then
+            echo "::error::${GITHUB_REF_NAME} no longer contains the promoted commit ${TARGET}; inspect the branch before releasing it."
+            exit 1
+          fi
+          if [ "$head" = "$TARGET" ]; then
+            echo "${GITHUB_REF_NAME} has no commits after the promoted candidate; nothing to queue."
+            exit 0
+          fi
+          # A superseded RC on the head cannot acquire another version's
+          # tag. Land a preparation PR through the normal checks instead:
+          # its merge supplies the new commit and triggers auto-release.
+          # Read remote tags, including peeled annotated tags, as the guard
+          # does; the checkout can predate the branch's latest candidate.
+          rc='^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$'
+          tags=$(git ls-remote --tags origin)
+          while read -r sha ref; do
+            tag=${ref#refs/tags/}
+            tag=${tag%'^{}'}
+            if [ "$sha" = "$head" ] && [[ "$tag" =~ $rc ]] && [ "${tag%-rc.*}" = "$STABLE" ]; then
+              echo "${tag} already tags ${head:0:8}; preparing a checked catch-up PR."
+              echo "prepare=true" >> "$GITHUB_OUTPUT"
+              echo "head=$head" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done <<<"$tags"
+          echo "Queuing auto-release for commits on ${GITHUB_REF_NAME} after the promoted candidate:"
+          git log --format='%h %s' "${TARGET}..${head}"
+          gh workflow run zz_generated.auto_release.yaml --ref "$GITHUB_REF_NAME" -f release-type=auto
+
+      # The release App bypasses the review rule for its generated PRs,
+      # never the required checks. Its push/merge triggers CI, unlike a
+      # GITHUB_TOKEN push. No write to the protected branch happens here.
+      - name: Generate the release token for catch-up
+        id: catch-up-token
+        if: steps.catch-up.outputs.prepare == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Check out the catch-up head
+        if: steps.catch-up.outputs.prepare == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.catch-up.outputs.head }}
+          fetch-depth: 0
+          token: ${{ steps.catch-up-token.outputs.token }}
+          # Keep the promoted checkout for its CircleCI verification below.
+          path: .release-catch-up-worktree
+      - name: Prepare a new commit for catch-up through a checked PR
+        id: catch-up-pr
+        if: steps.catch-up.outputs.prepare == 'true'
+        working-directory: .release-catch-up-worktree
+        env:
+          GH_TOKEN: ${{ steps.catch-up-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          STABLE: ${{ steps.decide.outputs.tag }}
+          CATCH_UP_HEAD: ${{ steps.catch-up.outputs.head }}
+          GIT_AUTHOR_NAME: giantswarm-release[bot]
+          GIT_AUTHOR_EMAIL: giantswarm-release[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: giantswarm-release[bot]
+          GIT_COMMITTER_EMAIL: giantswarm-release[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          branch="release/catch-up-${STABLE}-${CATCH_UP_HEAD:0:12}"
+          # A rerun reuses the same PR, including one already merged. Never
+          # rewrite its head or cut a second preparation commit for it.
+          pr=$(gh pr list --head "$branch" --base "$GITHUB_REF_NAME" --state all --json url --jq '.[0].url // empty')
+          if [ -z "$pr" ]; then
+            # The branch push can succeed before PR creation fails. Reuse
+            # that branch on a retry, without a force push.
+            remote=$(git ls-remote --heads origin "refs/heads/${branch}")
+            if [ -z "$remote" ]; then
+              git checkout -q --detach "$CATCH_UP_HEAD"
+              mkdir -p .github
+              printf 'stable=%s\nhead=%s\n' "$STABLE" "$CATCH_UP_HEAD" > .github/release-catch-up
+              git add .github/release-catch-up
+              git commit -m "docs(release): resume releases after ${STABLE}"
+              git push origin "HEAD:refs/heads/${branch}"
+            fi
+            pr=$(gh pr create --head "$branch" --base "$GITHUB_REF_NAME" \
+              --title "docs(release): resume releases after ${STABLE}" \
+              --body "Promotion of ${STABLE} left a superseded candidate on the branch head. This marker gives catch-up its own commit, preserving one version per commit. Merge after required checks; the merge triggers auto-release for the remaining changes.")
+          fi
+          state=$(gh pr view "$pr" --json state --jq .state)
+          if [ "$state" = MERGED ]; then
+            echo "Catch-up PR already merged: ${pr}"
+          elif [ "$state" = OPEN ]; then
+            gh pr merge "$pr" --auto --squash
+            echo "Catch-up waits for the required checks: ${pr}"
+          else
+            echo "::error::Catch-up PR was closed without merging: ${pr}; reopen it to resume releases."
+            exit 1
+          fi
+          echo "Catch-up PR: ${pr}" >> "$GITHUB_STEP_SUMMARY"
 
       # A tag that never reaches CircleCI is a silent failure: the GitHub
       # Release above exists and looks finished, but nothing gets built or
@@ -733,215 +892,3 @@ jobs:
           echo "::error::CircleCI never built ${TAG}: no CircleCI status on ${TARGET:0:8} from a workflow started in the ${CIRCLECI_STATUS_WAIT_SECONDS} s after the release" \
             "(GitHub delivers the webhook once and never retries). Run it as you: ${fix}"
           exit 1
-{{{{- if not .Fork }}}}
-
-  # CHANGELOG.md belongs to the release, not to pull requests: every pull
-  # request inserting at the same place made each merge conflict the others.
-  # After a stable release this job writes the release's notes, the text
-  # git-cliff rendered for the GitHub Release, under their version.
-  #
-  # A candidate writes nothing: its notes are cumulative, and the stable
-  # release of the cycle carries them all.
-  #
-  # Nothing waits for this job. No pull request check reads CHANGELOG.md, and
-  # `continue-on-error` keeps a failure here from turning a release's run red
-  # after the release exists (`devctl release promote` reads the run's
-  # conclusion). The sections are written from the tags, not from this run's
-  # release alone, so the next release repairs what a failed run or a pull
-  # request nobody merged left out. The pull request's `docs` title releases
-  # nothing when it merges.
-  changelog:
-    name: Changelog
-    needs: tag
-    if: ${{ !cancelled() && needs.tag.outputs.stable != '' }}
-    runs-on: ubuntu-26.04
-    continue-on-error: true
-    permissions:
-      contents: read
-    steps:
-      - name: Check the release App's secrets are available
-        id: secrets
-        env:
-          RELEASE_BOT_CLIENT_ID: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
-          RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
-        run: |
-          if [ -z "$RELEASE_BOT_CLIENT_ID" ] || [ -z "$RELEASE_BOT_PRIVATE_KEY" ]; then
-            # A run started by Dependabot sees Dependabot secrets alone.
-            echo "::warning::The giantswarm-release App secrets are not available to this run: CHANGELOG.md is not written, the next stable release writes this one too."
-            echo "available=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      # A push with GITHUB_TOKEN starts no checks, so the pull request could
-      # never turn green.
-      - name: Generate the giantswarm-release token
-        id: release-token
-        if: steps.secrets.outputs.available == 'true'
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
-
-      - name: Checkout
-        if: steps.secrets.outputs.available == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          ref: ${{ github.ref_name }}
-          fetch-depth: 0        # every tag's place on this branch
-          fetch-tags: true
-          # The App token is kept in the checkout so `git push` below uses it.
-          token: ${{ steps.release-token.outputs.token }}
-
-      - name: Write the release into CHANGELOG.md
-        id: section
-        if: steps.secrets.outputs.available == 'true'
-        env:
-          GH_TOKEN: ${{ steps.release-token.outputs.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.tag.outputs.stable }}
-        run: |
-          set -euo pipefail
-          # An open pull request of an earlier release is replaced, never
-          # stacked on: the sections are rebuilt from the branch below, so what
-          # the old one carried comes back unless it merged in the meantime.
-          # `--jq` filters what the list returned, and `gh pr list` stops at 30
-          # by default, newest first: the limit has to reach an old pull request
-          # behind every other open one.
-          open=$(gh pr list --base "$GITHUB_REF_NAME" --state open --limit 5000 --json number,headRefName \
-            --jq '.[] | select(.headRefName | startswith("auto-release/changelog-")) | .number')
-          for number in $open; do
-            gh pr close "$number" --delete-branch --comment "Replaced by the changelog of ${TAG}."
-          done
-          git fetch -q origin "$GITHUB_REF_NAME"
-          git checkout -q --detach FETCH_HEAD
-
-          # A repository without the file keeps its notes on the releases page.
-          if [ ! -f CHANGELOG.md ]; then
-            echo "::notice::no CHANGELOG.md on ${GITHUB_REF_NAME}: the notes of ${TAG} stay on its GitHub Release"
-            exit 0
-          fi
-
-          # Every stable release of this branch newer than the newest one the
-          # file names, newest first. The limit bounds the first run on a
-          # file that fell far behind.
-          limit=20
-          mapfile -t tags < <(git tag --merged HEAD --list 'v*.*.*' \
-            | { grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true; } | sort -rV)
-          scratch=$(mktemp -d)
-          : > "$scratch/first.md"
-          : > "$scratch/rest.md"
-          : > "$scratch/links.md"
-          newest="" written=0
-          for i in "${!tags[@]}"; do
-            tag=${tags[$i]}
-            version=${tag#v}
-            if grep -qE "^## \[v?${version//./\\.}\]" CHANGELOG.md || [ "$written" -ge "$limit" ]; then
-              break
-            fi
-            if ! release=$(gh release view "$tag" --json body,publishedAt); then
-              echo "::warning::${tag} has no GitHub release to read notes from: left out of CHANGELOG.md"
-              continue
-            fi
-            target=rest
-            if [ -z "$newest" ]; then
-              newest=$tag
-              target=first
-            fi
-            body=$(jq -r '.body' <<<"$release")
-            {
-              echo "## [${version}] - $(jq -r '.publishedAt[:10]' <<<"$release")"
-              echo
-              echo "$body"
-              echo
-            } >> "$scratch/$target.md"
-            previous=${tags[$((i + 1))]:-}
-            if [ -n "$previous" ]; then
-              echo "[${version}]: https://github.com/${GH_REPO}/compare/${previous}...${tag}" >> "$scratch/links.md"
-            else
-              echo "[${version}]: https://github.com/${GH_REPO}/releases/tag/${tag}" >> "$scratch/links.md"
-            fi
-            written=$((written + 1))
-          done
-          if [ -z "$newest" ]; then
-            echo "CHANGELOG.md already names ${TAG}"
-            exit 0
-          fi
-
-          # The newest section goes right under `## [Unreleased]`, the others
-          # after it. Whatever a person or an older pull request wrote under
-          # Unreleased moves into the newest section, so nothing is lost and
-          # Unreleased ends up empty. A `[Unreleased]:` link line at the end of
-          # the file, where a repository keeps those, moves on to the new tag.
-          awk -v first="$scratch/first.md" -v rest="$scratch/rest.md" -v links="$scratch/links.md" \
-            -v unreleased="[Unreleased]: https://github.com/${GH_REPO}/compare/${newest}...HEAD" '
-            function emit(file,   line) {
-              while ((getline line < file) > 0) print line
-              close(file)
-            }
-            function cut() {
-              sub(/^[ \t\n]+/, "", hand)
-              sub(/[ \t\n]+$/, "", hand)
-              print ""
-              print marker
-              print ""
-              emit(first)
-              if (hand != "") {
-                print "Written by hand before this release:"
-                print ""
-                print hand
-                print ""
-              }
-              emit(rest)
-            }
-            BEGIN {
-              marker = "<!-- Written at release from the pull request titles. Pull requests do not edit this file. -->"
-              state = "before"
-            }
-            state == "before" && /^## \[?[Uu]nreleased\]?/ { print; state = "unreleased"; next }
-            state == "before" && /^## / { print "## [Unreleased]"; cut(); state = "after" }
-            state == "unreleased" && (/^## / || /^\[[^]]+\]: /) { cut(); state = "after" }
-            state == "unreleased" {
-              if ($0 != marker) hand = hand $0 "\n"
-              next
-            }
-            /^\[[Uu]nreleased\]: / { print unreleased; emit(links); next }
-            { print }
-            END {
-              if (state == "before") print "## [Unreleased]"
-              if (state != "after") cut()
-            }
-          ' CHANGELOG.md > "$scratch/CHANGELOG.md"
-          cp "$scratch/CHANGELOG.md" CHANGELOG.md
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-
-      # The giantswarm-release App passes the review ruleset where the
-      # repository's reconciler lets it (`--release-app-id`), so the pull
-      # request lands once its checks are green. Elsewhere it waits for a
-      # review, and blocks nothing while it does.
-      - name: Open the changelog pull request
-        if: steps.section.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ steps.release-token.outputs.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ needs.tag.outputs.stable }}
-        run: |
-          set -euo pipefail
-          head="auto-release/changelog-${TAG}"
-          git switch -q -c "$head"
-          git config user.name 'giantswarm-release[bot]'
-          git config user.email '342014845+giantswarm-release[bot]@users.noreply.github.com'
-          git commit -q -m "docs(changelog): ${TAG}" -- CHANGELOG.md
-          # A branch left from a closed pull request of this tag, on a re-run.
-          if git ls-remote --exit-code --heads origin "$head" >/dev/null; then
-            git push -q origin --delete "$head"
-          fi
-          git push -q origin "$head"
-          url=$(gh pr create --base "$GITHUB_REF_NAME" --head "$head" \
-            --title "docs(changelog): ${TAG}" \
-            --body "Writes ${TAG} into CHANGELOG.md from its release notes. Opened by the Auto-release workflow; the next stable release replaces it if it is still open.")
-          gh pr merge --auto --squash "$url" \
-            || echo "::warning::Could not enable auto-merge on ${url}: check that the repository allows auto-merge. Nothing waits for it, and the next stable release replaces it."
-{{{{- end }}}}

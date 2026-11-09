@@ -1,6 +1,7 @@
 package ciwebhooks
 
 import (
+	"github.com/giantswarm/microerror"
 	"github.com/spf13/cobra"
 )
 
@@ -26,5 +27,9 @@ func (f *flag) Init(cmd *cobra.Command) {
 }
 
 func (f *flag) Validate() error {
+	if f.WebhookSharedSecret == "" {
+		return microerror.Maskf(invalidFlagError, "--webhook-secret must not be empty")
+	}
+
 	return nil
 }

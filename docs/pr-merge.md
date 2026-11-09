@@ -7,7 +7,7 @@ warning; the merge's release-failure exit code is preserved.
 
 ```nohighlight
 devctl pr merge <owner/repo> <number> [--timeout 60m] [--release-timeout 60m] [--no-release-wait]
-                [--rebase | --squash] [--update-branch] [--accept-red <check>]...
+                [--rebase | --squash] [--carry-of <number>] [--update-branch] [--accept-red <check>]...
                 [--dispatch <owner>/<repo>/<workflow file>[@<ref>]]
                 [--progress] [--circleci-from-statuses] [--failed-log [--failed-log-lines 50]] [--detach [--on-done <command>]]
 devctl pr merge status [<handle>]
@@ -75,6 +75,34 @@ A mergeable state GitHub has not computed yet (`unknown`) is read again a few ti
 refusals are applied, so a pull request just pushed is judged on its state and not on GitHub's
 laziness.
 
+## Carrying a colleague's commits: `--carry-of`
+
+When your own pull request carries a colleague's commits, `--carry-of <number>` names their
+original pull request in the **same repository**. The carrier is merged with **rebase**, preserving
+each commit's original Git author and subject; the caller remains the merger. The existing REST
+merge API provides no squash-author override, so this mode never squashes or rewrites authors.
+The original pull request can be open or closed; it is only read by this option.
+
+Before the CI wait and any branch update, and again immediately before merging, devctl compares
+the carrier's immutable base and head commit SHAs and reads every page of commits. Every commit's
+Git author must be linked to the original author's GitHub account id and have a name and email.
+Mixed authorship (including an extra commit by the carrier), an unlinked or unknown author, and an empty
+comparison are refused with exit 5. An invalid original number or the carrier itself is exit 7. Incomplete or
+unreadable comparisons are tooling failures, never treated as proof of authorship. A head that
+changes after its checks were judged is refused; a head that changes during the wait is checked
+again before merging.
+
+Rebase must be allowed by the repository; otherwise the command ends before waiting with exit 3.
+`--squash` is incompatible (exit 7). A merge queue is refused (exit 5), since its configured merge
+method could squash the commits. No repository setting is changed. The ordinary author check still
+requires the carrier to be the caller's own pull request (or an allowed automation account), and
+the review and `agentMerge` guards still apply. `--update-branch` uses the existing rebase update.
+
+The JSON document includes `carryOf: {"pullRequest": "https://github.com/owner/repo/pull/12",
+"author": "colleague"}`. The field is omitted without `--carry-of`; detached merges forward the
+option and include the same field in their final document. Rebase keeps commit subjects as written,
+so a conventional subject for release notes must already be present in the carried commits.
+
 ## Unanswered reviews
 
 A review in state `COMMENTED` does not block GitHub's protection, so a pull request would merge seconds after
@@ -106,8 +134,10 @@ runs the merge again.
 ## The wait
 
 The wait is `pr wait`'s, with its verdicts and exit codes: 1 red, 2 timeout, 3 not applicable, 4 a
-required context never reported. Nothing is merged on any of them. `--failed-log` is `pr wait`'s too: a red
-wait prints the tail of each failed job's log to stderr and carries it in `failedJobs[]`. A head that changes under the
+required context never reported. Nothing is merged on any of them. `--failed-log` is `pr wait`'s too:
+`--failed-log-lines 0` keeps the full Actions log (all failed-step output on CircleCI), including for
+a detached merge. A red
+wait prints the requested log of each failed job to stderr and carries it in `failedJobs[]`. A head that changes under the
 wait resets it to the new head with a warning. Its reads, and the release wait's, are retried the way
 `pr wait`'s are ([Polling](pr-wait.md#polling)): a reset connection or a 5xx is a warning and another
 try, a read that fails every try leaves the poll unanswered, and the head's checks are then read through
@@ -437,7 +467,7 @@ The document of the merge of [#2368](https://github.com/giantswarm/devctl/pull/2
   },
   "actions": [],
   "mergeCommitSha": "c0621f88454b753c64ab264b2e39a9bcf15873c7",
-  "mergedBy": "teemow",
+  "mergedBy": "fixture-person",
   "method": "squash",
   "branchDeleted": true,
   "enqueued": false,
@@ -475,7 +505,7 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 | `branchDeleted` | The head branch was deleted after the merge, or was gone already. `false` when nothing merged and for a head in a fork. |
 | `enqueued` | The base has a merge queue and the pull request went through it. |
 | `unansweredReviews` | The feedback the last review read found unanswered, each with `kind` (`review`, `review_comment`, `comment`), `login`, `state` (reviews only), `at`, `url` and `standing` (a standing request for changes); empty when nothing held the merge, `null` when a refusal came before the read. |
-| `release` | The release the merge triggered, as `devctl release wait --pr` reports it: `verdict` (`available`, `no_release`, `ci_failed`, `timeout`, `transient`, `not_applicable`, `tag_pipeline_empty`, `usage`, `auth_required`), `reason`, and its result fields (`repository`, `tag`, `sha`, `releaseModel`, `ciModel`, `artifacts[]`, `pipeline`, `actions[]`, see [release-wait.md](release-wait.md#the-document)). `null` with `--no-release-wait` and when nothing merged. |
+| `release` | The release the merge triggered, as `devctl release wait --pr` reports it: `verdict` (`available`, `no_release`, `ci_failed`, `timeout`, `transient`, `not_applicable`, `tag_pipeline_empty`, `usage`, `remote_error`, `auth_required`), `reason`, and its result fields (`repository`, `tag`, `sha`, `releaseModel`, `ciModel`, `artifacts[]`, `pipeline`, `actions[]`, see [release-wait.md](release-wait.md#the-document)). `null` with `--no-release-wait` and when nothing merged. |
 | `dispatch` | The workflow dispatched after the merge ([above](#after-the-merge-a-workflow-dispatch)): `workflow` (`<owner>/<repo>/<file>`), `ref`, `inputs` (`repository`, `pull_request`, `release`), `dispatched` and, when GitHub refused it, `reason`. `null` without `--dispatch` (or `DEVCTL_MERGE_DISPATCH`) and when nothing merged. |
 
 ## Exit codes
@@ -489,16 +519,17 @@ The envelope and the fields from `repository` to `unfinished[]` are [`pr wait`'s
 | 4 | `required_missing`, `approval_required`, `no_checks` | A required status context never reported, the head waits only for Actions runs awaiting a member's approval (`approval_required`), or its `pull_request` workflows never started (`no_checks`: close and reopen the pull request), known at the poll that saw it and before any merge; `reason` names the context or the runs. |
 | 5 | `refused` | Another human's pull request, a repository whose entry says `agentMerge: false`, or a standing request for changes or an unanswered review; `reason` names the author, the field or the feedback (`changes requested: …`, `unanswered review: …`, listed in `unansweredReviews`). |
 | 6 | `release_failed` | **Merged**, and the release failed: the merge commit's auto-release run failed before it tagged, or the tag pipeline failed; `release.pipeline.failedJobs` names the jobs. |
-| 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure (GitHub or CircleCI answered with an error other than a 5xx; the team files could not be read). |
+| 7 | `usage` | Wrong arguments or flags, a newer devctl released (the reason names `devctl version update`), or a tooling failure (GitHub answered with an error other than a 5xx; the team files could not be read). |
 | 8 | `auth_required` | No usable token; `reason` names the `devctl auth login` to run. |
 | 9 | `release_unconfirmed` | **Merged**, and the release was not confirmed pullable: `--release-timeout` passed, the release wait could not judge it, the auto-release run was superseded, or a commit status of the release's commit failed (`status_failed`); `release.verdict` and `reason` say which. |
+| 13 | `remote_error` | A CircleCI request failed. The command line was valid; the reason preserves the service error. Existing timeout and post-merge outcomes take precedence. |
 | 14 | `tag_pipeline_empty` | **Merged**, and the CircleCI tag pipeline settled without workflows although its configuration admits the tag. Returned within that poll with the same `release.verdict`; `release.pipeline` and `reason` name its number and URL and advise re-triggering the tag's pipeline. Never merge the pull request again. |
 
 `--detach` exits 0 with verdict `detached` once the merge started, or with the code of the check
 that refused the call. `devctl pr merge status` exits with the merge's code once it ended, 10
 (`running`) while it runs, and 7 for a lost merge or an unknown handle.
 
-Codes 1 to 5 mean nothing was merged, and 6, 9 and 14 that the pull request was merged. A 7 or 8 is read
+Codes 1 to 5 mean nothing was merged, and 6, 9 and 14 that the pull request was merged. A 7, 8 or 13 is read
 with `mergeCommitSha`: a failure after the merge (deleting the branch) leaves it set, while the release
 wait's own tooling and authentication failures are 9.
 

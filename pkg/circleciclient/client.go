@@ -24,6 +24,8 @@ import (
 
 	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
+
+	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 )
 
 // DefaultBaseURL is CircleCI's public API host.
@@ -37,6 +39,10 @@ type Config struct {
 	// environment variable ("$CIRCLECI_TOKEN"), or a description such as the
 	// devctl keychain. Empty means "the CircleCI token".
 	TokenSource string
+	// Renew re-reads the selected token source after a read gets 401. When
+	// set, the read is retried once after two seconds, even if the token is
+	// unchanged. Nil preserves a fixed credential, without retrying 401.
+	Renew func(ctx context.Context, rejected string) (string, error)
 	// Anonymous is a client without a token: it reads what CircleCI answers
 	// without one, the pipelines, workflows and jobs of a public project (a
 	// private one answers 404, IsNotFound), and no header is sent. Set with
@@ -84,6 +90,15 @@ func New(config Config) (*Client, error) {
 	httpClient := config.HTTPClient
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 60 * time.Second, Transport: config.Transport}
+	}
+	if config.Renew != nil {
+		copy := *httpClient
+		base := copy.Transport
+		if base == nil {
+			base = http.DefaultTransport
+		}
+		copy.Transport = &reauthorizing{base: base, renew: config.Renew, token: config.Token}
+		httpClient = &copy
 	}
 	logger := config.Logger
 	if logger == nil {
@@ -378,16 +393,26 @@ func (c *Client) ListPipelineWorkflows(ctx context.Context, pipelineID string) (
 	}
 }
 
-// ListWorkflowJobs returns the jobs of a workflow, retrying an authenticated
+// ListWorkflowJobs returns every page of the jobs of a workflow, retrying an authenticated
 // 404 anonymously for workflows readable through the public API.
 func (c *Client) ListWorkflowJobs(ctx context.Context, workflowID string) ([]Job, error) {
-	var out struct {
-		Items []Job `json:"items"`
+	var out []Job
+	base := "/api/v2/workflow/" + url.PathEscape(workflowID) + "/job"
+	path := base
+	for {
+		var page struct {
+			Items         []Job  `json:"items"`
+			NextPageToken string `json:"next_page_token"`
+		}
+		if err := c.readPublicJob(ctx, path, &page); err != nil {
+			return nil, microerror.Mask(err)
+		}
+		out = append(out, page.Items...)
+		if page.NextPageToken == "" {
+			return out, nil
+		}
+		path = base + "?page-token=" + url.QueryEscape(page.NextPageToken)
 	}
-	if err := c.readPublicJob(ctx, "/api/v2/workflow/"+url.PathEscape(workflowID)+"/job", &out); err != nil {
-		return nil, microerror.Mask(err)
-	}
-	return out.Items, nil
 }
 
 // RerunWorkflowFromFailed reruns the failed jobs of a finished workflow and
@@ -480,7 +505,7 @@ func (c *Client) v2Project(org, repo string) string {
 // do sends one request with body (JSON-encoded when not nil) and decodes a
 // 2xx answer into out (when not nil). A 404 is IsNotFound; every other
 // non-2xx status is an apiError carrying CircleCI's message.
-func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
+func (c *Client) do(ctx context.Context, method, path string, body, out any) (err error) {
 	var reader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -502,6 +527,12 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	}
 	c.logger.Debugf("circleci: %s %s", method, path)
 
+	defer func() {
+		// A cancelled read is the caller's outcome, not a failed service request.
+		if err != nil && ctx.Err() == nil {
+			err = &agentcli.RemoteError{Err: err}
+		}
+	}()
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return microerror.Mask(err)

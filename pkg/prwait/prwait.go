@@ -102,6 +102,7 @@ type Config struct {
 	// FailedLogLines, when positive, makes a red verdict read the log of
 	// each failed job once and keep that many of its last lines in
 	// Result.FailedJobs. A green or pending head reads no log.
+	// FullFailedLogLines keeps the full log; zero reads no log.
 	FailedLogLines int
 	// AcceptRed are check names whose failure does not make the verdict
 	// red: a failed check run, status or CircleCI workflow of one of these
@@ -311,7 +312,7 @@ func (w *Waiter) Wait(ctx context.Context, owner, repo string, number int) (*Res
 			return result, nil
 		case e.redDecided():
 			w.progress.Printf("poll %d: red: head %s: %s", poll, h.sha, e.redReason())
-			if w.failedLogLines > 0 {
+			if w.failedLogLines > 0 || w.failedLogLines == FullFailedLogLines {
 				result.FailedJobs = w.failedJobs(ctx, owner, repo, h, e)
 			}
 			return result, agentcli.NewExitError(agentcli.ExitRed, agentcli.VerdictRed, "head %s: %s", h.sha, e.redReason())

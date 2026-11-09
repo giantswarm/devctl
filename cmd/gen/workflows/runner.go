@@ -25,7 +25,13 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return microerror.Mask(err)
+	}
 
 	err := r.flag.Validate()
 	if err != nil {
@@ -128,11 +134,13 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 			workflowsInput.CreateReleasePRDeletion(),
 			workflowsInput.ValidateChangelogDeletion(),
 		)
-		// The release writes CHANGELOG.md here, so the template stops asking
-		// for an edit. A repository without a template has nothing to change.
-		pullRequestTemplate := workflowsInput.PullRequestTemplate()
-		if _, err := os.Stat(pullRequestTemplate.Path); err == nil {
-			inputs = append(inputs, pullRequestTemplate)
+		// GitHub Releases are the changelog here: CHANGELOG.md is frozen as a
+		// pointer at them, and the pull request template stops asking for an
+		// edit. A repository without either file gets none.
+		for _, in := range []input.Input{workflowsInput.ChangelogPointer(), workflowsInput.PullRequestTemplate()} {
+			if _, err := os.Stat(in.Path); err == nil {
+				inputs = append(inputs, in)
+			}
 		}
 	} else {
 		r.warnAutoReleaseDeclaredLegacy(workflowsInput.AutoReleaseDeletion(), workflowsInput.CliffTomlDeletion())
@@ -157,7 +165,9 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	if r.flag.Flavours.Contains(gen.FlavourApp) {
 		inputs = append(inputs, workflowsInput.CheckValuesSchema())
-		inputs = append(inputs, workflowsInput.ChartTests())
+		if r.flag.ChartTests {
+			inputs = append(inputs, workflowsInput.ChartTests())
+		}
 		if r.flag.CheckReadmeLinks {
 			inputs = append(inputs, workflowsInput.CheckReadmeLinks())
 		}
@@ -208,6 +218,42 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	if r.flag.PublishTechdocs {
 		inputs = append(inputs, workflowsInput.PublishTechdocsInput())
+	}
+
+	// An omitted input leaves an old workflow active. Retire only the known
+	// generated workflows that no longer match this run's flags or flavours.
+	// Keep configuration files (such as zizmor.base.yml) and unrelated
+	// workflows, including ones another generator prefixes zz_generated.
+	optional := []input.Input{
+		workflowsInput.FixVulnerabilities(),
+		workflowsInput.Gitleaks(),
+		workflowsInput.CheckValuesSchema(),
+		workflowsInput.ChartTests(),
+		workflowsInput.CheckReadmeLinks(),
+		workflowsInput.HelmDocsRegen(),
+		workflowsInput.ReservationCommand(),
+		workflowsInput.UpdateChart(),
+		workflowsInput.SyncFromUpstream(),
+		workflowsInput.DispatchUpdateChartEvents(""),
+		workflowsInput.TestKyvernoPoliciesWithChainsaw(),
+		workflowsInput.AddCustomerBoardAutomation(),
+		workflowsInput.ClusterAppDocumentationValidation(),
+		workflowsInput.ClusterAppSchemaValidation(),
+		workflowsInput.HelmRenderDiff(),
+		workflowsInput.RunOSSFScorecard(),
+		workflowsInput.AnalyzeGithubActions(),
+		workflowsInput.ClusterAppValuesValidationUsingSchema(),
+		workflowsInput.PublishTechdocsInput(),
+	}
+	optional = append(optional, workflowsInput.Mctl()...)
+	selected := make(map[string]bool, len(inputs))
+	for _, in := range inputs {
+		selected[in.Path] = true
+	}
+	for _, in := range optional {
+		if !selected[in.Path] {
+			inputs = append(inputs, input.Input{Path: in.Path, Delete: true})
+		}
 	}
 
 	err = gen.Execute(

@@ -24,6 +24,5 @@ type ManifestPruneOptions struct {
 	NonGoFiles     bool `toml:"non-go,omitempty"`
 	GoTests        bool `toml:"go-tests,omitempty"`
 
-	//Projects []map[string]interface{} `toml:"project,omitempty"`
-	Projects []map[string]interface{}
+	Projects []map[string]interface{} `toml:"project,omitempty"`
 }

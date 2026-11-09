@@ -31,7 +31,7 @@ devctl rollout wait myinstallation giantswarm/giantswarm-configs --pr 1234
 ### The release first
 
 The command starts with the wait of `devctl release wait` for the same version or `--pr`, with the
-same rules, tokens and exit codes (`--release-timeout`, 60 minutes by default; `--image` and `--chart` name the image and the chart a hand-written tag job pushes outside the architect orb, as there: the kagent line's charts under `giantswarm/kagent/helm/`; `--failed-log` and `--failed-log-lines` read the tail of each failed job's log when the release's CI failed, as there and as in [`devctl pr wait`](pr-wait.md), into `release.failedJobs[]` and stderr). That wait names the
+same rules, tokens and exit codes (`--release-timeout`, 60 minutes by default; `--image` and `--chart` name the image and the chart a hand-written tag job pushes outside the architect orb, as there: the kagent line's charts under `giantswarm/kagent/helm/`; `--failed-log` and `--failed-log-lines` read the tail of each failed job's log when the release's CI failed, as there and as in [`devctl pr wait`](pr-wait.md), into `release.failedJobs[]` and stderr; `--failed-log-lines 0` keeps the full Actions log or all failed-step output on CircleCI). That wait names the
 release's charts from the sources that define them (the team-file entry, the tag pipeline's push
 jobs, `helm/<dir>/Chart.yaml` at the tag), so a repository that publishes several charts is waited for
 on all of them (a second chart a generated pipeline's `custom.yml` pushes off the same tag included:
@@ -83,6 +83,9 @@ changed app whose values nothing takes is exit 3, verdict `rollout_unknown`, nev
 A failed values attempt is exit 1 once helm-controller has observed the current generation and
 finished reconciling, even when a new history digest or a handled reconcile proves it attempted the
 change. Active retries keep waiting.
+
+A failed attempt of the requested revision is still a failure when that revision was already applied,
+including a failed health check.
 
 With `--reconcile`, the wait asks the GitRepository, the Kustomizations and, once its values are
 rendered, each HelmRelease to reconcile, once each.
@@ -197,3 +200,4 @@ shown as progress) and:
 | 8 | `auth_required` | No GitHub token (`devctl auth login`), the kube context is not signed in (`tsh kube login <installation>`), or it is missing and `tsh` is not logged in (`tsh login`). |
 | 11 | `ambiguous_release` | With `--pr`, the release's commit carries the release tags of more than one version, as in [`release wait`](release-wait.md#exit-codes); `release.conflictingTags` names them, and the wait given the version follows it. |
 | 12 | `status_failed` | The release's artifacts are available and its tag pipeline is green, and a commit status of its commit failed, as in [`release wait`](release-wait.md#exit-codes); the reason names the failed contexts. |
+| 13 | `remote_error` | A CircleCI request failed. The command line was valid; the reason preserves the service error. Existing timeout and post-merge outcomes take precedence. |

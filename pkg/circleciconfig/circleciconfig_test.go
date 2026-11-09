@@ -33,17 +33,18 @@ func generated(t *testing.T) map[string]string {
 	return m
 }
 
-// TestListGenerated: devctl's own generated configuration runs build-image
-// behind go-build and build-chart on a pull request's branch, and its release
-// jobs, the chart's push included, on a tag only.
+// TestListGenerated: devctl's own generated configuration runs pin-version
+// on every branch and release tag, build-image behind go-build and
+// build-chart on a pull request's branch, and its release jobs, the chart's
+// push included, on a tag only.
 func TestListGenerated(t *testing.T) {
 	tests := map[string]struct {
 		run  Run
 		want []string
 	}{
-		"a pull request's branch":  {run: Run{Branch: "feature"}, want: []string{"build-chart", "build-image", "go-build", "setup"}},
-		"main":                     {run: Run{Branch: "main"}, want: []string{"go-build", "setup"}},
-		"a release tag":            {run: Run{Tag: "v1.2.3"}, want: []string{"build-chart", "go-build", "push-chart-release", "push-to-registries-release", "setup", "sync-china-registry", "upload-release-assets"}},
+		"a pull request's branch":  {run: Run{Branch: "feature"}, want: []string{"build-chart", "build-image", "go-build", "pin-version", "setup"}},
+		"main":                     {run: Run{Branch: "main"}, want: []string{"go-build", "pin-version", "setup"}},
+		"a release tag":            {run: Run{Tag: "v1.2.3"}, want: []string{"build-chart", "go-build", "pin-version", "push-chart-release", "push-to-registries-release", "setup", "sync-china-registry", "upload-release-assets"}},
 		"a tag that is no release": {run: Run{Tag: "nightly"}, want: nil},
 	}
 	for name, tt := range tests {

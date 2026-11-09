@@ -14,7 +14,7 @@ own shell and never enters an agent session.
 | Command | GitHub token |
 |---|---|
 | `auth exec` and the `gh` link | the App login; `gh` on a repository of an owner the App is not installed on keeps your own `gh` login |
-| `deploy`, `pr approve-align`, `pr approve-merge-renovate`, `release create`, `release promote`, `repo create`, `repo owner` | the App login; a token in the environment overrides it |
+| `deploy`, [`pr approve-align-files`](pr-approve-align-files.md), `pr approve-merge-renovate`, `release create`, `release promote`, `repo create`, `repo owner` | the App login; a token in the environment overrides it |
 | the version check that precedes every command, `version check`, `version update`, `repo validate --local` | the same, optional and looked up only when GitHub is asked (never while the one-hour version cache is fresh): without one a public read is anonymous (`repo validate --local`: the embedded schema, repository names unchecked) |
 | `pr wait`, `pr merge`, `pr rerun` | the App login for giantswarm; your own `gh` login (`gh auth token`) for every other owner; never a token in the environment |
 | `release wait`, `rollout wait` | the App login only (`rollout wait` reads the installation with your kube context) |
@@ -192,7 +192,9 @@ registration:
 3. devctl exchanges the code with the PKCE verifier at `POST /oauth/token`. The result is a standard
    90-day CircleCI API token that works with API v2 (`Circle-Token` header or Bearer).
 
-CircleCI issues no refresh token: log in again before the 90 days are over. Every command warns in
+CircleCI issues no refresh token: log in again before the 90 days are over. A valid login also lets
+devctl set up the CircleCI pipelines your teams' new repositories wait for, after any command (see
+`devctl repo follow-circleci --pending` in [repo.md](repo.md#the-automatic-pass)). Every command warns in
 its JSON `warnings` from seven days before the expiry. Re-running the flow for the same client and
 user atomically revokes the previous token, so a re-login leaves no stale token behind on CircleCI.
 
@@ -225,6 +227,9 @@ authorization server, so the flow is discovered, not configured:
    PKCE verifier and reads the login from the userinfo endpoint.
 4. The access token comes with a refresh token (the `offline_access` scope): a `repo` command that
    finds the access token expired refreshes it itself, no human involved, and stores the new pair.
+   Refresh uses the issuer saved at login, even when the resource advertises multiple servers. If that
+   issuer is no longer advertised, run `devctl auth login --muster-only` again; devctl sends no stored
+   refresh token to the replacement issuer. Authorization server metadata must identify the queried issuer.
    Refreshes hold the muster identity's lock and reread the record after acquiring it, so concurrent
    commands share the renewed pair and spend a rotating refresh token only once.
 
@@ -342,6 +347,7 @@ its final repository document. This is the CLI's behavior; `devctl serve` keeps 
 | 5 | `refused` | another author, an opt-out |
 | 7 | `usage` | wrong usage, a newer devctl released (the reason names `devctl version update`), or a tooling failure |
 | 8 | `auth_required` | no usable token; the reason names `devctl auth login` |
+| 13 | `remote_error` | A CircleCI request failed. The command line was valid; the reason preserves the service error. Existing timeout and post-merge outcomes take precedence. |
 
 ## Environment
 

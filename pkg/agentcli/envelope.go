@@ -42,6 +42,7 @@ const (
 	VerdictReleaseUnconfirmed Verdict = "release_unconfirmed"
 	VerdictAuthRequired       Verdict = "auth_required"
 	VerdictUsage              Verdict = "usage"
+	VerdictRemoteError        Verdict = "remote_error"
 	// VerdictAmbiguousRelease: the commit carries the release tags of more
 	// than one version; the caller names the version.
 	VerdictAmbiguousRelease Verdict = "ambiguous_release"
@@ -104,6 +105,9 @@ const (
 	// pipeline's, another CI's) failed: devctl release promote refuses the
 	// commit. The reason names the failed statuses.
 	ExitStatusFailed = 12
+	// ExitRemoteError: a CircleCI request failed; retrying the command may
+	// succeed. The command line itself was valid.
+	ExitRemoteError = 13
 	// ExitTagPipelineEmpty: the tag pipeline settled without workflows
 	// although its configuration admits the tag. After pr merge, the merge
 	// already happened: re-trigger the tag pipeline, never merge again.
@@ -246,6 +250,7 @@ func (e *ExitError) ExitVerdict() Verdict { return e.Verdict }
 
 // Exit maps err to the process exit code: 0 for nil, the code of an
 // [ExitCoder] anywhere in the chain, [ExitTimeout] for an exhausted read,
+// [ExitRemoteError] for a [RemoteError],
 // [ExitUsage] for any other error.
 func Exit(err error) int {
 	if err == nil {
@@ -257,7 +262,8 @@ func Exit(err error) int {
 
 // Outcome is err's place in the exit-code table: the code and verdict of an
 // [ExitCoder] anywhere in the chain, or a transient outcome for an exhausted
-// read not handled by its wait. Any other error is [ExitUsage]. err must not
+// read not handled by its wait, [ExitRemoteError] for a [RemoteError]. Any
+// other error is [ExitUsage]. err must not
 // be nil.
 func Outcome(err error) (int, Verdict) {
 	var coder ExitCoder
@@ -267,6 +273,10 @@ func Outcome(err error) (int, Verdict) {
 	var exhausted *RetriesExhaustedError
 	if errors.As(err, &exhausted) {
 		return ExitTimeout, VerdictTransient
+	}
+	var remote *RemoteError
+	if errors.As(err, &remote) {
+		return ExitRemoteError, VerdictRemoteError
 	}
 	return ExitUsage, VerdictUsage
 }

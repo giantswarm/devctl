@@ -175,7 +175,7 @@ CircleCI only through the commit statuses it posts to GitHub (`ci/circleci: <job
 nothing until the jobs it requires have finished, so the waits read the jobs CircleCI runs from the revision's
 `.circleci/config.yml` through GitHub: devctl's generated setup workflow continues with `.circleci/workflows.yml`
 deep-merged with `.circleci/custom.yml`, any other configuration is its own; a job runs when its `filters` take the
-pull request's branch (`pull/<n>` for a fork) or the tag and every job it requires runs, an approval posts nothing,
+pull request's branch (`pull/<n>` for a fork) or the tag and at least one job it requires runs (or it requires none), an approval posts nothing,
 and a workflow runs when its `when`/`unless` holds for a push (pipeline parameters at their defaults, `trigger_source`
 `webhook`), a scheduled one never. Every such job that has posted no status yet keeps a wait pending, named
 `ci/circleci: <job> (not posted yet)`. What the configuration cannot tell before the pipeline runs (a matrix job, a
@@ -217,6 +217,14 @@ the memory of the replica that runs it.
 and the Dex (`https://dex.<baseDomain>`), and the exchange client is the hub muster's Secret
 `<name>-token-exchange-credentials` in the release namespace, mounted into the pod. With installations, the
 `MCPServer`'s `requiredAudiences` carry `dex-k8s-authenticator`, the audience the installations' Dex connectors accept.
+
+On Cilium clusters, `networkPolicy.enabled: true` renders the server's egress policy: DNS through Cilium's DNS
+proxy, HTTPS to GitHub, the public and private registries and the catalog host, and each installation's Dex token
+endpoint and management API. The installation endpoints come from the same helper as the installations file,
+including `apiServer` and `dex.tokenEndpoint` overrides and their ports; IP endpoints use CIDR rules. Adding an
+installation then updates both the server and its egress in one values change. The policy selects only this
+release's pods and controls egress; ingress remains the deployment's responsibility. It covers the server's default
+GitHub, registry and catalog endpoints; deployments overriding those with `extraEnv` need matching egress rules.
 
 An installation's muster configuration adds the toolset presets `devctl` (`server: devctl`, every tool, the write
 tools included) and `devctl-read-only` (`pr_wait`, `release_wait`, `rollout_wait`, `pr_merge_status` and

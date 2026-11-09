@@ -149,6 +149,10 @@
           "installUpdateChart": {
             "type": "boolean"
           },
+          "chartTests": {
+            "type": "boolean",
+            "description": "Whether to generate the chart_tests workflow for an app repository; on by default."
+          },
           "checkReadmeLinks": {
             "type": "boolean",
             "description": "Generate zz_generated.check_readme_links.yaml (app flavour only; on by default). The workflow checks the links in README.md: a pull request that touches README.md fails on a dead URL, a relative path that does not exist in the repository or a reversed link '(text)[url]', and a weekly run files links whose target moved as one issue, 'Broken links in README', updated on later runs and closed once the links are fixed. Set false to pass '--check-readme-links=false' to 'devctl gen workflows' and keep the workflow out of the repository; align-files would otherwise put it back on every run. Requires devctl v8.123.0+ (an older devctl generates it regardless)."

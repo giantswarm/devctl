@@ -70,6 +70,16 @@ another team owns, unless you are one of its admins, your own green pull
 request is declined until a reviewer with write access approves it: exit 3,
 the reason naming the ruleset, its bypass actors and the owning team.
 
+--carry-of <number>: the original pull request in the same repository whose
+commits the caller carries in their own pull request. This requires rebase
+merging, preserving each commit's original author and subject. Before the
+wait and again before merging, every commit of the carrier is verified as
+authored by the original pull request's author, using the GitHub account id
+linked to its Git author. Mixed or unknown authorship and merge queues are
+refused (exit 5); disabled rebase merging is exit 3. --squash is excluded.
+The document's carryOf names the original pull request URL and its author.
+The ordinary author, review and repository opt-out guards still apply.
+
 --update-branch: a head behind its base is updated from the base before any
 check is judged (GitHub's Update branch, which merges the base in; with a
 rebase merge, Update with rebase, which rebases the head onto the base, so no
@@ -178,6 +188,7 @@ Exit codes:
      first, SIGINT/SIGTERM interrupted the wait, or the release wait could
      not judge it (release.verdict and the
      reason say which; devctl release wait <owner/repo> --pr <n> resumes it)
+ 13  remote_error: a CircleCI request failed before the merge
  14  tag_pipeline_empty: merged, and the tag pipeline settled without
      workflows although its configuration admits the tag; re-trigger the
      tag pipeline named in release.pipeline`

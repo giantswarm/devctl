@@ -170,5 +170,6 @@ A run of the name newer than the one given is named in `warnings`; the rerun is 
 | 5 | `refused` | a rerun of the workflow's name within the hour, a workflow still running without `--cancel`, or a rerun CircleCI refused (the reason carries its message) |
 | 7 | `usage` | wrong usage or a tooling failure |
 | 8 | `auth_required` | no CircleCI login, or one without Write access (`devctl auth login --circleci-only`) |
+| 13 | `remote_error` | A CircleCI request failed. The command line was valid; the reason preserves the service error. Existing timeout and post-merge outcomes take precedence. |
 
-`ci jobs` exits 0 (`listed`), 2 (`transient`), 3 (no such pipeline of the repository), 7 or 8.
+`ci jobs` exits 0 (`listed`), 2 (`transient`), 3 (no such pipeline of the repository), 7, 8 or 13 (`remote_error`).
