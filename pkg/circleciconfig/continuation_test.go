@@ -13,7 +13,7 @@ import (
 func TestListRuntimeContinuation(t *testing.T) {
 	multi := map[string]string{}
 	for path, fixture := range map[string]string{ConfigPath: "agent-toolchains.config.yml", WorkflowsPath: "agent-toolchains.workflows.yml"} {
-		content, err := os.ReadFile(filepath.Join("..", "gen", "input", "circleci", "testdata", fixture))
+		content, err := os.ReadFile(filepath.Join("..", "gen", "input", "circleci", "testdata", fixture)) // #nosec G304 -- fixed test fixture names
 		if err != nil {
 			t.Fatal(err)
 		}
