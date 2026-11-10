@@ -164,3 +164,92 @@ func TestDiscoverMusterRefusals(t *testing.T) {
 		t.Fatal("an empty endpoint was accepted")
 	}
 }
+
+func TestMusterRefreshExpiry(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		replacement string
+		lifetime    int64
+		oldExpiry   time.Time
+		wantExpiry  time.Time
+	}{
+		{name: "retained known expiry", oldExpiry: testNow.Add(time.Hour), wantExpiry: testNow.Add(time.Hour)},
+		{name: "retained unknown expiry"},
+		{name: "retained updated lifetime", lifetime: 7200, oldExpiry: testNow.Add(time.Hour), wantExpiry: testNow.Add(2 * time.Hour)},
+		{name: "rotated unknown expiry", replacement: "replacement", oldExpiry: testNow.Add(time.Hour)},
+		{name: "rotated updated lifetime", replacement: "replacement", lifetime: 7200, oldExpiry: testNow.Add(time.Hour), wantExpiry: testNow.Add(2 * time.Hour)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clock := testNow
+			a, store := newMusterAuth(t, func() time.Time { return clock })
+			requests := 0
+			mux := http.NewServeMux()
+			var srv *httptest.Server
+			mux.HandleFunc("/.well-known/oauth-protected-resource", func(w http.ResponseWriter, _ *http.Request) {
+				writeJSON(w, http.StatusOK, map[string]any{"authorization_servers": []string{srv.URL}})
+			})
+			mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
+				writeJSON(w, http.StatusOK, map[string]any{
+					"issuer": srv.URL, "authorization_endpoint": srv.URL + "/authorize", "token_endpoint": srv.URL + "/token",
+					"code_challenge_methods_supported": []string{"S256"}, "client_id_metadata_document_supported": true,
+				})
+			})
+			mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				if err := r.ParseForm(); err != nil {
+					t.Error(err)
+				}
+				if r.Form.Get("refresh_token") != "original" {
+					t.Error("refresh did not use the stored token")
+				}
+				response := map[string]any{"access_token": "fresh-access", "expires_in": 60}
+				if tc.replacement != "" {
+					response["refresh_token"] = tc.replacement
+				}
+				if tc.lifetime > 0 {
+					response["refresh_token_expires_in"] = tc.lifetime
+				}
+				writeJSON(w, http.StatusOK, response)
+			})
+			srv = httptest.NewServer(mux)
+			defer srv.Close()
+			if err := store.Set(UserMuster, Record{
+				Token: "expired-access", ExpiresAt: testNow.Add(-time.Minute),
+				RefreshToken: "original", RefreshExpiresAt: tc.oldExpiry,
+				Endpoint: srv.URL + "/mcp", Issuer: srv.URL, ClientID: MusterClientID,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := a.RequireMuster(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			stored, err := store.Get(UserMuster)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantToken := tc.replacement
+			if wantToken == "" {
+				wantToken = "original"
+			}
+			if stored.RefreshToken != wantToken || !stored.RefreshExpiresAt.Equal(tc.wantExpiry) {
+				t.Fatalf("refresh token or expiry changed unexpectedly: expiry = %s, want %s", stored.RefreshExpiresAt, tc.wantExpiry)
+			}
+			if !tc.wantExpiry.IsZero() {
+				clock = tc.wantExpiry.Add(time.Second)
+				status, err := a.Status()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if status.Muster.Refreshable || status.Muster.Usable() {
+					t.Fatal("expired pair remains refreshable or usable")
+				}
+				if _, err := a.RequireMuster(context.Background()); !errors.Is(err, ErrAuthRequired) {
+					t.Fatalf("expired pair: got %v, want login required", err)
+				}
+			}
+			if requests != 1 {
+				t.Fatalf("token exchanges = %d, want 1", requests)
+			}
+		})
+	}
+}
