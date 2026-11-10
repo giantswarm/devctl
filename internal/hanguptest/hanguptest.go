@@ -26,9 +26,12 @@ const envChild = "DEVCTL_TEST_HANGUP_CHILD"
 func Run(t *testing.T, wantExit int, run func(hangup func()) error) []byte {
 	t.Helper()
 	if os.Getenv(envChild) == t.Name() {
-		// Other tests may have ignored SIGHUP in the parent. Do not inherit
-		// that disposition: the runner under test must establish its own.
-		signal.Reset(syscall.SIGHUP)
+		// Reset can restore an inherited SIG_IGN. Notify establishes a
+		// non-ignored baseline even then, so the runner must explicitly
+		// ignore SIGHUP to pass the disposition check below.
+		hangups := make(chan os.Signal, 1)
+		signal.Notify(hangups, syscall.SIGHUP)
+		defer signal.Stop(hangups)
 		if signal.Ignored(syscall.SIGHUP) {
 			t.Fatal("SIGHUP is still ignored before running the command")
 		}
@@ -57,10 +60,6 @@ func Run(t *testing.T, wantExit int, run func(hangup func()) error) []byte {
 		os.Exit(agentcli.Exit(err))
 	}
 
-	// Other tests may have ignored SIGHUP in the parent. Reset it before
-	// spawning the child so execve does not pass SIG_IGN as the child's
-	// initial disposition.
-	signal.Reset(syscall.SIGHUP)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^"+regexp.QuoteMeta(t.Name())+"$") // #nosec G204 G702 -- the test binary itself
