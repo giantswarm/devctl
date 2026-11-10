@@ -215,6 +215,20 @@ defaults, which removes the language and Helm hooks and skips schema generation.
 example, a Go repository with a chart can regenerate with
 `devctl gen precommit --language go --flavors helmchart`; keep any other original options.
 
+Each chart also gets a `helm-docs-description-<chart>` check for its `values.yaml`. The pinned schema generator
+silently drops description continuation lines containing `--`. This check reports the file and line to reword
+(for example, replace the dash pair with an em dash), while allowing `--` in the first description line and the
+`@default`, `@notationType` and `@section` annotations. Ordinary comments and text inside YAML strings or block
+scalars are allowed. The hook installs pinned PyYAML in its isolated Python environment; the check itself runs
+offline and changes no files. Run pre-commit after `devctl gen precommit`: generation alone still uses the
+upstream parser. For example, reword the second line here before regenerating the schema:
+
+```yaml
+# -- Storage class of the volume.
+# Empty means the cluster default -- never a literal "--".
+storageClass: ""
+```
+
 A Go repository's config also refuses a `require` line in any `go.mod` (single or in a block) whose trailing comment has more than one word (`go-mod-require-comment`): Renovate's gomod manager reads only a one-word comment such as `// indirect` and skips the whole line otherwise, so that dependency is never updated and nothing says so. The explanation goes on a comment line above the require.
 
 A Go repository's `golangci-lint` hook, like `make lint` of `devctl gen makefile --language go`, passes no linter flags: the linters live in the repository's golangci-lint configuration, so a bare `golangci-lint run` lints with the same set. Both commands write `.golangci.yaml` (gosec and goconst on top of the standard set) when the repository has no configuration. A repository's own `.golangci.yml` or `.golangci.yaml` is kept as it is, except that gosec and goconst are added to `linters.enable` when it neither enables nor disables them (and govet too when `linters.default` replaces the standard set); a TOML or JSON configuration, or one whose `linters.enable` is a flow sequence, fails generation naming the linters to enable.
