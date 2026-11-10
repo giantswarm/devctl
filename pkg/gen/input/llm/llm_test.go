@@ -20,9 +20,10 @@ func TestBlockBody(t *testing.T) {
 			body, err := l.BlockBody()
 			require.NoError(t, err)
 			require.True(t, strings.HasPrefix(body, "## Giant Swarm conventions\n"))
-			require.Contains(t, body, "Where they differ from this block, they take precedence.")
-			require.Contains(t, body, "- Use conventional commits for commit messages and pull request titles.\n")
-			require.Equal(t, wantGo, strings.Contains(body, "goimports -local github.com/giantswarm/<repository>"))
+			text := strings.Join(strings.Fields(body), " ")
+			require.Contains(t, text, "Where they differ from this block, they take precedence.")
+			require.Contains(t, text, "- Use conventional commits for commit messages and pull request titles.")
+			require.Equal(t, wantGo, strings.Contains(text, "goimports -local github.com/giantswarm/<repository>"))
 			// Claude reads @ before a path or URL as an import.
 			require.NotContains(t, body, " @")
 			require.True(t, strings.HasSuffix(body, ".\n"), "the body ends with one newline")
@@ -31,7 +32,7 @@ func TestBlockBody(t *testing.T) {
 }
 
 func TestBlockBody_RecommendsPluginsForTheRepository(t *testing.T) {
-	const line = "- If the skills of the `giantswarm/claude-code` plugin marketplace are not available to you and the user works at Giant Swarm, tell them once that they can install the %s plugins from it.\n"
+	const line = "- If the skills of the `giantswarm/claude-code` plugin marketplace are not available to you and the user works at Giant Swarm, tell them once that they can install the %s plugins from it."
 	for _, tc := range []struct {
 		name   string
 		config llm.Config
@@ -49,7 +50,7 @@ func TestBlockBody_RecommendsPluginsForTheRepository(t *testing.T) {
 
 			body, err := l.BlockBody()
 			require.NoError(t, err)
-			require.Contains(t, body, fmt.Sprintf(line, tc.want))
+			require.Contains(t, strings.Join(strings.Fields(body), " "), fmt.Sprintf(line, tc.want))
 		})
 	}
 }
