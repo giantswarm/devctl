@@ -33,7 +33,7 @@ func TestBatchPolicySurvivesRegeneration(t *testing.T) {
 			if err := Execute(context.Background(), input.Input{Path: path, TemplateBody: source}); err != nil {
 				t.Fatal(err)
 			}
-			data, err := os.ReadFile(path)
+			data, err := os.ReadFile(path) // #nosec G304 -- generated fixture at a fixed relative path inside t.TempDir
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -43,7 +43,7 @@ func TestBatchPolicySurvivesRegeneration(t *testing.T) {
 			if !strings.Contains(string(data), "merge_group:") {
 				t.Fatal("missing queue trigger")
 			}
-			gate, err := os.ReadFile(gatePath)
+			gate, err := os.ReadFile(gatePath) // #nosec G304 -- generated fixture at a fixed relative path inside t.TempDir
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -60,7 +60,7 @@ func TestBatchPolicySurvivesRegeneration(t *testing.T) {
 	if err := Execute(context.Background(), input.Input{Path: path, TemplateBody: source}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile(path)
+	got, err := os.ReadFile(path) // #nosec G304 -- generated fixture at a fixed relative path inside t.TempDir
 	if err != nil {
 		t.Fatal(err)
 	}

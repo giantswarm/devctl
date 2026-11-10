@@ -9,6 +9,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const yamlMapTag = "!!map"
+
 // These validation workflows are expensive. PR-specific automations, title
 // checks, release workflows and publishing workflows deliberately stay intact.
 var expensive = map[string]bool{
@@ -45,17 +47,17 @@ func Apply(path string, content []byte, c *Config) ([]byte, error) {
 		return nil, fmt.Errorf("batch CI: %s has no triggers", path)
 	}
 	if on.Kind == yaml.SequenceNode {
-		m := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		m := &yaml.Node{Kind: yaml.MappingNode, Tag: yamlMapTag}
 		for _, v := range on.Content {
-			set(m, v.Value, &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"})
+			set(m, v.Value, &yaml.Node{Kind: yaml.MappingNode, Tag: yamlMapTag})
 		}
 		*on = *m
 	}
 	if on.Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("batch CI: unsupported triggers in %s", path)
 	}
-	set(on, "merge_group", &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"})
-	if c.Mode == "batch" {
+	set(on, "merge_group", &yaml.Node{Kind: yaml.MappingNode, Tag: yamlMapTag})
+	if c.Mode == modeBatch {
 		remove(on, "pull_request")
 	}
 	if name == "check_readme_links" {
@@ -138,7 +140,7 @@ if [[ "${CIRCLE_BRANCH:-}" == gh-readonly-queue/* ]]; then
   test "$(git rev-parse HEAD)" = "$CIRCLE_SHA1"
 fi
 `
-	if c.Mode == "batch" {
+	if c.Mode == modeBatch {
 		command += `# Only supersedable PR work is suppressed. Queue, base, maintenance
 # branches, tags and pipelines without PR metadata always continue.
 if [[ -n "${CIRCLE_PULL_REQUEST:-}${CIRCLE_PULL_REQUESTS:-}" && -z "${CIRCLE_TAG:-}" && "${CIRCLE_BRANCH:-}" != gh-readonly-queue/* && "${CIRCLE_BRANCH:-}" != release-* && "${CIRCLE_BRANCH:-}" != ` + shellQuote(c.BaseBranch) + ` ]]; then
@@ -148,7 +150,7 @@ fi
 	}
 	var step yaml.Node
 	// Marshal the command as data, never interpolate repository strings into YAML.
-	data, err := yaml.Marshal(map[string]interface{}{"run": map[string]string{"name": "Batch CI checkout and admission", "command": command}})
+	data, err := yaml.Marshal(map[string]interface{}{"run": map[string]string{nameKey: "Batch CI checkout and admission", "command": command}})
 	if err != nil {
 		return nil, err
 	}

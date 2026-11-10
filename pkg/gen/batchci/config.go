@@ -16,6 +16,9 @@ import (
 const ConfigPath = ".devctl/ci-batch.yaml"
 const GateName = "batch-ci"
 
+const modeBatch = "batch"
+const nameKey = "name"
+
 // Result identifies both a check and its trusted producer. Actions checks also
 // name their workflow, so a result from an older suite cannot mask a new run.
 type Result struct {
@@ -66,7 +69,7 @@ func Parse(data []byte) (*Config, error) {
 	if err := d.Decode(&extra); err != io.EOF {
 		return nil, fmt.Errorf("%s: expected exactly one policy document", ConfigPath)
 	}
-	if c.Mode != "prepare" && c.Mode != "batch" {
+	if c.Mode != "prepare" && c.Mode != modeBatch {
 		return nil, fmt.Errorf("%s: mode must be prepare or batch", ConfigPath)
 	}
 	if c.BaseBranch == "" || c.GateAppID <= 0 || len(c.Results) == 0 {

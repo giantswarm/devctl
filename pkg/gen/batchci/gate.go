@@ -10,6 +10,8 @@ import (
 //go:embed gate.js
 var gateScript string
 
+const permissionRead = "read"
+
 func Gate(c *Config) ([]byte, error) {
 	config, err := json.Marshal(map[string]interface{}{
 		"mode": c.Mode, "baseBranch": c.BaseBranch, "gateAppID": c.GateAppID, "results": c.Results,
@@ -18,12 +20,12 @@ func Gate(c *Config) ([]byte, error) {
 		return nil, err
 	}
 	workflow := map[string]interface{}{
-		"name": GateName,
+		nameKey: GateName,
 		"on": map[string]interface{}{
 			"pull_request": map[string]interface{}{"branches": []string{c.BaseBranch}},
 			"merge_group":  map[string]interface{}{"types": []string{"checks_requested"}},
 		},
-		"permissions": map[string]string{"contents": "read", "checks": "read", "statuses": "read", "actions": "read"},
+		"permissions": map[string]string{"contents": permissionRead, "checks": permissionRead, "statuses": permissionRead, "actions": permissionRead},
 		"concurrency": map[string]interface{}{
 			"group":              "${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}",
 			"cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
@@ -32,10 +34,10 @@ func Gate(c *Config) ([]byte, error) {
 			GateName: map[string]interface{}{
 				"runs-on": "ubuntu-26.04", "timeout-minutes": 50,
 				"steps": []interface{}{map[string]interface{}{
-					"name": "Verify admission policy and exact queue results",
-					"uses": "actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b", // v7.1.0
-					"env":  map[string]string{"BATCH_CI_CONFIG": string(config)},
-					"with": map[string]string{"script": gateScript},
+					nameKey: "Verify admission policy and exact queue results",
+					"uses":  "actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b", // v7.1.0
+					"env":   map[string]string{"BATCH_CI_CONFIG": string(config)},
+					"with":  map[string]string{"script": gateScript},
 				}},
 			},
 		},

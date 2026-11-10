@@ -86,7 +86,7 @@ func TestCircleSetupTransition(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, template := range []string{"setup-config.yml.template", "multi-image-setup-config.yml.template"} {
-		source, err := os.ReadFile(filepath.Join("..", "input", "circleci", "internal", "file", template))
+		source, err := os.ReadFile(filepath.Join("..", "input", "circleci", "internal", "file", template)) // #nosec G304 -- fixed repository fixture names from the literal list above
 		if err != nil {
 			t.Fatal(err)
 		}
