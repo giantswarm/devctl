@@ -25,7 +25,7 @@ func (f *identityTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		return nil, fmt.Errorf("unexpected mutation: %s", req.Method)
 	}
 	body := `{"merged":true}`
-	if req.URL.Path == "/search/issues" {
+	if req.URL.Path == testSearchIssuesPath {
 		body = `{"total_count":4,"items":[
 			{"number":42,"html_url":"https://github.com/one/api/pull/42"},
 			{"number":42,"html_url":"https://github.com/one/web/pull/42"},
@@ -47,7 +47,7 @@ func TestRunKeepsRepositoryScopedPRIdentity(t *testing.T) {
 	t.Cleanup(func() { http.DefaultTransport = original })
 	var out bytes.Buffer
 	r := &runner{flag: &flag{Grouping: GroupingDependency}, logger: logrus.New(), stdout: &out, stderr: io.Discard}
-	if err := r.run(context.Background(), &cobra.Command{}, []string{"dependency"}); err != nil {
+	if err := r.run(context.Background(), &cobra.Command{}, []string{GroupingDependency}); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{"/repos/one/api/pulls/42", "/repos/one/web/pulls/42", "/repos/two/api/pulls/42"} {
@@ -64,6 +64,8 @@ type commandIdentityTransport func(*http.Request) (*http.Response, error)
 
 func (f commandIdentityTransport) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
+const testRepoOA = "o/a"
+
 // PR numbers are scoped to one repository, including in an org-wide search.
 func TestCommandProcessesEqualNumbersInDifferentRepositories(t *testing.T) {
 	t.Setenv("DEVCTL_GITHUB_TOKEN", "synthetic-offline-token")
@@ -72,17 +74,17 @@ func TestCommandProcessesEqualNumbersInDifferentRepositories(t *testing.T) {
 	transport := commandIdentityTransport(func(req *http.Request) (*http.Response, error) {
 		var body any
 		switch req.URL.Path {
-		case "/search/issues":
+		case testSearchIssuesPath:
 			issues := []any{}
-			for _, repository := range []string{"o/a", "o/b", "other/a", "o/a"} {
-				issues = append(issues, map[string]any{"number": 7, "title": "Update fixture", "html_url": "https://github.com/" + repository + "/pull/7"})
+			for _, repository := range []string{testRepoOA, "o/b", "other/a", testRepoOA} {
+				issues = append(issues, map[string]any{testNumberKey: 7, testTitleKey: testFixtureTitle, testHTMLURLKey: "https://github.com/" + repository + "/pull/7"})
 			}
-			body = map[string]any{"total_count": len(issues), "items": issues}
+			body = map[string]any{testTotalCountKey: len(issues), testItemsKey: issues}
 		case "/repos/o/a/pulls/7", "/repos/o/b/pulls/7", "/repos/other/a/pulls/7":
 			mu.Lock()
 			seen[req.URL.Path]++
 			mu.Unlock()
-			body = map[string]any{"merged": true}
+			body = map[string]any{testMergedKey: true}
 		default:
 			t.Errorf("unexpected offline request: %s %s", req.Method, req.URL)
 			body = map[string]any{}
@@ -91,7 +93,7 @@ func TestCommandProcessesEqualNumbersInDifferentRepositories(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
-		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(string(raw))), Request: req}, nil
+		return &http.Response{StatusCode: 200, Header: http.Header{testContentTypeHeader: {testJSONContentType}}, Body: io.NopCloser(strings.NewReader(string(raw))), Request: req}, nil
 	})
 	previous := http.DefaultTransport
 	http.DefaultTransport = transport
@@ -102,13 +104,13 @@ func TestCommandProcessesEqualNumbersInDifferentRepositories(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd.SetArgs([]string{"fixture", "--dry-run"})
+	cmd.SetArgs([]string{testFixtureArg, "--dry-run"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	for _, repository := range []string{"o/a", "o/b", "other/a"} {
+	for _, repository := range []string{testRepoOA, "o/b", "other/a"} {
 		if n := seen["/repos/"+repository+"/pulls/7"]; n != 1 {
 			t.Errorf("%s PR 7 processed %d times, want once", repository, n)
 		}
