@@ -26,16 +26,19 @@ giantswarm/github whose release model is auto-release (releaseWorkflow,
 defaulting from gen.ci.generate), in the giantswarm organization. Pass
 exactly one of the two.
 
-For each repository, on its default branch (--branch names another, for one
-repository: a fork line's maintenance branch release-X.Y, whose candidates
-are its own series'):
+For each repository, on its default branch (--ref names another, for one
+repository: a maintenance branch release-X.Y enabled by that branch's
+auto-release push and workflow_dispatch triggers; another ref is a usage
+error). --branch remains available with its existing behavior; pass only
+one of --ref and --branch:
   1. The workflow file must be there (else not_auto_release) and carry the
      step "Resolve the candidate to promote" of devctl v8.102.0 or later
      (else outdated_workflow: an older workflow's release-type stable tags
      the branch head instead of promoting a candidate).
   2. The candidate is the highest vX.Y.Z-rc.N GitHub release newer than
-     the highest stable vX.Y.Z release, counting only tags reachable from
-     the default branch, as the workflow does (semver order: rc.10 after
+     the highest stable vX.Y.Z release (the X.Y series' stable baseline on
+     a maintenance --ref), counting only tags reachable from
+     the selected branch, as the workflow does (semver order: rc.10 after
      rc.9). A candidate or stable release of another branch is skipped.
      None: nothing_to_promote. A candidate that is a full release, not a
      pre-release, is failed, as the workflow refuses it; no lower candidate
@@ -45,11 +48,11 @@ are its own series'):
      With --version vX.Y.Z-rc.N (or the bare X.Y.Z-rc.N), for exactly one
      repository, the candidate is that one instead of the highest: a
      published pre-release newer than the highest stable release and
-     reachable from the default branch, else failed. The workflow must take its version input, else
+     reachable from the selected branch, else failed. The workflow must take its version input, else
      outdated_workflow. This promotes a candidate that is built while a
      later one is still building, or the one proven live: the stable tag
      lands on that candidate's commit whatever was cut after it. The
-     candidates cut after it on the default branch are named in later[]
+     candidates cut after it on the selected branch are named in later[]
      and in the message, as not in the release.
   3. UPGRADE.md at the candidate's commit must have no line starting with
      "## Next", including an empty section (else failed). Land the rename
@@ -64,7 +67,7 @@ are its own series'):
      A not_built entry names in newestBuilt, and in its message, the
      highest other candidate since the stable release that is built:
      promote it with --version, or wait for the refused one.
-  5. The workflow is dispatched on the default branch with
+  5. The workflow is dispatched on the selected branch with
      release-type: stable, and with --version also version: the candidate
      (dispatched; would_dispatch with --dry-run).
   6. Once every repository is dispatched, the run each dispatch started is
@@ -109,9 +112,10 @@ Exit codes:
      names them
   7  usage or tooling: neither or both of repositories and --team, a
      malformed owner/repo, a negative --follow-timeout, --version not of
-     the form vX.Y.Z-rc.N or X.Y.Z-rc.N or not with exactly one repository, --branch not with exactly one
-     repository, or a team without a team file, before
-     any repository is read
+     the form vX.Y.Z-rc.N or X.Y.Z-rc.N or not with exactly one repository,
+     --ref or --branch not with exactly one repository, both branch options,
+     or a team without a team file. An unsupported --ref is checked against
+     the repository and workflow before any candidate is read or dispatched
   8  authentication required: run ` + "`devctl auth login --github-only`" + `
 
 The GitHub token is the App login, or a token in DEVCTL_GITHUB_TOKEN,
@@ -127,7 +131,8 @@ Examples:
   devctl release promote giantswarm/devctl --dry-run
   devctl release promote giantswarm/devctl giantswarm/klaus
   devctl release promote giantswarm/devctl --version v1.2.3-rc.14
-  devctl release promote giantswarm/substrate --branch release-1.16 --version v1.16.5-rc.1
+  devctl release promote giantswarm/substrate --ref release-1.9 --dry-run
+  devctl release promote giantswarm/substrate --ref release-1.16 --version v1.16.5-rc.1
   devctl release promote --team team-bumblebee --progress`
 )
 

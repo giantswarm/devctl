@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/jedib0t/go-pretty/v6/text"
 )
 
 // MakeHyperlink creates an ANSI hyperlink (OSC 8) for terminals that support it.
@@ -32,7 +34,16 @@ func UpdateTable(w io.Writer, prStatuses []*PRStatus) {
 		prLink := MakeHyperlink(ps.URL, prText)
 		status := ps.GetStatus()
 
-		line := fmt.Sprintf("%s  %-40s %-30s", prLink, ps.DisplayLabel, status)
+		// Callers reserve one terminal row per PR. Minimum fmt widths can
+		// wrap long labels or statuses, breaking the next cursor movement.
+		// Keep the whole PR number and take any extra cells from the label.
+		labelWidth := 40 - (text.StringWidth(prText) - 6)
+		label := tableCell(ps.DisplayLabel, labelWidth)
+		line := fmt.Sprintf("%s  %s %s", prLink, label, tableCell(status, 30))
 		fmt.Fprintf(w, "\033[2K%s\n", line)
 	}
+}
+
+func tableCell(value string, width int) string {
+	return text.Pad(text.Snip(value, width, "…"), width, ' ')
 }

@@ -64,7 +64,7 @@ func TestListGenerated(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
-	setup := "version: 2.1\nsetup: true\njobs:\n  setup:\n    steps:\n    - run: cp .circleci/workflows.yml .circleci/continue.yml\nworkflows:\n  setup:\n    jobs: [setup]\n"
+	setup := generated(t)[ConfigPath]
 	tests := map[string]struct {
 		files map[string]string
 		run   Run

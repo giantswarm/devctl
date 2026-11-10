@@ -173,7 +173,7 @@ require (
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
-	github.com/klauspost/compress v1.19.2 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/knadh/koanf/maps v0.1.2 // indirect
 	github.com/knadh/koanf/providers/file v1.2.1 // indirect
 	github.com/knadh/koanf/providers/posflag v1.0.2 // indirect
@@ -228,7 +228,7 @@ require (
 // requires the fixed version itself.
 replace (
 	github.com/jackc/pgx/v5 => github.com/jackc/pgx/v5 v5.11.0 // CVE-2026-33815 CVE-2026-33816 CVE-2026-41889
-	github.com/klauspost/compress => github.com/klauspost/compress v1.20.3 // CVE-2026-63209
+	github.com/klauspost/compress => github.com/klauspost/compress v1.20.4 // CVE-2026-63209
 	github.com/prometheus/prometheus => github.com/prometheus/prometheus v0.314.0 // CVE-2026-42154 CVE-2026-40179
 	go.etcd.io/etcd/client/pkg/v3 => go.etcd.io/etcd/client/pkg/v3 v3.7.3 // CVE-2026-73500
 	go.etcd.io/etcd/server/v3 => go.etcd.io/etcd/server/v3 v3.7.1 // CVE-2026-44283 CVE-2026-73499
