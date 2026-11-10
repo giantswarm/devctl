@@ -267,3 +267,35 @@ func TestCheckInAWorkflowStepWithGHTokenAuthenticates(t *testing.T) {
 		t.Errorf("warned %q", warnings.String())
 	}
 }
+
+// Failed release discovery must not prevent the command's real work. A known
+// newer version still refuses in TestCheckWithAFreshCacheDoesNotOpenTheKeychain.
+func TestCheckUnavailableReleaseWarnsAndContinues(t *testing.T) {
+	for _, status := range []int{http.StatusForbidden, http.StatusInternalServerError} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			clearGitHubEnv(t)
+			t.Setenv("DEVCTL_UNSAFE_FORCE_VERSION", "")
+			t.Setenv(authstore.EnvCI, "true")
+			brokenKeychain(t)
+			requests := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				if r.URL.Path != "/repos/giantswarm/devctl/releases" {
+					t.Errorf("unexpected release request: %s", r.URL.Path)
+				}
+				w.Header().Set("X-RateLimit-Remaining", "0")
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"message":"API rate limit exceeded"}`))
+			}))
+			t.Cleanup(srv.Close)
+			t.Setenv(agentcli.EnvGitHubAPIURL, srv.URL)
+			var warnings bytes.Buffer
+			if err := check("1.0.0", true, &warnings); err != nil {
+				t.Fatalf("lookup failure blocked the command: %v", err)
+			}
+			if requests == 0 || !strings.Contains(warnings.String(), "warning: could not check the latest devctl release:") {
+				t.Fatalf("requests=%d warnings=%q", requests, warnings.String())
+			}
+		})
+	}
+}
