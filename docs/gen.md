@@ -18,6 +18,13 @@ Example:
 devctl gen workflows --flavour cli
 ```
 
+### Batch CI
+
+Repositories can stage exact-commit merge-group validation and then opt into full CI
+once per protected merge batch. See [the batch CI policy and transition](ci-batch.md)
+for the repository-owned configuration, required queue proof and rollback sequence.
+Ordinary PR CI remains unchanged until explicitly transitioned.
+
 ### Release workflow
 
 `--release-workflow` selects which release flow to generate. Two values:
