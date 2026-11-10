@@ -35,11 +35,13 @@ func TestInspectionPreservesCallerContext(t *testing.T) {
 		{name: "case 3: failed log metadata", path: "/api/v1.1/project/github/o/r/7", occurrence: 2},
 		{name: "case 4: failed step output", path: "/build", occurrence: 1},
 		{name: "case 5: all-step output", stepOutput: true, path: "/build", occurrence: 1},
+		{name: "case 6: successful step output", stepOutput: true, path: "/checkout", occurrence: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			routes := routes7("https://ci-output.invalid")
+			routes["GET /checkout"] = []sequence.Response{{Body: `[{"message":"Checkout complete\n","type":"out"}]`}}
 			routes["GET /build"] = []sequence.Response{{Body: buildOutput}}
 			if tc.jobs {
 				routes = routes3885("https://ci-output.invalid")
