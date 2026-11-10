@@ -745,8 +745,8 @@ func Test_evaluate(t *testing.T) {
 }
 
 func Test_evaluate_cancelledCheckSupersession(t *testing.T) {
-	// In the reported incident the cancelled job belonged to the higher-ID
-	// workflow run, but the passing job actually started later.
+	// Jobs from older suites cannot replace the newest suite, even if they
+	// started later.
 	started := time.Date(2026, 11, 2, 6, 52, 4, 0, time.UTC)
 	name := "semantic-pull-request / Validate PR title"
 	cancelled := inSuite(checkRun(125137577525, name, "completed", "cancelled", started), 112198936963)
@@ -763,37 +763,38 @@ func Test_evaluate_cancelledCheckSupersession(t *testing.T) {
 		wantIDs   []int64
 	}{
 		{
-			name:      "later passing job in a lower-ID workflow run supersedes cancellation",
+			name:      "newest cancelled suite overrides later-started passing job",
 			checks:    []*github.CheckRun{cancelled, passed},
 			workflows: []*github.WorkflowRun{cancelledWorkflow, passedWorkflow},
-			wantGreen: true,
-			wantIDs:   []int64{passed.GetID()},
+			wantRed:   true,
+			wantIDs:   []int64{cancelled.GetID()},
 		},
 		{
-			name:      "passing job listed first still supersedes cancellation",
+			name:      "listing order does not override newest cancelled suite",
 			checks:    []*github.CheckRun{passed, cancelled},
 			workflows: []*github.WorkflowRun{passedWorkflow, cancelledWorkflow},
-			wantGreen: true,
-			wantIDs:   []int64{passed.GetID()},
+			wantRed:   true,
+			wantIDs:   []int64{cancelled.GetID()},
 		},
 		{
-			name: "later pending job supersedes cancellation but still waits",
+			name: "older pending job does not supersede newest cancellation",
 			checks: []*github.CheckRun{
 				cancelled, inSuite(checkRun(passed.GetID(), name, "in_progress", "", started.Add(3*time.Second)), 112198936353),
 			},
 			workflows: []*github.WorkflowRun{
 				cancelledWorkflow, ofWorkflow(workflowRun(passedWorkflow.GetID(), "semantic-pull-request", "in_progress", ""), 366354474, 112198936353),
 			},
-			wantIDs: []int64{passed.GetID()},
+			wantRed: true,
+			wantIDs: []int64{cancelled.GetID()},
 		},
 		{
-			name: "jobs started together use the later check run ID",
+			name: "suite order takes precedence over check run ID",
 			checks: []*github.CheckRun{
 				cancelled, inSuite(checkRun(passed.GetID(), name, "completed", "success", started), 112198936353),
 			},
 			workflows: []*github.WorkflowRun{cancelledWorkflow, passedWorkflow},
-			wantGreen: true,
-			wantIDs:   []int64{passed.GetID()},
+			wantRed:   true,
+			wantIDs:   []int64{cancelled.GetID()},
 		},
 		{
 			name:      "only cancelled job remains red",
@@ -885,5 +886,33 @@ func Test_evaluation_approvalReason(t *testing.T) {
 		"Lint (https://github.com/o/r/actions/runs/Lint); nothing else is pending, and the runs start once a member approves them"
 	if got := e.approvalReason(); got != want {
 		t.Errorf("approvalReason:\nwant %q\ngot  %q", want, got)
+	}
+}
+
+func Test_evaluate_newestSuiteMissingRequiredJob(t *testing.T) {
+	for _, conclusion := range []string{"failure", "success", "cancelled"} {
+		t.Run(conclusion, func(t *testing.T) {
+			e := evaluate(snapshot{
+				checkRuns: []*github.CheckRun{
+					inSuite(checkRun(1, "ci-ok", "completed", "success", time.Time{}), 100),
+					inSuite(checkRun(2, "ci-ok", "completed", "success", time.Time{}), 200),
+				},
+				runs: []*github.WorkflowRun{
+					ofWorkflow(workflowRun(30, "CI Build", "completed", conclusion), 1, 300),
+					ofWorkflow(workflowRun(10, "CI Build", "completed", "success"), 1, 100),
+					ofWorkflow(workflowRun(20, "CI Build", "completed", "success"), 1, 200),
+				},
+				required: []string{"ci-ok"},
+			})
+			if e.green() || !e.neverReported() {
+				t.Errorf("missing newest-suite job must not be green: green=%v missing=%v", e.green(), e.requiredMissing)
+			}
+			if diff := cmp.Diff([]string{"ci-ok"}, e.requiredMissing); diff != "" {
+				t.Errorf("missing required contexts (-want +got):\n%s", diff)
+			}
+			if len(e.checks) != 0 {
+				t.Errorf("stale checks counted: %v", e.checks)
+			}
+		})
 	}
 }

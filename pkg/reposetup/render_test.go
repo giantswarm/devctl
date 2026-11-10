@@ -132,6 +132,9 @@ func Test_Render(t *testing.T) {
 			if !strings.Contains(got, "\n--- renovate.json5\n") {
 				t.Errorf("the scaffold has no renovate.json5")
 			}
+			if !strings.Contains(got, "\n--- renovate-custom.json5\n") {
+				t.Errorf("the scaffold has no repo-owned Renovate preset")
+			}
 			// A scaffold carries a CircleCI pipeline only where `devctl gen
 			// circleci` wrote it, never the template's.
 			hasPipeline := strings.Contains(got, "\n--- .circleci/config.yml\n")

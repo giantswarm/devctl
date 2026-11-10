@@ -118,6 +118,7 @@ The command uses three algorithms in sequence to group PRs:
 - **ALL groups are shown**, including those with only 1 PR
 - Version suffixes like `/v80` are normalized so `go-github/v80` and `go-github/v81` group together
 - Dependency selections search PR titles; mentioning the dependency only in a body or comment does not select that PR.
+- Multiword dependency groups search each normalized word, allowing words or versions removed during grouping to appear between them.
 
 ## Examples
 
@@ -214,7 +215,7 @@ This is useful when you expect multiple Renovate PRs to be created over time.
   as you in the giantswarm organization; the search finds pull requests there and in public repositories). A
   token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` overrides it, with a warning. See
   [auth.md](auth.md).
-- Terminal with ANSI escape code support for live table updates
+- Terminal with at least 80 columns and ANSI escape code support for live table updates
 - Terminal with OSC 8 support for clickable hyperlinks (optional, but recommended)
 
 ## UI Features
@@ -243,6 +244,7 @@ PR      Repository                               Status
 ```
 
 PR numbers are clickable hyperlinks (in supported terminals) that open the PR in your browser.
+Long dependency names and statuses are shortened with an ellipsis to keep each PR on one terminal row.
 
 ## Performance
 
