@@ -11,8 +11,8 @@ APPLICATION    := $(shell go list -m | cut -d '/' -f 3)
 BUILDTIMESTAMP := $(shell date -u '+%FT%TZ')
 GITSHA1        := $(shell git rev-parse --verify HEAD)
 MODULE         := $(shell go list -m)
-# main() is usually in `main.go`, but sometimes in `cmd/main.go` (for example in newer kubebuilder projects)
-MAIN_SOURCE    := $(shell if test -e cmd/main.go; then echo cmd/main.go; else echo main.go; fi)
+# Build the whole main package, including sibling files, at the root or in cmd/.
+MAIN_SOURCE    := $(shell if test -e cmd/main.go; then echo ./cmd; else echo .; fi)
 OS             := $(shell go env GOOS)
 ARCH           := $(shell go env GOARCH)
 SOURCES        := $(shell find . -name '*.go')
@@ -152,7 +152,7 @@ install: ## Install the application.
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o "$(shell go env GOPATH)/bin/$(APPLICATION)" "$(MAIN_SOURCE)"
 
 .PHONY: run
-run: ## Runs go run main.go.
+run: ## Runs the main package with go run.
 	@echo "====> $@"
 	go run -ldflags "$(LDFLAGS)" -race "$(MAIN_SOURCE)"
 
