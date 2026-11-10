@@ -74,9 +74,10 @@ log on every request, which separates an agent's actions from the person's own.
 
 | Agent action | Permission |
 |---|---|
-| Read repositories, pull requests, checks, statuses, workflow runs and logs, issues | metadata, contents, checks, statuses, actions: read |
+| Read repositories, pull requests, checks, statuses, workflow runs and logs, issues, Dependabot alerts | metadata, contents, checks, statuses, actions, vulnerability alerts: read |
+| Read and request team reviewers on pull requests (`gh pr view`, `gh pr edit`, `gh pr create --reviewer`), read team memberships (`repo create`) | organization members: read |
 | Comment on issues and pull requests, open and edit issues | issues, pull requests: write |
-| Open or update a pull request | pull requests: write |
+| Open or update a pull request | pull requests: write, organization members: read |
 | Push a branch, `.github/workflows` included | contents, workflows: write |
 | Merge through the ruleset bypass (`pr merge`): GitHub evaluates the merge as the person, so the owning team's or the admins' bypass applies | contents, pull requests: write |
 | Release: dispatch a workflow (`release promote`, `pr merge --dispatch`); the tag itself comes from the auto-release workflow's own token | actions, contents: write |
