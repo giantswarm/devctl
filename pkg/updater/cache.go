@@ -12,7 +12,6 @@ import (
 const (
 	cacheValidationDuration = 1 * time.Hour
 	cacheFileName           = "selfupdate.yaml"
-	cacheFileMode           = 0600
 )
 
 type cache struct {
@@ -41,7 +40,23 @@ func (c *cache) Persist(cacheDir string) error {
 
 	out := filepath.Join(cacheDir, cacheFileName)
 
-	err = os.WriteFile(out, serialized, os.FileMode(cacheFileMode))
+	// Publish only a complete document. A private file in the same directory
+	// keeps readers on the old inode until the replacement is ready.
+	staged, err := os.CreateTemp(cacheDir, ".selfupdate-*")
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	defer os.Remove(staged.Name())
+
+	if _, err := staged.Write(serialized); err != nil {
+		_ = staged.Close()
+		return microerror.Mask(err)
+	}
+	if err := staged.Close(); err != nil {
+		return microerror.Mask(err)
+	}
+
+	err = os.Rename(staged.Name(), out)
 	if err != nil {
 		return microerror.Mask(err)
 	}
