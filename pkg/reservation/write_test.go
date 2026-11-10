@@ -22,7 +22,7 @@ func TestWriteReservationEntryValidatesBeforeWriting(t *testing.T) {
 			if err := writeReservationEntry(path, "app", entry); err == nil || !IsInvalidConfig(err) {
 				t.Fatalf("expected invalid config, got %v", err)
 			}
-			got, err := os.ReadFile(path)
+			got, err := os.ReadFile(path) //nolint:gosec // a test fixture
 			if err != nil {
 				t.Fatal(err)
 			}
