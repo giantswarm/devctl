@@ -21,15 +21,19 @@ func TestCachePersistReplacesCompleteDocument(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, cacheFileName)
-	before, err := os.ReadFile(path)
+	before, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		t.Fatal(err)
 	}
-	reader, err := os.Open(path)
+	reader, err := os.Open(filepath.Clean(path))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reader.Close()
+	defer func() {
+		if err := reader.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 
 	next := cache{LatestVersion: "2.0.0"}
 	if err := next.Persist(dir); err != nil {
@@ -73,7 +77,7 @@ func TestCachePersistCleansUpAfterRenameFailure(t *testing.T) {
 	if err := c.Persist(dir); err == nil {
 		t.Fatal("expected rename over a directory to fail")
 	}
-	data, err := os.ReadFile(marker)
+	data, err := os.ReadFile(filepath.Clean(marker))
 	if err != nil {
 		t.Fatal(err)
 	}

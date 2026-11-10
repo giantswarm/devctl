@@ -46,7 +46,9 @@ func (c *cache) Persist(cacheDir string) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	defer os.Remove(staged.Name())
+	defer func() {
+		_ = os.Remove(staged.Name())
+	}()
 
 	if _, err := staged.Write(serialized); err != nil {
 		_ = staged.Close()
