@@ -93,7 +93,9 @@ func TestGenCircleCIOffline(t *testing.T) {
 func TestGateOutsideGen(t *testing.T) {
 	offlineContainer(t)
 	t.Setenv("DEVCTL_UNSAFE_SKIP_VERSION_CHECK", "")
-	dir := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "devctl")
+	config := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", config)
+	dir := filepath.Join(config, "devctl")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
