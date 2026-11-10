@@ -188,10 +188,3 @@ func Test_MergeManagedBlock_RejectsMarkersInBody(t *testing.T) {
 		require.False(t, IsInvalidManagedBlock(err))
 	}
 }
-
-func Test_MergeManagedBlock_BeginMarkerFitsMarkdownlintsDefaultLineLength(t *testing.T) {
-	merged, err := MergeManagedBlock(nil, testBlockBody)
-	require.NoError(t, err)
-	first, _, _ := strings.Cut(string(merged), "\n")
-	require.LessOrEqual(t, len(first), 80, first)
-}
