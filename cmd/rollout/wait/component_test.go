@@ -47,7 +47,11 @@ func runComponent(t *testing.T, client dynamic.Interface, args ...string) (rollo
 			return nil, nil
 		},
 	}
-	cmd := &cobra.Command{RunE: r.Run, SilenceErrors: true, SilenceUsage: true}
+	cmd := &cobra.Command{
+		RunE:          func(cmd *cobra.Command, args []string) error { return r.run(cmd.Context(), args) },
+		SilenceErrors: true,
+		SilenceUsage:  true,
+	}
 	r.flag.Init(cmd)
 	cmd.SetArgs(append([]string{"myinstallation", "--context", "kind-offline", "--kubeconfig", "offline.kubeconfig"}, args...))
 	err := cmd.ExecuteContext(context.Background())

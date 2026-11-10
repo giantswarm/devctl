@@ -57,6 +57,10 @@ func Run(t *testing.T, wantExit int, run func(hangup func()) error) []byte {
 		os.Exit(agentcli.Exit(err))
 	}
 
+	// Other tests may have ignored SIGHUP in the parent. Reset it before
+	// spawning the child so execve does not pass SIG_IGN as the child's
+	// initial disposition.
+	signal.Reset(syscall.SIGHUP)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^"+regexp.QuoteMeta(t.Name())+"$") // #nosec G204 G702 -- the test binary itself
