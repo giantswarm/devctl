@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
@@ -17,7 +19,23 @@ func quoteReservationKey(t *testing.T, dir, app, key string) {
 	if strings.Count(content, old) != 1 {
 		t.Fatalf("expected exactly one entry for %s", app)
 	}
-	writeAndCommit(t, dir, pathReservations, strings.Replace(content, old, "  "+key+":", 1))
+	writeLocalFixtureFile(t, dir, pathReservations, strings.Replace(content, old, "  "+key+":", 1))
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Add(pathReservations); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wt.Commit("quote "+app, &git.CommitOptions{
+		Author: &object.Signature{Name: "test", Email: "test@example.com", When: time.Unix(0, 0).UTC()},
+	}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestReserveQuotedKey(t *testing.T) {
