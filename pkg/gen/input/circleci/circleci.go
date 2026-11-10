@@ -42,7 +42,8 @@ const OrbVersion = "10.17.4"
 // cluster, the tests live in a uv project and the chart is installed with Helm.
 // A repo that has not migrated its .ats/main.yaml and tests yet pins a 0.x tag
 // (e.g. "0.15.0") to stay on the legacy dats.sh path until it has.
-const DefaultATSVersion = "1.0.3"
+// renovate: datasource=docker depName=gsoci.azurecr.io/giantswarm/app-test-suite
+const DefaultATSVersion = "1.1.1"
 
 // ATSImageRegistry is the registry the chart-test jobs pull app-test-suite and
 // the kind node image from. The jobs log in to it before pulling: ACR throttles

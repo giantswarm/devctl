@@ -48,6 +48,22 @@ cosign verify-blob "${ASSET}" \
 
 `devctl version update` does this verification itself: it downloads the bundle published next to this platform's binary and installs the new binary only when the bundle verifies for a CircleCI build of `github.com/giantswarm/devctl` (CircleCI issuer, a CircleCI pipeline-definition identity, and the certificate's source repository pinned to giantswarm/devctl). A release without a bundle, or a binary that does not match its signature, is refused and the installed binary stays as it is.
 
+### Version checks
+
+Commands protected by the version gate require the latest release. Update with
+`devctl version update`, or allow one specific installed version with
+`DEVCTL_UNSAFE_FORCE_VERSION=<running-version>`.
+
+To disable the version gate independently of the installed version, set
+`DEVCTL_UNSAFE_SKIP_VERSION_CHECK=true` in the command environment. Only the exact
+value `true` disables it; unset, empty, false and other values keep checks enabled.
+This skips updater setup, release lookups, cache access and authentication for the
+version check, including with `--no-cache` and development builds. It does not
+change explicit `devctl version` commands or other command guards. Orchestrators
+such as beekeeper can set it while their guards are off and remove it when guards
+are enabled again. This intentionally permits outdated binaries to run; prefer
+the version-specific override for a one-time exception.
+
 ## Features
 
 ### Authentication for the agent-facing commands (`devctl auth`)
