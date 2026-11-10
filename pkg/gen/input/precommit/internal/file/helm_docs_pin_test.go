@@ -14,7 +14,7 @@ import (
 // A rev alone therefore does not pin the generator used locally.
 func Test_PreCommitConfigHelmDocsPinsExecutable(t *testing.T) {
 	in := NewCreatePreCommitConfigInput(params.Params{
-		Flavors:    []string{"helmchart"},
+		Flavors:    []string{helmchartFlavor},
 		HelmCharts: []string{"my-app"},
 	})
 	tpl, err := template.New(in.Path).Parse(in.TemplateBody)
@@ -43,7 +43,7 @@ func Test_PreCommitConfigHelmDocsPinsExecutable(t *testing.T) {
 	var workflow struct {
 		Env map[string]string `json:"env"`
 	}
-	if err := yaml.Unmarshal([]byte(renderAction(t, params.Params{Flavors: []string{"helmchart"}})), &workflow); err != nil {
+	if err := yaml.Unmarshal([]byte(renderAction(t, params.Params{Flavors: []string{helmchartFlavor}})), &workflow); err != nil {
 		t.Fatal(err)
 	}
 	wantVersion := workflow.Env["HELM_DOCS_VERSION"]

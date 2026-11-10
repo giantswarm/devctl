@@ -25,7 +25,7 @@ devctl gen workflows --flavour cli
 | Value | What's emitted | When to use |
 |-------|----------------|-------------|
 | `legacy` (default) | `.github/workflows/zz_generated.create_release.yaml`, `zz_generated.create_release_pr.yaml`, `zz_generated.validate_changelog.yaml`. Releases driven by manually-pushed `main#release#patch`-style branches that open a release PR for human approval. | The historical flow; in use by most giantswarm repos today. |
-| `auto-release` | `.github/workflows/zz_generated.auto_release.yaml` and `cliff.toml` (at repo root). Releases driven by conventional commits on `main` -- the workflow runs `git-cliff --unreleased --bump` on every push, computes the next semver, and creates the next release candidate tag + GitHub pre-release atomically. A stable release is a manual promotion of the latest candidate. `feat` bumps the minor version, a breaking change the major, every other type the patch; `docs`, `style` and `test` commits are skipped, except that `test:` can advance an existing candidate. | Repos that want push-button releases from conventional commits. Requires `semantic_pull_request` enforcement on PR titles. |
+| `auto-release` | `.github/workflows/zz_generated.auto_release.yaml` and `cliff.toml` (at repo root). Releases driven by conventional commits on `main` -- the workflow runs `git-cliff --unreleased --bump` on every push, computes the next semver, and creates the next release candidate tag + GitHub pre-release atomically. A stable release is a manual promotion of the latest candidate. `feat` bumps the minor version, a breaking change the major, every other type the patch; `ci`, `chore`, `docs`, `style` and `test` commits are skipped and release nothing, except that `test:` can advance an existing candidate. | Repos that want push-button releases from conventional commits. Requires `semantic_pull_request` enforcement on PR titles. |
 
 Switching between values is bidirectional and self-cleaning: the chosen branch generates its own files and emits deletion inputs for the files of the other branch, so a flipped `--release-workflow` value over two consecutive gen runs leaves the repo with exactly one set of release files.
 
@@ -39,15 +39,16 @@ devctl gen workflows --flavour app --language go --release-workflow=auto-release
 
 #### Release candidates and stable releases
 
-Every releasable push releases the version git-cliff computes from the conventional commits since the last stable release. A minor or major version is cut as the next release candidate, `vX.Y.0-rc.N`; a patch of the last stable release (only fixes and chores since it) is the fast path and is tagged `vX.Y.Z` stable on its push, so there is never a patch candidate:
+Every releasable push releases the version git-cliff computes from the conventional commits since the last stable release. A minor or major version is cut as the next release candidate, `vX.Y.0-rc.N`; a patch of the last stable release (for example, only fixes since it) is the fast path and is tagged `vX.Y.Z` stable on its push, so there is never a patch candidate:
 
 | Merge (after `v1.2.9`) | Tag | Why |
 |-------|-----|-----|
 | `fix: x` | `v1.2.10` | a patch of the last stable release, tagged stable on its push |
 | `feat: add x` | `v1.3.0-rc.1` | a `feat` puts the cycle on the next minor |
 | `fix: y` | `v1.3.0-rc.2` | a fix during a cycle rides its next candidate |
-| `chore(deps): bump y` | `v1.3.0-rc.3` | releasable, so the next candidate |
-| `test: fix a failing test` | `v1.3.0-rc.4` | a test fix can replace an existing candidate |
+| `chore(deps): bump y` | none | `chore` is skipped |
+| `ci(tools): bump y` | none | `ci` is skipped |
+| `test: fix a failing test` | `v1.3.0-rc.3` | a test fix can replace an existing candidate |
 | `docs: fix a typo` | none | `docs` is skipped, so there is nothing new to put in a candidate |
 | `refactor!: drop y` | `v2.0.0-rc.1` | a breaking change moves the target, and the series restarts at `rc.1` |
 
@@ -55,7 +56,9 @@ The first release of a repository with no stable tag is a candidate. On a mainte
 
 `--patch-candidates` (team file `gen.ci.patchCandidates: true`) drops the fast path: a patch is cut as a candidate too, `v1.2.10-rc.1` for `fix: x` above and `v1.2.10-rc.2` for the next fix, on the default branch and on a maintenance branch alike, so no push tags a stable release. It is for a repository whose consumers follow a semver range that takes its next patch on their own (`>=1.17.0 <1.18.0`): every stable release is then a promotion of a candidate proven first. A maintenance branch's candidate is promoted on that branch, `devctl release promote <owner/repo> --branch release-X.Y --version vX.Y.Z-rc.N`.
 
-A push whose commits git-cliff all skips (`docs`, `style`, `test`) or drops as non-conventional tags nothing, except that a conventional `test:` commit after an existing candidate for the computed version cuts the next candidate. This lets a test fix replace a red candidate without depending on its pipeline status; it also applies when that candidate is green. Tests remain excluded from the version bump and release notes, and a test-only push with no pending candidate cuts nothing. Docs and style still cannot spend an rc number and a publish pipeline. A candidate is flagged as a GitHub pre-release, so it does not surface as the repo's "Latest release", and the `/^v.*/` CircleCI tag filter publishes it like any other tag.
+A push whose commits git-cliff all skips (`ci`, `chore`, `docs`, `style`, `test`) or drops as non-conventional tags nothing, except that a conventional `test:` commit after an existing candidate for the computed version cuts the next candidate. This lets a test fix replace a red candidate without depending on its pipeline status; it also applies when that candidate is green. Tests remain excluded from the version bump and release notes, and a test-only push with no pending candidate cuts nothing. Docs, style, ci and chore still cannot spend an rc number and a publish pipeline. A candidate is flagged as a GitHub pre-release, so it does not surface as the repo's "Latest release", and the `/^v.*/` CircleCI tag filter publishes it like any other tag.
+
+Use `fix` or `feat` for a dependency or build change that needs its own release. A `ci`, `chore` or `docs` change waits for the next releasable commit, including on fork lines.
 
 The single-version Auto-release workflow creates its tags and GitHub releases with a short-lived installation token of the `giantswarm-release` GitHub App, so a repository's GitHub Actions workflows listening on `push.tags` (for example `v*`) or `release` can run for candidates and stable releases. The App must be installed on the consuming repository with **Contents: write**, and `RELEASE_BOT_CLIENT_ID` and `RELEASE_BOT_PRIVATE_KEY` must be available as Actions secrets. The token is scoped to that repository and minted only when a tag was selected, after the release guards pass. Missing or unusable App credentials fail the job before a tag or release is created; there is no fallback to `GITHUB_TOKEN`, whose tag pushes and release events [do not start workflows](https://docs.github.com/en/actions/concepts/security/github_token#when-github_token-triggers-workflow-runs). Checkout, release-note lookups and CircleCI verification keep using the workflow's own read-only token. Existing repositories need the regenerated workflow; a tag already created with `GITHUB_TOKEN` gains no run retroactively. The separate `multi-image` workflow still uses `GITHUB_TOKEN` and relies on CircleCI for tag builds.
 
@@ -81,13 +84,33 @@ A stable minor or major release is cut only by running the workflow by hand with
 
 #### CHANGELOG.md
 
-On `auto-release` the GitHub Releases are the changelog. Each release's notes are git-cliff's grouping of the pull request titles merged since the previous release (the squash commit subjects), so the pull request title is the entry and nothing writes `CHANGELOG.md`: no release commit, no pull request after a release, no check, and no conflict between parallel pull requests on the file.
+On `auto-release` the GitHub Releases are the changelog. Each release's notes are git-cliff's grouping of the pull request titles merged since the previous release (the squash commit subjects), so the pull request title is the entry and nothing writes `CHANGELOG.md`: no changelog commit or PR after a release, no changelog check, and no conflict between parallel pull requests on the file.
 
 `gen workflows` on `auto-release` freezes an existing `CHANGELOG.md` as a pointer at `https://github.com/giantswarm/<repo>/releases`; its earlier entries stay in the git history and in the file at every earlier tag. It also drops a checklist item asking for a changelog edit from the repository's `.github/pull_request_template.md`, with its heading when the item was all the section held, keeping the rest of the template. A repository without either file gets none. A multi-image repository and a fork line keep their `CHANGELOG.md` as it is: the first releases each image on its own tag, the second carries upstream's file.
 
 `devctl release create` reads a component's changes from its `CHANGELOG.md` at the tag, and from its GitHub Releases when that file has no section for the version or the tag has no `CHANGELOG.md`: the notes of every release after the previous version up to the new one, its pre-releases left out, since the stable release carries their notes; a component new in the release gets the notes of its own release. Any other failure to read the file fails the command, as before. A note's `[**breaking**]` bullet is listed under the breaking changes.
 
 `cliff.toml`'s `[remote.github].repo` is read from the consuming repo's `origin` git remote URL, its `giantswarm/<repo>` path. A checkout with no origin remote, or one outside `giantswarm`, needs `--repo-name <repo>` instead; without either the command fails rather than silently writing `repo = ""`.
+
+After a successful promotion, the workflow fetches the release branch again. If it has commits after the promoted
+candidate, it dispatches `release-type: auto` on that branch, in the same concurrency group, before verifying the
+stable tag's CircleCI build. The queued run uses the new stable as its baseline: features open the next minor
+candidate, fixes take the normal patch path (a candidate with `--patch-candidates`), and skipped commits tag nothing.
+No additional user push is needed. A failed stable gate queues nothing. If the branch head already carries an RC
+of the just-promoted version, catch-up opens a release-preparation PR instead of dispatching onto that conflicting
+commit. The PR updates `.github/release-catch-up` with the stable tag and the head it resumes, and arms squash
+auto-merge. Its `docs(release):` title is skipped by git-cliff, so preparation alone spends no version.
+Its merge supplies a new commit and triggers auto-release; the one-version-per-commit guard stays in
+force. Other branch heads use the direct dispatch path. Retries reuse the preparation branch and PR; a closed,
+unmerged preparation PR fails with its URL rather than silently dropping catch-up.
+
+The preparation path uses the existing giantswarm-release App (`RELEASE_BOT_CLIENT_ID` and
+`RELEASE_BOT_PRIVATE_KEY`, Contents and Pull requests write). Repository auto-merge and the release App's
+review-rule bypass must be enabled by repository reconciliation (`--release-app-id`); required checks still gate
+the PR. Missing App credentials, a refused push/PR/auto-merge, or failing PR checks must be fixed in the automation:
+catch-up never pushes directly to a protected branch or bypasses required checks.
+`devctl release promote --version` refusing an RC older than the last stable lists commits on the branch after that
+stable in `stranded[]` and gives the auto-release dispatch command; a comparison it cannot read is reported as such.
 
 ### helm-docs regen workflow
 
@@ -111,6 +134,16 @@ devctl gen workflows --flavour app --language generic --helm-docs-regen
 `--reservation-support` (app flavour only, off by default) adds `.github/workflows/zz_generated.reservation_command.yaml`, a self-contained workflow with one job. A pull request comment that starts a line with `/deploy`, `/undeploy` or `/extend`, and a closed pull request, are sent to giantswarm/mc-reservations as a `repository_dispatch`, which reserves a management cluster for the branch's dev build (see `devctl reservation`). The workflow is a pure trigger: it sends only the repository, the pull request number and the comment ID, and mc-reservations re-reads and checks the rest. A job filter skips other comments, bot comments and the close of a fork's pull request, so they start no run. The repository needs the `MC_RESERVATIONS_DISPATCH_CLIENT_ID` and `MC_RESERVATIONS_DISPATCH_APP_KEY` org secrets, and the `mc-reservations-github` App installed, or a command gets no answer.
 
 In giantswarm/github the flag is `gen.reservationSupport: true` on the repository entry.
+
+### Chart tests workflow
+
+The app flavour generates `.github/workflows/zz_generated.chart_tests.yaml`, which runs the chart unit tests (`make helm-test`) on pull requests. A repository whose pipeline runs them elsewhere can leave it out.
+
+`--chart-tests=false` (app flavour only, on by default) keeps the workflow out of a repository. In giantswarm/github that is `gen.chartTests: false` on the repository entry; without it align-files puts the workflow back on every run.
+
+```nohighlight
+devctl gen workflows --flavour app --language generic --chart-tests=false
+```
 
 ### README link check workflow
 
@@ -182,6 +215,20 @@ defaults, which removes the language and Helm hooks and skips schema generation.
 example, a Go repository with a chart can regenerate with
 `devctl gen precommit --language go --flavors helmchart`; keep any other original options.
 
+Each chart also gets a `helm-docs-description-<chart>` check for its `values.yaml`. The pinned schema generator
+silently drops description continuation lines containing `--`. This check reports the file and line to reword
+(for example, replace the dash pair with an em dash), while allowing `--` in the first description line and the
+`@default`, `@notationType` and `@section` annotations. Ordinary comments and text inside YAML strings or block
+scalars are allowed. The hook installs pinned PyYAML in its isolated Python environment; the check itself runs
+offline and changes no files. Run pre-commit after `devctl gen precommit`: generation alone still uses the
+upstream parser. For example, reword the second line here before regenerating the schema:
+
+```yaml
+# -- Storage class of the volume.
+# Empty means the cluster default -- never a literal "--".
+storageClass: ""
+```
+
 A Go repository's config also refuses a `require` line in any `go.mod` (single or in a block) whose trailing comment has more than one word (`go-mod-require-comment`): Renovate's gomod manager reads only a one-word comment such as `// indirect` and skips the whole line otherwise, so that dependency is never updated and nothing says so. The explanation goes on a comment line above the require.
 
 A Go repository's `golangci-lint` hook, like `make lint` of `devctl gen makefile --language go`, passes no linter flags: the linters live in the repository's golangci-lint configuration, so a bare `golangci-lint run` lints with the same set. Both commands write `.golangci.yaml` (gosec and goconst on top of the standard set) when the repository has no configuration. A repository's own `.golangci.yml` or `.golangci.yaml` is kept as it is, except that gosec and goconst are added to `linters.enable` when it neither enables nor disables them (and govet too when `linters.default` replaces the standard set); a TOML or JSON configuration, or one whose `linters.enable` is a flow sequence, fails generation naming the linters to enable.
@@ -223,6 +270,12 @@ devctl gen renovate --language LANGUAGE
 
 Note: The `LANGUAGE` value is not validated currently. `go`, `python` and `node` add the matching language preset; every other value (e.g. `generic`) renders the base preset alone.
 
+The command also initializes an empty, repo-owned `renovate-custom.json5` when it is absent and extends it last. Commit both files in the same pull request. Existing custom files are preserved on every run; add repository-specific rules there, and they apply from that merge without another align-files run. Rules shared by a class of repositories belong in giantswarm/renovate-presets.
+
+The preset reference needs the repository's name even before it has custom rules. The command reads the `giantswarm/<name>` path of the origin remote, or accepts `--repo-name <name>` for a checkout without that remote. The checkout directory's name is never used.
+
+For a repository with an older generated config, run this command with the repository's existing generation options and commit both files before adding custom rules. If the pull request introduces `renovate-custom.json5`, regenerate the root config in that same pull request: adding the custom file alone to an older config still leaves its rules inactive until alignment. Once initialized, keep the custom file (use `{}` for no overrides), because Renovate cannot resolve a preset that has been deleted.
+
 The giantswarm/github align-files workflow runs this generator for repositories on devctl-generated CI (with `--circleci-generated`, which disables Renovate's architect-orb updates and extends the ATS preset because `gen circleci` bakes those in) and for the [`customer` flavour](flavours.md#customer) (without it: customer repositories have no CircleCI). Every other repository keeps its hand-maintained `renovate.json5`.
 
 A GitHub fork takes `--flavour fork`. Renovate skips a fork ("Repository is a fork and not manually configured - skipping") unless its default config file, `renovate.json` and never `renovate.json5`, sets `forkProcessing` to `"enabled"` itself; a preset cannot set it. The fork flavour therefore writes the same config as JSONC (comments kept, otherwise strict JSON, which is how Renovate parses `renovate.json`) into `renovate.json` with that key, and removes `renovate.json5`; it leaves `.github/dependabot.yml`, which on a fork line is upstream's, where the other flavours remove it. The fork line's own rules (`enabledManagers`, `customManagers`, `dependencyDashboard`) go into `renovate-custom.json5` as on any other repository. A fork line whose config turns Renovate off (`enabled: false`) keeps it: the command refuses to replace the opt-out, and Renovate skips the fork anyway. align-files generates nothing for a fork line, so the command runs by hand.
@@ -230,6 +283,50 @@ A GitHub fork takes `--flavour fork`. Renovate skips a fork ("Repository is a fo
 ```nohighlight
 devctl gen renovate --language go --flavour fork
 ```
+
+## Generating app test targets
+
+`devctl gen makefile --flavour app --language go` emits `Makefile.gen.app.mk` with `helm-test`
+for chart unit tests and `ats-test` for app-test-suite cluster tests. `make test`
+includes the unit tests; run the cluster tests explicitly:
+
+```nohighlight
+make ats-test ATS_CHART_FILE=build/my-app-1.2.3.tgz
+```
+
+Build the chart first, as CI's separate `build-chart` job does. Without
+`ATS_CHART_FILE`, the target selects the single `*.tgz` below `build/`; missing or
+ambiguous archives fail before creating a cluster. `ATS_CHART_ARCHIVE_PREFIX`
+restricts this discovery, like the orb's `chart_archive_prefix` parameter.
+
+The target requires Docker with host networking and a compatible `kind` on PATH
+(the pinned architect orb installs kind v0.33.0). It creates a temporary kind
+cluster with the same default node image as generated CI, applies
+`.ats/kind-config.yaml` when present, and runs the pinned ATS 1.x image with the
+checkout mounted at `/ats/workdir`, the calling user's UID/GID, and explicit
+chart, kubeconfig, cluster type and Kubernetes version arguments. ATS reads the
+repository's `.ats/main.yaml` (also `.yml`) and tests from the checkout. Each run
+uses its own kubeconfig and cluster name and removes them on success or failure;
+the caller's current context is never used. Repositories with no Python
+(`test_*.py` or `*_test.py`) or Go (`*_test.go`) tests under `tests/ats/` and no
+ATS config print a message and exit successfully before checking tools or
+artifacts. Generated dependency files alone do not count as a suite.
+
+The ATS and kind node image versions carry Renovate annotations. A repository
+with explicit CI pins must match them using `ATS_VERSION` and
+`ATS_KIND_NODE_IMAGE_VERSION` in `Makefile.custom.mk`; `ATS_KIND_NODE_IMAGE`
+overrides the whole node image reference. `ATS_KIND_CONFIG` overrides the kind
+config path (set it empty to disable it), and `ATS_FLAGS` passes additional ATS
+arguments, like the orb's `additional_app-test-suite_flags` parameter. The target
+requires an ATS 1.x suite; legacy 0.x suites must migrate before using it.
+
+CI continues to use `architect/run-tests-with-ats`. Its registry context and
+image publication steps are separate prerequisites: local tests need pullable
+application images, and this target does not copy CI credentials into kind for
+private image pulls. It also leaves the chart build and release steps separate.
+
+A [real-repository validation](validation/ats-test.md) records the generated
+target, built chart, image pins, command and live ATS outcome.
 
 ## Generating a plans repository's set-up
 

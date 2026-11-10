@@ -14,7 +14,7 @@ import (
 )
 
 // TestGoLintCustomHook uses the root Makefile's real include order and runs
-// make in parallel. Go, Git, version lookup and the linter are stubbed.
+// make in parallel. Go, Git, version lookup, goimports and the linter are stubbed.
 func TestGoLintCustomHook(t *testing.T) {
 	makePath, err := exec.LookPath("make")
 	if err != nil {
@@ -105,6 +105,9 @@ func TestGoLintCustomHook(t *testing.T) {
 				write("bin/go", "#!/bin/sh\ncase \"$*\" in\n'list -m') echo example.test/project ;;\n'env GOOS') echo linux ;;\n*) exit 1 ;;\nesac\n", 0o700)
 				write("bin/git", "#!/bin/sh\necho fixture\n", 0o700)
 				write("bin/gitsemver", "#!/bin/sh\necho 0.0.1\n", 0o700)
+				// Import formatting is covered by TestGoLintChecksImports. Keep
+				// this hook-ordering fixture independent of installed tools.
+				write("bin/goimports", "#!/bin/sh\nexit 0\n", 0o700)
 				write("bin/golangci-lint", "#!/bin/sh\nprintf 'golangci-lint %s\\n' \"$*\" >> \"$LINT_CALLS\"\nexit \"${LINT_EXIT_CODE:-0}\"\n", 0o700)
 
 				cmd := exec.Command(makePath, "--no-print-directory", "-rR", "-j2", "lint")

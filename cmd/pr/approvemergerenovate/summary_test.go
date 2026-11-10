@@ -30,7 +30,7 @@ func TestPrintSummaryPreservesOtherOutcomes(t *testing.T) {
 	var out bytes.Buffer
 	r := &runner{flag: &flag{}, stdout: &out}
 	var statuses []*pr.PRStatus
-	for _, status := range []string{"Merged (squash)", "Merged (auto-merge)", "Approved", "Queued to merge", "Already merged", "Auto-merge enabled", "Timeout waiting", "Waiting for checks (1/60)", "Merge failed", "No merge methods"} {
+	for _, status := range []string{testMergedSquashStatus, "Merged (auto-merge)", "Approved", "Queued to merge", "Already merged", "Auto-merge enabled", "Timeout waiting", "Waiting for checks (1/60)", "Merge failed", "No merge methods"} {
 		statuses = append(statuses, &pr.PRStatus{Status: status})
 	}
 	r.printSummary(statuses)
