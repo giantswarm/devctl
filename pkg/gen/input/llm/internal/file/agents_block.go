@@ -24,6 +24,7 @@ func AgentsBlockBody(p params.Params) (string, error) {
 	err := agentsBlock.Execute(&b, map[string]any{
 		"IsLanguageGo": params.IsLanguageGo(p),
 		"Plugins":      plugins(p),
+		"Source":       agentsBlockSource,
 	})
 	if err != nil {
 		return "", microerror.Mask(err)
