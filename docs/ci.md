@@ -173,3 +173,39 @@ A run of the name newer than the one given is named in `warnings`; the rerun is 
 | 13 | `remote_error` | A CircleCI request failed. The command line was valid; the reason preserves the service error. Existing timeout and post-merge outcomes take precedence. |
 
 `ci jobs` exits 0 (`listed`), 2 (`transient`), 3 (no such pipeline of the repository), 7, 8 or 13 (`remote_error`).
+
+## Cancel workflows and obsolete queued pipelines
+
+```sh
+devctl ci cancel giantswarm/devctl <workflow-id>
+devctl ci cancel giantswarm/devctl <pipeline-id> --pipeline
+devctl ci cancel giantswarm/devctl --stale --dry-run
+devctl ci cancel giantswarm/devctl --stale
+```
+
+The explicit forms cancel active workflows after checking repository ownership.
+Pipeline mode visits every workflow page, including setup workflows. Finished
+workflows are skipped. Cancellation requires a CircleCI login with Write access.
+
+`--stale` visits every project pipeline page and reads current GitHub branch and
+pull request state using the existing GitHub login. A different head revision or
+a closed PR makes a branch pipeline obsolete. Fork pipelines named `pull/N` are
+checked against that PR. Tags and the default branch are protected. A missing
+branch without a known closed PR is retained; failed reads stop the command.
+Only workflows whose jobs are all queued, blocked or not yet run are canceled:
+started jobs, unknown job states, empty job listings and approval jobs are retained.
+The jobs are read again immediately before cancellation. The APIs do not offer
+an atomic check-and-cancel, so an executor can still start between that read and
+the cancellation request.
+
+The JSON envelope follows the other `ci` commands (schema version 1), with
+`repository`, `dryRun`, `workflows` and `uncancelablePipelines`. Each workflow
+includes `id`, `pipelineId`, `status` and `outcome`: `skipped`, `would_cancel`, or
+`cancel_requested`. The latter records API acceptance, not terminal cancellation;
+use `ci jobs` to inspect completion. Partial results remain in the document if a
+later request fails. Exit codes follow the agent envelope: 0 success, 3 repository
+mismatch, 5 refused write, 7 usage/tooling failure, 8 authentication required.
+
+CircleCI API v2 exposes cancellation for workflows, not pipeline objects. A
+pipeline with no workflows cannot be canceled through this API and its ID is
+reported in `uncancelablePipelines`; the command does not claim to have canceled it.
