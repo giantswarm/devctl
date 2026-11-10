@@ -23,9 +23,9 @@ func TestSetupDiscoversPublishedReleasePages(t *testing.T) {
 		t.Run(fmt.Sprintf("page_two_fails=%t", failPageTwo), func(t *testing.T) {
 			published := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
 			draft := release("a/v9.0.0", published)
-			draft.Draft = new(true)
+			draft.Draft = true
 			prerelease := release("b/v9.0.0", published)
-			prerelease.Prerelease = new(true)
+			prerelease.Prerelease = true
 			var pages []string
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
@@ -70,7 +70,8 @@ func TestSetupDiscoversPublishedReleasePages(t *testing.T) {
 				}
 			}))
 			defer srv.Close()
-			client := github.NewClient(srv.Client())
+			client, err := github.NewClient(github.WithHTTPClient(srv.Client()))
+			require.NoError(t, err)
 			baseURL, err := url.Parse(srv.URL + "/")
 			require.NoError(t, err)
 			client.BaseURL = baseURL
