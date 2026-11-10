@@ -268,6 +268,15 @@ below. Where they differ from this block, they take precedence.
 - Giant Swarm's style guides are in <https://github.com/giantswarm/fmt>, one
   directory per topic (go, helm, kubernetes, prometheus, …). Read the relevant
   guide before you write or review that kind of code.
+- Follow the specification of what you build: the protocol (MCP, A2A, gRPC,
+  OAuth 2.1 and OIDC), Google's AIPs for our own REST and gRPC APIs, and the
+  conventions of the upstream project. When a change would not follow it, ask
+  the user before you write it, and state the deviation and its reason in the
+  pull request. See <https://github.com/giantswarm/fmt/blob/main/api/README.md>.
+- Name things with the term the specification, the domain or the repository's
+  `docs/glossary.md` already uses, and keep one meaning per word in code, APIs
+  and documentation. See
+  <https://github.com/giantswarm/fmt/blob/main/api/names.md>.
 - Use conventional commits for commit messages and pull request titles.
 - If `.github/workflows/zz_generated.auto_release.yaml` exists, GitHub Releases
   are written from pull request titles: do not edit CHANGELOG.md. Otherwise,

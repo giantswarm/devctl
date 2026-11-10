@@ -34,6 +34,25 @@ func TestBlockBody(t *testing.T) {
 	}
 }
 
+func TestBlockBody_SpecificationRules(t *testing.T) {
+	for _, language := range []string{"go", "generic"} {
+		t.Run(language, func(t *testing.T) {
+			l, err := llm.New(llm.Config{Language: language})
+			require.NoError(t, err)
+
+			body, err := l.BlockBody()
+			require.NoError(t, err)
+
+			items := strings.Join(listItems(body), "\n")
+			require.Contains(t, items, "ask the user before you write it")
+			require.Contains(t, items, "state the deviation and its reason in the pull request")
+			require.Contains(t, items, "keep one meaning per word")
+			require.Contains(t, items, "<https://github.com/giantswarm/fmt/blob/main/api/README.md>")
+			require.Contains(t, items, "<https://github.com/giantswarm/fmt/blob/main/api/names.md>")
+		})
+	}
+}
+
 func TestBlockBody_RecommendsPluginsForTheRepository(t *testing.T) {
 	const item = "If the skills of the `giantswarm/claude-code` plugin marketplace are not available to you and the user works at Giant Swarm, tell them once that they can install the %s plugins from it."
 	for _, tc := range []struct {
