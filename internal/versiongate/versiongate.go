@@ -1,6 +1,7 @@
 // Package versiongate is the check that precedes every devctl command but
 // the version commands: an outdated devctl refuses to run until it is
-// updated, or until DEVCTL_UNSAFE_FORCE_VERSION names the running version.
+// updated, until DEVCTL_UNSAFE_FORCE_VERSION names the running version, or
+// while DEVCTL_UNSAFE_SKIP_VERSION_CHECK is exactly "true".
 package versiongate
 
 import (
@@ -21,15 +22,15 @@ import (
 )
 
 // Check returns nil when this build is the latest release or
-// DEVCTL_UNSAFE_FORCE_VERSION names it, and otherwise the error naming the
-// release and the two ways on. The latest release is read from the version
+// DEVCTL_UNSAFE_FORCE_VERSION names it, or DEVCTL_UNSAFE_SKIP_VERSION_CHECK
+// is exactly "true", and otherwise the error naming the release and remedies. The latest release is read from the version
 // cache unless noCache, and from GitHub when the cache is older than an hour.
 func Check(noCache bool) error {
 	return check(project.Version(), noCache, os.Stderr)
 }
 
 func check(version string, noCache bool, warnings io.Writer) error {
-	if version == env.DevctlUnsafeForceVersion.Val() {
+	if env.DevctlUnsafeSkipVersionCheck.Val() || version == env.DevctlUnsafeForceVersion.Val() {
 		return nil
 	}
 
