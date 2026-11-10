@@ -1,6 +1,7 @@
 package githubclient
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -145,7 +146,7 @@ func TestReleasePublishFailureMappingAndPagination(t *testing.T) {
 }
 
 func TestListReleasesRejectsIncompleteListing(t *testing.T) {
-	for _, failPage := range []int{2, releasePages + 1} {
+	for _, failPage := range []int{2, 12} {
 		t.Run(fmt.Sprint(failPage), func(t *testing.T) {
 			pages := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +163,43 @@ func TestListReleasesRejectsIncompleteListing(t *testing.T) {
 			releases, err := publishClient(t, server.URL).ListReleases(t.Context(), "o", "r")
 			require.Error(t, err)
 			require.Nil(t, releases)
-			require.Equal(t, min(failPage, releasePages), pages)
+			require.Equal(t, failPage, pages)
 		})
 	}
+}
+
+func TestListReleasesReadsLongHistory(t *testing.T) {
+	pages := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pages++
+		w.Header().Set("Content-Type", "application/json")
+		if pages < 12 {
+			w.Header().Set("Link", fmt.Sprintf("<http://%s/repos/o/r/releases?page=%d>; rel=\"next\"", r.Host, pages+1))
+		}
+		_ = json.NewEncoder(w).Encode([]any{map[string]any{"tag_name": fmt.Sprintf("v1.0.%d", pages)}})
+	}))
+	t.Cleanup(server.Close)
+	releases, err := publishClient(t, server.URL).ListReleases(t.Context(), "o", "r")
+	require.NoError(t, err)
+	require.Len(t, releases, 12)
+	require.Equal(t, "v1.0.12", releases[11].Tag)
+}
+
+func TestListReleasesCancellationDiscardsPartialHistory(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("page") == "2" {
+			cancel()
+			<-r.Context().Done()
+			return
+		}
+		w.Header().Set("Link", fmt.Sprintf("<http://%s/repos/o/r/releases?page=2>; rel=\"next\"", r.Host))
+		_, _ = io.WriteString(w, `[{"tag_name":"v1.2.3"}]`)
+	}))
+	t.Cleanup(server.Close)
+	releases, err := publishClient(t, server.URL).ListReleases(ctx, "o", "r")
+	require.ErrorIs(t, err, context.Canceled)
+	require.Nil(t, releases)
 }

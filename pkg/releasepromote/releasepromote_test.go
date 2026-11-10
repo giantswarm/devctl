@@ -43,7 +43,10 @@ type fakeRepository struct {
 	releases    []githubclient.Release
 	// tagReleases answer GetReleaseByTag; releases too unless set.
 	tagReleases []githubclient.Release
-	status      githubclient.CombinedStatus
+	// commits and commitsErr answer the comparison of stable with branch.
+	commits    []string
+	commitsErr error
+	status     githubclient.CombinedStatus
 	// statuses override status per ref.
 	statuses    map[string]githubclient.CombinedStatus
 	dispatchErr error
@@ -110,6 +113,15 @@ func (f *fakeGitHub) Reachable(_ context.Context, owner, repo, ref, branch strin
 	f.compared = append(f.compared, ref)
 	r, err := f.repository(owner, repo)
 	return err == nil && branch == r.branch && !slices.Contains(r.unreachable, ref), err
+}
+
+func (f *fakeGitHub) CommitsAfter(_ context.Context, owner, repo, sha, branch string) ([]string, error) {
+	f.compared = append(f.compared, sha+".."+branch)
+	r, err := f.repository(owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	return r.commits, r.commitsErr
 }
 
 func (f *fakeGitHub) ListReleases(_ context.Context, owner, repo string) ([]githubclient.Release, error) {
@@ -653,7 +665,7 @@ func TestPromoteVersion(t *testing.T) {
 			repository: fakeRepository{branch: "main", releases: append([]githubclient.Release{candidate("v1.2.2-rc.1")}, streamReleases...), statuses: streamStatuses},
 			version:    "v1.2.2-rc.1",
 			state:      StateFailed,
-			message:    "v1.2.2-rc.1 is not a release candidate to promote on main: not newer than the last stable release v1.2.2",
+			message:    "v1.2.2-rc.1 is not a release candidate to promote on main: not newer than the last stable release v1.2.2; no commits on main after v1.2.2 need a new release",
 		},
 		{
 			name:       "a candidate of another branch",
@@ -696,6 +708,66 @@ func TestPromoteVersion(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Equal(t, []dispatch{{repository: "giantswarm/kserve", file: Workflow, ref: "main", inputs: map[string]any{"release-type": "stable", "version": tc.version}}}, gh.dispatches)
+		})
+	}
+}
+
+func TestPromoteStaleCandidateNamesExcludedCommits(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		branch     string
+		commits    []string
+		compareErr error
+		want       string
+	}{
+		{
+			name:    "a later RC and another merge are outside the promoted stable",
+			branch:  "main",
+			commits: []string{strings.Repeat("a", 40), strings.Repeat("b", 40)},
+			want:    "commits on main not in v0.122.0: " + strings.Repeat("a", 40) + ", " + strings.Repeat("b", 40),
+		},
+		{
+			name:    "an explicit maintenance branch is compared and named",
+			branch:  "release-0.122",
+			commits: []string{strings.Repeat("c", 40)},
+			want:    "commits on release-0.122 not in v0.122.0: " + strings.Repeat("c", 40),
+		},
+		{
+			name:   "an already included candidate has no excluded commits",
+			branch: "main",
+			want:   "no commits on main after v0.122.0 need a new release",
+		},
+		{
+			name:       "a failed comparison reports uncertainty and the next step",
+			branch:     "main",
+			compareErr: errors.New("comparison unavailable"),
+			want:       "reading commits on main after v0.122.0 failed: comparison unavailable",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gh := &fakeGitHub{repositories: map[string]fakeRepository{"giantswarm/example": {
+				branch: tc.branch, releases: []githubclient.Release{stable("v0.122.0"), candidate("v0.122.0-rc.4")},
+				commits: tc.commits, commitsErr: tc.compareErr,
+			}}}
+			result := NewResult("")
+			config := Config{GitHub: gh, Version: "v0.122.0-rc.4", DryRun: true}
+			if tc.branch != "main" {
+				config.Branch = tc.branch
+			}
+			err := Promote(t.Context(), config, []string{"giantswarm/example"}, &result)
+			require.Equal(t, agentcli.ExitRed, agentcli.Exit(err))
+			entry := result.Repositories[0]
+			require.Equal(t, StateFailed, entry.State)
+			require.Equal(t, "v0.122.0", entry.Stable)
+			require.Contains(t, entry.Message, "v0.122.0-rc.4 is not a release candidate to promote")
+			require.Contains(t, entry.Message, tc.want)
+			require.Equal(t, tc.commits, entry.Stranded)
+			require.Contains(t, gh.compared, "v0.122.0.."+tc.branch)
+			if len(tc.commits) > 0 || tc.compareErr != nil {
+				require.Contains(t, entry.Message, "gh workflow run zz_generated.auto_release.yaml --repo giantswarm/example --ref "+tc.branch+" -f release-type=auto")
+			}
+			require.Empty(t, gh.dispatches)
+			require.Empty(t, gh.statusRefs)
 		})
 	}
 }

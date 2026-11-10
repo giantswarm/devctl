@@ -112,6 +112,12 @@ func genCommands(f Fields, gc genContext) [][]string {
 	if g.HelmDocsRegen {
 		workflows = append(workflows, "--helm-docs-regen")
 	}
+	// The chart unit tests are on for every app repository unless the entry
+	// switches them off; align-files would otherwise put the workflow back on
+	// every run. A devctl that predates the flag generates it regardless.
+	if g.ChartTests != nil && !*g.ChartTests && knows(genWorkflows, "--chart-tests") {
+		workflows = append(workflows, "--chart-tests=false")
+	}
 	// The README link check is on for every app repository unless the entry
 	// switches it off; align-files would otherwise put the workflow back on
 	// every run. A devctl that predates the flag generates it regardless.

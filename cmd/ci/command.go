@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/ci/cancel"
 	"github.com/giantswarm/devctl/v8/cmd/ci/job"
 	"github.com/giantswarm/devctl/v8/cmd/ci/jobs"
 	"github.com/giantswarm/devctl/v8/cmd/ci/rerun"
@@ -13,7 +14,7 @@ import (
 
 const (
 	name        = "ci"
-	description = "Commands for CircleCI pipelines: the jobs of one, one job's failed output, the rerun of one workflow."
+	description = "Commands for CircleCI pipelines: the jobs of one, one job's failed output, rerun and cancellation of workflows."
 )
 
 type Config struct {
@@ -47,6 +48,11 @@ func New(config Config) (*cobra.Command, error) {
 		Short: description,
 		Long:  description,
 	}
+	cancelCmd, err := cancel.New(cancel.Config{Stderr: config.Stderr, Stdout: config.Stdout})
+	if err != nil {
+		return nil, err
+	}
+	c.AddCommand(cancelCmd)
 	c.AddCommand(jobsCmd)
 	c.AddCommand(jobCmd)
 	c.AddCommand(rerunCmd)
