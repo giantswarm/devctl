@@ -54,7 +54,9 @@ func (c *Client) StalePipeline(ctx context.Context, owner, repo string, p circle
 				}
 				return pr.GetHead().GetSHA() != p.VCS.Revision, nil
 			}
-			closed = true
+			if pr.GetHead().GetSHA() == p.VCS.Revision {
+				closed = true
+			}
 		}
 		if response.NextPage == 0 {
 			break
@@ -72,6 +74,6 @@ func (c *Client) StalePipeline(ctx context.Context, owner, repo string, p circle
 		return false, fmt.Errorf("GitHub returned an empty branch head")
 	}
 	// A reused branch with a new head is stale by revision; a current head is
-	// retained even if the branch has historical closed PRs.
+	// retained unless that revision belongs to a closed PR.
 	return ref.GetObject().GetSHA() != p.VCS.Revision || closed, nil
 }
