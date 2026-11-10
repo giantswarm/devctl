@@ -22,7 +22,8 @@ import (
 )
 
 // generatedCircleCI are devctl's own generated CircleCI configuration files:
-// on a pull request's branch, build-image runs behind go-build.
+// on a pull request's branch, build-image runs behind pin-version and
+// go-build.
 func generatedCircleCI(t *testing.T) map[string]string {
 	t.Helper()
 	files := map[string]string{}
@@ -43,9 +44,10 @@ func circleStatus(job, state string) *github.RepoStatus {
 // TestPRWaitJobBehindRequiresKeepsItPending: judged from the commit
 // statuses alone, a head whose finished jobs all passed is not green while a
 // job behind requires: has posted nothing: devctl's build-image, which
-// requires go-build, posts its first status only once go-build finished.
+// requires pin-version and go-build, posts its first status only once both
+// finished.
 func TestPRWaitJobBehindRequiresKeepsItPending(t *testing.T) {
-	beforeBuildImage := prwaittest.Head{Statuses: []*github.RepoStatus{circleStatus("setup", "success"), circleStatus("build-chart", "success"), circleStatus("go-build", "success")}}
+	beforeBuildImage := prwaittest.Head{Statuses: []*github.RepoStatus{circleStatus("setup", "success"), circleStatus("pin-version", "success"), circleStatus("build-chart", "success"), circleStatus("go-build", "success")}}
 	tests := []struct {
 		name    string
 		heads   []prwaittest.Head
@@ -56,8 +58,8 @@ func TestPRWaitJobBehindRequiresKeepsItPending(t *testing.T) {
 			name: "green once the job behind requires: posted and passed",
 			heads: []prwaittest.Head{
 				beforeBuildImage,
-				{Statuses: []*github.RepoStatus{circleStatus("setup", "success"), circleStatus("build-chart", "success"), circleStatus("go-build", "success"), circleStatus("build-image", "pending")}},
-				{Statuses: []*github.RepoStatus{circleStatus("setup", "success"), circleStatus("build-chart", "success"), circleStatus("go-build", "success"), circleStatus("build-image", "success")}},
+				{Statuses: []*github.RepoStatus{circleStatus("setup", "success"), circleStatus("pin-version", "success"), circleStatus("build-chart", "success"), circleStatus("go-build", "success"), circleStatus("build-image", "pending")}},
+				{Statuses: []*github.RepoStatus{circleStatus("setup", "success"), circleStatus("pin-version", "success"), circleStatus("build-chart", "success"), circleStatus("go-build", "success"), circleStatus("build-image", "success")}},
 			},
 			verdict: agentcli.VerdictGreen,
 		},
