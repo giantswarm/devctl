@@ -30,7 +30,7 @@ below. Where they differ from this block, they take precedence.
   update the documentation in the same pull request.
 - If the skills of the `giantswarm/claude-code` plugin marketplace are not
   available to you and the user works at Giant Swarm, tell them once that
-  they can install the `gs-base`, `gs-dev` and `gs-godev`
+  they can install the `gs-base`, `gs-dev`, `gs-godev` and `gs-appdev`
   plugins from it.
 - Go: run `goimports -local github.com/giantswarm/<repository>` on the files
   you change. CI with architect-orb fails when imports are grouped

@@ -2,7 +2,7 @@
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/bbc57913962860b1f2b3524a74a9692931c58034/pkg/gen/input/makefile/internal/file/Makefile.gen.app.mk.template
+#    https://github.com/giantswarm/devctl/blob/f4db4df4543e762b4ddcc2f7095c6f7c74d2b4ce/pkg/gen/input/makefile/internal/file/Makefile.gen.app.mk.template
 #
 
 ##@ App
@@ -141,7 +141,7 @@ test: helm-test
 # pins aligned with gen circleci; repositories with explicit CI pins override them
 # in Makefile.custom.mk. This target supports ATS 1.x (the generated CI default).
 # renovate: datasource=docker depName=gsoci.azurecr.io/giantswarm/app-test-suite
-ATS_VERSION ?= 1.0.3
+ATS_VERSION ?= 1.1.1
 # renovate: datasource=docker depName=gsoci.azurecr.io/giantswarm/kind-node
 ATS_KIND_NODE_IMAGE_VERSION ?= v1.37.0
 ATS_KIND_NODE_IMAGE ?= gsoci.azurecr.io/giantswarm/kind-node:$(ATS_KIND_NODE_IMAGE_VERSION)

@@ -2,7 +2,7 @@
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/2da48e8e991a721cdb632ba78fb4c3cbea2e06f6/pkg/gen/input/makefile/internal/file/Makefile.gen.go.mk.template
+#    https://github.com/giantswarm/devctl/blob/30010fbc8809ecb0f1422ee655a8105c299695b1/pkg/gen/input/makefile/internal/file/Makefile.gen.go.mk.template
 #
 
 PACKAGE_DIR    := ./bin-dist
