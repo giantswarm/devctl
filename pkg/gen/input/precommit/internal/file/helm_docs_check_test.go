@@ -23,7 +23,7 @@ func Test_HelmDocsDescriptionHook(t *testing.T) {
 	if err != nil {
 		t.Skip("python3 not available")
 	}
-	in := NewCreatePreCommitConfigInput(params.Params{Flavors: []string{"helmchart"}, HelmCharts: []string{"test-chart"}})
+	in := NewCreatePreCommitConfigInput(params.Params{Flavors: []string{helmchartFlavor}, HelmCharts: []string{"test-chart"}})
 	var rendered bytes.Buffer
 	if err := template.Must(template.New("").Parse(in.TemplateBody)).Execute(&rendered, in.TemplateData); err != nil {
 		t.Fatal(err)
