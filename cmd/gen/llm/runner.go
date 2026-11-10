@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
@@ -92,26 +93,37 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 }
 
 func (r *runner) dryRun(ctx context.Context) error {
-	mode := llm.DefaultMode
+	var report llm.Report
+	var steps []string
 	if r.flag.MigrateInstructions {
-		mode = llm.MigrationMode
-	}
-	report, err := llm.Preflight(ctx, ".", mode)
-	if err != nil {
-		return microerror.Mask(err)
-	}
-
-	if len(report.Findings) == 0 {
-		_, err = fmt.Fprintln(r.stdout, "gen llm would proceed: no findings")
-		return microerror.Mask(err)
-	}
-	if _, err := fmt.Fprintln(r.stdout, "gen llm would skip this repository:"); err != nil {
-		return microerror.Mask(err)
-	}
-	for _, f := range report.Findings {
-		if _, err := fmt.Fprintf(r.stdout, "%s: %s\n  fix: %s\n", f.Path, f.Problem, f.Fix); err != nil {
+		migration, migrationReport, err := llm.PlanMigration(ctx, ".")
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		report, steps = migrationReport, migration.Steps()
+	} else {
+		var err error
+		report, err = llm.Preflight(ctx, ".", llm.DefaultMode)
+		if err != nil {
 			return microerror.Mask(err)
 		}
 	}
-	return nil
+
+	var out strings.Builder
+	switch {
+	case len(report.Findings) > 0:
+		out.WriteString("gen llm would skip this repository:\n")
+		for _, f := range report.Findings {
+			fmt.Fprintf(&out, "%s: %s\n  fix: %s\n", f.Path, f.Problem, f.Fix)
+		}
+	case len(steps) > 0:
+		out.WriteString("gen llm would make these changes:\n")
+		for _, step := range steps {
+			fmt.Fprintf(&out, "- %s\n", step)
+		}
+	default:
+		out.WriteString("gen llm would proceed: no findings\n")
+	}
+	_, err := io.WriteString(r.stdout, out.String())
+	return microerror.Mask(err)
 }

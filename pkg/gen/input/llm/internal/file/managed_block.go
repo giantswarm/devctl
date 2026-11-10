@@ -15,13 +15,13 @@ const (
 	localSection = "## This repository\n"
 )
 
-// mergeManagedBlock returns the content of an AGENTS.md with body as its
+// MergeManagedBlock returns the content of an AGENTS.md with body as its
 // devctl-managed block. Without existing content, the result is the block
 // followed by an empty section for the repository's own instructions. Existing
 // content without a block keeps every byte, below the new block. An existing
 // block is replaced in place, keeping every byte around it. The block uses the
 // line ending of the file's first line, and a byte order mark stays first.
-func mergeManagedBlock(existing []byte, body string) ([]byte, error) {
+func MergeManagedBlock(existing []byte, body string) ([]byte, error) {
 	body = strings.ReplaceAll(body, "\r\n", "\n")
 	if !strings.HasSuffix(body, "\n") {
 		body += "\n"
