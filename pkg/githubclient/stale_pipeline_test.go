@@ -32,15 +32,15 @@ func TestStalePipelineEvidence(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
-				case "/repos/o/r":
+				case "/api/v3/repos/o/r":
 					_, _ = w.Write([]byte(`{"default_branch":"main"}`))
-				case "/repos/o/r/pulls", "/repos/o/r/pulls/12":
+				case "/api/v3/repos/o/r/pulls", "/api/v3/repos/o/r/pulls/12":
 					if tc.fail {
 						w.WriteHeader(http.StatusServiceUnavailable)
 						return
 					}
 					_, _ = w.Write([]byte(tc.prs))
-				case "/repos/o/r/git/ref/heads/feature":
+				case "/api/v3/repos/o/r/git/ref/heads/feature":
 					if tc.head == "" {
 						w.WriteHeader(http.StatusNotFound)
 						_, _ = w.Write([]byte(`{"message":"not found"}`))

@@ -7,6 +7,8 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
 )
 
+const statusQueued = "queued"
+
 // CancelClient supplies the CircleCI reads and writes needed for cancellation.
 type CancelClient interface {
 	GetWorkflow(context.Context, string) (*circleciclient.WorkflowDetail, error)
@@ -110,7 +112,7 @@ func cancelWorkflow(ctx context.Context, client CancelClient, pipeline string, w
 	item := CancelWorkflow{ID: w.ID, PipelineID: pipeline, Status: w.Status, Outcome: "skipped"}
 	result.Workflows = append(result.Workflows, item)
 	index := len(result.Workflows) - 1
-	if !circleciclient.WorkflowRunning(w.Status) && w.Status != "queued" {
+	if !circleciclient.WorkflowRunning(w.Status) && w.Status != statusQueued {
 		return nil
 	}
 	if queuedOnly {
@@ -132,7 +134,7 @@ func cancelWorkflow(ctx context.Context, client CancelClient, pipeline string, w
 	if err != nil {
 		return err
 	}
-	if !circleciclient.WorkflowRunning(current.Status) && current.Status != "queued" {
+	if !circleciclient.WorkflowRunning(current.Status) && current.Status != statusQueued {
 		return nil
 	}
 	if queuedOnly {
@@ -160,7 +162,7 @@ func queuedJobs(jobs []circleciclient.Job) bool {
 			return false
 		}
 		switch j.Status {
-		case "queued", "not_run", "blocked", "on_hold":
+		case statusQueued, "not_run", "blocked", "on_hold":
 		default:
 			return false
 		}
