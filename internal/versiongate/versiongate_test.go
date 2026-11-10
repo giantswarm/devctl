@@ -135,7 +135,7 @@ func TestCheckWithAFreshCacheDoesNotOpenTheKeychain(t *testing.T) {
 	for _, value := range []string{"true", "false", "", "invalid"} {
 		t.Setenv("DEVCTL_UNSAFE_SKIP_VERSION_CHECK", value)
 		err := check("0.9.0", false, &warnings)
-		if err != nil {
+		if (err == nil) != (value == "true") {
 			t.Errorf("outdated build with skip=%q: %v", value, err)
 		}
 	}

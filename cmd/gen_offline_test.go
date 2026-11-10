@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/giantswarm/micrologger"
 
@@ -87,13 +88,19 @@ func TestGenCircleCIOffline(t *testing.T) {
 	}
 }
 
-// TestGateOutsideGen is the control of [TestGenCircleCIOffline]: a command
-// outside `gen` in the same container still runs the version gate, which
-// cannot pass there (a test binary is version "dev", and neither the keychain
-// nor GitHub answers).
+// TestGateOutsideGen verifies that a confirmed newer release still blocks a
+// command outside gen, even though unavailable release discovery is best-effort.
 func TestGateOutsideGen(t *testing.T) {
 	offlineContainer(t)
-
+	t.Setenv("DEVCTL_UNSAFE_SKIP_VERSION_CHECK", "")
+	dir := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "devctl")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cache := "last_update: " + time.Now().UTC().Format(time.RFC3339) + "\nlatest_version: 99999.0.0\n"
+	if err := os.WriteFile(filepath.Join(dir, "selfupdate.yaml"), []byte(cache), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	code, out := execute(t)
 	if code == 0 {
 		t.Fatalf("exit 0, want the gate's error:\n%s", out)
