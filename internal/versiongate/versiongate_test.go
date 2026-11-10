@@ -40,7 +40,7 @@ func noSessionBus(t *testing.T) {
 func clearGitHubEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("DEVCTL_UNSAFE_SKIP_VERSION_CHECK", "")
-	for _, name := range append([]string{authstore.EnvCI, envGH}, authstore.GitHubEnvVars...) {
+	for _, name := range append([]string{authstore.EnvCI, envGH, "DEVCTL_UNSAFE_SKIP_VERSION_CHECK"}, authstore.GitHubEnvVars...) {
 		t.Setenv(name, "")
 	}
 }
@@ -276,6 +276,38 @@ func TestCheckInAWorkflowStepWithGHTokenAuthenticates(t *testing.T) {
 	}
 }
 
+// Failed release discovery must not prevent the command's real work. A known
+// newer version still refuses in TestCheckWithAFreshCacheDoesNotOpenTheKeychain.
+func TestCheckUnavailableReleaseWarnsAndContinues(t *testing.T) {
+	for _, status := range []int{http.StatusForbidden, http.StatusInternalServerError} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			clearGitHubEnv(t)
+			t.Setenv("DEVCTL_UNSAFE_FORCE_VERSION", "")
+			t.Setenv(authstore.EnvCI, "true")
+			brokenKeychain(t)
+			requests := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				if r.URL.Path != "/repos/giantswarm/devctl/releases" {
+					t.Errorf("unexpected release request: %s", r.URL.Path)
+				}
+				w.Header().Set("X-RateLimit-Remaining", "0")
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"message":"API rate limit exceeded"}`))
+			}))
+			t.Cleanup(srv.Close)
+			t.Setenv(agentcli.EnvGitHubAPIURL, srv.URL)
+			var warnings bytes.Buffer
+			if err := check("1.0.0", true, &warnings); err != nil {
+				t.Fatalf("lookup failure blocked the command: %v", err)
+			}
+			if requests == 0 || !strings.Contains(warnings.String(), "warning: could not check the latest devctl release:") {
+				t.Fatalf("requests=%d warnings=%q", requests, warnings.String())
+			}
+		})
+	}
+}
+
 // The component-owned opt-out works independently of the installed version,
 // cache and updater configuration. Only the documented literal enables it.
 func TestCheckUnsafeSkipVersionCheck(t *testing.T) {
@@ -293,11 +325,11 @@ func TestCheckUnsafeSkipVersionCheck(t *testing.T) {
 				for _, noCache := range []bool{false, true} {
 					var warnings bytes.Buffer
 					err := check(version, noCache, &warnings)
-					if (err == nil) != (value == "true") {
+					if err != nil {
 						t.Errorf("check(%q, noCache=%v) = %v, skip=%q", version, noCache, err, value)
 					}
-					if warnings.Len() != 0 {
-						t.Errorf("warned %q", warnings.String())
+					if (warnings.Len() == 0) != (value == "true") {
+						t.Errorf("warnings=%q, skip=%q", warnings.String(), value)
 					}
 				}
 			}

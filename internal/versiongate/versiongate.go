@@ -25,6 +25,7 @@ import (
 // DEVCTL_UNSAFE_FORCE_VERSION names it, or DEVCTL_UNSAFE_SKIP_VERSION_CHECK
 // is exactly "true", and otherwise the error naming the release and remedies. The latest release is read from the version
 // cache unless noCache, and from GitHub when the cache is older than an hour.
+// An unavailable lookup warns and allows the command to continue.
 func Check(noCache bool) error {
 	return check(project.Version(), noCache, os.Stderr)
 }
@@ -36,7 +37,8 @@ func check(version string, noCache bool, warnings io.Writer) error {
 
 	u, err := newUpdater(version, noCache, warnings)
 	if err != nil {
-		return microerror.Mask(err)
+		fmt.Fprintln(warnings, "warning: could not check the latest devctl release:", err)
+		return nil
 	}
 
 	latest, err := u.GetLatest()
@@ -44,7 +46,7 @@ func check(version string, noCache bool, warnings io.Writer) error {
 		return fmt.Errorf("version %[2]s of %[1]s is released; this is %[3]s: update with `%[1]s version update`, or run this version anyway with %[4]s=%[3]s",
 			project.Name(), latest, version, env.DevctlUnsafeForceVersion.Key())
 	} else if err != nil {
-		return microerror.Mask(err)
+		fmt.Fprintln(warnings, "warning: could not check the latest devctl release:", err)
 	}
 
 	return nil

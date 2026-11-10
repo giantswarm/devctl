@@ -1,0 +1,5 @@
+{
+  "exitCode": 0,
+  "stdoutContains": ["\"verdict\": \"listed\"", "\"name\": \"go-test\"", "\"number\": 7"],
+  "stderrContains": ["warning: could not check the latest devctl release:", "API rate limit exceeded"]
+}
