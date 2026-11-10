@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 	"time"
 
@@ -70,11 +69,8 @@ func TestSetupDiscoversPublishedReleasePages(t *testing.T) {
 				}
 			}))
 			defer srv.Close()
-			client, err := github.NewClient(github.WithHTTPClient(srv.Client()))
+			client, err := github.NewClient(github.WithHTTPClient(srv.Client()), github.WithURLs(new(srv.URL+"/"), nil))
 			require.NoError(t, err)
-			baseURL, err := url.Parse(srv.URL + "/")
-			require.NoError(t, err)
-			client.BaseURL = baseURL
 			ci := newFake(appDef())
 			ci.triggers["app"] = []circleciclient.Trigger{{ID: "on"}}
 
