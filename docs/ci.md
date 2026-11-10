@@ -132,6 +132,8 @@ rerun stands meanwhile.
 one. `--cancel` cancels it first (`POST /api/v2/workflow/{id}/cancel`), waits up to two minutes for
 CircleCI to read it canceled and reruns it: the recovery of a stuck workflow. A cancel that does not
 settle in time is exit 2; the rerun is then one call away once the workflow reads canceled.
+The shared cancel wait preserves caller cancellation and earlier caller deadlines as errors; they do not
+mean CircleCI ignored the cancel for two minutes and do not initiate fresh-pipeline recovery.
 
 ```nohighlight
 devctl ci rerun giantswarm/devctl f1290c29-… --from-failed && devctl release wait giantswarm/devctl v8.123.0
