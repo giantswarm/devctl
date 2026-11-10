@@ -136,6 +136,11 @@ on the same branch. An unsupported ref is exit 7 before candidate checks or disp
 
 `devctl rollout wait <installation> <owner/repo> (<vX.Y.Z> | --pr <n>)` runs the release wait, then blocks until every Flux HelmRelease and App CR on the installation's management cluster that deploys one of the release's charts runs the version, is ready and has its Deployments, StatefulSets and DaemonSets rolled out. It reads the cluster through the kube context `tsh kube login` writes, as you; `--reconcile` asks Flux to look now. A deployment pinned elsewhere is reported and warned about; a failed install or upgrade of the version is exit 1, a timeout exit 2 naming what is missing. See [docs/rollout-wait.md](docs/rollout-wait.md).
 
+For a component rolled by a version range while its meta chart stays unchanged, use
+`devctl rollout wait <installation> --chart <name> --version <vX.Y.Z>`. It waits directly for the
+component chart on the installation, without repository release checks or a GitHub login, and reports
+the chart and running version.
+
 ```nohighlight
 devctl rollout wait myinstallation giantswarm/app-operator v7.5.4 --progress
 ```

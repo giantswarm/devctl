@@ -79,16 +79,33 @@ func (r *runner) kubeContext(installation string) string {
 }
 
 func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Document) error {
-	if len(args) < 2 || len(args) > 3 {
-		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "usage: devctl %s <installation> <owner/repo> [<vX.Y.Z|X.Y.Z>] [--version <vX.Y.Z>] [--pr <number>], got %d argument(s)", rolloutwait.Command, len(args))
+	if len(args) < 1 || len(args) > 3 {
+		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "usage: devctl %s <installation> <owner/repo> [<vX.Y.Z|X.Y.Z>] [--version <vX.Y.Z>] [--pr <number>], or devctl %s <installation> --chart <name> --version <vX.Y.Z>, got %d argument(s)", rolloutwait.Command, rolloutwait.Command, len(args))
 	}
 	installation := args[0]
 	if installation == "" || strings.ContainsAny(installation, "/ ") {
 		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "%q is not an installation name", installation)
 	}
-	owner, repo, ok := strings.Cut(args[1], "/")
-	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
-		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "%q is not a repository: expected owner/repo", args[1])
+	component := len(args) == 1
+	owner, repo := "", ""
+	if component {
+		if len(r.flag.Charts) == 0 || r.flag.Version == "" || r.flag.PR != 0 {
+			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "without a repository, pass --chart <name> and --version <vX.Y.Z>, without --pr")
+		}
+		for _, chart := range r.flag.Charts {
+			if chart == "" || strings.ContainsAny(chart, "/: \t\r\n") {
+				return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--chart %q: a component wait needs a chart name, without a registry, path or tag", chart)
+			}
+		}
+		if len(r.flag.Images) > 0 || r.flag.FailedLog.Enabled {
+			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--image and --failed-log need a repository release; a component wait reads only the installation")
+		}
+	} else {
+		var ok bool
+		owner, repo, ok = strings.Cut(args[1], "/")
+		if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
+			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "%q is not a repository: expected owner/repo", args[1])
+		}
 	}
 	version := r.flag.Version
 	if len(args) > 2 {
@@ -141,6 +158,30 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 	})
 	if err != nil {
 		return err
+	}
+
+	if component {
+		// A range-rolled component has no new meta-chart release. Judge
+		// its chart version directly with the same rollout engine.
+		doc.Release.Verdict = agentcli.VerdictNotApplicable
+		doc.Release.Reason = "component wait: repository release checks skipped"
+		waiter, err := rolloutwait.New(rolloutwait.Config{
+			Installation: installation,
+			KubeContext:  kubeContext,
+			Version:      version,
+			Charts:       r.flag.Charts,
+			HelmReleases: r.flag.HelmReleases,
+			Client:       client,
+			Timeout:      r.flag.Timeout,
+			Reconcile:    r.flag.Reconcile,
+			Clock:        clock,
+			Progress:     progress,
+			Warn:         doc.Warn,
+		})
+		if err != nil {
+			return err
+		}
+		return waiter.Wait(ctx, &doc.Result)
 	}
 
 	progress.Printf("reading the GitHub login for %s", owner)
