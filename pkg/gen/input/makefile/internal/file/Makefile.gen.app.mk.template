@@ -105,19 +105,20 @@ helm-test: install-helm-unittest ## Run the chart unit tests (helm-unittest).
 # network error (a connection reset) fails it; the install runs up to
 # HELM_UNITTEST_ATTEMPTS times, HELM_UNITTEST_RETRY_DELAY seconds apart. A failed attempt
 # can leave a half-installed plugin behind that the next install refuses, so it is
-# uninstalled before each retry.
+# uninstalled after every failure, including the last. A matching version must also
+# run its binary: plugin metadata alone survives an interrupted download.
 install-helm-unittest:
 	@have=$$(helm plugin list 2>/dev/null | awk '$$1 == "unittest" {print $$2}'); \
 	want=$$(echo "$(HELM_UNITTEST_VERSION)" | sed 's/^v//'); \
-	if [ "$$have" != "$$want" ]; then \
+	if [ "$$have" != "$$want" ] || ! helm unittest --version >/dev/null 2>&1; then \
 		[ -z "$$have" ] || helm plugin uninstall unittest >/dev/null 2>&1 || true; \
 		verify=""; \
 		helm plugin install --help 2>&1 | grep -q -e '--verify' && verify="--verify=false"; \
 		attempt=1; \
 		until helm plugin install $$verify https://github.com/helm-unittest/helm-unittest --version $(HELM_UNITTEST_VERSION); do \
+			helm plugin uninstall unittest >/dev/null 2>&1 || true; \
 			[ "$$attempt" -lt "$(HELM_UNITTEST_ATTEMPTS)" ] || exit 1; \
 			echo "helm-unittest install failed (attempt $$attempt of $(HELM_UNITTEST_ATTEMPTS)), retrying in $(HELM_UNITTEST_RETRY_DELAY)s" >&2; \
-			helm plugin uninstall unittest >/dev/null 2>&1 || true; \
 			sleep $(HELM_UNITTEST_RETRY_DELAY); \
 			attempt=$$((attempt + 1)); \
 		done; \
