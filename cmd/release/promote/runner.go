@@ -56,6 +56,7 @@ func (r *runner) promote(ctx context.Context, args []string, doc *releasepromote
 		DryRun:        r.flag.DryRun,
 		Version:       r.flag.Version,
 		Branch:        r.flag.Branch,
+		Ref:           r.flag.Ref,
 		Follow:        !r.flag.NoFollow,
 		FollowTimeout: r.flag.FollowTimeout,
 	}
