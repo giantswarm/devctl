@@ -71,12 +71,28 @@ func CancelStale(ctx context.Context, client CancelClient, owner, repo string, s
 			if p.VCS.Tag != "" || p.VCS.Branch == "" || p.VCS.Revision == "" {
 				continue
 			}
+			// Historical pipelines dominate large repositories. Read their
+			// workflows first so finished builds consume no GitHub budget.
+			workflows, err := client.ListPipelineWorkflows(ctx, p.ID)
+			if err != nil {
+				return err
+			}
+			active := false
+			for _, workflow := range workflows {
+				if circleciclient.WorkflowRunning(workflow.Status) || workflow.Status == statusQueued {
+					active = true
+					break
+				}
+			}
+			if len(workflows) != 0 && !active {
+				continue
+			}
 			yes, err := stale(ctx, p)
 			if err != nil {
 				return err
 			}
 			if yes {
-				if err := cancelPipeline(ctx, client, p.ID, true, result); err != nil {
+				if err := cancelWorkflows(ctx, client, p.ID, workflows, true, result); err != nil {
 					return err
 				}
 			}
@@ -97,6 +113,10 @@ func cancelPipeline(ctx context.Context, client CancelClient, id string, queuedO
 	if err != nil {
 		return err
 	}
+	return cancelWorkflows(ctx, client, id, workflows, queuedOnly, result)
+}
+
+func cancelWorkflows(ctx context.Context, client CancelClient, id string, workflows []circleciclient.Workflow, queuedOnly bool, result *CancelResult) error {
 	if len(workflows) == 0 {
 		result.UncancelablePipelines = append(result.UncancelablePipelines, id)
 	}

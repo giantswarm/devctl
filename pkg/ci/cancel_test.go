@@ -101,3 +101,13 @@ func TestCancelStaleReadFailureStopsWrites(t *testing.T) {
 	require.ErrorContains(t, err, "listing failed")
 	require.Empty(t, f.canceled)
 }
+
+func TestCancelStaleFinishedPipelinesNeedNoGitHubRead(t *testing.T) {
+	f := &cancelFake{workflows: []circleciclient.Workflow{{ID: "w", Status: "success"}}}
+	err := CancelStale(t.Context(), f, "o", "r", func(context.Context, circleciclient.Pipeline) (bool, error) {
+		t.Fatal("finished pipeline read GitHub")
+		return false, nil
+	}, &CancelResult{})
+	require.NoError(t, err)
+	require.Empty(t, f.canceled)
+}
