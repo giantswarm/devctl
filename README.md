@@ -141,6 +141,10 @@ For a component rolled by a version range while its meta chart stays unchanged, 
 component chart on the installation, without repository release checks or a GitHub login, and reports
 the chart and running version.
 
+A repository may also be retained in the document:
+`devctl rollout wait <installation> <owner/repo> --chart <name> <version>` skips release checks
+for that single bare chart name. OCI chart paths continue to check repository releases.
+
 ```nohighlight
 devctl rollout wait myinstallation giantswarm/app-operator v7.5.4 --progress
 ```

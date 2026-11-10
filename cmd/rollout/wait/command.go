@@ -29,7 +29,12 @@ Repository release checks are skipped (release.verdict is not_applicable),
 so no GitHub login or tag pipeline is needed. --pr, --image and --failed-log
 require a repository; --release-timeout has no effect without one.
 
-With a repository, the wait has two parts. The release first, exactly as
+With a repository and one bare --chart <chart-name>, the version argument
+or --version names the component version. The repository is carried in the
+document but is not queried. This form takes one chart and no --pr, --image
+or --failed-log. OCI chart paths keep the repository release wait.
+
+With a repository and release artifacts, the wait has two parts. The release first, exactly as
 devctl release wait does it (a version, as the argument or --version, or --pr for the release
 that carries the merge commit on the pull request's base branch, a release
 branch's included): its images

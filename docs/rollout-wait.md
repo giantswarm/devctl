@@ -53,6 +53,16 @@ skipped. `--pr`, `--image` and `--failed-log` require a repository; `--release-t
 on this form. Specify the component version explicitly: omitting a version with only `--helmrelease`
 still cannot identify which range-resolved release to wait for.
 
+With a repository, a single bare chart name also waits directly for the component:
+
+```nohighlight
+devctl rollout wait myinstallation giantswarm/agent-platform --chart agent-platform-connectivity v1.2.3
+```
+
+The version argument or `--version` names the component version. The repository is retained in
+JSON but is not queried. This form accepts one chart and no `--pr`, `--image` or `--failed-log`.
+An OCI path such as `--chart giantswarm/kagent/helm/kagent` keeps the repository release wait.
+
 ### The release first
 
 The command starts with the wait of `devctl release wait` for the same version or `--pr`, with the
