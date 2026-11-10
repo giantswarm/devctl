@@ -50,9 +50,10 @@ func TestGoBuildMainPackage(t *testing.T) {
 						t.Fatalf("make %s: %v\n%s", target, err, out)
 					}
 					binary := filepath.Join(dir, "fixture")
-					if target == "build-linux" {
+					switch target {
+					case "build-linux":
 						binary = filepath.Join(dir, "fixture-linux")
-					} else if target == "install" {
+					case "install":
 						binary = filepath.Join(gopath, "bin", "fixture")
 					}
 					if _, err := buildinfo.ReadFile(binary); err != nil {
