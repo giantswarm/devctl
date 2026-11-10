@@ -42,7 +42,7 @@ func runComponent(t *testing.T, client dynamic.Interface, args ...string) (rollo
 			}
 			return client, nil
 		},
-		openRelease: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+		openRelease: func(context.Context, string, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
 			t.Fatal("component wait must not open repository release sources")
 			return nil, nil
 		},

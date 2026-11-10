@@ -26,8 +26,8 @@ const (
 	// has no promotion step: its release-type stable tags the branch head; or,
 	// with --version, its promotion step takes no version input.
 	StateOutdatedWorkflow = "outdated_workflow"
-	// StateFailed: a read or the dispatch failed; the message has GitHub's
-	// answer.
+	// StateFailed: a preflight check, read or dispatch failed; the message
+	// explains why.
 	StateFailed = "failed"
 	// StateRefused: the dispatched run concluded without cutting the stable
 	// release, the repository's stable gate refusing it for one; the message
@@ -66,6 +66,9 @@ type Repository struct {
 	// is the promoted candidate's commit, so they are not in it. Empty
 	// without --version or when there is none.
 	Later []string `json:"later,omitempty"`
+	// Stranded names the commits on the release branch after Stable when a
+	// named candidate is refused because its version already shipped.
+	Stranded []string `json:"stranded,omitempty"`
 	// StatusState is the combined commit status of the candidate: success,
 	// pending, failure or error; empty until read.
 	StatusState string `json:"statusState"`

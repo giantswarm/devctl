@@ -20,6 +20,13 @@
         "default": false,
         "description": "The repository's opt-in to alignment. With true the reconciler changes the repository to its declared set-up and the company baseline on every trigger: a merged change of this entry, Align now, the nightly. Without it every run is a check -- the drift in the run's summary, the artifact and the inventory, nothing changed on GitHub or CircleCI. A repository created by the automation (devctl repo create, the Repositories page, the Repo Manager) is declared with align: true: its creation is the opt-in. An existing repository opts in when its team adds the field to its entry in a pull request the team reviews; a lifecycle change carries it. The team's channel file teams/team-<name>.yaml names the team's channels and holds no opt-in."
       },
+      "protection": {
+        "type": "string",
+        "enum": [
+          "baseline"
+        ],
+        "description": "With baseline a customer-flavour repository opts into the protection step: the company baseline and the devctl ruleset with its bypass actors (unless agentMerge: false), on the customer's own default branch. Without this field customer repositories keep their own protection. Other flavours always get the baseline. align: true is still needed for the reconciler to repair instead of only checking."
+      },
       "agentMerge": {
         "type": "boolean",
         "default": true,
@@ -141,6 +148,10 @@
           },
           "installUpdateChart": {
             "type": "boolean"
+          },
+          "chartTests": {
+            "type": "boolean",
+            "description": "Whether to generate the chart_tests workflow for an app repository; on by default."
           },
           "checkReadmeLinks": {
             "type": "boolean",

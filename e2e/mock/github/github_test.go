@@ -97,6 +97,57 @@ func TestFixtureETagIsKept(t *testing.T) {
 	assert.Equal(t, http.StatusNotModified, resp.StatusCode)
 }
 
+func TestNotModifiedPreservesFixtureHeaders(t *testing.T) {
+	for _, reset := range []string{"1791265200", "+3s"} {
+		t.Run(reset, func(t *testing.T) {
+			headers := map[string]string{
+				"x-ratelimit-limit":     "60",
+				"x-ratelimit-remaining": "0",
+				"x-ratelimit-used":      "60",
+				"x-ratelimit-reset":     reset,
+				"x-ratelimit-resource":  "core",
+				"Cache-Control":         "private, max-age=0, must-revalidate",
+				"X-GitHub-Request-Id":   "conditional-request",
+			}
+			pending := map[string]any{"state": "pending"}
+			s, err := Start(sequence.Routes{
+				"GET /repos/o/r/commits/abc/status": {
+					{Body: pending},
+					{Body: pending, Headers: headers},
+				},
+			})
+			require.NoError(t, err)
+			t.Cleanup(s.Close)
+
+			first, _ := get(t, s.URL+"/repos/o/r/commits/abc/status", nil)
+			require.Equal(t, http.StatusOK, first.StatusCode)
+			etag := first.Header.Get("ETag")
+			require.NotEmpty(t, etag)
+			assert.Equal(t, "4999", first.Header.Get("X-RateLimit-Remaining"))
+
+			earliestReset := time.Now().Add(3 * time.Second).Unix()
+			second, body := get(t, s.URL+"/repos/o/r/commits/abc/status", map[string]string{"If-None-Match": etag})
+			latestReset := time.Now().Add(3 * time.Second).Unix()
+			require.Equal(t, http.StatusNotModified, second.StatusCode)
+			assert.Empty(t, body)
+			assert.Equal(t, etag, second.Header.Get("ETag"))
+			for key, value := range headers {
+				if key != "x-ratelimit-reset" || reset != "+3s" {
+					assert.Equal(t, value, second.Header.Get(key), key)
+				}
+			}
+			if reset == "+3s" {
+				at, err := strconv.ParseInt(second.Header.Get("X-RateLimit-Reset"), 10, 64)
+				require.NoError(t, err)
+				assert.GreaterOrEqual(t, at, earliestReset)
+				assert.LessOrEqual(t, at, latestReset)
+			}
+			assert.Equal(t, reset, headers["x-ratelimit-reset"], "serving a response must not mutate the fixture")
+			assert.Len(t, s.Requests(), 2)
+		})
+	}
+}
+
 func TestUnscriptedRouteIsNotFound(t *testing.T) {
 	s, err := Start(sequence.Routes{})
 	require.NoError(t, err)

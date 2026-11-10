@@ -91,6 +91,9 @@ func openWithTeleport(ctx context.Context, c ClusterConfig, missing error) (dyna
 
 	c.Progress.Printf("kube context %s is not in the kubeconfig; tsh kube login %s into a private kubeconfig", c.Context, c.Installation)
 	if err := c.Teleport.KubeLogin(ctx, c.Installation, c.Context, private); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("logging in to kube context %s: %w", c.Context, err)
+		}
 		return nil, agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "kube context %s does not exist and %v; %s", c.Context, err, otherContexts)
 	}
 	rules := loadingRules(private)

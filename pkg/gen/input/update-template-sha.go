@@ -13,13 +13,10 @@ import (
 func main() {
 	filename := os.Args[1]
 
-	currentWorkingDirectory, err := os.Getwd()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	rootCmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	gitRoot, err := rootCmd.CombinedOutput()
+	// Git's repository-relative prefix uses URL path separators and is not
+	// affected by the logical PWD of a symlinked checkout.
+	prefixCmd := exec.Command("git", "rev-parse", "--show-prefix")
+	gitPrefix, err := prefixCmd.CombinedOutput()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -32,15 +29,15 @@ func main() {
 	// automation propagated each flip as a no-op PR to every consuming repo. Restricting to
 	// HEAD resolves to the last commit reachable from the build's checkout (the release tag
 	// on tag builds) that touched the template, so the SHA only changes when the template does.
-	shaCmd := exec.Command("git", "rev-list", "-1", "HEAD", "--", fmt.Sprintf("%s/%s", currentWorkingDirectory, filename))
+	shaCmd := exec.Command("git", "rev-list", "-1", "HEAD", "--", filename)
 	sha, err := shaCmd.CombinedOutput()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	strippedPath := strings.TrimPrefix(currentWorkingDirectory, strings.TrimSpace(string(gitRoot)))
+	templatePath := strings.TrimSpace(string(gitPrefix)) + filename
 
-	if err := os.WriteFile(filename+".sha", []byte(fmt.Sprintf("https://github.com/giantswarm/devctl/blob/%s%s/%s", strings.TrimSpace(string(sha)), strippedPath, filename)), 0666); err != nil {
+	if err := os.WriteFile(filename+".sha", []byte(fmt.Sprintf("https://github.com/giantswarm/devctl/blob/%s/%s", strings.TrimSpace(string(sha)), templatePath)), 0666); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -19,11 +19,14 @@ import (
 // autoReleaseStep is one step of the tag job as the rendered workflow declares
 // it.
 type autoReleaseStep struct {
-	ID   string            `yaml:"id"`
-	Name string            `yaml:"name"`
-	If   string            `yaml:"if"`
-	Run  string            `yaml:"run"`
-	Env  map[string]string `yaml:"env"`
+	ID               string            `yaml:"id"`
+	Name             string            `yaml:"name"`
+	If               string            `yaml:"if"`
+	Run              string            `yaml:"run"`
+	Env              map[string]string `yaml:"env"`
+	Uses             string            `yaml:"uses"`
+	With             map[string]string `yaml:"with"`
+	WorkingDirectory string            `yaml:"working-directory"`
 }
 
 // tagJobSteps returns the steps of the auto-release tag job from the rendered
@@ -91,6 +94,9 @@ func gitIn(t *testing.T, dir string, args ...string) (string, error) {
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+		// Background maintenance could still write .git when t.TempDir cleans up.
+		"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=gc.auto", "GIT_CONFIG_VALUE_0=0",
+		"GIT_CONFIG_KEY_1=maintenance.auto", "GIT_CONFIG_VALUE_1=false",
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
 		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com",
 	)
@@ -141,7 +147,7 @@ func repo(t *testing.T, history ...string) string {
 // cliffSkippedTypes are the commit_parsers in cliff.toml that carry
 // `skip = true`. git-cliff leaves them out of both the release notes and the
 // bump, so they are not releasable on their own.
-var cliffSkippedTypes = []string{"docs", "style", "test"}
+var cliffSkippedTypes = []string{"ci", "chore", "docs", "style", "test"}
 
 // countedSubject matches a conventional subject as git-cliff parses it
 // (letters, digits, `_` and `-` in the type) and captures its type.
@@ -221,6 +227,9 @@ func runStep(t *testing.T, script, dir string, env ...string) (map[string]string
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+		// Background maintenance could still write .git when t.TempDir cleans up.
+		"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=gc.auto", "GIT_CONFIG_VALUE_0=0",
+		"GIT_CONFIG_KEY_1=maintenance.auto", "GIT_CONFIG_VALUE_1=false",
 		"GITHUB_REF_NAME=main",
 		"GITHUB_OUTPUT="+outPath,
 		"GITHUB_STEP_SUMMARY="+filepath.Join(t.TempDir(), "step-summary"),
@@ -311,11 +320,10 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			stable:    true,
 		},
 		{
-			name:      "a chore(deps) alone is a patch too",
+			name:      "a chore(deps) alone releases nothing",
 			history:   []string{"v1.2.9", "chore(deps): bump y"},
-			next:      "v1.2.10",
-			expectTag: "v1.2.10",
-			stable:    true,
+			next:      "v1.2.9",
+			expectTag: "",
 		},
 		{
 			// A patch candidate cut before the patch fast path is released by
@@ -333,10 +341,10 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			expectTag: "v1.3.0-rc.2",
 		},
 		{
-			name:      "chore(deps) during a cycle cuts the next candidate",
+			name:      "chore(deps) during a cycle releases nothing",
 			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "chore(deps): bump y"},
 			next:      "v1.3.0",
-			expectTag: "v1.3.0-rc.2",
+			expectTag: "",
 		},
 		{
 			// `docs` is skipped by cliff.toml, so there is nothing new to put
@@ -347,11 +355,11 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			expectTag: "",
 		},
 		{
-			// `test` is skipped too: a test fixture bump ships nothing.
-			name:      "a test-only push during a cycle releases nothing",
+			// `test` opens no cycle, but can replace a failed candidate.
+			name:      "a test-only push during a cycle cuts the next candidate",
 			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "test(deps): bump a fixture"},
 			next:      "v1.3.0",
-			expectTag: "",
+			expectTag: "v1.3.0-rc.2",
 		},
 		{
 			name:      "a non-conventional push during a cycle releases nothing",

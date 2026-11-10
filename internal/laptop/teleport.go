@@ -55,7 +55,8 @@ func (t Tsh) binary() (string, error) {
 
 // LoggedIn reads tsh status --format=json: no active profile, or one whose
 // certificate has expired, is not logged in. tsh kube login would start an
-// interactive login for either, which the check rules out.
+// interactive login for either, which the check rules out. A command that
+// cannot start, is canceled or times out returns an error, not a login state.
 func (t Tsh) LoggedIn(ctx context.Context) (bool, string, error) {
 	path, err := t.binary()
 	if err != nil {
@@ -67,6 +68,13 @@ func (t Tsh) LoggedIn(ctx context.Context) (bool, string, error) {
 	cmd := exec.CommandContext(ctx, path, "status", "--format=json") // #nosec G204 -- tsh from exec.LookPath, fixed arguments
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
+		if cause := ctx.Err(); cause != nil {
+			return false, "", fmt.Errorf("checking tsh status: %w", cause)
+		}
+		var exited *exec.ExitError
+		if !errors.As(err, &exited) {
+			return false, "", fmt.Errorf("running tsh status: %w", err)
+		}
 		return false, firstLine(stderr.String(), err.Error()), nil
 	}
 	var status struct {
@@ -103,6 +111,9 @@ func (t Tsh) KubeLogin(ctx context.Context, installation, kubeContext, kubeconfi
 	cmd := exec.CommandContext(ctx, path, "kube", "login", installation, "--set-context-name="+kubeContext) // #nosec G204 -- tsh from exec.LookPath; the installation is checked by the caller and passed as its own argument element
 	cmd.Env = append(withoutEnv(os.Environ(), "KUBECONFIG"), "KUBECONFIG="+kubeconfig)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		if cause := ctx.Err(); cause != nil {
+			return fmt.Errorf("tsh kube login %s: %w", installation, cause)
+		}
 		return fmt.Errorf("tsh kube login %s: %s", installation, firstLine(string(out), err.Error()))
 	}
 	return nil
