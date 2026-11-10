@@ -325,8 +325,12 @@ func TestReservationToolsTakeNoUser(t *testing.T) {
 
 // Promotion without a pullRequest argument must report the link already stored.
 func TestReservationPromotionReportsEffectivePullRequest(t *testing.T) {
-	for _, pr := range []string{"", "giantswarm/hello-world#7"} {
-		t.Run(pr, func(t *testing.T) {
+	for _, tc := range []struct{ name, pr string }{
+		{"unlinked", ""},
+		{"linked", "giantswarm/hello-world#7"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pr := tc.pr
 			g := newGitOps(t)
 			c := g.connectPerson(t, alice)
 			args := reserveArgs()
