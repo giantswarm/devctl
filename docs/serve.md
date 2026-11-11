@@ -173,19 +173,25 @@ A promotion's document names the identity source `platform`. The private registr
 The server holds no CircleCI credential; the laptop keeps its own. `pr_wait`, `pr_merge` and `release_wait` read
 CircleCI only through the commit statuses it posts to GitHub (`ci/circleci: <job>`). A job behind `requires:` posts
 nothing until the jobs it requires have finished, so the waits read the jobs CircleCI runs from the revision's
-`.circleci/config.yml` through GitHub: devctl's generated setup workflow continues with `.circleci/workflows.yml`
+`.circleci/config.yml` through GitHub: devctl's static generated setup workflow continues with `.circleci/workflows.yml`
 deep-merged with `.circleci/custom.yml`, any other configuration is its own; a job runs when its `filters` take the
-pull request's branch (`pull/<n>` for a fork) or the tag and every job it requires runs, an approval posts nothing,
+pull request's branch (`pull/<n>` for a fork) or the tag and at least one job it requires runs (or it requires none), an approval posts nothing,
 and a workflow runs when its `when`/`unless` holds for a push (pipeline parameters at their defaults, `trigger_source`
 `webhook`), a scheduled one never. Every such job that has posted no status yet keeps a wait pending, named
 `ci/circleci: <job> (not posted yet)`. What the configuration cannot tell before the pipeline runs (a matrix job, a
-condition on another pipeline value, a setup workflow devctl does not generate) is a warning, and those jobs count once
+condition on another pipeline value, a runtime continuation such as multi-image setup, or another setup workflow) is a warning, and those jobs count once
 they post.
 
-`release_wait` judges the tag's CI by those statuses on the tag's commit: green once every tag job posted, no job is
-pending and the newest status of no context failed; the document's `pipeline` lists the jobs, with no CircleCI id,
+For images and charts, `release_wait` judges the tag's CI by those statuses on the tag's commit: green
+once every tag job posted, no job is pending and the newest status of no context failed; the document's
+`pipeline` lists the jobs, with no CircleCI id,
 number or url. A job the branch's pipeline runs too may have posted from that pipeline; the tag-only jobs require it,
 so they post only once it ran in the tag pipeline.
+
+For a CircleCI repository that ships release assets without images or charts, commit statuses cannot
+distinguish a stable tag's pipeline from its candidate's on the same commit. `release_wait` times
+out naming the missing tag-pipeline verification. Use `devctl release wait` with the laptop's
+CircleCI login to verify that pipeline and its release assets.
 
 There is no `pr_rerun`, `ci_jobs`, `ci_rerun` or `release_rerun`, and no failed-log tail: they read or write CircleCI.
 A coding agent that meets a flaky job reports it, or pushes a commit that rebuilds.
@@ -211,6 +217,14 @@ the memory of the replica that runs it.
 and the Dex (`https://dex.<baseDomain>`), and the exchange client is the hub muster's Secret
 `<name>-token-exchange-credentials` in the release namespace, mounted into the pod. With installations, the
 `MCPServer`'s `requiredAudiences` carry `dex-k8s-authenticator`, the audience the installations' Dex connectors accept.
+
+On Cilium clusters, `networkPolicy.enabled: true` renders the server's egress policy: DNS through Cilium's DNS
+proxy, HTTPS to GitHub, the public and private registries and the catalog host, and each installation's Dex token
+endpoint and management API. The installation endpoints come from the same helper as the installations file,
+including `apiServer` and `dex.tokenEndpoint` overrides and their ports; IP endpoints use CIDR rules. Adding an
+installation then updates both the server and its egress in one values change. The policy selects only this
+release's pods and controls egress; ingress remains the deployment's responsibility. It covers the server's default
+GitHub, registry and catalog endpoints; deployments overriding those with `extraEnv` need matching egress rules.
 
 An installation's muster configuration adds the toolset presets `devctl` (`server: devctl`, every tool, the write
 tools included) and `devctl-read-only` (`pr_wait`, `release_wait`, `rollout_wait`, `pr_merge_status` and

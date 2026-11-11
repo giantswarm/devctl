@@ -2,37 +2,32 @@ package followcircleci
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"time"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v93/github"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/repo/internal/client"
+	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/authstore"
+	"github.com/giantswarm/devctl/v8/pkg/circleciapp"
 	"github.com/giantswarm/devctl/v8/pkg/circleciclient"
-	"github.com/giantswarm/devctl/v8/pkg/reposetup/reconcile"
 )
 
-// hooks reads a repository's webhooks on GitHub.
-type hooks func(ctx context.Context, owner, repo string) ([]*github.Hook, error)
-
-// circleCI is what the command asks of CircleCI, as the person.
-type circleCI interface {
-	Me(ctx context.Context) (*circleciclient.User, error)
-	Following(ctx context.Context, org, repo string) (bool, error)
-	Unfollow(ctx context.Context, org, repo string) error
-	Follow(ctx context.Context, org, repo string) error
-}
-
 type runner struct {
+	flag   *flag
 	stdout io.Writer
+	stderr io.Writer
 	// The seams tests replace: the clients, the clock.
-	open     func(ctx context.Context, owner string) (hooks, circleCI, error)
-	sleep    func(ctx context.Context, d time.Duration) error
-	wait     time.Duration
-	interval time.Duration
+	open func(ctx context.Context, owner string, warn func(string)) (circleciapp.GitHub, circleciapp.CircleCI, error)
+	// openSession reaches giantswarm-repo-manager, for --pending.
+	openSession client.Opener
+	sleep       func(ctx context.Context, d time.Duration) error
+	interval    time.Duration
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
@@ -40,7 +35,38 @@ func (r *runner) Run(cmd *cobra.Command, args []string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	r.flag.WaitSet = cmd.Flags().Changed("wait") || cmd.Flags().Changed("timeout")
+	if err := r.validate(args); err != nil {
+		if r.flag.JSON() {
+			doc := newDocument()
+			return agentcli.Report(r.stdout, &doc, agentcli.VerdictGreen, agentcli.FlagError(command, err))
+		}
+		return microerror.Mask(err)
+	}
+	if r.flag.Pending {
+		return r.runPending(ctx)
+	}
 	return microerror.Mask(r.run(ctx, args[0]))
+}
+
+// validate checks the arguments: one repository, or --pending.
+func (r *runner) validate(args []string) error {
+	if err := r.flag.Validate(); err != nil {
+		return microerror.Mask(err)
+	}
+	switch {
+	case r.flag.Pending && len(args) > 0:
+		return microerror.Maskf(invalidArgError, "--pending takes no repository")
+	case r.flag.Pending && r.flag.Migrate:
+		return microerror.Maskf(invalidArgError, "--migrate is for one repository, not --pending")
+	case r.flag.Pending && r.flag.WaitSet:
+		return microerror.Maskf(invalidArgError, "--pending does not wait for the runs: --wait and --timeout are for one repository")
+	case !r.flag.Pending && len(args) != 1:
+		return microerror.Maskf(invalidArgError, "expected [OWNER/]REPOSITORY, or --pending")
+	case !r.flag.Pending && r.flag.JSON():
+		return microerror.Maskf(invalidArgError, "--output json is for --pending")
+	}
+	return nil
 }
 
 func (r *runner) run(ctx context.Context, arg string) error {
@@ -48,71 +74,47 @@ func (r *runner) run(ctx context.Context, arg string) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	slug := owner + "/" + repo
-	readHooks, ci, err := r.open(ctx, owner)
+	warn := func(w string) {
+		if w != "" {
+			fmt.Fprintln(r.stderr, w)
+		}
+	}
+	gh, ci, err := r.open(ctx, owner, warn)
 	if err != nil {
 		return microerror.Mask(err)
 	}
-
-	present, err := hasWebhook(ctx, readHooks, owner, repo)
-	if err != nil {
-		return microerror.Mask(err)
+	if r.flag.Wait {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, r.flag.Timeout)
+		defer cancel()
 	}
-	if present {
-		fmt.Fprintf(r.stdout, "%s: webhook present, nothing to do\n", slug)
-		return nil
-	}
-
-	me, err := ci.Me(ctx)
-	if err != nil {
-		return microerror.Mask(fmt.Errorf("the CircleCI login: %w", err))
-	}
-	following, err := ci.Following(ctx, owner, repo)
+	report, err := circleciapp.Setup(ctx, ci, gh, owner, repo, circleciapp.Options{
+		Migrate:  r.flag.Migrate,
+		Wait:     r.flag.Wait,
+		Waiter:   circleciapp.Waiter{CircleCI: ci, Sleep: r.sleep, Interval: r.interval},
+		Progress: func(format string, args ...any) { fmt.Fprintf(r.stdout, format+"\n", args...) },
+	})
 	switch {
-	case circleciclient.IsNotFound(err):
-		return microerror.Maskf(notFollowedError, "CircleCI knows no project %s: it is set up by the reconciler's circleci step first", slug)
+	case circleciclient.IsForbidden(err):
+		return microerror.Mask(authstore.CircleCIWriteRequired("CircleCI refused to create the pipeline"))
+	case errors.Is(err, context.DeadlineExceeded):
+		return microerror.Maskf(timeoutError, "%s/%s: the runs did not settle within %s", owner, repo, r.flag.Timeout)
 	case err != nil:
 		return microerror.Mask(err)
 	}
-	if following {
-		// A follow the login holds already installs nothing: CircleCI
-		// installs the hook on a new follow, so the login unfollows first.
-		if err := ci.Unfollow(ctx, owner, repo); err != nil {
-			return microerror.Mask(err)
-		}
-		fmt.Fprintf(r.stdout, "%s: unfollowed as %s\n", slug, me.Login)
+	if !report.Result.Changed() && len(report.Runs) == 0 {
+		fmt.Fprintf(r.stdout, "%s/%s: set up already, nothing to do\n", owner, repo)
 	}
-	if err := ci.Follow(ctx, owner, repo); err != nil {
-		return microerror.Mask(err)
+	if !report.Green() {
+		var red []string
+		for _, run := range report.Runs {
+			if run.Outcome != nil && !run.Outcome.Green {
+				red = append(red, fmt.Sprintf("pipeline %d (%s)", run.Pipeline.Number, run.Ref))
+			}
+		}
+		return microerror.Maskf(redError, "%s/%s is set up, and %s red: the pipeline is in place, the build failed", owner, repo, strings.Join(red, ", "))
 	}
-	fmt.Fprintf(r.stdout, "%s: followed as %s\n", slug, me.Login)
-
-	for waited := time.Duration(0); ; waited += r.interval {
-		present, err := hasWebhook(ctx, readHooks, owner, repo)
-		if err != nil {
-			return microerror.Mask(err)
-		}
-		if present {
-			fmt.Fprintf(r.stdout, "%s: webhook present\n", slug)
-			return nil
-		}
-		if waited >= r.wait {
-			return microerror.Maskf(webhookMissingError,
-				"%s: followed as %s, and CircleCI installed no webhook within %s: %s is no GitHub admin of the repository, or the CircleCI grant on GitHub lacks the hook scope (sign out of CircleCI and sign in again through GitHub)",
-				slug, me.Login, r.wait, me.Login)
-		}
-		if err := r.sleep(ctx, r.interval); err != nil {
-			return microerror.Mask(err)
-		}
-	}
-}
-
-func hasWebhook(ctx context.Context, read hooks, owner, repo string) (bool, error) {
-	hooks, err := read(ctx, owner, repo)
-	if err != nil {
-		return false, fmt.Errorf("read the webhooks of %s/%s: %w", owner, repo, err)
-	}
-	return reconcile.HasCircleCIWebhook(hooks), nil
+	return nil
 }
 
 // parse splits [OWNER/]REPOSITORY; the owner defaults to giantswarm.

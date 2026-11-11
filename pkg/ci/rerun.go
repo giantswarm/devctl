@@ -154,15 +154,16 @@ func runsOfName(runs []circleciclient.Workflow, name string) (newest *circlecicl
 }
 
 // AwaitCanceled reads the workflow until it no longer runs and returns its
-// status; exit 2 when it still runs after CancelTimeout.
+// status; exit 2 when it still runs after CancelTimeout. Caller cancellation
+// or an earlier caller deadline is returned unchanged, not as a settle timeout.
 func AwaitCanceled(ctx context.Context, client *circleciclient.Client, workflowID string, clock agentcli.Clock) (string, error) {
-	ctx, cancel := clock.Timeout(ctx, CancelTimeout)
+	waitCtx, cancel := clock.Timeout(ctx, CancelTimeout)
 	defer cancel()
 	status := ""
 	for {
-		w, err := client.GetWorkflow(ctx, workflowID)
+		w, err := client.GetWorkflow(waitCtx, workflowID)
 		if err != nil {
-			if ctx.Err() != nil {
+			if waitCtx.Err() != nil {
 				break
 			}
 			return "", err
@@ -171,9 +172,12 @@ func AwaitCanceled(ctx context.Context, client *circleciclient.Client, workflowI
 		if !circleciclient.WorkflowRunning(status) {
 			return status, nil
 		}
-		if err := clock.Sleep(ctx, cancelPoll); err != nil {
+		if err := clock.Sleep(waitCtx, cancelPoll); err != nil {
 			break
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
 	return "", agentcli.NewExitError(agentcli.ExitTimeout, agentcli.VerdictTimeout,
 		"workflow %s is canceled and still reads %s after %s: rerun it once it reads canceled", workflowID, status, CancelTimeout)

@@ -4,106 +4,6 @@ command: devctl gen workflows --flavour generic --language go --repo-name exampl
 command: devctl gen llm --flavour generic --language go
 command: devctl gen renovate --language go --repo-name example-service
 
---- .cursor/rules/zz_generated.base-llm-rules.mdc
----
-description: Instructions for AI/LLM assistants
-alwaysApply: true
----
-
-# Instructions for AI/LLM assistants
-
-You are an AI assistant acting as an expert software developer and platform engineer working on Giant Swarm platform components. Your task is to act as a pair programmer and help others working in this codebase to keep the code delightful to work with. This includes ensuring that the code adheres to Giant Swarm's quality standards, keeping the project well-architected and organized, and maintaining supporting documentation, diagrams, and rules for other AI assistants.
-
-# Persona: Senior Giant Swarm Platform Engineer
-
-- **Technical Depth**: You are a domain expert in Go (formerly, golang), Helm, Kubernetes APIs and development, software design patterns, software architecture, Go application security, software testing, and software performance optimization,
-- **Problem-Solver**: You approach issues methodically, prioritizing safety and stability. You first investigate deeply with the tools provided to you, before suggesting changes. You find and fix the root cause, not the symptoms.
-- **Clear Communicator**: You explain complex topics clearly and provide actionable steps.
-- **Collaborative**: You guide users, suggest diagnostic paths, and help them think through problems.
-- **Best Practices**: You adhere to Giant Swarm operational and technical standards.
-
-# Reviewer Guidelines
-
-## Core Behaviors
-
-- Unless directed by the user, never use or recommend external linters, code analysis, or other tooling which isn't already recommended in Giant Swarm agent rules or style guides.
-- Always adhere to the central coding guidelines and best practices maintained at: @https://github.com/giantswarm/fmt/
-- Prioritize readability, maintainability, and security.
-- Write comprehensive tests and documentation.
-- If documentation is available in the `docs` folder, keep this up-to-date when changing code.
-- Maintain the main README.md file for correctness.
-- If a changelog is available as CHANGELOG.md, add your changes to it.
-
-## Release Management
-
-- Follow the changelog and release guidelines from @https://github.com/giantswarm/fmt/tree/main/releases
-- Use semantic versioning and conventional commits
-
-
-## Language-Specific Guidelines
-
-Additional language-specific rules can be found in the general style guide and in the other rules files in this repository.
-
-
-### Go Development
-
-- Go code must always adhere to the Go language-specific development guidelines and patterns rules in this repository.
-
-### Go Application Security
-
-- Ensure all Go dependencies are up to date.
-- Follow best security practices for Go applications.
-
-
----
-
-For detailed guidelines and examples, always refer to: @https://github.com/giantswarm/fmt/
-
-
-<!--
-DO NOT EDIT. Generated with devctl.
-This file is maintained at:
-https://github.com/giantswarm/devctl/tree/main
-Manual changes will be overwritten.
--->
-
---- .cursor/rules/zz_generated.go-llm-rules.mdc
----
-description: Go language-specific development guidelines and patterns
-globs: **/*.go,go.mod,go.sum
----
-
-These guidelines apply to Go code and supplement any other general development instructions or workflows.
-
-# Go Code Guidelines
-
-- All Go code is expected to adhere to the rules outlined in the Giant Swarm style guide located at @https://github.com/giantswarm/fmt/tree/main/go .
-- Always fetch and fully understand the style guide before reviewing any code.
-- The Giant Swarm style guide linked above must always be considered definitive. ALL rules and provisions contained in the style guide MUST be met.
-- When applying the style guide, always list all instances of a particular issue, grouped by the finding type.
-
-## Formatting
-
-CI will perform the following check for proper code formatting and sorting/grouping of imports:
-
-```bash
-go install golang.org/x/tools/cmd/goimports@latest && \
-if [[ -n $(goimports -local github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME} -l .) ]];
-then
-  goimports -local github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME} -d . && exit 1;
-fi
-```
-
-When creating or modifying Go files, perform the according check and mitigate any issues before committing.
-
-
-<!--
-DO NOT EDIT. Generated with devctl.
-This file is maintained at:
-https://github.com/giantswarm/devctl/tree/main
-Manual changes will be overwritten.
--->
-
 --- .github/pull_request_template.md
 ### What does this PR do?
 
@@ -299,7 +199,7 @@ jobs:
         permission-organization-projects: write
     - name: Add issue to personal board
       if: ${{ env.BOARD != 'null' && env.BOARD != ''  && env.BOARD != null }}
-      uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0
+      uses: actions/add-to-project@f2c1f1fa649a891be84948ea89b5dfba1526ef05 # v2.0.1
       with:
         project-url: ${{ env.BOARD }}
         github-token: ${{ steps.app-token.outputs.token }}
@@ -334,7 +234,7 @@ jobs:
         permission-organization-projects: write
     - name: Add issue to team board
       if: ${{ env.BOARD != 'null' && env.BOARD != '' && env.BOARD != null }}
-      uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0
+      uses: actions/add-to-project@f2c1f1fa649a891be84948ea89b5dfba1526ef05 # v2.0.1
       with:
         project-url: ${{ env.BOARD }}
         github-token: ${{ steps.app-token.outputs.token }}
@@ -358,7 +258,7 @@ jobs:
         permission-issues: read
         permission-organization-projects: write
     - name: Add issue to roadmap board
-      uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0
+      uses: actions/add-to-project@f2c1f1fa649a891be84948ea89b5dfba1526ef05 # v2.0.1
       with:
         project-url: https://github.com/orgs/giantswarm/projects/273
         github-token: ${{ steps.app-token.outputs.token }}
@@ -368,7 +268,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/tree/main
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/create_release.yaml.template
 #
 name: Create Release
 
@@ -400,7 +300,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/tree/main
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/create_release_pr.yaml.template
 #
 name: Create Release PR
 on:
@@ -461,7 +361,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/tree/main
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/fix_vulnerabilities.yaml.template
 #
 
 name: Fix Go vulnerabilities
@@ -502,7 +402,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/tree/main
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/gitleaks.yaml.template
 #
 name: gitleaks
 
@@ -527,7 +427,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/tree/main
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/run_ossf_scorecard.yaml.template
 #
 
 # This workflow uses actions that are not certified by GitHub. They are provided
@@ -570,7 +470,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/tree/main
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/semantic_pull_request.yaml.template
 #
 name: semantic-pull-request
 
@@ -621,7 +521,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/tree/main
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/validate_changelog.yaml.template
 #
 name: Validate changelog
 
@@ -678,6 +578,10 @@ linters:
   enable:
     - gosec
     - goconst
+  settings:
+    goconst:
+      # Test fixtures repeat literals intentionally; keep production checks.
+      ignore-tests: true
 
 issues:
   max-issues-per-linter: 0
@@ -701,6 +605,49 @@ rules:
   document-start: disable
   line-length:
     max: 200
+
+--- AGENTS.md
+<!-- BEGIN devctl-managed: edits in this block are overwritten -->
+<!-- markdownlint-disable-file MD041 -->
+
+## Giant Swarm conventions
+
+devctl maintains this block from [its template][devctl-agents-block] and
+overwrites changes to it. Instructions for this repository go in the section
+below. Where they differ from this block, they take precedence.
+
+[devctl-agents-block]: https://github.com/giantswarm/devctl/blob/main/pkg/gen/input/llm/internal/file/agents_block.md.template
+
+- Never put customer names or other customer information in code, commit
+  messages, issues or pull requests. Most Giant Swarm repositories are public,
+  and private ones are kept ready to become public.
+- Giant Swarm's style guides are in <https://github.com/giantswarm/fmt>, one
+  directory per topic (go, helm, kubernetes, prometheus, …). Read the relevant
+  guide before you write or review that kind of code.
+- Use conventional commits for commit messages and pull request titles.
+- If `.github/workflows/zz_generated.auto_release.yaml` exists, GitHub Releases
+  are written from pull request titles: do not edit CHANGELOG.md. Otherwise,
+  add your change to CHANGELOG.md as described in
+  <https://github.com/giantswarm/fmt/blob/main/releases/changelog.md>.
+- If `.pre-commit-config.yaml` exists, run
+  `pre-commit run --files <changed files>` before committing; not every clone
+  has the hooks installed.
+- Do not add linters, formatters or other tooling unless asked; use what the
+  repository already has.
+- Put documentation in `docs/` rather than growing README.md, which gives an
+  overview and links into `docs/`. When a change affects documented behaviour,
+  update the documentation in the same pull request.
+- If the skills of the `giantswarm/claude-code` plugin marketplace are not
+  available to you and the user works at Giant Swarm, tell them once that
+  they can install the `gs-base`, `gs-dev` and `gs-godev`
+  plugins from it.
+- Go: run `goimports -local github.com/giantswarm/<repository>` on the files
+  you change. CI with architect-orb fails when imports are grouped
+  differently.
+
+<!-- END devctl-managed -->
+
+## This repository
 
 --- CHANGELOG.md
 # Changelog
@@ -968,10 +915,10 @@ By making a contribution to this project, I certify that:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/tree/main
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.template
 #
 
-include Makefile.*.mk
+-include Makefile.*.mk
 
 ##@ General
 
@@ -995,22 +942,27 @@ help: ## Display this help.
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/tree/main
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.gen.go.mk.template
 #
 
 APPLICATION    := $(shell go list -m | cut -d '/' -f 3)
 BUILDTIMESTAMP := $(shell date -u '+%FT%TZ')
 GITSHA1        := $(shell git rev-parse --verify HEAD)
 MODULE         := $(shell go list -m)
-# main() is usually in `main.go`, but sometimes in `cmd/main.go` (for example in newer kubebuilder projects)
-MAIN_SOURCE    := $(shell if test -e cmd/main.go; then echo cmd/main.go; else echo main.go; fi)
+# Build the whole main package, including sibling files, at the root or in cmd/.
+MAIN_SOURCE    := $(shell if test -e cmd/main.go; then echo ./cmd; else echo .; fi)
 OS             := $(shell go env GOOS)
+ARCH           := $(shell go env GOARCH)
 SOURCES        := $(shell find . -name '*.go')
-VERSION        := $(shell gitsemver get)
-# Expanded first in every recipe that stamps VERSION into its output, so a failed
-# `gitsemver get` fails the build instead of producing an unversioned binary.
+# Older gitsemver releases cannot open a worktree's .git file. Fall back to
+# local version tags; without one, leave VERSION empty so shipping targets fail.
+VERSION        := $(shell if version=$$(gitsemver get 2>/dev/null) && [ -n "$$version" ]; then \
+  printf '%s\n' "$$version"; \
+  else git describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' 2>/dev/null | sed 's/^v//'; fi)
+# Expanded first in every recipe that stamps VERSION into its output, so failed
+# lookups fail the build instead of producing an unversioned binary.
 # Targets that do not ship a version (test, lint, ...) never expand it.
-REQUIRE_VERSION = $(if $(VERSION),,$(error VERSION is empty: `gitsemver get` failed in $(CURDIR); pass VERSION=<version> to override))
+REQUIRE_VERSION = $(if $(VERSION),,$(error VERSION is empty: `gitsemver get` and `git describe` found no version in $(CURDIR); pass VERSION=<version> to override))
 ifeq ($(OS), linux)
 EXTLDFLAGS := -static
 endif
@@ -1018,6 +970,13 @@ LDFLAGS        ?= -w -linkmode 'auto' -extldflags '$(EXTLDFLAGS)' \
   -X '$(MODULE)/pkg/project.version=$(VERSION)' \
   -X '$(MODULE)/pkg/project.buildTimestamp=$(BUILDTIMESTAMP)' \
   -X '$(MODULE)/pkg/project.gitSHA=$(GITSHA1)'
+
+# Copy to a unique sibling before renaming so a running binary keeps its inode
+# and readers only see complete files. Keep the versioned artifact for packaging.
+INSTALL_BINARY = tmp=$$(mktemp "$(2).tmp.XXXXXX") || exit $$?; \
+	trap 'rm -f "$$tmp"' EXIT; \
+	trap 'exit 1' HUP INT TERM; \
+	cp -a "$(1)" "$$tmp" && mv -f "$$tmp" "$(2)"
 
 .DEFAULT_GOAL := build
 
@@ -1039,27 +998,31 @@ build-windows-amd64: $(APPLICATION)-windows-amd64.exe ## Builds a local binary f
 
 $(APPLICATION): $(APPLICATION)-v$(VERSION)-$(OS)-amd64
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-darwin: $(APPLICATION)-v$(VERSION)-darwin-amd64
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-darwin-arm64: $(APPLICATION)-v$(VERSION)-darwin-arm64
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-linux: $(APPLICATION)-v$(VERSION)-linux-amd64
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
+
+$(APPLICATION)-linux-amd64: $(APPLICATION)-v$(VERSION)-linux-amd64
+	@echo "====> $@"
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-linux-arm64: $(APPLICATION)-v$(VERSION)-linux-arm64
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-windows-amd64.exe: $(APPLICATION)-v$(VERSION)-windows-amd64.exe
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-v$(VERSION)-%-amd64: $(SOURCES)
 	$(REQUIRE_VERSION)
@@ -1080,10 +1043,10 @@ $(APPLICATION)-v$(VERSION)-windows-amd64.exe: $(SOURCES)
 install: ## Install the application.
 	$(REQUIRE_VERSION)
 	@echo "====> $@"
-	go build -ldflags "$(LDFLAGS)" -o "$(shell go env GOPATH)/bin/$(APPLICATION)" "$(MAIN_SOURCE)"
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o "$(shell go env GOPATH)/bin/$(APPLICATION)" "$(MAIN_SOURCE)"
 
 .PHONY: run
-run: ## Runs go run main.go.
+run: ## Runs the main package with go run.
 	@echo "====> $@"
 	go run -ldflags "$(LDFLAGS)" -race "$(MAIN_SOURCE)"
 
@@ -1099,9 +1062,28 @@ imports: ## Runs goimports.
 	goimports -local $(MODULE) -w .
 
 .PHONY: lint
-lint: ## Runs golangci-lint.
+lint: ## Checks import formatting and runs golangci-lint (installs goimports if missing).
 	@echo "====> $@"
+	@tool=$$(command -v goimports) || { \
+		bindir=$$(go env GOBIN) || exit $$?; \
+		if [ -z "$$bindir" ]; then \
+			gopath=$$(go env GOPATH) || exit $$?; \
+			bindir="$$gopath/bin"; \
+		fi; \
+		GOBIN="$$bindir" go install golang.org/x/tools/cmd/goimports@v0.50.0 || exit $$?; \
+		tool="$$bindir/goimports"; \
+	}; \
+	files=$$("$$tool" -local "$(MODULE)" -l .) || exit $$?; \
+	if [ -n "$$files" ]; then \
+		printf '%s\n' "$$files"; \
+		echo "Run 'make imports' to fix import formatting."; \
+		exit 1; \
+	fi
 	golangci-lint run --timeout=15m ./...
+
+# Extend lint from Makefile.custom.mk without replacing its generated recipe.
+.PHONY: lint-custom
+lint: lint-custom
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -1134,10 +1116,10 @@ test: ## Runs go test with default values (race detector when a C toolchain is a
 	go test -ldflags "$(LDFLAGS)" $(RACE) ./...
 
 .PHONY: build-docker
-build-docker: build-linux ## Builds docker image to registry.
+build-docker: $(APPLICATION)-linux-$(ARCH) ## Builds docker image to registry for the host architecture.
 	$(REQUIRE_VERSION)
 	@echo "====> $@"
-	cp -a $(APPLICATION)-linux $(APPLICATION)
+	@$(call INSTALL_BINARY,$<,$(APPLICATION))
 	docker build -t ${APPLICATION}:${VERSION} .
 
 --- README.md
@@ -1169,20 +1151,28 @@ package main
 
 func main() {}
 
+--- renovate-custom.json5
+// Repo-owned Renovate overrides. Edit this file; devctl preserves it.
+{}
+
 --- renovate.json5
 // DO NOT EDIT. This file is generated by `devctl gen renovate` and kept in sync
 // by the giantswarm/github align-files workflow. Repo-specific Renovate rules
-// belong in renovate-custom.json5 (repo root) -- it is added as the last
-// `extends` entry when present and never touched by devctl. Rules for a whole
-// class of repos belong in giantswarm/renovate-presets instead.
+// belong in renovate-custom.json5 (repo root) -- devctl initializes it once
+// and extends it last, preserving existing rules. Commit both files together.
+// Rules for a whole class of repos belong in giantswarm/renovate-presets instead.
 {
   extends: [
     // Base config - https://github.com/giantswarm/renovate-presets/blob/main/default.json5
     'github>giantswarm/renovate-presets:default.json5',
     // Go specific config - https://github.com/giantswarm/renovate-presets/blob/main/lang-go.json5
     'github>giantswarm/renovate-presets:lang-go.json5',
+    // Repo-owned overrides -- last entry, so its rules win over the presets.
+    // Renovate resolves this from the default branch on every run: edits are
+    // live on merge, no regeneration needed.
+    'github>giantswarm/example-service:renovate-custom.json5',
   ],
-  // Our own bots commit onto Renovate branches. The giantswarm-release
+  // Our automation commits onto Renovate branches. The giantswarm-release
   // GitHub App pushes what the generated workflows produce
   // (zz_generated.helm-docs-regen.yaml, the update-chart and
   // sync-from-upstream flows); taylorbot <dev@giantswarm.io> did so before

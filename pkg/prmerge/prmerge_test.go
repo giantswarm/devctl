@@ -35,7 +35,7 @@ func pull(over map[string]any) map[string]any {
 		"title": "feat: thing", "node_id": "PR_1",
 		"user": map[string]any{"login": "someone", "type": "User"},
 		"head": map[string]any{"sha": "abc123", "ref": "feature", "repo": map[string]any{"full_name": "o/r"}},
-		"base": map[string]any{"ref": "main", "repo": map[string]any{"full_name": "o/r"}},
+		"base": map[string]any{"ref": "main", "sha": "base123", "repo": map[string]any{"full_name": "o/r"}},
 	}
 	maps.Copy(pr, over)
 	return pr
@@ -100,6 +100,9 @@ func routes(pr map[string]any, more ...sequence.Routes) sequence.Routes {
 	maps.Copy(r, greenHead("abc123"))
 	maps.Copy(r, noFeedback("abc123", "def456"))
 	maps.Copy(r, upToDate("abc123", "def456"))
+	for _, sha := range []string{"abc123", "def456"} {
+		r["GET /repos/o/r/compare/base123..."+sha] = []sequence.Response{{Body: comparison(commit(sha, "feat: thing"))}}
+	}
 	for _, m := range more {
 		maps.Copy(r, m)
 	}
@@ -202,7 +205,6 @@ func Test_Merge_refusalsBeforeTheWait(t *testing.T) {
 		{name: "draft", pr: pull(map[string]any{"draft": true}), wantCode: 3, wantReason: "draft", wantVerdict: agentcli.VerdictNotApplicable},
 		{name: "conflicting", pr: pull(map[string]any{"mergeable_state": "dirty"}), wantCode: 3, wantReason: "conflicts with main", wantVerdict: agentcli.VerdictNotApplicable},
 		{name: "behind without --update-branch", pr: pull(map[string]any{"mergeable_state": "behind"}), wantCode: 3, wantReason: "behind main, which requires branches to be up to date; --update-branch updates it from main", wantVerdict: agentcli.VerdictNotApplicable},
-		{name: "behind a base that is not strict, without --update-branch", pr: pull(map[string]any{"mergeable_state": "blocked"}), wantCode: 3, wantReason: "the pull request is 2 commit(s) behind main: its checks ran against an older main than the one the merge lands it on; --update-branch updates it from main and waits for its checks again", wantVerdict: agentcli.VerdictNotApplicable},
 		{name: "another human", pr: pull(map[string]any{"user": map[string]any{"login": "alice", "type": "User"}}), wantCode: 5, wantReason: "the pull request was opened by alice, not by someone: devctl pr merge merges the caller's own pull requests and those of bots and GitHub Apps (the Bot user type or a [bot] login) and of the automation accounts architectbot, taylorbot", wantVerdict: agentcli.VerdictRefused},
 		{name: "opted out", pr: pull(nil), configure: func(c *Config) {
 			c.Policy = func(context.Context, string, string) (Verdict, error) {
@@ -234,6 +236,9 @@ func Test_Merge_refusalsBeforeTheWait(t *testing.T) {
 			}
 			if result.Repository != "o/r" || result.Number != 42 || result.HeadSHA != "abc123" || result.BaseRef != "main" {
 				t.Errorf("the result names the pull request as read: %+v", result)
+			}
+			if result.Draft != tc.pr["draft"].(bool) {
+				t.Errorf("the result must report the draft state, got %+v", result)
 			}
 			if tc.wantCode == 0 {
 				if result.MergeCommitSHA != "m1" || !result.BranchDeleted {
@@ -358,11 +363,11 @@ func Test_Merge_paths(t *testing.T) {
 				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 0}},
 		},
 		{
-			name:      "an entry whose flavours cannot be read keeps the default squash, with a warning",
+			name:      "an entry whose flavours cannot be read refuses the default method",
 			routes:    routes(pull(nil)),
 			configure: func(c *Config) { c.Policy = verdict(Verdict{Team: "team-a", Warning: "gen.flavours unreadable"}) },
-			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123", warning: "gen.flavours unreadable",
-				requested: map[string]int{"PUT /repos/o/r/pulls/42/merge": 1}},
+			want: want{code: 3, reason: "gen.flavours unreadable", method: "squash", headSHA: "abc123",
+				requested: map[string]int{"GET /repos/o/r/commits/abc123/check-runs": 0, "PUT /repos/o/r/pulls/42/merge": 0}},
 		},
 		{
 			name:   "settings the token cannot read leave the asked method to GitHub",
@@ -392,7 +397,7 @@ func Test_Merge_paths(t *testing.T) {
 			name: "a merge-queue base is enqueued, waited for, then the branch deleted",
 			routes: routes(pull(nil), sequence.Routes{
 				"GET /repos/o/r/pulls/42": {
-					{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(map[string]any{"mergeable_state": "blocked"})},
+					{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(map[string]any{"mergeable_state": "blocked"})},
 					{Body: pull(map[string]any{"state": "closed", "merged": true, "merge_commit_sha": "q1", "merged_by": map[string]any{"login": "queue-enqueuer"}})},
 				},
 				"GET /repos/o/r/rules/branches/main": {{Body: []any{
@@ -406,7 +411,7 @@ func Test_Merge_paths(t *testing.T) {
 		{
 			name: "the merge queue drops the pull request: red",
 			routes: routes(pull(nil), sequence.Routes{
-				"GET /repos/o/r/pulls/42":            {{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(map[string]any{"state": "closed"})}},
+				"GET /repos/o/r/pulls/42":            {{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(map[string]any{"state": "closed"})}},
 				"GET /repos/o/r/rules/branches/main": {{Body: []any{map[string]any{"type": "merge_queue", "ruleset_id": 1}}}},
 				"POST /graphql":                      {{Body: map[string]any{"data": map[string]any{}}}},
 			}),
@@ -499,27 +504,26 @@ func Test_Merge_paths(t *testing.T) {
 				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 2, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
 		},
 		{
-			name:   "up to date without --update-branch: the base is compared before and after the wait, the head merged",
+			name:   "non-strict base without --update-branch: merge the unchanged green head without comparing",
 			routes: routes(pull(map[string]any{"mergeable_state": "blocked"})),
 			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
-				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 2, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 0, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
 		},
 		{
-			name: "the base moves during the wait, without --update-branch: exit 3, nothing merged",
+			name: "behind a non-strict base without --update-branch: merge the unchanged head",
 			routes: routes(pull(nil), sequence.Routes{
 				"GET /repos/o/r/compare/main...abc123": {
-					{Body: map[string]any{"status": "ahead", "ahead_by": 1, "behind_by": 0}},
 					{Body: map[string]any{"status": "diverged", "ahead_by": 1, "behind_by": 3}},
 				},
 			}),
-			want: want{code: 3, reason: "3 commit(s) behind main: its checks ran against an older main than the one the merge lands it on (main moved during the wait); --update-branch", method: "squash", headSHA: "abc123",
-				requested: map[string]int{"GET /repos/o/r/commits/abc123/check-runs": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 0}},
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
+				requested: map[string]int{"GET /repos/o/r/commits/abc123/check-runs": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "GET /repos/o/r/compare/main...abc123": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
 		},
 		{
 			name: "the base moves during the wait, with --update-branch: update, wait for the new head, merge it",
 			routes: routes(pull(nil), greenHead("def456"), sequence.Routes{
 				"GET /repos/o/r/pulls/42": {
-					{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)},
+					{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)},
 					{Body: pull(map[string]any{"head": map[string]any{"sha": "def456", "ref": "feature", "repo": map[string]any{"full_name": "o/r"}}})},
 				},
 				"GET /repos/o/r/compare/main...abc123": {
@@ -536,7 +540,7 @@ func Test_Merge_paths(t *testing.T) {
 			name: "behind a merge-queue base without --update-branch: the queue tests it against the base, no comparison",
 			routes: routes(pull(nil), sequence.Routes{
 				"GET /repos/o/r/pulls/42": {
-					{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)},
+					{Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)}, {Body: pull(nil)},
 					{Body: pull(map[string]any{"state": "closed", "merged": true, "merge_commit_sha": "q1", "merged_by": map[string]any{"login": "queue-enqueuer"}})},
 				},
 				"GET /repos/o/r/rules/branches/main":   {{Body: []any{map[string]any{"type": "merge_queue", "ruleset_id": 1}}}},
@@ -875,10 +879,10 @@ func Test_TeamFilePolicy(t *testing.T) {
 			"GET /repos/giantswarm/github/contents/repositories":             {dir},
 			"GET /repos/giantswarm/github/contents/repositories/team-a.yaml": {teamFile("- name: svc\n  gen:\n    flavours:\n      - app\n    language: go\n")},
 		}, wantTeam: "team-a", wantRequests: 2},
-		{name: "flavours that do not decode are no fork line, with a warning", owner: "giantswarm", repo: "odd", routes: sequence.Routes{
+		{name: "flavours that do not decode leave fork-line status unknown", owner: "giantswarm", repo: "odd", routes: sequence.Routes{
 			"GET /repos/giantswarm/github/contents/repositories":             {dir},
 			"GET /repos/giantswarm/github/contents/repositories/team-a.yaml": {teamFile("- name: odd\n  gen:\n    flavours: fork\n")},
-		}, wantTeam: "team-a", wantWarning: "is not taken for a fork line", wantRequests: 2},
+		}, wantTeam: "team-a", wantWarning: "fork-line status is unknown", wantRequests: 2},
 		{name: "a repository outside the organisation is not looked up", owner: "o", repo: "r", routes: sequence.Routes{}, wantRequests: 0},
 		{name: "team files the token cannot read are an error, not a guess", owner: "giantswarm", repo: "svc", routes: sequence.Routes{}, wantErr: true, wantRequests: 1},
 	}
@@ -1160,7 +1164,7 @@ func Test_refuseBehind(t *testing.T) {
 		round        int
 		wantReason   string // empty: update it
 	}{
-		{name: "strict, no flag", behind: behindStrict, round: 1, wantReason: "the pull request is behind main, which requires branches to be up to date; --update-branch updates it from main and waits for its checks again"},
+		{name: "strict, no flag", behind: behindStrict, round: 1, wantReason: "requiring up-to-date branches is a repository owner branch-protection setting"},
 		{name: "not strict, no flag", behind: 4, round: 1, wantReason: "the pull request is 4 commit(s) behind main: its checks ran against an older main than the one the merge lands it on; --update-branch"},
 		{name: "moved during the wait, no flag", behind: 1, round: 2, wantReason: "(main moved during the wait); --update-branch"},
 		{name: "flag, first round", updateBranch: true, behind: 4, round: 1},

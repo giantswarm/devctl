@@ -12,12 +12,30 @@ import (
 )
 
 const (
-	name        = "wait <installation> <owner/repo> [<vX.Y.Z|X.Y.Z>]"
-	description = "Block until a release's charts run on an installation; one JSON document, exit codes for the outcome."
-	long        = `Wait until a release runs on an installation.
+	name        = "wait <installation> [<owner/repo> [<vX.Y.Z|X.Y.Z>]]"
+	description = "Block until a release's charts or a component chart version run on an installation; one JSON document, exit codes for the outcome."
+	long        = `Wait until a release or component runs on an installation.
 
-The wait has two parts. The release first, exactly as devctl release wait
-does it (a version, as the argument or --version, or --pr for the release
+The wait ignores SIGHUP and reads no stdin, so it outlives its terminal.
+
+For a component rolled by a chart version range under an unchanged meta
+chart, omit the repository and pass --chart <name> --version <vX.Y.Z>.
+This waits directly on the installation for that chart version or a newer
+one, Ready at its current generation and with its workloads rolled out.
+--chart is the chart name here, without a registry, path or tag; repeat it
+to wait for several charts at that version. The document names the target
+in charts and version, and the deployed version in deployments[].runningVersion.
+Repository release checks are skipped (release.verdict is not_applicable),
+so no GitHub login or tag pipeline is needed. --pr, --image and --failed-log
+require a repository; --release-timeout has no effect without one.
+
+With a repository and one bare --chart <chart-name>, the version argument
+or --version names the component version. The repository is carried in the
+document but is not queried. This form takes one chart and no --pr, --image
+or --failed-log. OCI chart paths keep the repository release wait.
+
+With a repository and release artifacts, the wait has two parts. The release first, exactly as
+devctl release wait does it (a version, as the argument or --version, or --pr for the release
 that carries the merge commit on the pull request's base branch, a release
 branch's included): its images
 and charts pullable, its tag pipeline green. The
@@ -61,7 +79,10 @@ A deployment that will not get there is reported in the document and a
 warning, and the wait goes on for the others: its source pins another tag
 or a digest, its semver range or the App's spec.version excludes the
 version (a workload cluster's App pinned to an older release), or the
-HelmRelease is suspended; when no deployment follows the version, exit 3.
+HelmRelease is suspended. When no deployment follows the version yet, the
+wait polls until --timeout so GitOps can apply a new selector, then waits
+for the rollout within that same timeout. Still no follower at the deadline
+is exit 3; all HelmReleases suspended is exit 3 at once.
 The wait ends when the version was attempted and failed: the HelmRelease
 Stalled, or not Ready after a failed install, upgrade or test of the
 version once helm-controller settled it (its current generation observed,
@@ -90,7 +111,8 @@ Exit codes:
   1  the release's CI failed, or the rollout failed; the reason names the
      deployment and its condition
   2  timeout, of the release (--release-timeout) or of the rollout
-     (--timeout); the document shows what is still missing
+     (--timeout), or SIGINT/SIGTERM; reason identifies an interrupted
+     wait, the document shows what is still missing
   3  not applicable: no release follows the pull request, the release
      ships no chart, nothing on the installation deploys its charts, or
      no deployment follows the version; rollout_unknown: a configuration
@@ -100,8 +122,10 @@ Exit codes:
      a request the cluster refused
   8  authentication required: devctl auth login for GitHub, tsh kube login
      <installation> for the cluster, tsh login for a missing context
+ 13  remote_error: a CircleCI request failed; the command line was valid
 
 Examples:
+  devctl rollout wait myinstallation --chart kagent --version v1.2.4
   devctl rollout wait myinstallation giantswarm/app-operator v7.5.4
   devctl rollout wait myinstallation giantswarm/app-operator --pr 1234 --reconcile --progress`
 )

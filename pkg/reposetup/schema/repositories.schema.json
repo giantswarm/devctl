@@ -4,7 +4,7 @@
   "type": "array",
   "items": {
     "type": "object",
-    "description": "One repository of the team whose file the entry lives in. The entry is the request for the repository and its desired state: what it declares (settings, branch protection, CircleCI, description, visibility, lifecycle, generated files) is what the automation keeps true. There is no template field; the template a repository is created from is derived from componentType, gen.flavours and gen.language.",
+    "description": "One repository of the team whose file the entry lives in. The entry is the request for the repository and its desired state: what it declares (settings, branch protection, description, visibility, lifecycle, generated files) is what the automation keeps true; that a CircleCI GitHub App pipeline builds it is checked, and a person sets the pipeline up. There is no template field; the template a repository is created from is derived from componentType, gen.flavours and gen.language.",
     "required": [
       "name",
       "componentType"
@@ -19,6 +19,13 @@
         "type": "boolean",
         "default": false,
         "description": "The repository's opt-in to alignment. With true the reconciler changes the repository to its declared set-up and the company baseline on every trigger: a merged change of this entry, Align now, the nightly. Without it every run is a check -- the drift in the run's summary, the artifact and the inventory, nothing changed on GitHub or CircleCI. A repository created by the automation (devctl repo create, the Repositories page, the Repo Manager) is declared with align: true: its creation is the opt-in. An existing repository opts in when its team adds the field to its entry in a pull request the team reviews; a lifecycle change carries it. The team's channel file teams/team-<name>.yaml names the team's channels and holds no opt-in."
+      },
+      "protection": {
+        "type": "string",
+        "enum": [
+          "baseline"
+        ],
+        "description": "With baseline a customer-flavour repository opts into the protection step: the company baseline and the devctl ruleset with its bypass actors (unless agentMerge: false), on the customer's own default branch. Without this field customer repositories keep their own protection. Other flavours always get the baseline. align: true is still needed for the reconciler to repair instead of only checking."
       },
       "agentMerge": {
         "type": "boolean",
@@ -141,6 +148,10 @@
           },
           "installUpdateChart": {
             "type": "boolean"
+          },
+          "chartTests": {
+            "type": "boolean",
+            "description": "Whether to generate the chart_tests workflow for an app repository; on by default."
           },
           "checkReadmeLinks": {
             "type": "boolean",
@@ -391,7 +402,7 @@
           "production"
         ],
         "default": "production",
-        "description": "Lifecycle stage of the repository; surfaces in the developer portal catalog. 'production' (the default) is a repository in active use. 'deprecated' is a component we decided to phase out: align-files extends the renovate-presets deprecated.json5 preset (disable routine updates, keep only security/vulnerability remediation) for repos whose Renovate config is generated (gen.ci.generate or the customer flavour), every other repo keeps its hand-maintained renovate.json5 (requires devctl v8.26.0+). 'archived' is a repository whose work is over: it is archived on GitHub and its CircleCI project is unfollowed, and the entry stays in the team file as the record (the automation never recreates it and never removes the entry). 'deleted' is a repository that is to be gone: the reconciler unfollows its CircleCI project and deletes it on GitHub -- code, issues, pull requests, releases and packages with it; an organization owner can restore it on GitHub for 90 days -- and the entry stays in the team file as the record of the deletion (never recreated, never removed by the automation). Like an archive it is set in a team-file pull request the owning team reviews."
+        "description": "Lifecycle stage of the repository; surfaces in the developer portal catalog. 'production' (the default) is a repository in active use. 'deprecated' is a component we decided to phase out: align-files extends the renovate-presets deprecated.json5 preset (disable routine updates, keep only security/vulnerability remediation) for repos whose Renovate config is generated (gen.ci.generate or the customer flavour), every other repo keeps its hand-maintained renovate.json5 (requires devctl v8.26.0+). 'archived' is a repository whose work is over: it is archived on GitHub and CircleCI's deploy key is removed from it, and the entry stays in the team file as the record (the automation never recreates it and never removes the entry). 'deleted' is a repository that is to be gone: the reconciler deletes it on GitHub -- code, issues, pull requests, releases and packages with it; an organization owner can restore it on GitHub for 90 days -- and the entry stays in the team file as the record of the deletion (never recreated, never removed by the automation). Like an archive it is set in a team-file pull request the owning team reviews."
       },
       "name": {
         "type": "string",

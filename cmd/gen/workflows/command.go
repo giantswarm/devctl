@@ -7,23 +7,20 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
+
+	"github.com/giantswarm/devctl/v8/pkg/gen"
 )
 
 const (
 	name             = "workflows"
 	shortDescription = `Generates GitHub workflows.`
-	longDescription  = `Generates GitHub workflows.
+)
+
+var longDescription = `Generates GitHub workflows.
 
 There are different generation flavours:
 
-  - app - project containing a helm chart
-  - cli - project released with a downloadable binary
-  - generic - everything else, i.e a project which simply needs to be released
-  - k8sapi - project containing a Kubernetes API
-  - fleet - project containing clusters using GitOps
-  - cluster-app - project containing helm chart, that is a cluster app (e.g. cluster-aws, cluster-azure, ...)
-`
-)
+` + gen.FlavourDescriptionList()
 
 type Config struct {
 	Logger micrologger.Logger

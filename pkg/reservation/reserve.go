@@ -83,6 +83,9 @@ type Result struct {
 	// App is the chart Reserve resolved the request to. It is the reservation's
 	// key on the cluster.
 	App string `json:"app"`
+	// PullRequest is the effective link, retained from an existing reservation
+	// when an exclusive promotion omits the requested pull request.
+	PullRequest string `json:"pullRequest,omitempty"`
 	// Commit is the hash of the commit Reserve made.
 	Commit string `json:"commit"`
 	// SourceName is the name of the new OCIRepository.
@@ -247,12 +250,17 @@ func Reserve(req Request) (res Result, err error) {
 	sourceName := chart + SourceNameSuffix
 	component := path.Join(reservationsDir, chart)
 
+	created, err := newComponentFiles(req.RepoDir, req.Cluster, chart)
+	if err != nil {
+		return Result{}, microerror.Mask(err)
+	}
+
 	// The entry and the component are one change. Everything below is staged in
 	// the working tree and lands in a single commit, or the run fails and the
 	// writes are discarded, so the user's checkout stays clean for the next run.
 	defer func() {
 		if err != nil {
-			discardWrites(req.RepoDir, req.Cluster, chart)
+			discardWrites(req.RepoDir, req.Cluster, chart, created...)
 		}
 	}()
 	err = writeComponent(filepath.Join(collectionsPath, reservationsDir, chart),
@@ -296,6 +304,7 @@ func Reserve(req Request) (res Result, err error) {
 
 	return Result{
 		App:          chart,
+		PullRequest:  req.PullRequest,
 		Commit:       commit,
 		SourceName:   sourceName,
 		SemverFilter: semverFilter,

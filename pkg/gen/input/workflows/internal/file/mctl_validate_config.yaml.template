@@ -83,7 +83,7 @@ jobs:
       - name: Post failure comment
         # Skips (config not run yet) stay silent.
         if: steps.mctl.outputs.exit_code != '0'
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           MCTL_OUTPUT:    ${{ steps.mctl.outputs.output }}
           MCTL_EXIT_CODE: ${{ steps.mctl.outputs.exit_code }}
@@ -110,20 +110,31 @@ jobs:
       - name: Post create-mc prompt
         # Only once config has run ("skipped" means it has not).
         if: steps.mctl.outputs.exit_code == '0' && !contains(steps.mctl.outputs.output, 'validate-config skipped')
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           INSTALLATION: ${{ steps.install.outputs.name }}
+          MCTL_OUTPUT:  ${{ steps.mctl.outputs.output }}
         with:
           script: |
             const installation = process.env.INSTALLATION;
+            // mctl's "  ⚠ <file>: <reason>" lines.
+            const warnings = (process.env.MCTL_OUTPUT || '').split('\n').map(l => l.trim()).filter(l => l.startsWith('⚠'));
             // Token lets reruns update the comment in place.
             const token = `<!-- mctl-validate-config-ready-${installation} -->`;
             const body = [
               token,
               '### ✅ Config validated — ready to bootstrap',
               '',
-              `All checks passed for **${installation}**.`,
+              `${warnings.length ? 'Checks passed with warnings' : 'All checks passed'} for **${installation}**.`,
               '',
+              ...(warnings.length ? [
+                '⚠️ **Warnings** — the merge gate blocks until these are fixed:',
+                '',
+                '```',
+                ...warnings,
+                '```',
+                '',
+              ] : []),
               'Comment `/create-mc` on this PR when you are ready to start the bootstrap pipeline.',
             ].join('\n');
 

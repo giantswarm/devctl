@@ -19,11 +19,14 @@ import (
 // autoReleaseStep is one step of the tag job as the rendered workflow declares
 // it.
 type autoReleaseStep struct {
-	ID   string            `yaml:"id"`
-	Name string            `yaml:"name"`
-	If   string            `yaml:"if"`
-	Run  string            `yaml:"run"`
-	Env  map[string]string `yaml:"env"`
+	ID               string            `yaml:"id"`
+	Name             string            `yaml:"name"`
+	If               string            `yaml:"if"`
+	Run              string            `yaml:"run"`
+	Env              map[string]string `yaml:"env"`
+	Uses             string            `yaml:"uses"`
+	With             map[string]string `yaml:"with"`
+	WorkingDirectory string            `yaml:"working-directory"`
 }
 
 // tagJobSteps returns the steps of the auto-release tag job from the rendered
@@ -91,6 +94,9 @@ func gitIn(t *testing.T, dir string, args ...string) (string, error) {
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+		// Background maintenance could still write .git when t.TempDir cleans up.
+		"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=gc.auto", "GIT_CONFIG_VALUE_0=0",
+		"GIT_CONFIG_KEY_1=maintenance.auto", "GIT_CONFIG_VALUE_1=false",
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
 		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com",
 	)
@@ -141,7 +147,7 @@ func repo(t *testing.T, history ...string) string {
 // cliffSkippedTypes are the commit_parsers in cliff.toml that carry
 // `skip = true`. git-cliff leaves them out of both the release notes and the
 // bump, so they are not releasable on their own.
-var cliffSkippedTypes = []string{"docs", "style", "test"}
+var cliffSkippedTypes = []string{"ci", "chore", "docs", "style", "test"}
 
 // countedSubject matches a conventional subject as git-cliff parses it
 // (letters, digits, `_` and `-` in the type) and captures its type.
@@ -221,6 +227,9 @@ func runStep(t *testing.T, script, dir string, env ...string) (map[string]string
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+		// Background maintenance could still write .git when t.TempDir cleans up.
+		"GIT_CONFIG_COUNT=2", "GIT_CONFIG_KEY_0=gc.auto", "GIT_CONFIG_VALUE_0=0",
+		"GIT_CONFIG_KEY_1=maintenance.auto", "GIT_CONFIG_VALUE_1=false",
 		"GITHUB_REF_NAME=main",
 		"GITHUB_OUTPUT="+outPath,
 		"GITHUB_STEP_SUMMARY="+filepath.Join(t.TempDir(), "step-summary"),
@@ -311,11 +320,10 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			stable:    true,
 		},
 		{
-			name:      "a chore(deps) alone is a patch too",
+			name:      "a chore(deps) alone releases nothing",
 			history:   []string{"v1.2.9", "chore(deps): bump y"},
-			next:      "v1.2.10",
-			expectTag: "v1.2.10",
-			stable:    true,
+			next:      "v1.2.9",
+			expectTag: "",
 		},
 		{
 			// A patch candidate cut before the patch fast path is released by
@@ -333,10 +341,10 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			expectTag: "v1.3.0-rc.2",
 		},
 		{
-			name:      "chore(deps) during a cycle cuts the next candidate",
+			name:      "chore(deps) during a cycle releases nothing",
 			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "chore(deps): bump y"},
 			next:      "v1.3.0",
-			expectTag: "v1.3.0-rc.2",
+			expectTag: "",
 		},
 		{
 			// `docs` is skipped by cliff.toml, so there is nothing new to put
@@ -347,11 +355,11 @@ func Test_AutoReleaseDecide(t *testing.T) {
 			expectTag: "",
 		},
 		{
-			// `test` is skipped too: a test fixture bump ships nothing.
-			name:      "a test-only push during a cycle releases nothing",
+			// `test` opens no cycle, but can replace a failed candidate.
+			name:      "a test-only push during a cycle cuts the next candidate",
 			history:   []string{"v1.2.9", "feat: add x", "v1.3.0-rc.1", "test(deps): bump a fixture"},
 			next:      "v1.3.0",
-			expectTag: "",
+			expectTag: "v1.3.0-rc.2",
 		},
 		{
 			name:      "a non-conventional push during a cycle releases nothing",
@@ -1170,100 +1178,157 @@ func tagJobStepNamed(t *testing.T, name string) autoReleaseStep {
 	return autoReleaseStep{}
 }
 
-// curlStub is the curl the verify step's cases run: it answers a GET with the
-// GET body and code it is handed and a POST with the POST body and code, in
-// the body-newline-code shape the step's `-w '\n%{http_code}'` produces.
-const curlStub = `#!/usr/bin/env bash
+// verifyGhStub is the gh the verify step's cases run: `gh release view` answers
+// the release's publishedAt, `gh api` the CircleCI statuses of the commit as
+// the step's --jq filter leaves them, one JSON array.
+const verifyGhStub = `#!/usr/bin/env bash
 set -euo pipefail
-method=GET
-while [ $# -gt 0 ]; do
-  case "$1" in
-    -X) method=$2; shift 2 ;;
-    *) shift ;;
-  esac
-done
-if [ "$method" = POST ]; then
-  printf '%s\n%s' "$STUB_POST_BODY" "$STUB_POST_CODE"
-else
-  printf '%s\n%s' "$STUB_GET_BODY" "$STUB_GET_CODE"
-fi
+case "$1" in
+  release) printf '%s\n' "$STUB_PUBLISHED" ;;
+  api)
+    [ -z "${STUB_API_FAIL:-}" ] || { echo "HTTP 502" >&2; exit 1; }
+    # STUB_STATUSES_LATER answers every read after the first: statuses that
+    # land while the step waits.
+    if [ -n "${STUB_STATUSES_LATER:-}" ] && [ -e "$STUB_DIR/read" ]; then
+      printf '%s\n' "$STUB_STATUSES_LATER"
+    else
+      touch "$STUB_DIR/read"
+      printf '%s\n' "$STUB_STATUSES"
+    fi
+    ;;
+  *) echo "unexpected gh $*" >&2; exit 2 ;;
+esac
 `
 
-// runVerify runs the extracted verify step against the curl stub and returns
-// its combined output. The wait is zero so an empty list is final after one
-// pass; the codes that end the wait at once (404, 401, 403) never reach it.
-func runVerify(t *testing.T, token string, get, post [2]string) ([]byte, error) {
+// runVerify runs the extracted verify step against the gh stub and returns
+// its combined output. The wait is zero so the statuses read once are final.
+func runVerify(t *testing.T, statuses string, env ...string) ([]byte, error) {
 	t.Helper()
 
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "curl"), []byte(curlStub), 0o700); err != nil { // #nosec G306 -- the stub has to be executable
-		t.Fatalf("write curl stub: %v", err)
+	if err := os.WriteFile(filepath.Join(bin, "gh"), []byte(verifyGhStub), 0o700); err != nil { // #nosec G306 -- the stub has to be executable
+		t.Fatalf("write gh stub: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "sleep"), []byte("#!/usr/bin/env bash\n"), 0o700); err != nil { // #nosec G306 -- the stub has to be executable
+		t.Fatalf("write sleep stub: %v", err)
 	}
 
 	cmd := exec.CommandContext(t.Context(), "bash", "-c", tagJobStepNamed(t, "Verify CircleCI picked up the tag").Run) // #nosec G204 -- the script is the rendered template, test-only
 	cmd.Env = append(os.Environ(),
-		"TAG=v0.1.0",
+		"TAG=v0.2.4",
+		"TARGET=0123456789abcdef",
 		"GITHUB_REPOSITORY=example/widget",
-		"CIRCLECI_API_TOKEN="+token,
-		"CIRCLECI_PIPELINE_WAIT_SECONDS=0",
-		"STUB_GET_BODY="+get[0], "STUB_GET_CODE="+get[1],
-		"STUB_POST_BODY="+post[0], "STUB_POST_CODE="+post[1],
+		"CIRCLECI_STATUS_WAIT_SECONDS=0",
+		"STUB_PUBLISHED=2026-10-22T11:20:53Z",
+		"STUB_STATUSES="+statuses,
+		"STUB_DIR="+bin,
 		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
 	)
+	cmd.Env = append(cmd.Env, env...)
 
 	return cmd.CombinedOutput()
 }
 
-// Test_AutoReleaseVerifyCircleCI pins what the verify step does with each
-// answer of the pipeline list. A project CircleCI does not follow (404 with a
-// token) is the first tag of a repository created pull-request-last: the
-// repository set-up reconciler follows the project and reports the missed
-// build, so the step warns and passes instead of failing every new
-// repository's first run. A followed project whose list stays empty is
-// triggered by the step itself, and a rejected token still fails the run.
+// The CircleCI statuses of release-automation-sandbox's v0.2.4 commit, as
+// GitHub listed them: the branch build's workflows (setup 359214e5, go-build
+// 60675be8, the latter finishing after the release) and the tag build's
+// (setup dc012fa3, build 04a3e5ed), newest first.
+const (
+	branchStatuses = `{"context":"ci/circleci: go-build","state":"success","created_at":"2026-10-22T11:21:34Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/60675be8/job/409db27c"},` +
+		`{"context":"ci/circleci: setup","state":"success","created_at":"2026-10-22T11:20:41Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/359214e5/job/2962c9c4"},` +
+		`{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:20:41Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/60675be8/job/409db27c"},` +
+		`{"context":"ci/circleci: setup","state":"pending","created_at":"2026-10-22T11:20:33Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/359214e5/job/2962c9c4"}`
+	// oauthTagStatus is an OAuth follow's job on the tag commit, started after
+	// the release.
+	oauthTagStatus = `{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:20:54Z","creator":{"login":"alice"},"target_url":"https://circleci.com/gh/example/widget/12"}`
+	tagStatuses    = `{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:21:03Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/04a3e5ed/job/76cd04bd"},` +
+		`{"context":"ci/circleci: setup","state":"success","created_at":"2026-10-22T11:21:03Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/dc012fa3/job/84113292"},` +
+		`{"context":"ci/circleci: setup","state":"pending","created_at":"2026-10-22T11:20:55Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/dc012fa3/job/84113292"}`
+)
+
+// Test_AutoReleaseVerifyCircleCI pins what the verify step reads from the
+// CircleCI statuses of the tag's commit. It holds no CircleCI credential and
+// triggers nothing. A workflow started after the release is the tag's build;
+// the branch build of the same commit, which started before and posts the
+// same contexts after, is not. A commit without any CircleCI status has no
+// pipeline yet (a new repository before its creator's set-up): a warning.
+// A missed tag fails the run, naming the person's fix.
 func Test_AutoReleaseVerifyCircleCI(t *testing.T) {
 	testCases := []struct {
 		name       string
-		token      string
-		get, post  [2]string
+		statuses   string
+		env        []string
 		expectFail bool
 		expectOut  []string
 		rejectOut  []string
 	}{
 		{
-			name:      "an unfollowed project warns and passes",
-			token:     "token",
-			get:       [2]string{`{"message":"Project not found"}`, "404"},
-			expectOut: []string{"::warning::v0.1.0 is released; CircleCI does not follow this project yet.", "reconciler"},
-			rejectOut: []string{"::error::"},
-		},
-		{
-			name:      "no token cannot verify and passes",
-			token:     "",
-			get:       [2]string{`{"message":"Project not found"}`, "404"},
-			expectOut: []string{"::warning::cannot verify that CircleCI built v0.1.0"},
-			rejectOut: []string{"::error::"},
-		},
-		{
-			name:      "a followed project with no pipeline is triggered",
-			token:     "token",
-			get:       [2]string{`{"items":[],"next_page_token":null}`, "200"},
-			post:      [2]string{`{"number":7,"state":"pending"}`, "201"},
-			expectOut: []string{"triggered CircleCI pipeline #7 for v0.1.0"},
+			name:      "the tag's own build passes",
+			statuses:  "[" + tagStatuses + "," + branchStatuses + "]",
+			expectOut: []string{"CircleCI builds v0.2.4: 1 pipeline(s)"},
 			rejectOut: []string{"::error::", "::warning::"},
 		},
 		{
-			name:       "a rejected token fails",
-			token:      "token",
-			get:        [2]string{`{"message":"Unauthorized"}`, "401"},
+			// The branch build's continuation started after the release; its
+			// setup started before. No tag pipeline started.
+			name:       "a branch continuation started after the release is no tag build",
+			statuses:   `[{"context":"ci/circleci: go-build","state":"pending","created_at":"2026-10-22T11:20:58Z","creator":{"login":"circleci-app[bot]"},"target_url":"https://app.circleci.com/workflow/late/job/j"},` + branchStatuses + "]",
 			expectFail: true,
-			expectOut:  []string{"::error::CircleCI rejected CIRCLECI_API_TOKEN (HTTP 401)"},
+			expectOut:  []string{"::error::CircleCI never built v0.2.4"},
+		},
+		{
+			name:       "the branch build alone is a missed tag build",
+			statuses:   "[" + branchStatuses + "]",
+			expectFail: true,
+			expectOut:  []string{"::error::CircleCI never built v0.2.4", "devctl repo follow-circleci example/widget"},
+		},
+		{
+			name:       "unreadable statuses fail with an error, not silently",
+			statuses:   "[]",
+			env:        []string{"STUB_API_FAIL=1"},
+			expectFail: true,
+			expectOut:  []string{"reading the release or the commit statuses of 01234567 failed", "::error::could not read the release or the commit statuses"},
+		},
+		{
+			// An OAuth follow's statuses link jobs, not workflows: a branch
+			// job after the release looks like the tag's. Not judged.
+			name:      "OAuth statuses alone warn and pass, not verified",
+			statuses:  `[{"context":"ci/circleci: go-build","state":"failure","created_at":"2026-10-22T11:22:00Z","creator":{"login":"alice"},"target_url":"https://circleci.com/gh/example/widget/12"}]`,
+			expectOut: []string{"::warning::v0.2.4: an OAuth follow builds 01234567", "--migrate"},
+			rejectOut: []string{"::error::"},
+		},
+		{
+			// The App built the branch before the release; only an OAuth
+			// follow posted after it: not judged, as the engine reads it.
+			name:      "an OAuth build after the release beside an earlier App build warns",
+			statuses:  "[" + `{"context":"ci/circleci: go-build","state":"success","created_at":"2026-10-22T11:22:00Z","creator":{"login":"alice"},"target_url":"https://circleci.com/gh/example/widget/12"},` + branchStatuses + "]",
+			expectOut: []string{"::warning::v0.2.4: an OAuth follow builds 01234567"},
+			rejectOut: []string{"::error::"},
+		},
+		{
+			// Both pipelines build the repository: the first read sees the
+			// OAuth build of the tag and the App's branch build only; the
+			// App's tag build lands while the step waits, and verifies it.
+			name:     "a double-built repository waits for the App's tag build and verifies it",
+			statuses: "[" + oauthTagStatus + "," + branchStatuses + "]",
+			env: []string{
+				"CIRCLECI_STATUS_WAIT_SECONDS=30",
+				"STUB_STATUSES_LATER=[" + oauthTagStatus + "," + tagStatuses + "," + branchStatuses + "]",
+			},
+			expectOut: []string{"retrying in 10 s", "CircleCI builds v0.2.4: 1 pipeline(s)"},
+			rejectOut: []string{"::error::", "::warning::"},
+		},
+		{
+			name:      "no CircleCI status at all warns and passes",
+			statuses:  "[]",
+			expectOut: []string{"::warning::v0.2.4 is released and no CircleCI pipeline builds this repository yet", "devctl repo follow-circleci example/widget"},
+			rejectOut: []string{"::error::"},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := runVerify(t, tc.token, tc.get, tc.post)
+			out, err := runVerify(t, tc.statuses, tc.env...)
 
 			if tc.expectFail && err == nil {
 				t.Fatalf("verify step passed:\n%s", out)
