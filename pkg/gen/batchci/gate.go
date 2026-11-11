@@ -35,7 +35,7 @@ func Gate(c *Config) ([]byte, error) {
 				"runs-on": "ubuntu-26.04", "timeout-minutes": 50,
 				"steps": []interface{}{map[string]interface{}{
 					nameKey: "Verify admission policy and exact queue results",
-					"uses":  "actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b", // v7.1.0
+					"uses":  "actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3", // v9.0.0
 					"env":   map[string]string{"BATCH_CI_CONFIG": string(config)},
 					"with":  map[string]string{"script": gateScript},
 				}},
