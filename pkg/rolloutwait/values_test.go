@@ -293,3 +293,31 @@ func TestValuesChangeAgainBeforeAttempt(t *testing.T) {
 		t.Errorf("want three polls, got %d", polls)
 	}
 }
+
+// A failure that is still being retried on the first poll and settles on
+// obsolete values later is requested then: --reconcile is not first-poll only.
+func TestStaleValuesFailureSettlingLaterIsRequested(t *testing.T) {
+	hr := failedWithValues("0.48.1", "replicas: 1\n")
+	retrying := append(ready("False", "UpgradeFailed", "old values failed"), map[string]any{"type": "Reconciling", "status": "True", "reason": "Progressing"})
+	_ = unstructured.SetNestedSlice(hr.Object, retrying, "status", "conditions")
+	client := newClient(ociRepository(map[string]any{"semver": ">=0.17.0"}), hr, valuesConfigMap("replicas: 2\n"))
+	polls := 0
+	client.PrependReactor("list", "helmreleases", func(k8stesting.Action) (bool, runtime.Object, error) {
+		polls++
+		if polls == 2 {
+			_ = unstructured.SetNestedSlice(hr.Object, ready("False", "UpgradeFailed", "old values failed"), "status", "conditions")
+		}
+		return true, &unstructured.UnstructuredList{Items: []unstructured.Unstructured{*hr.DeepCopy()}}, nil
+	})
+	r := wait(t, client, true)
+	wantExit(t, r, agentcli.ExitTimeout, "values have changed since the last attempt")
+	patches := map[string]int{}
+	for _, a := range client.Actions() {
+		if p, ok := a.(k8stesting.PatchAction); ok {
+			patches[p.GetResource().Resource]++
+		}
+	}
+	if patches["helmreleases"] != 1 || len(patches) != 1 {
+		t.Errorf("want one HelmRelease request, got %v", patches)
+	}
+}
