@@ -9,9 +9,9 @@ env:
   KYVERNO_POLICIES_APP_NAME: {{{{ .Repository }}}}
   KIND_CLUSTER_NAME: chainsaw-kyverno-cluster
   # renovate: datasource=github-releases depName=kubernetes-sigs/kind
-  KIND_VERSION: v0.25.0
+  KIND_VERSION: v0.33.0
   # renovate: datasource=docker depName=kindest/node
-  KUBERNETES_VERSION: v1.33.7
+  KUBERNETES_VERSION: v1.37.0
   # renovate: datasource=github-releases depName=giantswarm/kyverno-crds
   KYVERNO_VERSION: v1.19.2
   HELM_VERSION: 4
