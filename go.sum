@@ -172,8 +172,8 @@ github.com/giantswarm/releases/sdk v0.13.0 h1:xEAO+rI820X/XTeMDF2IowmBKEbHQ0PS5L
 github.com/giantswarm/releases/sdk v0.13.0/go.mod h1:YBRAKlJhZkt3hIxOIuQN5CD7A67it67s7GjGaE1yedU=
 github.com/giantswarm/schemalint/v2 v2.6.3 h1:cSnqMGB9J/PkZ6ze9Wl6g+sZz+SfyVl0kUe95PSjbks=
 github.com/giantswarm/schemalint/v2 v2.6.3/go.mod h1:KHiC82/GPPnL6uQxzro3vptV1t7fFuBHT62ppYUKdqA=
-github.com/giantswarm/selfupdate-cosign v0.3.27 h1:Nn40qckVXy7aE5gliTPspYe3ooiMKhLOXBsUTDtyfPI=
-github.com/giantswarm/selfupdate-cosign v0.3.27/go.mod h1:iYm/MPqu01/vLvGB6EaJd6IURTOPNJw/zpvLD9A7Dsg=
+github.com/giantswarm/selfupdate-cosign v0.3.28 h1:HERE1xBN2aZCfzxWYHtBMr2hwb8encxh+lQv1WPHxxk=
+github.com/giantswarm/selfupdate-cosign v0.3.28/go.mod h1:SJAwn34MAlODL5B01X6cCOtGPI1b+maJIO+iC08e87I=
 github.com/gliderlabs/ssh v0.3.8 h1:a4YXD1V7xMF9g5nTkdfnja3Sxy1PVDCj1Zg4Wb8vY6c=
 github.com/gliderlabs/ssh v0.3.8/go.mod h1:xYoytBv1sV0aL3CavoDuJIQNURXkkfPA/wxQ1pL1fAU=
 github.com/go-chi/chi/v5 v5.5.0 h1:xdKQ1dJmVJsmgahrXSKhUx8NyVPzpwdlyrrQFpMPJgg=
