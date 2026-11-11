@@ -362,10 +362,23 @@ const success = "success"
 const (
 	generatedSetup = `version: 2.1
 setup: true
+orbs:
+  continuation: circleci/continuation@2.0.1
 jobs:
   setup:
+    executor: continuation/default
     steps:
-    - run: cp .circleci/workflows.yml .circleci/continue.yml
+    - checkout
+    - run:
+        command: |
+          if [ -f .circleci/custom.yml ]; then
+            yq eval-all '. as $item ireduce ({}; . *+ $item)' \
+              .circleci/workflows.yml .circleci/custom.yml > .circleci/continue.yml
+          else
+            cp .circleci/workflows.yml .circleci/continue.yml
+          fi
+    - continuation/continue:
+        configuration_path: .circleci/continue.yml
 workflows:
   setup:
     jobs:

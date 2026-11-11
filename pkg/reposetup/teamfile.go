@@ -16,6 +16,9 @@ import (
 	sigsyaml "sigs.k8s.io/yaml"
 )
 
+// ProtectionBaseline opts a customer repository into the protection baseline.
+const ProtectionBaseline = "baseline"
+
 // TeamFile is one repositories/<team>.yaml of giantswarm/github: the team
 // that owns every entry in it and the entries themselves.
 type TeamFile struct {
@@ -171,6 +174,10 @@ type Fields struct {
 	// the repository's own GitHub Actions gate that runs on every pull
 	// request. A declared context is never removed as a ghost.
 	RequiredChecks []string `yaml:"requiredChecks"`
+	// Protection opts a customer repository into the protection step with
+	// "baseline". Empty keeps the customer's own protection; other flavours
+	// always get the baseline.
+	Protection string `yaml:"protection"`
 	// AgentMerge is the repository's opt-out from agent merges: with false
 	// the default branch's ruleset has no bypass actor, so nothing merges
 	// past the required review. Nil is the default, true.
@@ -242,6 +249,7 @@ type GenFields struct {
 	Language                      string          `yaml:"language"`
 	InstallUpdateChart            bool            `yaml:"installUpdateChart"`
 	HelmDocsRegen                 bool            `yaml:"helmDocsRegen"`
+	ChartTests                    *bool           `yaml:"chartTests"`
 	CheckReadmeLinks              *bool           `yaml:"checkReadmeLinks"`
 	RunSecurityScorecard          *bool           `yaml:"runSecurityScorecard"`
 	GenerateLlmRules              *bool           `yaml:"generateLlmRules"`

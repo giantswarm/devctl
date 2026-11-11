@@ -1,13 +1,26 @@
 package sequence
 
 import (
+	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestDelayedResponseHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/slow", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+	err := Write(w, req, Response{Delay: time.Hour, Body: "unreached"})
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, w.Body.String())
+}
 
 func TestNextAdvancesAndRepeatsTheLast(t *testing.T) {
 	s, err := New(Routes{
@@ -89,6 +102,34 @@ func TestNewRefusesMalformedRoutes(t *testing.T) {
 	assert.Error(t, err, "no responses")
 }
 
+func TestNewRefusesMalformedQueries(t *testing.T) {
+	for _, query := range []string{
+		"branch=%",
+		"branch=%zz",
+		"branch=feature;other",
+		"branch=feature&page-token=%zz",
+		"br%zzanch=feature",
+	} {
+		t.Run(query, func(t *testing.T) {
+			key := "GET /pipelines?" + query
+			s, err := New(Routes{key: {{}}})
+			assert.Nil(t, s)
+			assert.ErrorContains(t, err, key)
+		})
+	}
+}
+
+func TestNextMatchesEscapedQueryValues(t *testing.T) {
+	s, err := New(Routes{"GET /pipelines?branch=feature%3B100%25": {{Body: "matched"}}})
+	require.NoError(t, err)
+
+	resp, ok := s.Next(httptest.NewRequest(http.MethodGet, "/pipelines?branch=feature%3B100%25&page-token=next", nil))
+	require.True(t, ok)
+	assert.Equal(t, "matched", resp.Body)
+	_, ok = s.Next(httptest.NewRequest(http.MethodGet, "/pipelines?branch=other", nil))
+	assert.False(t, ok, "the escaped branch remains a filter")
+}
+
 func TestResponseBytes(t *testing.T) {
 	data, err := Response{}.Bytes()
 	require.NoError(t, err)
@@ -127,6 +168,39 @@ func TestWrite(t *testing.T) {
 	require.NoError(t, Write(rec, httptest.NewRequest(http.MethodGet, "/", nil), text))
 	assert.Equal(t, "text/plain", rec.Header().Get("Content-Type"), "the fixture's Content-Type stays")
 	assert.Equal(t, "hi", rec.Body.String())
+}
+
+func TestWritePreservesFixtureContentLength(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for _, key := range []string{"Content-Length", "content-length"} {
+			t.Run(method+"/"+key, func(t *testing.T) {
+				rec := httptest.NewRecorder()
+				resp := Response{Headers: map[string]string{key: "100"}, Body: "partial"}
+				require.NoError(t, Write(rec, httptest.NewRequest(method, "/", nil), resp))
+				assert.Equal(t, "100", rec.Header().Get("Content-Length"))
+				if method == http.MethodHead {
+					assert.Empty(t, rec.Body.String())
+				} else {
+					assert.Equal(t, "partial", rec.Body.String())
+				}
+			})
+		}
+	}
+}
+
+func TestWriteCanScriptTruncatedBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = Write(w, r, Response{Headers: map[string]string{"Content-Length": "100"}, Body: "partial"})
+	}))
+	t.Cleanup(server.Close)
+
+	resp, err := server.Client().Get(server.URL + "/")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	assert.Equal(t, int64(100), resp.ContentLength)
+	assert.Equal(t, "partial", string(body))
 }
 
 func TestRequestString(t *testing.T) {

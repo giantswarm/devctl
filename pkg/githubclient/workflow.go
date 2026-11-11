@@ -2,6 +2,7 @@ package githubclient
 
 import (
 	"context"
+	"time"
 
 	"github.com/giantswarm/microerror"
 	"github.com/google/go-github/v93/github"
@@ -39,15 +40,18 @@ func (c *Client) GetCombinedStatus(ctx context.Context, owner, repo, ref string)
 	return status, nil
 }
 
-// releasePages bounds ListReleases: 1000 releases.
-const releasePages = 10
+// releaseLookupTimeout bounds the complete release listing, regardless of history size.
+const releaseLookupTimeout = 2 * time.Minute
 
 // ListReleases returns the releases of a repository, drafts included, in the
 // order GitHub lists them (newest first).
 func (c *Client) ListReleases(ctx context.Context, owner, repo string) ([]Release, error) {
+	ctx, cancel := context.WithTimeout(ctx, releaseLookupTimeout)
+	defer cancel()
+
 	opts := &github.ListOptions{PerPage: 100}
 	var out []Release
-	for range releasePages {
+	for {
 		releases, resp, err := c.ghClient.Repositories.ListReleases(ctx, owner, repo, opts)
 		if isGithub404(err) {
 			return nil, microerror.Maskf(notFoundError, "repository %s/%s", owner, repo)
@@ -57,18 +61,21 @@ func (c *Client) ListReleases(ctx context.Context, owner, repo string) ([]Releas
 		}
 		for _, rel := range releases {
 			out = append(out, Release{
-				Tag:        rel.GetTagName(),
-				URL:        rel.GetHTMLURL(),
-				Published:  !rel.GetDraft(),
-				Prerelease: rel.GetPrerelease(),
+				Tag:           rel.GetTagName(),
+				URL:           rel.GetHTMLURL(),
+				Published:     !rel.GetDraft(),
+				Prerelease:    rel.GetPrerelease(),
+				PublishFailed: hasPublishFailure(rel.GetBody()),
 			})
 		}
 		if resp.NextPage == 0 {
-			break
+			return out, nil
+		}
+		if resp.NextPage <= opts.Page {
+			return nil, microerror.Maskf(executionError, "listing releases of %s/%s: pagination did not advance", owner, repo)
 		}
 		opts.Page = resp.NextPage
 	}
-	return out, nil
 }
 
 // DefaultBranch returns the default branch of a repository. IsNotFound when

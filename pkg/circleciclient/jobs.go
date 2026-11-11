@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/giantswarm/microerror"
@@ -184,6 +186,16 @@ func (c *Client) JobSteps(ctx context.Context, org, repo string, number int64) (
 	return steps, nil
 }
 
+// StepOutput reads the messages of any step, including a successful one,
+// from its signed output URL without sending the API token.
+func (c *Client) StepOutput(ctx context.Context, outputURL string) (string, error) {
+	var out strings.Builder
+	if err := c.stepOutput(ctx, outputURL, &out); err != nil {
+		return "", microerror.Mask(err)
+	}
+	return out.String(), nil
+}
+
 // LastOutputAt reads a step's output at outputURL and returns the time of
 // its last message: when the step last wrote anything. Zero when the step
 // has written nothing yet.
@@ -203,8 +215,12 @@ func (c *Client) LastOutputAt(ctx context.Context, outputURL string) (time.Time,
 	// The output is one JSON array of messages; only their times are kept,
 	// so a long log costs no more memory than its longest message.
 	dec := json.NewDecoder(resp.Body)
-	if _, err := dec.Token(); err != nil {
+	opening, err := dec.Token()
+	if err != nil {
 		return time.Time{}, microerror.Maskf(apiError, "step output: invalid JSON answer: %v", err)
+	}
+	if opening != json.Delim('[') {
+		return time.Time{}, microerror.Maskf(apiError, "step output: invalid JSON answer: expected message array")
 	}
 	var last time.Time
 	for dec.More() {
@@ -217,6 +233,16 @@ func (c *Client) LastOutputAt(ctx context.Context, outputURL string) (time.Time,
 		if m.Time.After(last) {
 			last = m.Time
 		}
+	}
+	closing, err := dec.Token()
+	if err != nil {
+		return time.Time{}, microerror.Maskf(apiError, "step output: invalid JSON answer: %v", err)
+	}
+	if closing != json.Delim(']') {
+		return time.Time{}, microerror.Maskf(apiError, "step output: invalid JSON answer: expected array end")
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return time.Time{}, microerror.Maskf(apiError, "step output: invalid JSON answer: expected EOF, got %v", err)
 	}
 	return last, nil
 }

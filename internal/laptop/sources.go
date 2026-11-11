@@ -7,25 +7,31 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/authexec"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/releasepromote"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 )
 
 // ReleaseWaitSources are the sources of a release wait on a laptop: the
-// GitHub token through the gate, the CircleCI token through its gate when
-// the tag turns out to carry a CircleCI configuration (its expiry notice to
-// warn), and the private registry with the docker keychain, the
-// credentials `docker login` stored. The GitHub and CircleCI requests go
-// through transport.
-func ReleaseWaitSources(ctx context.Context, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*releasewait.Sources, error) {
-	token, err := authstore.RequireGitHub(ctx)
+// GitHub login selected for owner the same way as pr wait, the CircleCI
+// token through its gate when the tag turns out to carry a CircleCI
+// configuration (its expiry notice to warn), and the private registry with
+// the docker keychain, the credentials `docker login` stored. The GitHub and
+// CircleCI requests go through transport.
+func ReleaseWaitSources(ctx context.Context, owner string, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*releasewait.Sources, error) {
+	token, err := authexec.RepositoryToken(ctx, owner, authstore.RequireGitHub, authexec.PersonGitHub)
 	if err != nil {
 		return nil, err
 	}
+	// Only the App login renews itself; a refused gh login is the outcome.
+	var renew func(context.Context, string) (string, error)
+	if authexec.Identity(token) == authexec.IdentityApp {
+		renew = authstore.RenewGitHubToken
+	}
 	return releasewait.NewSources(endpoints, transport, releasewait.Credentials{
 		GitHubToken: token.Value,
-		RenewGitHub: authstore.RenewGitHubToken,
+		RenewGitHub: renew,
 		CircleCI: func(ctx context.Context) (string, string, error) {
 			token, err := authstore.RequireCircleCI(ctx)
 			if err != nil {
@@ -33,6 +39,14 @@ func ReleaseWaitSources(ctx context.Context, endpoints agentcli.Endpoints, trans
 			}
 			warn(token.Warning)
 			return token.Value, token.SourceName(), nil
+		},
+		RenewCircleCI: func(ctx context.Context, _ string) (string, error) {
+			token, err := authstore.RequireCircleCI(ctx)
+			if err != nil {
+				return "", err
+			}
+			warn(token.Warning)
+			return token.Value, nil
 		},
 		Registry: authn.DefaultKeychain,
 	})

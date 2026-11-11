@@ -34,7 +34,7 @@ func runCommandWithCluster(t *testing.T, args []string, f *flag, openErr, cluste
 		flag:   f,
 		stdout: &stdout,
 		stderr: &stderr,
-		openRelease: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+		openRelease: func(context.Context, string, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
 			if clusterErr != nil {
 				t.Error("the release must not be read when the kube context fails")
 			}
@@ -63,7 +63,7 @@ func TestRunUsageErrorsAreDocuments(t *testing.T) {
 		reason string
 	}{
 		{name: "no arguments", args: nil, reason: "usage: devctl rollout wait <installation> <owner/repo>"},
-		{name: "no repository", args: []string{"myinstallation"}, reason: "got 1 argument(s)"},
+		{name: "no repository or component", args: []string{"myinstallation"}, reason: "pass --chart <name> and --version"},
 		{name: "too many arguments", args: []string{"myinstallation", "giantswarm/devctl", "v1.2.3", "v1.2.4"}, reason: "got 4 argument(s)"},
 		{name: "installation with a slash", args: []string{"giantswarm/devctl", "v1.2.3"}, reason: "is not an installation name"},
 		{name: "no slash", args: []string{"myinstallation", "devctl", "v1.2.3"}, reason: "expected owner/repo"},
@@ -135,7 +135,7 @@ func TestRunPassesKubeconfigAndTeleport(t *testing.T) {
 		flag:   &flag{Kubeconfig: "/home/me/own.kubeconfig"},
 		stdout: &stdout,
 		stderr: &bytes.Buffer{},
-		openRelease: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+		openRelease: func(context.Context, string, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
 			return nil, errors.New("stop after the cluster")
 		},
 		openCluster: func(_ context.Context, c laptop.ClusterConfig) (dynamic.Interface, error) {
@@ -162,6 +162,43 @@ func TestRunVersionFlagIsTheVersion(t *testing.T) {
 			_, err := runCommand(t, args, &flag{Version: "v3.23.0"}, authErr)
 			if agentcli.Exit(err) != agentcli.ExitAuthRequired {
 				t.Fatalf("want the release opened (exit %d), got %d (%v)", agentcli.ExitAuthRequired, agentcli.Exit(err), err)
+			}
+		})
+	}
+}
+
+func TestRunMalformedHelmReleaseEndsBeforeTooling(t *testing.T) {
+	for _, name := range []string{"", "/x", "x/", "a/b/c"} {
+		t.Run(name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			called := false
+			r := &runner{
+				flag:   &flag{HelmReleases: []string{name}},
+				stdout: &stdout,
+				stderr: &bytes.Buffer{},
+				gate: func(bool) error {
+					called = true
+					return errors.New("the gate must not run for malformed --helmrelease")
+				},
+				openCluster: func(context.Context, laptop.ClusterConfig) (dynamic.Interface, error) {
+					called = true
+					return nil, errors.New("the cluster must not open for malformed --helmrelease")
+				},
+				openRelease: func(context.Context, string, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+					called = true
+					return nil, errors.New("the release must not open for malformed --helmrelease")
+				},
+			}
+			err := r.run(context.Background(), []string{"myinstallation", "giantswarm/devctl", "v1.2.3"})
+			if called {
+				t.Error("invalid --helmrelease reached tooling")
+			}
+			var doc agentcli.Envelope
+			if jsonErr := json.Unmarshal(stdout.Bytes(), &doc); jsonErr != nil {
+				t.Fatalf("stdout is not one JSON document: %v", jsonErr)
+			}
+			if agentcli.Exit(err) != agentcli.ExitUsage || doc.ExitCode != agentcli.ExitUsage || doc.Verdict != agentcli.VerdictUsage || !strings.Contains(doc.Reason, "--helmrelease") {
+				t.Errorf("want the malformed flag as a usage document, got %+v (%v)", doc, err)
 			}
 		})
 	}

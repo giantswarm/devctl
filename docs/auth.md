@@ -14,7 +14,7 @@ own shell and never enters an agent session.
 | Command | GitHub token |
 |---|---|
 | `auth exec` and the `gh` link | the App login; `gh` on a repository of an owner the App is not installed on keeps your own `gh` login |
-| `deploy`, `pr approve-align`, `pr approve-merge-renovate`, `release create`, `release promote`, `repo create` | the App login; a token in the environment overrides it |
+| `deploy`, [`pr approve-align-files`](pr-approve-align-files.md), `pr approve-merge-renovate`, `release create`, `release promote`, `repo create`, `repo owner` | the App login; a token in the environment overrides it |
 | the version check that precedes every command, `version check`, `version update`, `repo validate --local` | the same, optional and looked up only when GitHub is asked (never while the one-hour version cache is fresh): without one a public read is anonymous (`repo validate --local`: the embedded schema, repository names unchecked) |
 | `pr wait`, `pr merge`, `pr rerun` | the App login for giantswarm; your own `gh` login (`gh auth token`) for every other owner; never a token in the environment |
 | `release wait`, `rollout wait` | the App login only (`rollout wait` reads the installation with your kube context) |
@@ -51,7 +51,10 @@ more act with another token:
 
 - `pr wait`, `pr merge` and `release wait` take their GitHub token from the keychain and from nowhere
   else: no environment variable, no `gh auth token`, no file. They exit 8 naming `devctl auth login`
-  before they wait for anything, since they need the CircleCI token too.
+  when a required login is missing. `pr wait` and `pr merge` with `--circleci-from-statuses` judge
+  CircleCI jobs from their configuration and GitHub statuses, as `devctl serve` does, without a CircleCI
+  token. `--failed-log` takes precedence and uses the CircleCI API for job logs; `pr rerun` also still
+  needs the CircleCI login.
 - `repo setup` and its subcommands `ciwebhooks` and `renovate`, and `repo checks` need
   Administration write, which the App does not carry: they act with your own token, as the table says,
   and print no override warning.
@@ -71,9 +74,10 @@ log on every request, which separates an agent's actions from the person's own.
 
 | Agent action | Permission |
 |---|---|
-| Read repositories, pull requests, checks, statuses, workflow runs and logs, issues | metadata, contents, checks, statuses, actions: read |
+| Read repositories, pull requests, checks, statuses, workflow runs and logs, issues, Dependabot alerts | metadata, contents, checks, statuses, actions, vulnerability alerts: read |
+| Read and request team reviewers on pull requests (`gh pr view`, `gh pr edit`, `gh pr create --reviewer`), read team memberships (`repo create`) | organization members: read |
 | Comment on issues and pull requests, open and edit issues | issues, pull requests: write |
-| Open or update a pull request | pull requests: write |
+| Open or update a pull request | pull requests: write, organization members: read |
 | Push a branch, `.github/workflows` included | contents, workflows: write |
 | Merge through the ruleset bypass (`pr merge`): GitHub evaluates the merge as the person, so the owning team's or the admins' bypass applies | contents, pull requests: write |
 | Release: dispatch a workflow (`release promote`, `pr merge --dispatch`); the tag itself comes from the auto-release workflow's own token | actions, contents: write |
@@ -84,6 +88,17 @@ log on every request, which separates an agent's actions from the person's own.
 **Not an agent action:** administration (branch protection, rulesets, settings, creating or editing
 webhooks, deploy keys, repository creation). It stays with giantswarm-repo-manager, its own App reached
 through the `repo` commands, or with a person in their own shell.
+
+For a repository's **declared owning team**, use `devctl repo owner giantswarm/devctl`
+([the team-file lookup](repo.md#devctl-repo-owner)). It reads the declaration in
+`giantswarm/github` with Contents read, which the App already carries. It does not list
+GitHub access grants. `gh api repos/<owner>/<repo>/teams` requires
+[Administration read](https://docs.github.com/en/rest/repos/repos#list-repository-teams);
+under the agent App token it can return `403 Resource not accessible by integration`.
+Do not use that endpoint for agent ownership checks or fall back to a person's token.
+The reconciler's permissions step compares actual grants with its separate administration
+installation token; a team-file declaration cannot replace that check. No agent App
+permission needs widening for the ownership lookup.
 
 The App is installed on the giantswarm organization only. `gh` through devctl therefore acts with the
 App token for giantswarm's repositories and wherever no repository is named, and keeps the person's own
@@ -178,7 +193,9 @@ registration:
 3. devctl exchanges the code with the PKCE verifier at `POST /oauth/token`. The result is a standard
    90-day CircleCI API token that works with API v2 (`Circle-Token` header or Bearer).
 
-CircleCI issues no refresh token: log in again before the 90 days are over. Every command warns in
+CircleCI issues no refresh token: log in again before the 90 days are over. A valid login also lets
+devctl set up the CircleCI pipelines your teams' new repositories wait for, after any command (see
+`devctl repo follow-circleci --pending` in [repo.md](repo.md#the-automatic-pass)). Every command warns in
 its JSON `warnings` from seven days before the expiry. Re-running the flow for the same client and
 user atomically revokes the previous token, so a re-login leaves no stale token behind on CircleCI.
 
@@ -211,6 +228,11 @@ authorization server, so the flow is discovered, not configured:
    PKCE verifier and reads the login from the userinfo endpoint.
 4. The access token comes with a refresh token (the `offline_access` scope): a `repo` command that
    finds the access token expired refreshes it itself, no human involved, and stores the new pair.
+   Refresh uses the issuer saved at login, even when the resource advertises multiple servers. If that
+   issuer is no longer advertised, run `devctl auth login --muster-only` again; devctl sends no stored
+   refresh token to the replacement issuer. Authorization server metadata must identify the queried issuer.
+   Refreshes hold the muster identity's lock and reread the record after acquiring it, so concurrent
+   commands share the renewed pair and spend a rotating refresh token only once.
 
 Then the sign-in to giantswarm-repo-manager, once: the manager is pinned to its own GitHub App, so
 devctl asks muster (`core_auth_login`) for the sign-in, prints and opens the App's consent URL when
@@ -235,7 +257,10 @@ completed. A refused or timed-out authorization is exit 7 with the reason in the
 devctl auth status
 ```
 
-Reads the records, contacts nothing and prints:
+Reads the records and validates an unexpired CircleCI token with one authenticated
+[`GET /me`](https://circleci.com/docs/api/v2/index.html#operation/getCurrentUser).
+Missing, empty or expired CircleCI tokens make no request. GitHub and muster are
+described from the stored metadata; no token is refreshed or changed. Prints:
 
 ```json
 {
@@ -268,11 +293,18 @@ Reads the records, contacts nothing and prints:
 ```
 
 A GitHub token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` adds the override warning to
-`warnings` and `github.warnings`, never the token and never with `CI` set; the exit code stays the keychain's.
+`warnings` and `github.warnings`, never the token and never with `CI` set; the warning does not change the exit code.
 
 Exit 0 when the GitHub and CircleCI identities are usable without a human (valid, or expired with
 a valid refresh token); exit 8 with the `devctl auth login` invocation that fixes it when one is
-missing or expired for good. An agent runs `devctl auth status || devctl auth login`. The `muster`
+missing, empty, expired for good or rejected. HTTP 401 or 403 from CircleCI adds
+`"invalid": true` and `"httpStatus": 401` (or 403) under `circleci`, preserves its
+stored expiry, and names `devctl auth login --circleci-only` in the reason when
+GitHub is usable. A successful validation reports CircleCI's current login.
+Service errors (including rate limiting), network failures and malformed responses
+are exit 7: validation could not be completed, rather than proof of invalid credentials.
+Failed HTTP responses include `circleci.httpStatus`; their bodies are never printed.
+The `muster`
 identity is the third block of the document, with its `endpoint`, and is reported, not required:
 only the `repo` commands need it, and they exit 8 naming `devctl auth login --muster-only`
 themselves.
@@ -289,7 +321,9 @@ to print once, empty for the App login and in CI; the error is `ErrAuthRequired`
 `authstore.RequireGitHub(ctx)` returns the App login, refreshed when needed, or `ErrAuthRequired`;
 `authstore.RequireCircleCI(ctx)` returns the token or `ErrAuthRequired`, with the seven-day warning
 on the token for the envelope. A CircleCI token is required only when the repository has a CircleCI
-project. `authstore.RequireMuster(ctx)` returns the muster token, refreshed when needed, with the
+project and the command reads its API; `pr wait` and `pr merge` with `--circleci-from-statuses`
+(without `--failed-log`) read neither that token nor the CircleCI API.
+`authstore.RequireMuster(ctx)` returns the muster token, refreshed when needed, with the
 endpoint it is for, or `ErrAuthRequired` naming `--muster-only`. The errors carry exit code 8 and
 the verdict `auth_required` through `agentcli.ExitCoder`, so a command returns them unchanged.
 
@@ -299,16 +333,22 @@ Every agent-facing command prints one JSON document on stdout when it finishes a
 `--progress` writes one line per step to stderr. The envelope is `command`, `schemaVersion`,
 `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt`, then the command's fields.
 
+The CLI waits (`pr wait`, `release wait`, `rollout wait` and `pr merge`) ignore SIGHUP and read
+nothing from stdin, so they outlive a closed terminal, SSH session or harness and finish with their
+document and exit code. `repo watch` also ignores SIGHUP and reads no stdin; `--output json` prints
+its final repository document. This is the CLI's behavior; `devctl serve` keeps its server signal handling.
+
 | Code | Verdict | Meaning |
 |---|---|---|
 | 0 | `green`, `available` | ok |
 | 1 | `red`, `ci_failed` | a check is red or the tag's CI failed |
-| 2 | `timeout` | the deadline passed; the document names what was unfinished |
+| 2 | `timeout` | the deadline passed or SIGINT/SIGTERM interrupted a CLI wait; the document names what was unfinished. An acknowledged `pr merge` instead exits 9 (`release_unconfirmed`) with its merge commit and the release confirmation command. |
 | 3 | `not_applicable` | draft, closed, conflicting, behind a strict base, version not resolvable |
 | 4 | `required_missing`, `approval_required`, `no_checks` | a required context never reported; Actions runs await a member's approval; the `pull_request` workflows never started |
 | 5 | `refused` | another author, an opt-out |
 | 7 | `usage` | wrong usage, a newer devctl released (the reason names `devctl version update`), or a tooling failure |
 | 8 | `auth_required` | no usable token; the reason names `devctl auth login` |
+| 13 | `remote_error` | A CircleCI request failed. The command line was valid; the reason preserves the service error. Existing timeout and post-merge outcomes take precedence. |
 
 ## Environment
 

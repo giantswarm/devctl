@@ -24,7 +24,7 @@ type Undeclared struct {
 // and lifecycle steps are what such an entry is for.
 func UndeclaredEntry(u Undeclared) Entry {
 	var b strings.Builder
-	fmt.Fprintf(&b, "- name: %s\n", u.Name)
+	fmt.Fprintf(&b, "- name: %q\n", u.Name)
 	if u.ComponentType != "" {
 		fmt.Fprintf(&b, "  componentType: %s\n", u.ComponentType)
 	}
