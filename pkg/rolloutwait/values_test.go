@@ -216,6 +216,9 @@ func TestValuesFailureDigest(t *testing.T) {
 		{name: "case 0: YAML layout and map ordering do not change inputs", input: "{replicas: 2}", canonical: "replicas: 2\n"},
 		{name: "case 1: lexicographic ordering including maps inside lists", input: "key2: 2\nkey10: 10\nitems:\n- z2: two\n  z10: ten\n", canonical: "items:\n- z10: ten\n  z2: two\nkey10: 10\nkey2: 2\n"},
 		{name: "case 2: empty values hash zero bytes", input: "{}", canonical: ""},
+		{name: "case 4: nested maps and compact sequences", input: "z:\n  key2: [two, three]\n  key10: {b: 2, a: 1}\n", canonical: "z:\n  key10:\n    a: 1\n    b: 2\n  key2:\n  - two\n  - three\n"},
+		{name: "case 5: JSON scalar conversion and YAML quoting", input: "text: 'yes'\nnumber: 2.0\n'null': null\nflag: true\n", canonical: "flag: true\n\"null\": null\nnumber: 2\ntext: \"yes\"\n"},
+		{name: "case 6: multiline strings", input: "message: |\n  first\n  second\n", canonical: "message: |\n  first\n  second\n"},
 		// Independently calculated SHA1 of the literal YAML "replicas: 2\n".
 		{name: "case 3: legacy checksum", input: "replicas: 2\n", digest: "96bc5f992b874ad84925a2f144739ecfcc2621b0"},
 	} {
