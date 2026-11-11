@@ -43,7 +43,7 @@ require (
 	github.com/titanous/json5 v1.0.0
 	github.com/zalando/go-keyring v0.2.8
 	go.yaml.in/yaml/v2 v2.4.4
-	golang.org/x/mod v0.42.0
+	golang.org/x/mod v0.43.0
 	golang.org/x/net v0.62.0
 	golang.org/x/oauth2 v0.38.0
 	golang.org/x/sys v0.50.0
