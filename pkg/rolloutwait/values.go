@@ -41,11 +41,18 @@ func (w *Waiter) staleValuesFailure(ctx context.Context, d Deployment, hr *unstr
 		if legacy {
 			data, err = yaml.Marshal(values)
 		} else {
-			// Flux chartutil.DigestValues encodes JSON-compatible values as
-			// YAML v2 MapSlices, sorted lexicographically at every depth.
-			ordered := yaml.JSONObjectToYAMLObject(values)
-			sortValues(ordered)
-			data, err = goyaml.Marshal(ordered)
+			// Preserve the JSON-to-YAML scalar conversion used by Flux, then
+			// order mapping nodes lexicographically at every depth. v4 no
+			// longer supports the v2 MapSlice representation.
+			data, err = yaml.Marshal(values)
+			if err == nil {
+				var ordered goyaml.Node
+				err = goyaml.Unmarshal(data, &ordered)
+				if err == nil {
+					sortValues(&ordered)
+					data, err = goyaml.Dump(&ordered, goyaml.WithV2Defaults(), goyaml.WithCompactSeqIndent(), goyaml.WithLineWidth(-1))
+				}
+			}
 		}
 		if err != nil {
 			return d, false, fmt.Errorf("%s: cannot encode values for comparison", d.id())
@@ -155,16 +162,20 @@ func mergeValues(a, b map[string]any) map[string]any {
 	return out
 }
 
-func sortValues(value any) {
-	switch v := value.(type) {
-	case goyaml.MapSlice:
-		sort.Slice(v, func(i, j int) bool { return v[i].Key.(string) < v[j].Key.(string) })
-		for _, item := range v {
-			sortValues(item.Value)
+// sortValues preserves scalar tags and styles while replacing the encoder's
+// natural key ordering with Flux's lexicographic ordering.
+func sortValues(node *goyaml.Node) {
+	if node.Kind == goyaml.MappingNode {
+		pairs := make([][2]*goyaml.Node, len(node.Content)/2)
+		for i := range pairs {
+			pairs[i] = [2]*goyaml.Node{node.Content[2*i], node.Content[2*i+1]}
 		}
-	case []any:
-		for _, item := range v {
-			sortValues(item)
+		sort.Slice(pairs, func(i, j int) bool { return pairs[i][0].Value < pairs[j][0].Value })
+		for i, pair := range pairs {
+			node.Content[2*i], node.Content[2*i+1] = pair[0], pair[1]
 		}
+	}
+	for _, child := range node.Content {
+		sortValues(child)
 	}
 }
