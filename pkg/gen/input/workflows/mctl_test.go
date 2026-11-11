@@ -484,11 +484,13 @@ func outputValue(raw, key string) string {
 	return ""
 }
 
-// actions/github-script@v7 injects no getOctokit; a call to it crashes the step.
+// The mctl workflows build extra clients with new github.constructor({ auth }), which every pinned
+// github-script release supports; getOctokit is injected only from v9 on, so a call to it breaks the
+// step on an older pin.
 func Test_MctlNoGetOctokit(t *testing.T) {
 	for name, body := range mctlRenders(t, false) {
 		if strings.Contains(body, "getOctokit(") {
-			t.Errorf("%s calls getOctokit, which github-script@v7 does not provide; use new github.constructor({ auth })", name)
+			t.Errorf("%s calls getOctokit, which github-script before v9 does not provide; use new github.constructor({ auth })", name)
 		}
 	}
 }
