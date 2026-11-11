@@ -22,9 +22,10 @@ var agentsBlock = template.Must(template.New("agents_block").Parse(agentsBlockTe
 func AgentsBlockBody(p params.Params) (string, error) {
 	var b strings.Builder
 	err := agentsBlock.Execute(&b, map[string]any{
-		"IsLanguageGo": params.IsLanguageGo(p),
-		"Plugins":      plugins(p),
-		"Source":       agentsBlockSource,
+		"IsCodeRepository": params.IsCodeRepository(p),
+		"IsLanguageGo":     params.IsLanguageGo(p),
+		"Plugins":          plugins(p),
+		"Source":           agentsBlockSource,
 	})
 	if err != nil {
 		return "", microerror.Mask(err)

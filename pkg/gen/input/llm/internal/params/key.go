@@ -9,3 +9,13 @@ func IsLanguageGo(p Params) bool {
 func IsFlavourApp(p Params) bool {
 	return p.Flavours.Contains(gen.FlavourApp)
 }
+
+// IsCodeRepository reports whether the repository holds application code or
+// Kubernetes API types, as opposed to charts, configuration or policies only.
+func IsCodeRepository(p Params) bool {
+	switch gen.Language(p.Language) {
+	case gen.LanguageGo, gen.LanguageNode, gen.LanguagePython:
+		return true
+	}
+	return p.Flavours.Contains(gen.FlavourKubernetesAPI)
+}

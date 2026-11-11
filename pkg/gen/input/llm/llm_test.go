@@ -35,20 +35,35 @@ func TestBlockBody(t *testing.T) {
 }
 
 func TestBlockBody_SpecificationRules(t *testing.T) {
-	for _, language := range []string{"go", "generic"} {
-		t.Run(language, func(t *testing.T) {
-			l, err := llm.New(llm.Config{Language: language})
+	const (
+		specItem  = "<https://github.com/giantswarm/fmt/blob/main/design/specifications.md>"
+		namesItem = "<https://github.com/giantswarm/fmt/blob/main/design/names.md>"
+	)
+	for _, tc := range []struct {
+		name     string
+		config   llm.Config
+		wantSpec bool
+	}{
+		{name: "Go", config: llm.Config{Language: "go", Flavours: gen.FlavourSlice{gen.FlavourCLI}}, wantSpec: true},
+		{name: "node", config: llm.Config{Language: "node", Flavours: gen.FlavourSlice{gen.FlavourApp}}, wantSpec: true},
+		{name: "python", config: llm.Config{Language: "python", Flavours: gen.FlavourSlice{gen.FlavourGeneric}}, wantSpec: true},
+		{name: "Kubernetes API types", config: llm.Config{Language: "generic", Flavours: gen.FlavourSlice{gen.FlavourKubernetesAPI}}, wantSpec: true},
+		{name: "chart", config: llm.Config{Language: "generic", Flavours: gen.FlavourSlice{gen.FlavourApp}}},
+		{name: "customer", config: llm.Config{Language: "generic", Flavours: gen.FlavourSlice{gen.FlavourCustomer}}},
+		{name: "kyverno policy", config: llm.Config{Language: "kyverno-policy", Flavours: gen.FlavourSlice{gen.FlavourGeneric}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l, err := llm.New(tc.config)
 			require.NoError(t, err)
 
 			body, err := l.BlockBody()
 			require.NoError(t, err)
 
 			items := strings.Join(listItems(body), "\n")
-			require.Contains(t, items, "ask the user before you write it")
-			require.Contains(t, items, "state the deviation and its reason in the pull request")
+			require.Equal(t, tc.wantSpec, strings.Contains(items, specItem))
+			require.Equal(t, tc.wantSpec, strings.Contains(items, "open a draft pull request when nobody can be asked"))
 			require.Contains(t, items, "keep one meaning per word")
-			require.Contains(t, items, "<https://github.com/giantswarm/fmt/blob/main/api/README.md>")
-			require.Contains(t, items, "<https://github.com/giantswarm/fmt/blob/main/api/names.md>")
+			require.Contains(t, items, namesItem)
 		})
 	}
 }
