@@ -220,7 +220,6 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 	}()
 	deadline := w.clock.Now().Add(w.clock.ScaledTimeout(w.timeout))
 	interval := IntervalFloor
-	reconciled := false
 	for {
 		w.polled, w.listed = nil, map[string][]unstructured.Unstructured{}
 		list, err := w.observe(ctx)
@@ -254,14 +253,13 @@ func (w *Waiter) wait(ctx context.Context, result *Result) error {
 			w.progress.Printf("%s runs %s on %s", strings.Join(result.Charts, ", "), w.version, w.installation)
 			return nil
 		}
-		// A revision's objects become worth a request one after another
-		// (a HelmRelease once its values are rendered): each is asked
-		// once, when it is.
-		if w.reconcile && pending != nil && (!reconciled || w.revision != "") {
+		// Objects become worth a request one after another (a revision's
+		// HelmRelease once its values are rendered, a HelmRelease once its
+		// failure on obsolete values settles): each is asked once, when it is.
+		if w.reconcile && pending != nil {
 			if err := w.requestReconciles(ctx, list); err != nil {
 				return err
 			}
-			reconciled = true
 		}
 		for _, d := range pending {
 			w.progress.Printf("%s: %s", d.id(), d.Message)
@@ -368,15 +366,20 @@ func (w *Waiter) requestReconciles(ctx context.Context, list []Deployment) error
 			w.progress.Printf("requested a reconcile of %s", d.self)
 			continue
 		}
-		// A named HelmRelease of another chart is not behind the version.
-		if d.Kind != KindHelmRelease || !w.charts[d.Chart] || atLeast(d.RunningVersion, w.version) {
+		// A failure on changed values needs a new attempt even at the
+		// deployed version or on a named component's own version line.
+		behind := w.charts[d.Chart] && !atLeast(d.RunningVersion, w.version)
+		if d.Kind != KindHelmRelease || (!behind && d.self == nil) {
 			continue
 		}
 		targets := []object{{resource: helmReleases, kind: KindHelmRelease, namespace: d.Namespace, name: d.Name}}
-		if d.source != nil {
+		if behind && d.source != nil {
 			targets = append([]object{*d.source}, targets...)
 		}
 		for _, o := range targets {
+			if w.requested[o.String()] != "" {
+				continue
+			}
 			if err := w.requestReconcile(ctx, o); err != nil {
 				return err
 			}

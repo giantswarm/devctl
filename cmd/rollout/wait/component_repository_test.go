@@ -56,14 +56,20 @@ func componentCommand(t *testing.T, args []string, objects ...runtime.Object) (r
 	return doc, releaseCalls, client, err
 }
 
+// repositoryComponentObjects takes ready as a Ready status, optionally
+// followed by ":<reason>"; the reason defaults to UpgradeFailed.
 func repositoryComponentObjects(kind, running, ready string, observed, available int64) []runtime.Object {
+	ready, reason, _ := strings.Cut(ready, ":")
+	if reason == "" {
+		reason = "UpgradeFailed"
+	}
 	component := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "helm.toolkit.fluxcd.io/v2", "kind": "HelmRelease",
 		"metadata": map[string]any{"name": componentName, "namespace": "agent-platform", "generation": int64(2)},
 		"spec":     map[string]any{"chartRef": map[string]any{"kind": "OCIRepository", "name": componentName}},
 		"status": map[string]any{
 			"observedGeneration": observed, "lastAttemptedRevision": "1.2.3",
-			"conditions": []any{map[string]any{"type": "Ready", "status": ready, "reason": "UpgradeFailed"}},
+			"conditions": []any{map[string]any{"type": "Ready", "status": ready, "reason": reason}},
 			"history":    []any{map[string]any{"chartVersion": running + "+digest", "status": "deployed", "name": componentName, "namespace": "agent-platform"}},
 		},
 	}}
@@ -111,7 +117,8 @@ func TestComponentChartWait(t *testing.T) {
 	}{
 		{"range-pinned component", rolloutwait.KindHelmRelease, "1.2.3", "True", 2, 2, 0, rolloutwait.StateRolledOut},
 		{"ready at an older version", rolloutwait.KindHelmRelease, "1.2.2", "True", 2, 2, 2, rolloutwait.StateProgressing},
-		{"target version not ready", rolloutwait.KindHelmRelease, "1.2.3", "False", 2, 2, 2, rolloutwait.StateProgressing},
+		{"target version not ready", rolloutwait.KindHelmRelease, "1.2.3", "False:Progressing", 2, 2, 2, rolloutwait.StateProgressing},
+		{"target version failed again", rolloutwait.KindHelmRelease, "1.2.3", "False", 2, 2, 1, rolloutwait.StateFailed},
 		{"unobserved generation", rolloutwait.KindHelmRelease, "1.2.3", "True", 1, 2, 2, rolloutwait.StateProgressing},
 		{"workload still rolling", rolloutwait.KindHelmRelease, "1.2.3", "True", 2, 1, 2, rolloutwait.StateProgressing},
 		{"failed component upgrade", rolloutwait.KindHelmRelease, "1.2.2", "False", 2, 2, 1, rolloutwait.StateFailed},

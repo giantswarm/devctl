@@ -161,7 +161,8 @@ the version. One of none of them (a component a meta chart renders, on a version
 by itself: rolled out once it is Ready at its current generation (`status.observedGeneration`) with no
 reconcile in flight (`Reconciling` not True) and its workloads are rolled out; `Progressing` or
 `DependencyNotReady` keeps the wait open; Stalled, or not Ready after a failed install, upgrade or test, is
-exit 1. `--reconcile` does not ask it to reconcile.
+exit 1. A failure on obsolete values keeps waiting as described below; `--reconcile` asks it to
+attempt the changed values once.
 
 ### When a deployment has rolled out
 
@@ -199,6 +200,15 @@ The wait ends at once with exit 1 when the version was attempted and failed: the
 reports a `failed` release; a Deployment of the release is past its progress deadline. A failure of an
 older revision is not the version's: the wait goes on.
 
+A failed HelmRelease attempt must also have used the current values. The wait resolves `spec.valuesFrom`
+ConfigMaps and Secrets in the HelmRelease's namespace, merges them with inline `spec.values` using Flux's
+precedence and Helm `targetPath` rules, and compares Flux's `lastAttemptedConfigDigest` (or the legacy
+`lastAttemptedValuesChecksum`). A mismatch keeps waiting for a new attempt, even if the chart version and
+HelmRelease generation did not change. A new settled failure on those values is exit 1 with its current
+message, including when that chart version was deployed before. The same rule applies to explicitly named
+components. Values are never printed in comparison errors; a refused input read is a tooling or authentication
+failure. Without either attempt digest, the existing generation-based failure judgment applies.
+
 ### Polling and `--reconcile`
 
 The cluster is listed after a pause of 5 seconds, doubling to 30, until `--timeout` (30 minutes by
@@ -207,6 +217,8 @@ reconcile requests; a timeout retains the last completed poll. Flux polls an OCI
 interval, often ten minutes; `--reconcile` sets `reconcile.fluxcd.io/requestedAt` once on the source and the HelmRelease
 of each deployment still behind, the annotation `flux reconcile` sets, so Flux looks now. It is the
 only write the command makes; without it the command only reads.
+It also requests a HelmRelease whose failure used obsolete values, including a named component or a
+release already at the chart version. Each such HelmRelease is requested once.
 
 ## The document
 

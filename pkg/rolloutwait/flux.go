@@ -195,23 +195,14 @@ func (w *Waiter) judgeHelmRelease(ctx context.Context, hr *unstructured.Unstruct
 	if !w.charts[src.chart] {
 		return w.judgeNamedHelmRelease(ctx, d, hr, releaseNamespace, release)
 	}
-	if atLeast(d.RunningVersion, w.version) {
-		if !current || ready.status != conditionTrue {
-			return d.set(StateProgressing, "%s deployed, the HelmRelease not ready: %s", d.RunningVersion, orUnknown(ready)), nil
+	if !atLeast(d.RunningVersion, w.version) {
+		admitted, err := src.admits(w.version)
+		if err != nil {
+			return d, fmt.Errorf("%s: reading its version selector %q: %w", d.id(), src.follows, err)
 		}
-		if _, remote, _ := unstructured.NestedMap(hr.Object, "spec", "kubeConfig"); remote {
-			w.warnPoll(fmt.Sprintf("%s deploys to a remote cluster: its workloads are not checked, helm-controller's wait vouches for them", d.id()))
-			return d.set(StateRolledOut, ""), nil
+		if !admitted {
+			return d.set(StateNotFollowing, "%s follows %s, which excludes %s; runs %s", d.Source, src.follows, w.version, orNone(d.RunningVersion)), nil
 		}
-		return w.judgeWorkloads(ctx, d, releaseNamespace, release)
-	}
-
-	admitted, err := src.admits(w.version)
-	if err != nil {
-		return d, fmt.Errorf("%s: reading its version selector %q: %w", d.id(), src.follows, err)
-	}
-	if !admitted {
-		return d.set(StateNotFollowing, "%s follows %s, which excludes %s; runs %s", d.Source, src.follows, w.version, orNone(d.RunningVersion)), nil
 	}
 	if bare(str(hr, "status", "lastAttemptedRevision")) == w.version && (stalled.status == conditionTrue || (ready.status == conditionFalse && helmReleaseFailures[ready.reason])) {
 		// A failure settles once helm-controller is done with it: at the
@@ -223,7 +214,20 @@ func (w *Waiter) judgeHelmRelease(ctx context.Context, hr *unstructured.Unstruct
 		if reconciling.status == conditionTrue {
 			return d.set(StateProgressing, "runs %s; %s %s, helm-controller retrying: %s", orNone(d.RunningVersion), ready.reason, w.version, strings.TrimSpace(reconciling.reason+" "+reconciling.message)), nil
 		}
+		if pending, stale, err := w.staleValuesFailure(ctx, d, hr); stale || err != nil {
+			return pending, err
+		}
 		return d.set(StateFailed, "%s %s: %s", ready.reason, w.version, ready.message), nil
+	}
+	if atLeast(d.RunningVersion, w.version) {
+		if !current || ready.status != conditionTrue {
+			return d.set(StateProgressing, "%s deployed, the HelmRelease not ready: %s", d.RunningVersion, orUnknown(ready)), nil
+		}
+		if _, remote, _ := unstructured.NestedMap(hr.Object, "spec", "kubeConfig"); remote {
+			w.warnPoll(fmt.Sprintf("%s deploys to a remote cluster: its workloads are not checked, helm-controller's wait vouches for them", d.id()))
+			return d.set(StateRolledOut, ""), nil
+		}
+		return w.judgeWorkloads(ctx, d, releaseNamespace, release)
 	}
 	if src.ready.found && src.ready.status != conditionTrue {
 		return d.set(StateProgressing, "runs %s; %s not ready: %s", orNone(d.RunningVersion), d.Source, src.ready.message), nil
@@ -243,6 +247,12 @@ func (w *Waiter) judgeNamedHelmRelease(ctx context.Context, d Deployment, hr *un
 		return d.set(StateProgressing, "runs %s; helm-controller has not observed generation %d yet (the HelmRelease: %s)", orNone(d.RunningVersion), hr.GetGeneration(), orUnknown(ready)), nil
 	}
 	if stalled.status == conditionTrue || (ready.status == conditionFalse && helmReleaseFailures[ready.reason]) {
+		if reconciling.status == conditionTrue {
+			return d.set(StateProgressing, "runs %s; helm-controller retrying: %s", orNone(d.RunningVersion), orUnknown(reconciling)), nil
+		}
+		if pending, stale, err := w.staleValuesFailure(ctx, d, hr); stale || err != nil {
+			return pending, err
+		}
 		return d.set(StateFailed, "%s at generation %d: %s", ready.reason, hr.GetGeneration(), ready.message), nil
 	}
 	if ready.status != conditionTrue || reconciling.status == conditionTrue || d.RunningVersion == "" {

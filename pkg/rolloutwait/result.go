@@ -93,8 +93,8 @@ type Deployment struct {
 	// source is the Flux source object a reconcile request goes to; nil for
 	// an App and for a HelmChart that does not exist yet.
 	source *object
-	// self is, for a revision, the object itself a reconcile request goes
-	// to; nil for what Flux does not reconcile on request (a Konfiguration).
+	// self is the object to reconcile for a revision or changed values;
+	// nil for what Flux does not reconcile on request (a Konfiguration).
 	self *object
 }
 
