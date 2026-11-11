@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 )
 
 // NewConditional is New for a poll loop: every GET is a conditional request

@@ -11,14 +11,22 @@ import (
 
 	"k8s.io/client-go/dynamic"
 
+	"github.com/giantswarm/devctl/v8/internal/laptop"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 )
 
-// runCommand runs the command with sources that refuse to open, so what is
-// tested is the argument handling, the gate and the envelope.
+// runCommand runs the command with release sources that refuse to open, so
+// what is tested is the argument handling, the gate and the envelope.
 func runCommand(t *testing.T, args []string, f *flag, openErr error) (map[string]any, error) {
+	t.Helper()
+	return runCommandWithCluster(t, args, f, openErr, nil)
+}
+
+// runCommandWithCluster is runCommand with the cluster opening failing with
+// clusterErr (opening it is a no-op when nil).
+func runCommandWithCluster(t *testing.T, args []string, f *flag, openErr, clusterErr error) (map[string]any, error) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	r := &runner{
@@ -26,11 +34,14 @@ func runCommand(t *testing.T, args []string, f *flag, openErr error) (map[string
 		flag:   f,
 		stdout: &stdout,
 		stderr: &stderr,
-		openRelease: func(context.Context, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+		openRelease: func(context.Context, string, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+			if clusterErr != nil {
+				t.Error("the release must not be read when the kube context fails")
+			}
 			return nil, openErr
 		},
-		openCluster: func(string, string, func(http.RoundTripper) http.RoundTripper) (dynamic.Interface, error) {
-			return nil, errors.New("must not be opened")
+		openCluster: func(context.Context, laptop.ClusterConfig) (dynamic.Interface, error) {
+			return nil, clusterErr
 		},
 	}
 	err := r.run(context.Background(), args)
@@ -52,13 +63,16 @@ func TestRunUsageErrorsAreDocuments(t *testing.T) {
 		reason string
 	}{
 		{name: "no arguments", args: nil, reason: "usage: devctl rollout wait <installation> <owner/repo>"},
-		{name: "no repository", args: []string{"myinstallation"}, reason: "got 1 argument(s)"},
+		{name: "no repository or component", args: []string{"myinstallation"}, reason: "pass --chart <name> and --version"},
 		{name: "too many arguments", args: []string{"myinstallation", "giantswarm/devctl", "v1.2.3", "v1.2.4"}, reason: "got 4 argument(s)"},
 		{name: "installation with a slash", args: []string{"giantswarm/devctl", "v1.2.3"}, reason: "is not an installation name"},
 		{name: "no slash", args: []string{"myinstallation", "devctl", "v1.2.3"}, reason: "expected owner/repo"},
 		{name: "neither version nor pr", args: []string{"myinstallation", "giantswarm/devctl"}, reason: "exactly one of a version"},
 		{name: "both version and pr", args: []string{"myinstallation", "giantswarm/devctl", "v1.2.3"}, flag: flag{PR: 7}, reason: "exactly one of a version"},
 		{name: "not a version", args: []string{"myinstallation", "giantswarm/devctl", "latest"}, reason: "not a version"},
+		{name: "both --version and pr", args: []string{"myinstallation", "giantswarm/devctl"}, flag: flag{Version: "v1.2.3", PR: 7}, reason: "exactly one of a version"},
+		{name: "--version and a differing argument", args: []string{"myinstallation", "giantswarm/devctl", "v1.2.3"}, flag: flag{Version: "v1.2.4"}, reason: "differ"},
+		{name: "--version not a version", args: []string{"myinstallation", "giantswarm/devctl"}, flag: flag{Version: "latest"}, reason: "not a version"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -99,5 +113,93 @@ func TestRunAuthRequiredIsExit8(t *testing.T) {
 	}
 	if doc["verdict"] != string(agentcli.VerdictAuthRequired) || !strings.Contains(doc["reason"].(string), "devctl auth login") {
 		t.Errorf("envelope: %v", doc)
+	}
+}
+
+func TestRunMissingContextEndsBeforeTheRelease(t *testing.T) {
+	missing := laptop.MissingContextError("myinstallation", "teleport.giantswarm.io-myinstallation", []string{"gs-myinstallation"})
+	doc, err := runCommandWithCluster(t, []string{"myinstallation", "giantswarm/devctl", "v1.2.3"}, &flag{}, nil, missing)
+	if agentcli.Exit(err) != agentcli.ExitUsage {
+		t.Fatalf("want exit %d, got %d (%v)", agentcli.ExitUsage, agentcli.Exit(err), err)
+	}
+	if reason, _ := doc["reason"].(string); !strings.Contains(reason, "gs-myinstallation") || !strings.Contains(reason, "--context") {
+		t.Errorf("reason should name the candidate and --context: %q", reason)
+	}
+}
+
+func TestRunPassesKubeconfigAndTeleport(t *testing.T) {
+	var got laptop.ClusterConfig
+	var stdout bytes.Buffer
+	r := &runner{
+		gate:   func(bool) error { return nil },
+		flag:   &flag{Kubeconfig: "/home/me/own.kubeconfig"},
+		stdout: &stdout,
+		stderr: &bytes.Buffer{},
+		openRelease: func(context.Context, string, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+			return nil, errors.New("stop after the cluster")
+		},
+		openCluster: func(_ context.Context, c laptop.ClusterConfig) (dynamic.Interface, error) {
+			got = c
+			return nil, nil
+		},
+		teleport: laptop.Tsh{},
+	}
+	_ = r.run(context.Background(), []string{"myinstallation", "giantswarm/devctl", "v1.2.3"})
+	if got.Installation != "myinstallation" || got.Context != "teleport.giantswarm.io-myinstallation" || got.Kubeconfig != "/home/me/own.kubeconfig" || got.Teleport == nil || got.Wrap == nil {
+		t.Errorf("cluster config: %+v", got)
+	}
+}
+
+// --version names the version like the argument: the wait goes on to the
+// release.
+func TestRunVersionFlagIsTheVersion(t *testing.T) {
+	authErr := &authstore.AuthRequiredError{Identity: "GitHub", Cause: "no token in the keychain", Hint: "devctl auth login"}
+	for name, args := range map[string][]string{
+		"flag only":                  {"myinstallation", "giantswarm/devctl"},
+		"flag and the same argument": {"myinstallation", "giantswarm/devctl", "v3.23.0"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := runCommand(t, args, &flag{Version: "v3.23.0"}, authErr)
+			if agentcli.Exit(err) != agentcli.ExitAuthRequired {
+				t.Fatalf("want the release opened (exit %d), got %d (%v)", agentcli.ExitAuthRequired, agentcli.Exit(err), err)
+			}
+		})
+	}
+}
+
+func TestRunMalformedHelmReleaseEndsBeforeTooling(t *testing.T) {
+	for _, name := range []string{"", "/x", "x/", "a/b/c"} {
+		t.Run(name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			called := false
+			r := &runner{
+				flag:   &flag{HelmReleases: []string{name}},
+				stdout: &stdout,
+				stderr: &bytes.Buffer{},
+				gate: func(bool) error {
+					called = true
+					return errors.New("the gate must not run for malformed --helmrelease")
+				},
+				openCluster: func(context.Context, laptop.ClusterConfig) (dynamic.Interface, error) {
+					called = true
+					return nil, errors.New("the cluster must not open for malformed --helmrelease")
+				},
+				openRelease: func(context.Context, string, agentcli.Endpoints, http.RoundTripper, func(string)) (*releasewait.Sources, error) {
+					called = true
+					return nil, errors.New("the release must not open for malformed --helmrelease")
+				},
+			}
+			err := r.run(context.Background(), []string{"myinstallation", "giantswarm/devctl", "v1.2.3"})
+			if called {
+				t.Error("invalid --helmrelease reached tooling")
+			}
+			var doc agentcli.Envelope
+			if jsonErr := json.Unmarshal(stdout.Bytes(), &doc); jsonErr != nil {
+				t.Fatalf("stdout is not one JSON document: %v", jsonErr)
+			}
+			if agentcli.Exit(err) != agentcli.ExitUsage || doc.ExitCode != agentcli.ExitUsage || doc.Verdict != agentcli.VerdictUsage || !strings.Contains(doc.Reason, "--helmrelease") {
+				t.Errorf("want the malformed flag as a usage document, got %+v (%v)", doc, err)
+			}
+		})
 	}
 }

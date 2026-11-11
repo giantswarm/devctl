@@ -14,6 +14,14 @@ type Config struct {
 	// auto-release workflow; main when empty.
 	ReleaseBranch string
 
+	// MaintenanceBranches says a fork line's maintenance branches
+	// (release-X.Y) cut releases too, each the patches of its X.Y series.
+	MaintenanceBranches bool
+
+	// PatchCandidates says a patch of the last stable release is cut as a
+	// release candidate too, never tagged stable on its push.
+	PatchCandidates bool
+
 	// RepoName is the repository's name under the giantswarm organization,
 	// for cliff.toml's `[remote.github].repo` field.
 	RepoName string
@@ -31,10 +39,12 @@ func New(config Config) (*Workflows, error) {
 
 	w := &Workflows{
 		params: params.Params{
-			Dir:           ".github/workflows",
-			Flavours:      config.Flavours,
-			ReleaseBranch: releaseBranch,
-			RepoName:      config.RepoName,
+			Dir:                 ".github/workflows",
+			Flavours:            config.Flavours,
+			ReleaseBranch:       releaseBranch,
+			MaintenanceBranches: config.MaintenanceBranches,
+			PatchCandidates:     config.PatchCandidates,
+			RepoName:            config.RepoName,
 		},
 	}
 
@@ -45,8 +55,25 @@ func (w *Workflows) AddCustomerBoardAutomation() input.Input {
 	return file.NewCustomerBoardAutomationInput(w.params)
 }
 
+func (w *Workflows) CheckReadmeLinks() input.Input {
+	return file.NewCheckReadmeLinksInput(w.params)
+}
+
 func (w *Workflows) CheckValuesSchema() input.Input {
 	return file.NewCheckValuesSchemaInput(w.params)
+}
+
+// ChartTests runs the chart unit tests (`make helm-test`) on a pull request.
+// CircleCI calls `make test` only through architect/go-build, so in a
+// chart-only app repository nothing else runs the suites.
+func (w *Workflows) ChartTests() input.Input {
+	return file.NewChartTestsInput(w.params)
+}
+
+// ReservationCommand sends reservation commands from pull request comments,
+// and pull request closes, to giantswarm/mc-reservations.
+func (w *Workflows) ReservationCommand() input.Input {
+	return file.NewReservationCommandInput(w.params)
 }
 
 func (w *Workflows) ClusterAppDocumentationValidation() input.Input {
@@ -64,12 +91,28 @@ func (w *Workflows) AutoRelease() input.Input {
 	return file.NewAutoReleaseInput(w.params)
 }
 
+// AutoReleaseMultiImage is the Auto Release of a multi-image repository: one
+// <name>/vX.Y.Z release line per image directory.
+func (w *Workflows) AutoReleaseMultiImage() input.Input {
+	return file.NewAutoReleaseMultiImageInput(w.params)
+}
+
 func (w *Workflows) AutoReleaseDeletion() input.Input {
 	return file.NewAutoReleaseDeletionInput(w.params)
 }
 
 func (w *Workflows) AutoReleaseLegacyDeletion() input.Input {
 	return file.NewAutoReleaseLegacyDeletionInput(w.params)
+}
+
+func (w *Workflows) ChangelogDeletion() input.Input {
+	return file.NewChangelogDeletionInput(w.params)
+}
+
+// ChangelogPointer freezes a repository's CHANGELOG.md as a pointer at its
+// GitHub Releases.
+func (w *Workflows) ChangelogPointer() input.Input {
+	return file.NewChangelogPointerInput(w.params)
 }
 
 func (w *Workflows) CliffToml() input.Input {
@@ -116,6 +159,16 @@ func (w *Workflows) HelmRenderDiff() input.Input {
 	return file.NewHelmRenderDiff(w.params)
 }
 
+// Mctl returns the mctl workflows of a management-clusters repository.
+func (w *Workflows) Mctl() []input.Input {
+	return file.NewMctlInputs(w.params)
+}
+
+// MctlLegacyDeletion deletes the unprefixed workflows and op.env written by `mctl create cmc-repo`.
+func (w *Workflows) MctlLegacyDeletion() []input.Input {
+	return file.NewMctlLegacyDeletionInputs(w.params)
+}
+
 func (w *Workflows) PublishTechdocsInput() input.Input {
 	return file.NewPublishTechdocs(w.params)
 }
@@ -138,6 +191,12 @@ func (w *Workflows) TestKyvernoPoliciesWithChainsaw() input.Input {
 
 func (w *Workflows) UpdateChart() input.Input {
 	return file.NewUpdateChartInput(w.params)
+}
+
+// PullRequestTemplate drops the checklist item asking for a CHANGELOG.md edit
+// from a repository's existing pull request template.
+func (w *Workflows) PullRequestTemplate() input.Input {
+	return file.NewPullRequestTemplateInput()
 }
 
 func (w *Workflows) ValidateChangelog() input.Input {

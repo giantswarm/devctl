@@ -24,7 +24,8 @@ The flavour is one of **two independent axes**. The other one is the programming
 | [`fleet`](#fleet) | holds GitOps definitions for management clusters |
 | [`customer`](#customer) | tracks issues on a shared customer board |
 | [`fork`](#fork) | carries an upstream release plus patches on an organisation branch |
-| [`plans`](#plans) | holds a team's PRDs and plan-workflow skills (beside `generic`) |
+| [`multi-image`](#multi-image) | builds and releases multiple images, one per `toolchains/<name>/` directory |
+| [`plans`](#plans) | holds a team's PRDs, companion websites and plan-workflow skills |
 | [`generic`](#generic) | is none of the above and just needs to be released |
 
 `generic` is the neutral choice, not a fallback for "I am not sure": it adds nothing beyond the base files. If a more specific flavour applies, use it -- and add `generic` only when nothing else does.
@@ -37,10 +38,11 @@ An app, by the definition of the Giant Swarm app platform. Each app repository c
 
 | Command | Result |
 |---------|--------|
-| `gen makefile` | `Makefile.gen.app.mk` -- the `lint-chart`, `update-chart`, `update-deps` and `helm-docs` targets |
-| `gen workflows` | `.github/workflows/zz_generated.check_values_schema.yaml` |
+| `gen makefile` | `Makefile.gen.app.mk` -- the `lint-chart`, `update-chart`, `update-deps`, `helm-docs` and `helm-test` targets |
+| `gen workflows` | `.github/workflows/zz_generated.check_values_schema.yaml`, plus `zz_generated.chart_tests.yaml` (unless `--chart-tests=false`) and `zz_generated.check_readme_links.yaml` (unless `--check-readme-links=false`) |
 | `gen workflows --install-update-chart` | additionally `zz_generated.update_chart.yaml`, plus `zz_generated.sync_from_upstream.yaml` with `--upstream-sync-automation` and `zz_generated.dispatch_update_chart_events.yaml` with `--dispatch-update-chart-events-repo` |
 | `gen circleci` | the chart pipeline: `build-chart` / `push-to-app-catalog` jobs and the ATS chart tests |
+| `gen llm` | includes the `gs-appdev` plugin in the `AGENTS.md` managed block |
 
 With `--language kyverno-policy` this flavour also generates `zz_generated.test-kyverno-policies-with-chainsaw.yaml`.
 
@@ -66,7 +68,7 @@ A command line interface (CLI) component which is typically executed on-demand e
 
 **Requires `--language go`** -- `gen makefile` rejects any other combination, and the CircleCI binary jobs are only emitted for Go.
 
-Two `gen circleci` flags apply to this flavour only: `--build-concurrency` and `--resource-class`. Lower the first and/or raise the second if the cold cross-compile gets OOM-killed.
+The `gen circleci` flag `--build-concurrency` applies to this flavour only, and `--resource-class` sizes the `cli` `go-build` job as well as the Node job. Lower the first and/or raise the second if the cold cross-compile gets OOM-killed.
 
 ### `k8sapi`
 
@@ -82,7 +84,9 @@ A repository to be used with GitOps containing kubernetes clusters.
 
 | Command | Result |
 |---------|--------|
-| `gen workflows` | `.github/workflows/zz_generated.cluster_app_values_validation_schema.yaml` -- validates the `management-clusters/**/cluster-app-manifests.yaml` committed in the repo against the corresponding cluster app schema |
+| `gen workflows` | `.github/workflows/zz_generated.cluster_app_values_validation_schema.yaml` -- validates the `management-clusters/**/cluster-app-manifests.yaml` committed in the repo against the corresponding cluster app schema, plus `zz_generated.mctl_*.yaml` |
+
+`devctl gen workflows` generates the mctl workflows of a `<customer>-management-clusters` repository (`zz_generated.mctl_*.yaml`: cluster init PR, `/init`, `/config`, `/create-mc`, the `mctl/ready-to-merge` gate and the merge and close cascades), running the mctl image tag devctl pins (`vars.MCTL_IMAGE` overrides it). They never run in `giantswarm/template-management-clusters`. The unprefixed copies and `op.env` that `mctl create cmc-repo` wrote are deleted.
 
 ### `customer`
 
@@ -98,7 +102,16 @@ Its generated setup is the GitHub workflows (`gen workflows`, including the cust
 
 ### `fork`
 
-A fork line: a repository that carries an upstream release plus the carried patches on a branch named after the organisation, which its entry declares as `defaultBranch`. The tree is upstream's, so nothing is generated for it: every `devctl gen` leaves it as it is, and the repository set-up reconciler skips the scaffold and CODEOWNERS steps on it and runs every other step as declared, branch protection on the declared branch included. Its pull requests land by rebase merge, so that each carried patch stays one upstream-ready commit, and a re-pin merges upstream's history: the reconciler's settings step keeps rebase merges on and leaves merge commits as the repository has them, while the rest of the settings baseline (squash merges named after the pull request's title, branch updates and auto-merge on, the head branch deleted on merge, issues on, wiki and projects off) applies as everywhere. Declared alone, with the repository's language.
+A fork line: a repository that carries an upstream release plus the carried patches on a branch named after the organisation, which its entry declares as `defaultBranch`. The tree is upstream's, so nothing is generated for it: align-files leaves it as it is, and only `devctl gen renovate --flavour fork`, run by hand, writes the `renovate.json` Renovate needs to scan a GitHub fork ([details](gen.md#generating-renovate-configuration)); and the repository set-up reconciler skips the scaffold and CODEOWNERS steps on it and runs every other step as declared, branch protection on the declared branch included. Its pull requests land by rebase merge, so that each carried patch stays one upstream-ready commit, and a re-pin merges upstream's history: the reconciler's settings step keeps rebase merges on and leaves merge commits as the repository has them, while the rest of the settings baseline (squash merges named after the pull request's title, branch updates and auto-merge on, the head branch deleted on merge, issues on, wiki and projects off) applies as everywhere. Declared alone, with the repository's language.
+
+### `multi-image`
+
+A repository of images alone, several of them, each with its own release line: one image per `toolchains/<name>/` directory holding a `Dockerfile`, named `giantswarm/<repo>/<name>` and released as `<name>/vX.Y.Z` (giantswarm/agent-toolchains). Declared on its own with `language: generic`, on generated CI with `gen.ci.releaseWorkflow: auto-release` (the default there; `legacy` is refused). `devctl gen circleci` renders its per-image pipeline and `devctl gen workflows` its per-image Auto Release ([details](gen.md#multi-image-repositories)).
+
+| Command | Result |
+|---------|--------|
+| `gen circleci` | per-image build and publish pipeline for each `toolchains/<name>/Dockerfile` |
+| `gen workflows --release-workflow auto-release` | `.github/workflows/zz_generated.auto_release.yaml` tagging each changed image directory `<name>/vX.Y.Z` |
 
 ### `generic`
 
@@ -108,7 +121,11 @@ No flavour-specific files. The repo still gets everything that is not flavour-ga
 
 ### `plans`
 
-A team plans repository: versioned PRDs, their companion websites and the plan-workflow agent skills (cabbage-plans, bumblebee-plans, atlas-plans and the like). An add-on flavour, declared beside `generic` (`flavours: [generic, plans]`) with `language: generic` and `gen.ci.generate: false` -- there is no CircleCI for it, the same as `customer`. It derives the template `giantswarm/template-plans`; any other language is refused, the same way language `node` is until its template ships.
+A team plans repository: versioned PRDs, their companion websites and the plan-workflow agent skills (one `<team>-plans` repository per team). Declared on its own (`flavours: [plans]`) with `language: generic` and `gen.ci.generate: false` -- there is no CircleCI for it, the same as `customer`. It derives the template `giantswarm/template-plans`; any other language is refused, the same way language `node` is until its template ships. `devctl gen plans` writes the repository's shared set-up, the `.claude/settings.json` that enables the `gs-plans` plugin ([gen.md](gen.md#generating-a-plans-repositorys-set-up)).
+
+| Command | Result |
+|---------|--------|
+| `gen plans` | `.claude/settings.json` enabling the `gs-plans` plugin |
 
 ## Flavours and languages
 
@@ -116,7 +133,7 @@ A team plans repository: versioned PRDs, their companion websites and the plan-w
 
 | Language | Result |
 |----------|--------|
-| `go` | `gen makefile`: `Makefile.gen.go.mk`. `gen circleci`: the `go-build` job. `gen workflows`: `zz_generated.fix_vulnerabilities.yaml`. `gen llm`: `zz_generated.go-llm-rules.mdc`. `gen precommit`: repo name auto-detected from `go.mod` |
+| `go` | `gen makefile`: `Makefile.gen.go.mk`. `gen circleci`: the `go-build` job. `gen workflows`: `zz_generated.fix_vulnerabilities.yaml`. `gen llm`: `goimports -local` rule and `gs-godev` plugin in the `AGENTS.md` managed block. `gen precommit`: `.golangci.yml` and Go hooks, with repo name auto-detected from `go.mod` |
 | `node` | `gen circleci`: a `node-build` / `node-test` job on a `cimg/node` executor, tuned with `--package-manager` and the `--node-*` flags. `gen precommit`: a `ci:lint` pre-push hook |
 | `kyverno-policy` | `gen makefile`: `Makefile.gen.chainsaw.mk` and the chainsaw test scaffolding. `gen workflows` (with flavour `app`): `zz_generated.test-kyverno-policies-with-chainsaw.yaml` |
 | `python` | accepted as a valid value, but no generator currently emits Python-specific files |
@@ -136,6 +153,6 @@ The two axes combine freely, apart from one rule: **`cli` requires `go`**. Some 
 
 - Only `gen makefile` and `gen circleci` validate `--language` against the list above. `gen workflows`, `gen llm` and `gen precommit` accept any string, so a typo such as `-l golang` silently produces output with the language-specific parts missing.
 - `gen makefile` requires both `--flavour` and `--language`; `gen workflows` requires `--flavour`.
-- `gen llm` accepts `--flavour`, but no generated rule currently depends on it. Only `--language go` changes its output.
+- `gen llm` writes the devctl-managed block in `AGENTS.md`: `--language go` adds the `goimports -local` rule and `gs-godev` plugin, `--flavour app` adds the `gs-appdev` plugin, and `--flavour fork` skips generation.
 - `gen renovate --language` is **not** this list. It names an ecosystem for Renovate to watch (`go`, `docker`, ...).
 - `gen precommit` has its own, unrelated `--flavors` flag (US spelling) with the values `bash`, `md` and `helmchart`. These select extra pre-commit checkers and have nothing to do with repository flavours.

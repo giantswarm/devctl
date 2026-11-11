@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -17,12 +18,24 @@ const (
 	FlavourClusterApp              Flavour = "cluster-app"
 	FlavourManagementClustersFleet Flavour = "fleet"
 	// FlavourPlans is a team plans repository: versioned PRDs, their
-	// companion websites and the plan-workflow agent skills. An add-on
-	// flavour declared beside generic (flavours: [generic, plans]) with
-	// language generic; the generators produce nothing extra for it, and the
-	// repository set-up engine derives it the template giantswarm/template-plans.
+	// companion websites and the plan-workflow agent skills. Declared on its
+	// own (flavours: [plans]) with language generic: the repository set-up
+	// engine derives it the template giantswarm/template-plans, and gen plans
+	// writes its shared set-up.
 	FlavourPlans Flavour = "plans"
+	// FlavourMultiImage is a repository of several images, each with its own
+	// release line: one image per toolchains/<name>/ directory holding a
+	// Dockerfile, released as <name>/vX.Y.Z. gen circleci renders its
+	// per-image pipeline and gen workflows its per-directory Auto Release.
+	FlavourMultiImage Flavour = "multi-image"
 )
+
+// MultiImageDir is the directory of a multi-image repository whose
+// subdirectories holding a Dockerfile are its images: toolchains/go/Dockerfile
+// is the image giantswarm/<repo>/go, released as go/vX.Y.Z. It is also the
+// build context of every image, so the images share the build files kept
+// there beside them, and a change to those releases every image.
+const MultiImageDir = "toolchains"
 
 func AllFlavours() []string {
 	return []string{
@@ -35,7 +48,34 @@ func AllFlavours() []string {
 		FlavourClusterApp.String(),
 		FlavourManagementClustersFleet.String(),
 		FlavourPlans.String(),
+		FlavourMultiImage.String(),
 	}
+}
+
+// flavourDescriptions documents each flavour for the command help. Every entry
+// of AllFlavours() must have one -- Test_FlavourDescriptions enforces that, so a
+// new flavour cannot silently leave the help text behind.
+var flavourDescriptions = map[Flavour]string{
+	FlavourApp:                     "project containing a helm chart",
+	FlavourCLI:                     "project released with a downloadable binary",
+	FlavourCustomer:                "project whose issues are tracked on the general customer board",
+	FlavourFork:                    "project carrying an upstream release plus patches on an organisation branch",
+	FlavourGeneric:                 "everything else, i.e a project which simply needs to be released",
+	FlavourKubernetesAPI:           "project containing a Kubernetes API",
+	FlavourClusterApp:              "project containing helm chart, that is a cluster app (e.g. cluster-aws, cluster-azure, ...)",
+	FlavourManagementClustersFleet: "project containing clusters using GitOps",
+	FlavourPlans:                   "team plans repository holding PRDs, companion websites and plan-workflow skills",
+	FlavourMultiImage:              "project building and releasing multiple images, one per toolchains/<name>/ directory",
+}
+
+// FlavourDescriptionList renders the flavours as an indented bullet list for a
+// command's long description, in AllFlavours() order.
+func FlavourDescriptionList() string {
+	var b strings.Builder
+	for _, f := range AllFlavours() {
+		fmt.Fprintf(&b, "  - %s - %s\n", f, flavourDescriptions[Flavour(f)])
+	}
+	return b.String()
 }
 
 type Flavour string
@@ -60,6 +100,8 @@ func NewFlavour(s string) (Flavour, error) {
 		return FlavourManagementClustersFleet, nil
 	case FlavourPlans.String():
 		return FlavourPlans, nil
+	case FlavourMultiImage.String():
+		return FlavourMultiImage, nil
 	}
 
 	return Flavour("unknown"), microerror.Maskf(invalidConfigError, "flavour must be one of %s", strings.Join(AllFlavours(), "|"))
@@ -82,8 +124,9 @@ func (s FlavourSlice) Contains(f Flavour) bool {
 
 // Generates says whether the generators have anything to produce for the
 // flavours. A fork line carries its upstream's files plus the carried
-// patches: nothing is generated for it, every `devctl gen` leaves it as it
-// is.
+// patches: nothing is generated for it, align-files leaves it as it is; only
+// `devctl gen renovate --flavour fork`, run by hand, writes the renovate.json
+// Renovate needs to scan a GitHub fork.
 func (s FlavourSlice) Generates() bool {
 	return !s.Contains(FlavourFork)
 }

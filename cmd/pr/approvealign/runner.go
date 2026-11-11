@@ -4,15 +4,20 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/giantswarm/microerror"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/pr/internal/checks"
+	"github.com/giantswarm/devctl/v8/cmd/pr/internal/prcontext"
 	"github.com/giantswarm/devctl/v8/internal/pr"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
@@ -26,14 +31,30 @@ type runner struct {
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
 	}
-	return r.run(ctx, cmd, args)
+	err := r.run(ctx, cmd, args)
+	// An empty or failed search can end the run after cancellation; report the cancellation.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	return err
 }
 
 func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	token, err := authstore.ResolveGitHub(ctx)
 	if err != nil {
 		return err
@@ -62,26 +83,36 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	// Search for align-files PRs
 	// Note: We don't filter by status:success here because we want to find all PRs
 	// and then check/wait for their status in processPR (similar to approve-merge-renovate)
-	searchQuery := `is:pr is:open archived:false org:giantswarm review-requested:@me "chore: align files according to platform standards"`
-
-	searchOpts := &github.SearchOptions{
-		ListOptions: github.ListOptions{PerPage: 100},
+	searchQuery := `is:pr is:open archived:false org:giantswarm review-requested:@me in:title "` + alignTitle + `"`
+	if r.flag.Team != "" {
+		// Team scope: a repository that requests no reviewer never puts its
+		// Align files PR into anyone's queue, so search without the review filter.
+		searchQuery = `is:pr is:open archived:false org:giantswarm in:title "` + alignTitle + `"`
 	}
-	searchResults, _, err := githubClient.Search.Issues(ctx, searchQuery, searchOpts)
+
+	issues, err := r.searchIssues(ctx, githubClient, searchQuery)
 	if err != nil {
-		return microerror.Maskf(executionFailedError, "failed to search for PRs: %v", err)
+		return err
 	}
 
-	if searchResults.GetTotal() == 0 {
+	if r.flag.Team != "" {
+		repos, err := teamRepositories(ctx, githubClient, r.flag.Team)
+		if err != nil {
+			return err
+		}
+		issues = selectTeamPRs(issues, repos)
+	}
+
+	if len(issues) == 0 {
 		fmt.Fprintln(r.stdout, "No PRs found.")
 		return nil
 	}
 
 	// Initialize PR statuses with mutex protection for concurrent updates
 	var prStatusesMu sync.Mutex
-	prStatuses := make([]*pr.PRStatus, 0, len(searchResults.Issues))
+	prStatuses := make([]*pr.PRStatus, 0, len(issues))
 
-	for _, issue := range searchResults.Issues {
+	for _, issue := range issues {
 		owner, repoName, err := pr.ParseRepoFromURL(issue.GetHTMLURL())
 		if err != nil {
 			continue
@@ -100,12 +131,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		prStatuses = append(prStatuses, ps)
 	}
 
-	pr.PrintTableHeader(r.stdout, "Repository")
-
-	// Print initial empty rows for all PRs
-	for range prStatuses {
-		fmt.Fprintln(r.stdout, "")
-	}
+	displayedRows := 0
 
 	// Start processing all PRs in parallel
 	var wg sync.WaitGroup
@@ -118,10 +144,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	}
 
 	// Update display periodically until all PRs are done
-	done := make(chan bool)
+	done := make(chan struct{})
 	go func() {
 		wg.Wait()
-		done <- true
+		close(done)
 	}()
 
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -129,10 +155,17 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 
 	for {
 		select {
+		case <-ctx.Done():
+			wg.Wait()
+			pr.UpdateTable(r.stdout, prStatuses)
+			fmt.Fprintln(r.stdout, "")
+			r.printSummary(prStatuses)
+			return ctx.Err()
+
 		case <-done:
 			// Final update
 			prStatusesMu.Lock()
-			pr.UpdateTable(r.stdout, prStatuses)
+			r.updateStatusTable(prStatuses, displayedRows, token.SourceName())
 			prStatusesMu.Unlock()
 
 			fmt.Fprintln(r.stdout, "")
@@ -141,13 +174,34 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 			r.printSummary(prStatuses)
 			prStatusesMu.Unlock()
 
-			return nil
+			return ctx.Err()
 
 		case <-ticker.C:
 			prStatusesMu.Lock()
-			pr.UpdateTable(r.stdout, prStatuses)
+			displayedRows = r.updateStatusTable(prStatuses, displayedRows, token.SourceName())
 			prStatusesMu.Unlock()
 		}
+	}
+}
+
+func (r *runner) searchIssues(ctx context.Context, githubClient *github.Client, query string) ([]*github.Issue, error) {
+	opts := &github.SearchOptions{ListOptions: github.ListOptions{PerPage: 100}}
+
+	var issues []*github.Issue
+	for {
+		results, resp, err := githubClient.Search.Issues(ctx, query, opts)
+		if err != nil {
+			return nil, microerror.Maskf(executionFailedError, "failed to search for PRs: %v", err)
+		}
+		for _, issue := range results.Issues {
+			if strings.HasPrefix(issue.GetTitle(), alignTitle) {
+				issues = append(issues, issue)
+			}
+		}
+		if resp.NextPage == 0 {
+			return issues, nil
+		}
+		opts.Page = resp.NextPage
 	}
 }
 
@@ -156,15 +210,22 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 	retryDelay := 5 * time.Second
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
+		if ctx.Err() != nil {
+			ps.UpdateStatus("Cancelled")
+			return
+		}
 		if attempt > 0 {
-			time.Sleep(retryDelay)
+			if err := prcontext.Sleep(ctx, retryDelay); err != nil {
+				ps.UpdateStatus("Cancelled")
+				return
+			}
 		}
 
 		// Get PR details
 		ps.UpdateStatus("Checking...")
-		prData, _, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
+		prData, resp, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
 		if err != nil {
-			ps.UpdateStatus("Failed to get PR")
+			ps.UpdateStatus(readErrorStatus(failedPRRead, resp, err))
 			return
 		}
 
@@ -174,89 +235,54 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 			return
 		}
 
+		// Search results can be stale when a PR has been renamed.
+		if !strings.HasPrefix(prData.GetTitle(), alignTitle) {
+			ps.UpdateStatus("Skipped: not an Align files PR")
+			return
+		}
+
 		// Check if auto-merge is enabled (for status display later)
 		hasAutoMerge := prData.GetAutoMerge() != nil
 
 		// Check status checks BEFORE checking if already approved
 		headSHA := prData.GetHead().GetSHA()
-		combinedStatus, _, _ := githubClient.Repositories.GetCombinedStatus(ctx, ps.Owner, ps.Repo, headSHA, nil)
-		checkRuns, _, _ := githubClient.Checks.ListCheckRunsForRef(ctx, ps.Owner, ps.Repo, headSHA, nil)
-
-		// Check if any checks are failing or pending
-		hasFailedChecks := false
-		checksPending := false
-
-		// Check combined status first - this is for traditional status checks
-		if combinedStatus != nil {
-			state := combinedStatus.GetState()
-			totalCount := combinedStatus.GetTotalCount()
-
-			if state == "success" {
-				// All required checks passed
-				checksPending = false
-				hasFailedChecks = false
-			} else if state == stateFailure || state == "error" {
-				hasFailedChecks = true
-			} else if state == "pending" && totalCount > 0 {
-				// Only treat as pending if there are actual status checks
-				// pending with totalCount=0 just means no checks exist, not that checks are waiting
-				checksPending = true
-			}
+		checkResult, err := checks.Read(ctx, githubClient, ps.Owner, ps.Repo, headSHA)
+		if err != nil {
+			ps.UpdateStatus("Failed to get checks: " + err.Error())
+			return
 		}
+		combinedStatus, checkRuns := checkResult.Combined, checkResult.Runs
 
-		// Check individual check runs (GitHub Actions checks)
-		if checkRuns != nil && len(checkRuns.CheckRuns) > 0 && !hasFailedChecks {
-			// Only check runs if combinedStatus didn't already give us a definitive answer
-			if combinedStatus == nil || (combinedStatus.GetState() != "success" && combinedStatus.GetState() != stateFailure) {
-				for _, run := range checkRuns.CheckRuns {
-					conclusion := run.GetConclusion()
-					status := run.GetStatus()
-
-					if status == "completed" {
-						if conclusion == stateFailure || conclusion == "cancelled" || conclusion == "timed_out" {
-							hasFailedChecks = true
-							break
-						}
-						// success, neutral, skipped are OK
-					} else {
-						// Check is not completed (queued, in_progress)
-						checksPending = true
-					}
-				}
-			}
-		}
-
-		if hasFailedChecks {
+		if checkResult.Failed {
 			ps.UpdateStatus("Failed checks")
 			return
 		}
 
-		if checksPending {
+		if checkResult.Pending {
 			ps.UpdateStatus(fmt.Sprintf("Waiting for checks (%d/%d)", attempt+1, maxRetries))
 			continue
 		}
 
 		// Checks are passing, proceed with approval
 		// Check if already approved
-		reviews, _, err := githubClient.PullRequests.ListReviews(ctx, ps.Owner, ps.Repo, ps.Number, nil)
+		reviews, resp, err := allReviews(ctx, githubClient, ps.Owner, ps.Repo, ps.Number)
 		if err != nil {
-			ps.UpdateStatus("Failed to get reviews")
+			ps.UpdateStatus(readErrorStatus(failedReviewRead, resp, err))
 			return
 		}
 
-		alreadyApproved := false
-		for _, review := range reviews {
-			if review.GetState() == "APPROVED" {
-				alreadyApproved = true
-				break
-			}
-		}
+		alreadyApproved := hasCurrentApproval(reviews)
 
 		if alreadyApproved {
 			// Check if it merged after being approved
 			prCheck, _, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
 			if err == nil && prCheck.GetMerged() {
 				ps.UpdateStatus("Merged (auto-merge)")
+				return
+			}
+
+			if prCheck != nil && prCheck.GetHead().GetSHA() != headSHA {
+				ps.UpdateStatus("Head changed; run again")
 				return
 			}
 
@@ -268,17 +294,25 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 				}
 
 				ps.UpdateStatus("Updating branch...")
-				_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, nil)
-				if err != nil {
+				_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, github.UpdatePullRequestBranchRequest{ExpectedHeadSHA: new(headSHA)})
+				if err != nil && !isGitHubAccepted(err) {
 					ps.UpdateStatus("Failed to update branch")
 					return
 				}
 
 				// Wait a bit for the update to process, then continue to check if it merged
-				time.Sleep(3 * time.Second)
+				if err := prcontext.Sleep(ctx, 3*time.Second); err != nil {
+					ps.UpdateStatus("Cancelled")
+					return
+				}
 				prCheck, _, err = githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
 				if err == nil && prCheck.GetMerged() {
 					ps.UpdateStatus("Merged (auto-merge)")
+					return
+				}
+
+				if err != nil || prCheck.GetHead().GetSHA() == "" || prCheck.GetHead().GetSHA() == headSHA {
+					ps.UpdateStatus("Waiting for branch update")
 					return
 				}
 
@@ -292,9 +326,13 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 
 			if hasAutoMerge {
 				ps.UpdateStatus("Already approved, queued")
-			} else {
-				ps.UpdateStatus("Already approved")
+				return
 			}
+			if r.flag.Team != "" {
+				r.mergeApproved(ctx, githubClient, ps, prCheck, combinedStatus, checkRuns, headSHA)
+				return
+			}
+			ps.UpdateStatus("Already approved")
 			return
 		}
 
@@ -310,7 +348,8 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 
 		ps.UpdateStatus("Approving...")
 		reviewRequest := &github.PullRequestReviewRequest{
-			Event: new("APPROVE"),
+			Event:    new("APPROVE"),
+			CommitID: new(headSHA),
 		}
 		_, _, err = githubClient.PullRequests.CreateReview(ctx, ps.Owner, ps.Repo, ps.Number, reviewRequest)
 		if err != nil {
@@ -319,27 +358,43 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 		}
 
 		// After approval, check if PR needs to be updated with base branch
-		time.Sleep(2 * time.Second)
+		if err := prcontext.Sleep(ctx, 2*time.Second); err != nil {
+			ps.UpdateStatus("Cancelled")
+			return
+		}
 		prCheck, _, err := githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
 		if err == nil && prCheck.GetMerged() {
 			ps.UpdateStatus("Merged (auto-merge)")
 			return
 		}
 
+		if prCheck != nil && prCheck.GetHead().GetSHA() != headSHA {
+			ps.UpdateStatus("Head changed; run again")
+			return
+		}
+
 		// Check if PR branch is behind and needs updating
 		if prCheck != nil && prCheck.GetMergeableState() == "behind" {
 			ps.UpdateStatus("Updating branch...")
-			_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, nil)
-			if err != nil {
+			_, _, err := githubClient.PullRequests.UpdateBranch(ctx, ps.Owner, ps.Repo, ps.Number, github.UpdatePullRequestBranchRequest{ExpectedHeadSHA: new(headSHA)})
+			if err != nil && !isGitHubAccepted(err) {
 				ps.UpdateStatus("Failed to update branch")
 				return
 			}
 
 			// Wait a bit for the update to process, then check if it merged
-			time.Sleep(3 * time.Second)
+			if err := prcontext.Sleep(ctx, 3*time.Second); err != nil {
+				ps.UpdateStatus("Cancelled")
+				return
+			}
 			prCheck, _, err = githubClient.PullRequests.Get(ctx, ps.Owner, ps.Repo, ps.Number)
 			if err == nil && prCheck.GetMerged() {
 				ps.UpdateStatus("Merged (auto-merge)")
+				return
+			}
+
+			if err != nil || prCheck.GetHead().GetSHA() == "" || prCheck.GetHead().GetSHA() == headSHA {
+				ps.UpdateStatus("Waiting for branch update")
 				return
 			}
 
@@ -364,6 +419,45 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 	ps.UpdateStatus("Timeout waiting for checks")
 }
 
+// mergeApproved merges an approved, green PR that carries no auto-merge, or
+// names the required check that nothing produces when that is what blocks it.
+func (r *runner) mergeApproved(ctx context.Context, githubClient *github.Client, ps *pr.PRStatus, prData *github.PullRequest, combined *github.CombinedStatus, runs *github.ListCheckRunsResults, headSHA string) {
+	if prData == nil {
+		ps.UpdateStatus("Already approved")
+		return
+	}
+
+	switch prData.GetMergeableState() {
+	case "clean":
+	case "blocked":
+		required, err := requiredContexts(ctx, githubClient, ps.Owner, ps.Repo, prData.GetBase().GetRef())
+		if err == nil {
+			if missing := missingContexts(required, combined, runs); len(missing) > 0 {
+				ps.UpdateStatus("Blocked: required check never reported: " + strings.Join(missing, ", "))
+				return
+			}
+		}
+		ps.UpdateStatus("Already approved, blocked")
+		return
+	default:
+		ps.UpdateStatus("Already approved, not mergeable (" + prData.GetMergeableState() + ")")
+		return
+	}
+
+	if r.flag.DryRun {
+		ps.UpdateStatus("Would merge")
+		return
+	}
+
+	ps.UpdateStatus("Merging...")
+	_, _, err := githubClient.PullRequests.Merge(ctx, ps.Owner, ps.Repo, ps.Number, "", &github.PullRequestOptions{MergeMethod: "squash", SHA: headSHA})
+	if err != nil {
+		ps.UpdateStatus("Failed to merge")
+		return
+	}
+	ps.UpdateStatus("Merged")
+}
+
 func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 	merged := 0
 	approved := 0
@@ -372,10 +466,24 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 	skipped := 0
 	failed := 0
 	waiting := 0
+	blocked := 0
+	wouldApprove := 0
+	wouldMerge := 0
+	wouldUpdate := 0
 
 	for _, ps := range prStatuses {
 		status := ps.GetStatus()
-		if strings.Contains(status, "Merged") {
+		// Error messages may themselves contain words such as "Merged" or
+		// "Already"; classify the failure before inspecting the rest of the text.
+		if strings.HasPrefix(status, "Failed") {
+			failed++
+		} else if strings.HasPrefix(status, "Would approve") {
+			wouldApprove++
+		} else if status == "Would merge" {
+			wouldMerge++
+		} else if status == "Would update branch" {
+			wouldUpdate++
+		} else if strings.Contains(status, "Merged") {
 			merged++
 		} else if strings.Contains(status, "Updated, queued") {
 			updated++
@@ -383,14 +491,14 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 		} else if strings.Contains(status, "Branch updated") {
 			updated++
 			approved++
-		} else if strings.Contains(status, "queued to merge") {
+		} else if strings.Contains(status, "queued to merge") || status == "Already approved, queued" {
 			queued++
 		} else if strings.Contains(status, "Approved") && !strings.Contains(status, "Would") && !strings.Contains(status, "Already") {
 			approved++
-		} else if strings.Contains(status, "Already") {
+		} else if strings.Contains(status, "Blocked") || strings.Contains(status, "not mergeable") || strings.HasSuffix(status, "blocked") {
+			blocked++
+		} else if strings.Contains(status, "Already") || strings.HasPrefix(status, "Skipped:") {
 			skipped++
-		} else if strings.Contains(status, "Failed") {
-			failed++
 		} else if strings.Contains(status, "Waiting") || strings.Contains(status, "Timeout") {
 			waiting++
 		}
@@ -399,7 +507,13 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 	fmt.Fprintln(r.stdout, "─────────────────────────────")
 	fmt.Fprintln(r.stdout, "Summary:")
 	if r.flag.DryRun {
-		fmt.Fprintf(r.stdout, "  PRs that would be approved: %d\n", len(prStatuses)-skipped-failed-waiting)
+		fmt.Fprintf(r.stdout, "  PRs that would be approved: %d\n", wouldApprove)
+		if wouldMerge > 0 {
+			fmt.Fprintf(r.stdout, "  PRs that would be merged: %d\n", wouldMerge)
+		}
+		if wouldUpdate > 0 {
+			fmt.Fprintf(r.stdout, "  PR branches that would be updated: %d\n", wouldUpdate)
+		}
 	} else {
 		if merged > 0 {
 			fmt.Fprintf(r.stdout, "  PRs merged: %d\n", merged)
@@ -418,5 +532,12 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 	}
 	if waiting > 0 {
 		fmt.Fprintf(r.stdout, "  PRs still waiting: %d\n", waiting)
+	}
+	if blocked > 0 {
+		fmt.Fprintf(r.stdout, "  PRs blocked: %d\n", blocked)
+	}
+	groups, _ := groupReadErrors(prStatuses)
+	for _, group := range groups {
+		fmt.Fprintf(r.stdout, "  %d PR(s): %s\n", group.count, group.status)
 	}
 }

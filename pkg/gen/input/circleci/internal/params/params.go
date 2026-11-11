@@ -25,6 +25,9 @@ type Params struct {
 	// emitted, and the chart push jobs gate directly on build-chart instead.
 	// Only meaningful for a chart/app repo (HasApp); ignored otherwise.
 	SkipATS bool
+	// ChartTestRequires are additional branch execute-chart-tests dependencies
+	// read from the repo's .circleci/config.custom.yml.
+	ChartTestRequires []string
 	// ATSOnRelease adds the tag-time chart-test job (execute-chart-tests-release,
 	// gating push-chart-release) next to the branch job. False, the default,
 	// runs the chart tests on branches only and lets the tag build and push
@@ -43,6 +46,17 @@ type Params struct {
 	// (tests/ats/pyproject.toml + uv.lock instead of tests/ats/Pipfile). Derived
 	// from ATSVersion (major >= 1).
 	ATSKindCluster bool
+	// ATSKindNodeImage is the kind node image emitted as `kind_node_image` on
+	// both run-tests-with-ats jobs when ATSKindCluster is set.
+	ATSKindNodeImage string
+	// ATSImageRegistry is the registry the chart-test jobs log in to before
+	// pulling ATSPullImages.
+	ATSImageRegistry string
+	// ATSPullImages are the images, space-separated, both run-tests-with-ats
+	// jobs pull in their pre-steps -- logged in, with bounded retry and
+	// backoff -- so a transient registry `toomanyrequests` does not fail the
+	// job: app-test-suite, plus the kind node image when ATSKindCluster.
+	ATSPullImages string
 	// ATSKindConfig is the repo-owned kind Cluster configuration emitted as
 	// `kind_config` on both run-tests-with-ats jobs (the job passes it to
 	// `kind create cluster --config`: feature gates, runtime config, patches,
@@ -257,6 +271,14 @@ type Params struct {
 	// Defaults to "large"; raised per repo via gen.ci.resourceClass (the same
 	// knob the cli go-build job uses) for a memory-hungry monorepo verify/build.
 	NodeResourceClass string
+	// NodeJestMaxWorkers is the JEST_MAX_WORKERS the Node job exports, sized
+	// from NodeResourceClass's memory; a repo's test script passes it to jest
+	// as --maxWorkers. 0 (a class of unknown memory) exports nothing.
+	NodeJestMaxWorkers int
+	// NodeLintConcurrency is the BACKSTAGE_CLI_CONCURRENCY the Node job
+	// exports, sized from NodeResourceClass's memory; backstage-cli's repo lint
+	// and repo build read it. 0 exports nothing.
+	NodeLintConcurrency int
 	// NodeTestTarget is the package.json script the Node job runs for the
 	// verify phase (the make-target interface). Defaults to "test".
 	NodeTestTarget string
@@ -286,6 +308,23 @@ type Params struct {
 	TemplateHelmRepositoryPlaceholder string
 	TemplateAppName                   string
 	TemplateHelmRepository            string
+
+	// MultiImage selects the multi-image pipeline (the multi-image flavour):
+	// one image per ImagesDir/<name>/ directory, released as <name>/vX.Y.Z,
+	// rendered from its own setup and workflows templates. The fields below
+	// apply to it alone.
+	MultiImage bool
+	// ImagesDir is the directory whose subdirectories holding a Dockerfile
+	// are the images, and the build context of each.
+	ImagesDir string
+	// DefaultBranch is the branch a branch build diffs against and that
+	// builds nothing itself.
+	DefaultBranch string
+	// ImageNamePrefix is the image repository path the image's name is
+	// appended to (giantswarm/<repo>).
+	ImageNamePrefix string
+	// Registry is the one registries-data line every image job pushes with.
+	Registry string
 }
 
 // ImageBuild is one architect/build-image job: one platform, on a machine of

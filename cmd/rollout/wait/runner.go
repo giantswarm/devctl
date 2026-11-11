@@ -10,7 +10,9 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/dynamic"
 
+	"github.com/giantswarm/devctl/v8/internal/laptop"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/prwait"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
 	"github.com/giantswarm/devctl/v8/pkg/rolloutwait"
 )
@@ -22,14 +24,19 @@ type runner struct {
 	// gate is versiongate.Check: an outdated devctl ends the run in the
 	// document.
 	gate func(noCache bool) error
-	// openRelease is releasewait.OpenSources and openCluster
-	// rolloutwait.OpenCluster; tests inject fakes.
-	openRelease func(ctx context.Context, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*releasewait.Sources, error)
-	openCluster func(installation, kubeContext string, wrap func(http.RoundTripper) http.RoundTripper) (dynamic.Interface, error)
+	// openRelease is laptop.ReleaseWaitSources and openCluster
+	// laptop.OpenCluster; tests inject fakes.
+	openRelease func(ctx context.Context, owner string, endpoints agentcli.Endpoints, transport http.RoundTripper, warn func(string)) (*releasewait.Sources, error)
+	openCluster func(ctx context.Context, c laptop.ClusterConfig) (dynamic.Interface, error)
+	// teleport logs in to an installation the kubeconfig lacks.
+	teleport laptop.Teleport
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	return r.run(cmd.Context(), args)
+	agentcli.IgnoreHangup()
+	ctx, stop := agentcli.InterruptContext(cmd.Context())
+	defer stop()
+	return r.run(ctx, args)
 }
 
 // FlagError reports a flag cobra could not parse like any other wrong call:
@@ -51,7 +58,7 @@ func (r *runner) run(ctx context.Context, args []string) error {
 		repository = args[1]
 	}
 	doc := newDocument(installation, r.kubeContext(installation), repository)
-	err := r.wait(ctx, args, &doc)
+	err := agentcli.Interrupted(ctx, r.wait(ctx, args, &doc))
 	return agentcli.Report(r.stdout, &doc, rolloutwait.VerdictRolledOut, err)
 }
 
@@ -72,28 +79,62 @@ func (r *runner) kubeContext(installation string) string {
 }
 
 func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Document) error {
-	if len(args) < 2 || len(args) > 3 {
-		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "usage: devctl %s <installation> <owner/repo> [<vX.Y.Z|X.Y.Z>] [--pr <number>], got %d argument(s)", rolloutwait.Command, len(args))
+	if len(args) < 1 || len(args) > 3 {
+		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "usage: devctl %s <installation> <owner/repo> [<vX.Y.Z|X.Y.Z>] [--version <vX.Y.Z>] [--pr <number>], or devctl %s <installation> --chart <name> --version <vX.Y.Z>, for a repository component use --chart <chart-name> <version>; got %d argument(s)", rolloutwait.Command, rolloutwait.Command, len(args))
 	}
 	installation := args[0]
 	if installation == "" || strings.ContainsAny(installation, "/ ") {
 		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "%q is not an installation name", installation)
 	}
-	owner, repo, ok := strings.Cut(args[1], "/")
-	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
-		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "%q is not a repository: expected owner/repo", args[1])
+	component := len(args) == 1
+	owner, repo := "", ""
+	if component {
+		if len(r.flag.Charts) == 0 || r.flag.Version == "" || r.flag.PR != 0 {
+			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "without a repository, pass --chart <name> and --version <vX.Y.Z>, without --pr")
+		}
+		for _, chart := range r.flag.Charts {
+			if chart == "" || strings.ContainsAny(chart, "/: \t\r\n") {
+				return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--chart %q: a component wait needs a chart name, without a registry, path or tag", chart)
+			}
+		}
+		if len(r.flag.Images) > 0 || r.flag.FailedLog.Enabled {
+			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "--image and --failed-log need a repository release; a component wait reads only the installation")
+		}
+	} else {
+		var ok bool
+		owner, repo, ok = strings.Cut(args[1], "/")
+		if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
+			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "%q is not a repository: expected owner/repo", args[1])
+		}
 	}
-	version := ""
+	version := r.flag.Version
 	if len(args) > 2 {
+		if version != "" && version != args[2] {
+			return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "the version argument %q and --version %q differ: name the version once", args[2], version)
+		}
 		version = args[2]
 	}
 	if (version == "") == (r.flag.PR == 0) {
-		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "pass exactly one of a version (vX.Y.Z or X.Y.Z) and --pr <number>")
+		return agentcli.NewExitError(agentcli.ExitUsage, agentcli.VerdictUsage, "pass exactly one of a version (vX.Y.Z or X.Y.Z) and --pr <number>; for a component, use --chart <chart-name> <version>")
 	}
 	if version != "" {
 		if _, err := releasewait.ParseVersion(version); err != nil {
 			return err
 		}
+	}
+	if !component {
+		chart, err := r.flag.componentChart()
+		if err != nil {
+			return err
+		}
+		component = chart != ""
+	}
+	if err := rolloutwait.ValidateHelmReleases(r.flag.HelmReleases); err != nil {
+		return err
+	}
+	failedLogLines, err := r.flag.FailedLog.TailLines()
+	if err != nil {
+		return err
 	}
 	if err := r.gate(false); err != nil {
 		return err
@@ -111,69 +152,71 @@ func (r *runner) wait(ctx context.Context, args []string, doc *rolloutwait.Docum
 		return &agentcli.Retrying{Base: base, Clock: clock, Progress: progress, Warn: doc.Warn}
 	}
 
-	// The release first: it names the charts and proves them pullable.
-	progress.Printf("reading the GitHub token from the keychain")
-	sources, err := r.openRelease(ctx, endpoints, retrying(nil), doc.Warn)
-	if err != nil {
-		return err
-	}
-	releaseWaiter, err := releasewait.New(releasewait.Config{
-		Owner:        owner,
-		Repo:         repo,
-		Version:      version,
-		PR:           r.flag.PR,
-		Timeout:      r.flag.ReleaseTimeout,
-		Images:       r.flag.Images,
-		GitHub:       sources.GitHub,
-		Entries:      sources.Entries,
-		CircleCI:     sources.CircleCI,
-		Registry:     sources.Registry,
-		CatalogIndex: sources.CatalogIndex,
-		Endpoints:    endpoints,
-		Clock:        clock,
-		Rate:         sources.Rate,
-		Progress:     progress,
-		Warn:         doc.Warn,
-	})
-	if err != nil {
-		return err
-	}
-	if err := releaseWaiter.Wait(ctx, &doc.Release.Result); err != nil {
-		code, verdict := agentcli.Outcome(err)
-		doc.Release.Verdict, doc.Release.Reason = verdict, err.Error()
-		return agentcli.NewExitError(code, verdict, "release: %s", err)
-	}
-	doc.Release.Verdict = agentcli.VerdictAvailable
-
-	var charts []string
-	for _, a := range doc.Release.Artifacts {
-		if a.Kind == releasewait.KindChart {
-			charts = append(charts, rolloutwait.ChartName(a.Reference))
-		}
-	}
-	if len(charts) == 0 {
-		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable, "%s %s ships no chart, nothing rolls out", args[1], doc.Release.Tag)
-	}
-
+	// The kube context is read before the release wait, so a context that
+	// does not exist ends the wait at once rather than after the release.
 	kubeContext := r.kubeContext(installation)
-	client, err := r.openCluster(installation, kubeContext, retrying)
-	if err != nil {
-		return err
-	}
-	waiter, err := rolloutwait.New(rolloutwait.Config{
+	client, err := r.openCluster(ctx, laptop.ClusterConfig{
 		Installation: installation,
-		KubeContext:  kubeContext,
-		Version:      doc.Release.Tag,
-		Charts:       charts,
-		Client:       client,
-		Timeout:      r.flag.Timeout,
-		Reconcile:    r.flag.Reconcile,
-		Clock:        clock,
+		Context:      kubeContext,
+		Kubeconfig:   r.flag.Kubeconfig,
+		Wrap:         retrying,
+		Teleport:     r.teleport,
 		Progress:     progress,
-		Warn:         doc.Warn,
 	})
 	if err != nil {
 		return err
 	}
-	return waiter.Wait(ctx, &doc.Result)
+
+	if component {
+		// A range-rolled component has no new meta-chart release. Judge
+		// its chart version directly with the same rollout engine.
+		doc.Release.Verdict = agentcli.VerdictNotApplicable
+		doc.Release.Reason = "component wait: repository release is not checked (checks skipped)"
+		waiter, err := rolloutwait.New(rolloutwait.Config{
+			Installation: installation,
+			KubeContext:  kubeContext,
+			Version:      version,
+			Charts:       r.flag.Charts,
+			HelmReleases: r.flag.HelmReleases,
+			Client:       client,
+			Timeout:      r.flag.Timeout,
+			Reconcile:    r.flag.Reconcile,
+			Clock:        clock,
+			Progress:     progress,
+			Warn:         doc.Warn,
+		})
+		if err != nil {
+			return err
+		}
+		return waiter.Wait(ctx, &doc.Result)
+	}
+
+	progress.Printf("reading the GitHub login for %s", owner)
+	sources, err := r.openRelease(ctx, owner, endpoints, retrying(nil), doc.Warn)
+	if err != nil {
+		return err
+	}
+	err = rolloutwait.Release{
+		Installation:   installation,
+		KubeContext:    kubeContext,
+		Owner:          owner,
+		Repo:           repo,
+		Version:        version,
+		PR:             r.flag.PR,
+		Timeout:        r.flag.Timeout,
+		ReleaseTimeout: r.flag.ReleaseTimeout,
+		Images:         r.flag.Images,
+		Charts:         r.flag.Charts,
+		HelmReleases:   r.flag.HelmReleases,
+		Reconcile:      r.flag.Reconcile,
+		FailedLogLines: failedLogLines,
+		Sources:        sources,
+		Client:         client,
+		Endpoints:      endpoints,
+		Clock:          clock,
+		Progress:       progress,
+		Warn:           doc.Warn,
+	}.Wait(ctx, doc)
+	prwait.PrintFailedJobs(r.stderr, doc.Release.FailedJobs)
+	return err
 }

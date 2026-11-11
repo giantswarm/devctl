@@ -147,10 +147,10 @@ func TestExecuteGroupWithoutArguments(t *testing.T) {
 // version gate is on and never answers for them: they run it themselves.
 func TestExecuteAgentCommandWrongCalls(t *testing.T) {
 	for _, args := range [][]string{
-		{"pr", "wait", "--bogus"},
+		{"pr", testWaitCommandName, "--bogus"},
 		{"pr", "merge", "giantswarm/devctl", "1", "--timeout", "30"},
-		{"release", "wait"},
-		{"release", "wait", "giantswarm/devctl", "--pr", "x"},
+		{"release", testWaitCommandName},
+		{"release", testWaitCommandName, "giantswarm/devctl", "--pr", "x"},
 		{"release", "promote"},
 		{"release", "promote", "giantswarm/devctl", "--team", "team-bumblebee"},
 		{"auth", "status", "extra"},

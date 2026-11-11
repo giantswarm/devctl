@@ -5,7 +5,6 @@
   description: Team plans, their PRDs and companion websites.
   gen:
     flavours:
-      - generic
       - plans
     language: generic
     ci:

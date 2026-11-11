@@ -3,6 +3,7 @@ package rolloutwait
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -30,16 +31,20 @@ var workloadKinds = []struct {
 	{"Deployment", deployments, judgeDeployment},
 	{"StatefulSet", statefulSets, judgeStatefulSet},
 	{"DaemonSet", daemonSets, judgeDaemonSet},
+	{KindHelmRelease, helmReleases, judgeChildHelmRelease},
 }
 
-// workloads reads the Deployments, StatefulSets and DaemonSets of the Helm
-// release in namespace and judges each rollout the way kubectl rollout
-// status does. failed is the message of a Deployment past its progress
-// deadline, empty otherwise.
+// workloads reads the Deployments, StatefulSets, DaemonSets and Flux
+// HelmReleases (a meta chart's components) of the Helm release of
+// namespace, in every namespace (a chart may render its workloads into
+// another, as kagent's does), and judges each rollout the way kubectl
+// rollout status (flux get helmrelease) does. failed is the message of a
+// Deployment past its progress deadline or a HelmRelease whose upgrade
+// failed, empty otherwise.
 func (w *Waiter) workloads(ctx context.Context, namespace, release string) (list []Workload, failed string, err error) {
 	list = []Workload{}
 	for _, k := range workloadKinds {
-		items, err := w.list(ctx, k.resource, namespace)
+		items, err := w.list(ctx, k.resource, "")
 		if err != nil {
 			return nil, "", err
 		}
@@ -155,13 +160,44 @@ func judgeDaemonSet(u *unstructured.Unstructured) judgement {
 	return judgement{ready: true}
 }
 
-// conditionTrue is the status of a condition that holds.
-const conditionTrue = "True"
+// judgeChildHelmRelease judges a HelmRelease a chart renders: ready once
+// helm-controller observed its generation and it is Ready with no
+// reconcile in flight, its dependencies included; failed when it stalled
+// or its install or upgrade failed.
+func judgeChildHelmRelease(u *unstructured.Unstructured) judgement {
+	if suspended, _, _ := unstructured.NestedBool(u.Object, "spec", "suspend"); suspended {
+		return judgement{ready: true, message: "suspended: Flux does not reconcile it"}
+	}
+	if j, ok := observed(u); !ok {
+		return j
+	}
+	ready, stalled := condition(u, "Ready"), condition(u, "Stalled")
+	if reconciling := condition(u, "Reconciling"); reconciling.status == conditionTrue {
+		return judgement{message: "retrying or reconciling: " + orUnknown(reconciling)}
+	}
+	if stalled.status == conditionTrue || (ready.status == conditionFalse && helmReleaseFailures[ready.reason]) {
+		return judgement{message: orUnknown(ready), failed: true}
+	}
+	if ready.status != conditionTrue {
+		return judgement{message: "not ready: " + orUnknown(ready)}
+	}
+	return judgement{ready: true}
+}
+
+// The statuses of a condition that holds or does not, and of a deployed
+// Helm release.
+const (
+	conditionTrue  = "True"
+	conditionFalse = "False"
+	statusDeployed = "deployed"
+)
 
 // cond is one status condition.
 type cond struct {
 	found                   bool
 	status, reason, message string
+	// since is the lastTransitionTime; zero when absent or unreadable.
+	since time.Time
 }
 
 // condition reads the status condition of type t.
@@ -173,7 +209,8 @@ func condition(u *unstructured.Unstructured, t string) cond {
 			continue
 		}
 		s := func(k string) string { v, _ := m[k].(string); return v }
-		return cond{found: true, status: s("status"), reason: s("reason"), message: s("message")}
+		since, _ := time.Parse(time.RFC3339, s("lastTransitionTime"))
+		return cond{found: true, status: s("status"), reason: s("reason"), message: s("message"), since: since}
 	}
 	return cond{}
 }

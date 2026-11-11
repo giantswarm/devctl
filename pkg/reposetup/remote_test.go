@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 )
 
 // fakeTeamFiles is giantswarm/github's REST surface as Remote uses it:
@@ -27,6 +28,14 @@ type fakeTeamFiles struct {
 	commit map[string]any
 	pull   map[string]any
 }
+
+// The caller's team memberships in the fake: team-bumblebee active,
+// team-rocket pending, team-hidden unreadable to the token, team-secret
+// invisible to it; every other team readable without a membership.
+var (
+	memberships = map[string]string{"team-bumblebee": "active", "team-rocket": "pending"}
+	teamStatus  = map[string]int{"team-hidden": 403, "team-secret": 404}
+)
 
 func (f *fakeTeamFiles) handler(t *testing.T) http.Handler {
 	writeJSON := func(w http.ResponseWriter, v any) {
@@ -78,11 +87,23 @@ func (f *fakeTeamFiles) handler(t *testing.T) http.Handler {
 	mux.HandleFunc("GET /user", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"login": "octocat"})
 	})
-	mux.HandleFunc("GET /user/teams", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, []map[string]any{
-			{"slug": "team-bumblebee", "organization": map[string]any{"login": "giantswarm"}},
-			{"slug": "team-other-org", "organization": map[string]any{"login": "elsewhere"}},
-		})
+	// The caller's teams as the validation check reads them: the team,
+	// then the membership. teamStatus answers a team read other than 200;
+	// memberships are the caller's states, a team without one a 404.
+	mux.HandleFunc("GET /orgs/giantswarm/teams/{team}", func(w http.ResponseWriter, r *http.Request) {
+		if status := teamStatus[r.PathValue("team")]; status != 0 {
+			w.WriteHeader(status)
+			return
+		}
+		writeJSON(w, map[string]any{"slug": r.PathValue("team")})
+	})
+	mux.HandleFunc("GET /orgs/giantswarm/teams/{team}/memberships/{login}", func(w http.ResponseWriter, r *http.Request) {
+		state, ok := memberships[r.PathValue("team")]
+		if !ok || r.PathValue("login") != "octocat" {
+			w.WriteHeader(404)
+			return
+		}
+		writeJSON(w, map[string]any{"state": state, "role": "member"})
 	})
 	mux.HandleFunc("GET /repos/giantswarm/github/git/ref/heads/main", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"ref": "refs/heads/main", "object": map[string]any{"sha": "main-sha"}})
@@ -156,8 +177,8 @@ func TestRemote(t *testing.T) {
 		t.Errorf("undeclared: got %v, want entryNotFoundError", err)
 	}
 
-	person, err := remote.Person(ctx, "giantswarm")
-	if err != nil || person.Login != "octocat" || strings.Join(person.Teams, ",") != "team-bumblebee" {
+	person, err := remote.Person(ctx, "giantswarm", "team-bumblebee", "team-planeteers", "team-rocket", "team-hidden", "team-secret")
+	if err != nil || person.Login != "octocat" || strings.Join(person.Teams, ",") != "team-bumblebee" || strings.Join(person.Unread, ",") != "team-hidden,team-secret" {
 		t.Errorf("Person: %+v, %v", person, err)
 	}
 
@@ -188,6 +209,75 @@ func TestRemote(t *testing.T) {
 	}
 }
 
+func TestRemotePersonRequestedTeams(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		omitTeams    bool
+		teams        []string
+		wantTeams    []string
+		wantRequests []string
+	}{
+		{
+			name: "omitted teams return only the login", omitTeams: true,
+			wantRequests: []string{"GET /user"},
+		},
+		{
+			name:         "nil teams return only the login",
+			wantRequests: []string{"GET /user"},
+		},
+		{
+			name: "empty teams return only the login", teams: []string{},
+			wantRequests: []string{"GET /user"},
+		},
+		{
+			name: "unasked active memberships are excluded", teams: []string{"team-planeteers"},
+			wantRequests: []string{
+				"GET /user", "GET /orgs/giantswarm/teams/team-planeteers",
+				"GET /orgs/giantswarm/teams/team-planeteers/memberships/octocat",
+			},
+		},
+		{
+			name: "asked active membership is included", teams: []string{"team-bumblebee"},
+			wantTeams: []string{"team-bumblebee"},
+			wantRequests: []string{
+				"GET /user", "GET /orgs/giantswarm/teams/team-bumblebee",
+				"GET /orgs/giantswarm/teams/team-bumblebee/memberships/octocat",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var requests []string
+			handler := (&fakeTeamFiles{}).handler(t)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests = append(requests, r.Method+" "+strings.TrimPrefix(r.URL.Path, "/api/v3"))
+				handler.ServeHTTP(w, r)
+			}))
+			defer srv.Close()
+			client, err := github.NewClient(github.WithEnterpriseURLs(srv.URL, srv.URL))
+			if err != nil {
+				t.Fatal(err)
+			}
+			remote := Remote{GitHub: client}
+			var person Person
+			if tc.omitTeams {
+				person, err = remote.Person(context.Background(), "giantswarm")
+			} else {
+				person, err = remote.Person(context.Background(), "giantswarm", tc.teams...)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			srv.Close() // Wait for handlers before reading the recorded requests.
+			if person.Login != "octocat" || !slices.Equal(person.Teams, tc.wantTeams) || len(person.Unread) != 0 {
+				t.Errorf("Person: %+v, want login octocat, teams %v and no unread teams", person, tc.wantTeams)
+			}
+			if !slices.Equal(requests, tc.wantRequests) {
+				t.Errorf("requests: %v, want %v", requests, tc.wantRequests)
+			}
+		})
+	}
+}
+
 func TestCreationPullRequest(t *testing.T) {
 	tf := &RemoteTeamFile{TeamFile: &TeamFile{Team: "team-bumblebee", Path: "repositories/team-bumblebee.yaml"}, SHA: "abc"}
 	result := &Result{Entries: []Entry{{
@@ -203,5 +293,10 @@ func TestCreationPullRequest(t *testing.T) {
 		if !strings.Contains(pr.Body, want) {
 			t.Errorf("body lacks %q:\n%s", want, pr.Body)
 		}
+	}
+
+	pr = CreationPullRequest(tf, []byte("file"), result, CreatedRepository{})
+	if want := "The reconciler creates the repository as the giantswarm-align-files App once this pull request merges"; !strings.Contains(pr.Body, want) {
+		t.Errorf("body of a declaration without a repository lacks %q:\n%s", want, pr.Body)
 	}
 }

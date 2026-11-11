@@ -1,21 +1,28 @@
 # Authentication: `devctl auth`
 
 devctl acts on GitHub as you, with the login of the `giantswarm-devctl` GitHub App; it reads pipelines on
-CircleCI with your CircleCI token and reaches giantswarm-repo-manager with your muster token. All three live
+CircleCI with your CircleCI token (and reruns failed workflows with it) and reaches giantswarm-repo-manager with your muster token. All three live
 in the OS keychain: `devctl auth login` puts them there, `devctl auth status` shows what is there, and no
 command prints a token.
+
+An agent acts on GitHub with the same login and nothing else: `devctl auth exec` hands the App's
+short-lived user token to `gh` and any other program, so a person's long-lived `gh` login stays in their
+own shell and never enters an agent session.
 
 ## The GitHub token of every command
 
 | Command | GitHub token |
 |---|---|
-| `deploy`, `pr approve-align`, `pr approve-merge-renovate`, `release create`, `release promote` | the App login; a token in the environment overrides it |
-| the version check that precedes every command, `version check`, `version update`, `repo validate` | the same, optional and looked up only when GitHub is asked (never while the one-hour version cache is fresh): without one a public read is anonymous (`repo validate`: the embedded schema, repository names unchecked) |
-| `pr wait`, `pr merge`, `release wait`, `rollout wait` | the App login only (`rollout wait` reads the installation with your kube context) |
-| `repo create` | your own: `$GITHUB_TOKEN` (`--github-token-envvar`), else `gh auth token` |
+| `auth exec` and the `gh` link | the App login; `gh` on a repository of an owner the App is not installed on keeps your own `gh` login |
+| `deploy`, [`pr approve-align-files`](pr-approve-align-files.md), `pr approve-merge-renovate`, `release create`, `release promote`, `repo create`, `repo owner` | the App login; a token in the environment overrides it |
+| the version check that precedes every command, `version check`, `version update`, `repo validate --local` | the same, optional and looked up only when GitHub is asked (never while the one-hour version cache is fresh): without one a public read is anonymous (`repo validate --local`: the embedded schema, repository names unchecked) |
+| `pr wait`, `pr merge`, `pr rerun` | the App login for giantswarm; your own `gh` login (`gh auth token`) for every other owner; never a token in the environment |
+| `release wait`, `rollout wait` | the App login only (`rollout wait` reads the installation with your kube context) |
+| `release rerun` | none while a workflow is rerun; to redeliver the push webhook of a pipeline without a workflow, the identity `pr rerun` uses |
+| `ci jobs`, `ci rerun` | none: they read CircleCI alone (`ci rerun` writes with the Write login) |
 | `repo setup` (and `repo setup ciwebhooks`, `repo setup renovate`), `repo checks` | your own: `$GITHUB_TOKEN` (`--github-token-envvar`) |
 | `repo reconcile` | the engine's installation token in CI: `$GITHUB_TOKEN` (`--github-token-envvar`) |
-| the other `repo` commands | none: giantswarm-repo-manager acts, reached with the muster token |
+| `repo validate` and the other `repo` commands | none: giantswarm-repo-manager acts, reached with the muster token |
 
 **The default is the App login.** Log in once with `devctl auth login --github-only`; the token refreshes
 itself for six months. A command that needs a token and finds no usable login exits 8 with one sentence
@@ -25,9 +32,9 @@ the others.
 **The App login reaches the giantswarm organization and public repositories.** The App is installed on
 the giantswarm organization only. GitHub answers 404 for a private repository elsewhere, and a search
 leaves it out; `deploy` and `release create` add to that 404 the cause and the variables that override
-the login. `pr wait` and `pr merge` add the same cause without naming a variable: neither reads one, so a
-personal repository's pull request (a private one outside the App's installation) fails with a reason
-that names the missing reach, not a plain "not found".
+the login. `pr wait` and `pr merge` follow the owner instead, as the `gh` link does: a repository of an
+owner the App is not installed on is read and merged with your own `gh` login, the document's `identity`
+saying `gh`; a 404 there names the missing installation and the read access the `gh` login lacks.
 
 **A token in the environment is an explicit override, never a fallback.** When `DEVCTL_GITHUB_TOKEN`,
 `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` is set (the first set one, in that order; a command with
@@ -39,19 +46,112 @@ token`. `devctl auth status` shows the same warning.
 **In CI** (`CI` set to any value) the keychain is never read and nothing warns: the variable is the only
 source. A command that needs a token and finds none exits 8 naming the variables to set.
 
-**The exceptions.** The App can write contents and pull requests and read actions, checks, statuses and
-metadata, nothing else, and it does not gain more:
+**The exceptions.** The App carries the agent permission set below, nothing else; the commands that need
+more act with another token:
 
 - `pr wait`, `pr merge` and `release wait` take their GitHub token from the keychain and from nowhere
   else: no environment variable, no `gh auth token`, no file. They exit 8 naming `devctl auth login`
-  before they wait for anything, since they need the CircleCI token too.
-- `repo create`, `repo setup` and its subcommands `ciwebhooks` and `renovate`, and `repo checks` need
-  Administration or Webhooks write, which the App does not carry: they act with your own token, as the
-  table says, and print no override warning.
+  when a required login is missing. `pr wait` and `pr merge` with `--circleci-from-statuses` judge
+  CircleCI jobs from their configuration and GitHub statuses, as `devctl serve` does, without a CircleCI
+  token. `--failed-log` takes precedence and uses the CircleCI API for job logs; `pr rerun` also still
+  needs the CircleCI login.
+- `repo setup` and its subcommands `ciwebhooks` and `renovate`, and `repo checks` need
+  Administration write, which the App does not carry: they act with your own token, as the table says,
+  and print no override warning.
+- `pr rerun` and `release rerun` redeliver a push webhook with the App's Webhooks permission; a 403 from
+  GitHub is exit 8 naming it, never a silent failure.
 - `repo reconcile` is the engine's CI path and acts with its installation token.
 - `release promote` dispatches the auto-release workflow, which needs Actions write: the App carries it, so the
   login dispatches wherever you may run the workflow yourself. The document's `identity` names the token's source
   and, for the login, its account.
+
+## The agent permission set
+
+The `giantswarm-devctl` App's permissions are the complete set of what an agent does on GitHub. A user
+token is capped twice: by these permissions and by the person's own rights, so the App gives nobody more
+than they already have. GitHub attributes every action to the person and records the App in the audit
+log on every request, which separates an agent's actions from the person's own.
+
+| Agent action | Permission |
+|---|---|
+| Read repositories, pull requests, checks, statuses, workflow runs and logs, issues, Dependabot alerts | metadata, contents, checks, statuses, actions, vulnerability alerts: read |
+| Read and request team reviewers on pull requests (`gh pr view`, `gh pr edit`, `gh pr create --reviewer`), read team memberships (`repo create`) | organization members: read |
+| Comment on issues and pull requests, open and edit issues | issues, pull requests: write |
+| Open or update a pull request | pull requests: write, organization members: read |
+| Push a branch, `.github/workflows` included | contents, workflows: write |
+| Merge through the ruleset bypass (`pr merge`): GitHub evaluates the merge as the person, so the owning team's or the admins' bypass applies | contents, pull requests: write |
+| Release: dispatch a workflow (`release promote`, `pr merge --dispatch`); the tag itself comes from the auto-release workflow's own token | actions, contents: write |
+| Approve and re-run workflow runs | actions: write |
+| Write the organization's project boards (Projects v2) | organization projects: write |
+| Redeliver the push webhook delivery of a CircleCI pipeline that never got a workflow (`pr rerun`, `release rerun`): the hooks, their deliveries, one delivery's payload, the redelivery | webhooks: read and write |
+
+**Not an agent action:** administration (branch protection, rulesets, settings, creating or editing
+webhooks, deploy keys, repository creation). It stays with giantswarm-repo-manager, its own App reached
+through the `repo` commands, or with a person in their own shell.
+
+For a repository's **declared owning team**, use `devctl repo owner giantswarm/devctl`
+([the team-file lookup](repo.md#devctl-repo-owner)). It reads the declaration in
+`giantswarm/github` with Contents read, which the App already carries. It does not list
+GitHub access grants. `gh api repos/<owner>/<repo>/teams` requires
+[Administration read](https://docs.github.com/en/rest/repos/repos#list-repository-teams);
+under the agent App token it can return `403 Resource not accessible by integration`.
+Do not use that endpoint for agent ownership checks or fall back to a person's token.
+The reconciler's permissions step compares actual grants with its separate administration
+installation token; a team-file declaration cannot replace that check. No agent App
+permission needs widening for the ownership lookup.
+
+The App is installed on the giantswarm organization only. `gh` through devctl therefore acts with the
+App token for giantswarm's repositories and wherever no repository is named, and keeps the person's own
+`gh` login for a repository of another owner, which the App cannot reach (below).
+
+## `devctl auth exec`
+
+```nohighlight
+devctl auth exec -- gh api user
+devctl auth exec -- gh pr comment 42 --repo giantswarm/devctl --body "..."
+```
+
+Runs a command with the App login's token in `$GH_TOKEN`, which `gh` reads in preference to its own
+login. The token is the keychain's, refreshed first when it expires within ten minutes, so a command never
+starts on a token that dies under it; devctl hands it to the command's environment and never prints it.
+devctl replaces itself with the command: the exit code, signals and terminal are the command's. Without a
+usable login it exits 8 with one line on stderr naming `devctl auth login --github-only`; a command not
+found is exit 7. Environment variables do not override the keychain here, and no version check precedes
+it: an outdated devctl still hands over the token, so a devctl release never stops an agent's `gh`.
+
+**The `gh` link.** devctl started under the name `gh` (a link to it) is `devctl auth exec -- gh`: it runs
+the next `gh` on `PATH` past its own entry, so another `gh` shim ahead of the link (a test harness's or
+sandbox's, which passed the call on to the link) is never run a second time. Without a `gh` past the link
+it runs the first `gh` on `PATH` that is not devctl itself. A program that hands every call back to the link
+(a shim past it running the first `gh` on `PATH`) loops; devctl refuses after four programs in one chain of
+calls (`DEVCTL_AUTH_EXEC_CHAIN`), exit 7, naming each program it ran. An agent environment puts the link in
+a directory first on the agent's `PATH`:
+
+```nohighlight
+mkdir -p ~/.local/share/devctl/agent-bin
+ln -s "$(command -v devctl)" ~/.local/share/devctl/agent-bin/gh
+# in the agent's shell only, never the person's own:
+export PATH="$HOME/.local/share/devctl/agent-bin:$PATH"
+```
+
+**The owner rule.** `gh` acting on a repository of an owner the App is not installed on runs without the
+token, on the person's own `gh` login: the App does not reach that repository. The repository is the one
+gh acts on: `--repo`/`-R`, `$GH_REPO`, a `repos/<owner>/…` or `orgs/<owner>/…` endpoint of `gh api`, the
+URL or repository argument of `gh pr|issue|run|release|repo|workflow`, else the working directory's
+repository as gh resolves it (`gh repo set-default`, then the remotes `upstream`, `github`, `origin`).
+Everything else (a giantswarm repository, `gh api user`, `gh api graphql`, `gh search`) acts with the App
+token.
+
+**The upload rule.** `gh issue|pr` with `--attach` (`gh pr comment 5 --attach proof.png`) also runs on the
+person's own `gh` login, whatever the owner: GitHub's file upload endpoint refuses an App user token (404,
+which `gh` reports as "attaching files requires write access to the repository"). A person without write
+access to the repository is still refused.
+
+Every `gh` the agent runs, also from scripts and subprocesses, then acts by that rule, and
+`devctl version update` replacing the binary keeps the link working. `gh auth status` in such a shell
+names `GH_TOKEN` as the source; `gh api user/installations` answers only for an App user token and names
+`giantswarm-devctl`. `git` over SSH keeps its SSH key; a `git` whose credential helper is `gh auth
+git-credential` resolved through `PATH` uses the App token too.
 
 ## `devctl auth login`
 
@@ -85,13 +185,17 @@ registration:
    unauthenticated `POST /oauth/register`. The client id and the redirect URI stay in the keychain
    record; later logins reuse them. A new client is registered only when the record has none or
    its loopback port can no longer be bound.
-2. devctl prints the authorization URL to stderr and opens the browser on it. Choose **Read**
-   access on the consent page; it is all the commands need. The browser returns to the loopback
-   address with the code; the state is checked.
+2. devctl prints the authorization URL to stderr and opens the browser on it. Choose **Write**
+   access on the consent page: `pr rerun` and `release rerun` rerun workflows, a write; every other
+   command reads. A login that granted Read access keeps working for the reads, and a rerun on it is
+   exit 8 naming `devctl auth login --circleci-only`. The browser returns to the loopback address
+   with the code; the state is checked.
 3. devctl exchanges the code with the PKCE verifier at `POST /oauth/token`. The result is a standard
    90-day CircleCI API token that works with API v2 (`Circle-Token` header or Bearer).
 
-CircleCI issues no refresh token: log in again before the 90 days are over. Every command warns in
+CircleCI issues no refresh token: log in again before the 90 days are over. A valid login also lets
+devctl set up the CircleCI pipelines your teams' new repositories wait for, after any command (see
+`devctl repo follow-circleci --pending` in [repo.md](repo.md#the-automatic-pass)). Every command warns in
 its JSON `warnings` from seven days before the expiry. Re-running the flow for the same client and
 user atomically revokes the previous token, so a re-login leaves no stale token behind on CircleCI.
 
@@ -124,6 +228,11 @@ authorization server, so the flow is discovered, not configured:
    PKCE verifier and reads the login from the userinfo endpoint.
 4. The access token comes with a refresh token (the `offline_access` scope): a `repo` command that
    finds the access token expired refreshes it itself, no human involved, and stores the new pair.
+   Refresh uses the issuer saved at login, even when the resource advertises multiple servers. If that
+   issuer is no longer advertised, run `devctl auth login --muster-only` again; devctl sends no stored
+   refresh token to the replacement issuer. Authorization server metadata must identify the queried issuer.
+   Refreshes hold the muster identity's lock and reread the record after acquiring it, so concurrent
+   commands share the renewed pair and spend a rotating refresh token only once.
 
 Then the sign-in to giantswarm-repo-manager, once: the manager is pinned to its own GitHub App, so
 devctl asks muster (`core_auth_login`) for the sign-in, prints and opens the App's consent URL when
@@ -148,7 +257,10 @@ completed. A refused or timed-out authorization is exit 7 with the reason in the
 devctl auth status
 ```
 
-Reads the records, contacts nothing and prints:
+Reads the records and validates an unexpired CircleCI token with one authenticated
+[`GET /me`](https://circleci.com/docs/api/v2/index.html#operation/getCurrentUser).
+Missing, empty or expired CircleCI tokens make no request. GitHub and muster are
+described from the stored metadata; no token is refreshed or changed. Prints:
 
 ```json
 {
@@ -181,11 +293,18 @@ Reads the records, contacts nothing and prints:
 ```
 
 A GitHub token in `DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN` or `OPSCTL_GITHUB_TOKEN` adds the override warning to
-`warnings` and `github.warnings`, never the token and never with `CI` set; the exit code stays the keychain's.
+`warnings` and `github.warnings`, never the token and never with `CI` set; the warning does not change the exit code.
 
 Exit 0 when the GitHub and CircleCI identities are usable without a human (valid, or expired with
 a valid refresh token); exit 8 with the `devctl auth login` invocation that fixes it when one is
-missing or expired for good. An agent runs `devctl auth status || devctl auth login`. The `muster`
+missing, empty, expired for good or rejected. HTTP 401 or 403 from CircleCI adds
+`"invalid": true` and `"httpStatus": 401` (or 403) under `circleci`, preserves its
+stored expiry, and names `devctl auth login --circleci-only` in the reason when
+GitHub is usable. A successful validation reports CircleCI's current login.
+Service errors (including rate limiting), network failures and malformed responses
+are exit 7: validation could not be completed, rather than proof of invalid credentials.
+Failed HTTP responses include `circleci.httpStatus`; their bodies are never printed.
+The `muster`
 identity is the third block of the document, with its `endpoint`, and is reported, not required:
 only the `repo` commands need it, and they exit 8 naming `devctl auth login --muster-only`
 themselves.
@@ -202,7 +321,9 @@ to print once, empty for the App login and in CI; the error is `ErrAuthRequired`
 `authstore.RequireGitHub(ctx)` returns the App login, refreshed when needed, or `ErrAuthRequired`;
 `authstore.RequireCircleCI(ctx)` returns the token or `ErrAuthRequired`, with the seven-day warning
 on the token for the envelope. A CircleCI token is required only when the repository has a CircleCI
-project. `authstore.RequireMuster(ctx)` returns the muster token, refreshed when needed, with the
+project and the command reads its API; `pr wait` and `pr merge` with `--circleci-from-statuses`
+(without `--failed-log`) read neither that token nor the CircleCI API.
+`authstore.RequireMuster(ctx)` returns the muster token, refreshed when needed, with the
 endpoint it is for, or `ErrAuthRequired` naming `--muster-only`. The errors carry exit code 8 and
 the verdict `auth_required` through `agentcli.ExitCoder`, so a command returns them unchanged.
 
@@ -212,16 +333,22 @@ Every agent-facing command prints one JSON document on stdout when it finishes a
 `--progress` writes one line per step to stderr. The envelope is `command`, `schemaVersion`,
 `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt`, then the command's fields.
 
+The CLI waits (`pr wait`, `release wait`, `rollout wait` and `pr merge`) ignore SIGHUP and read
+nothing from stdin, so they outlive a closed terminal, SSH session or harness and finish with their
+document and exit code. `repo watch` also ignores SIGHUP and reads no stdin; `--output json` prints
+its final repository document. This is the CLI's behavior; `devctl serve` keeps its server signal handling.
+
 | Code | Verdict | Meaning |
 |---|---|---|
 | 0 | `green`, `available` | ok |
 | 1 | `red`, `ci_failed` | a check is red or the tag's CI failed |
-| 2 | `timeout` | the deadline passed; the document names what was unfinished |
+| 2 | `timeout` | the deadline passed or SIGINT/SIGTERM interrupted a CLI wait; the document names what was unfinished. An acknowledged `pr merge` instead exits 9 (`release_unconfirmed`) with its merge commit and the release confirmation command. |
 | 3 | `not_applicable` | draft, closed, conflicting, behind a strict base, version not resolvable |
-| 4 | `required_missing` | a required context never reported |
+| 4 | `required_missing`, `approval_required`, `no_checks` | a required context never reported; Actions runs await a member's approval; the `pull_request` workflows never started |
 | 5 | `refused` | another author, an opt-out |
 | 7 | `usage` | wrong usage, a newer devctl released (the reason names `devctl version update`), or a tooling failure |
 | 8 | `auth_required` | no usable token; the reason names `devctl auth login` |
+| 13 | `remote_error` | A CircleCI request failed. The command line was valid; the reason preserves the service error. Existing timeout and post-merge outcomes take precedence. |
 
 ## Environment
 
@@ -237,5 +364,5 @@ The defaults are production; the variables exist for other sites and for tests a
 | `DEVCTL_REGISTRY_PRIVATE` | `gsociprivate.azurecr.io` | private registry, docker keychain |
 | `DEVCTL_REGISTRY_INSECURE` | unset | `1` talks plain HTTP to the registries (tests) |
 | `DEVCTL_MUSTER_URL` | `https://muster.gazelle.awsprod.gigantic.io/mcp` | the muster MCP endpoint `--muster-only` signs in to and the `repo` commands reach giantswarm-repo-manager through |
-| `DEVCTL_KEYRING_FILE` | unset | a 0600 JSON file in place of the OS keychain (tests) |
+| `DEVCTL_KEYRING_FILE` | unset | a JSON file that holds the records in place of the OS keychain; read from the environment when a command starts, created with mode 0600 on first write. Unset or empty keeps the keychain (tests, machines without a keychain daemon) |
 | `DEVCTL_TIME_SCALE` | `1` | multiplies every sleep and timeout; the e2e suite runs at `0.001` |

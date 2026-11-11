@@ -1,6 +1,7 @@
 // Package versiongate is the check that precedes every devctl command but
 // the version commands: an outdated devctl refuses to run until it is
-// updated, or until DEVCTL_UNSAFE_FORCE_VERSION names the running version.
+// updated, until DEVCTL_UNSAFE_FORCE_VERSION names the running version, or
+// while DEVCTL_UNSAFE_SKIP_VERSION_CHECK is exactly "true".
 package versiongate
 
 import (
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 
 	"github.com/giantswarm/microerror"
 
@@ -20,21 +22,23 @@ import (
 )
 
 // Check returns nil when this build is the latest release or
-// DEVCTL_UNSAFE_FORCE_VERSION names it, and otherwise the error naming the
-// release and the two ways on. The latest release is read from the version
+// DEVCTL_UNSAFE_FORCE_VERSION names it, or DEVCTL_UNSAFE_SKIP_VERSION_CHECK
+// is exactly "true", and otherwise the error naming the release and remedies. The latest release is read from the version
 // cache unless noCache, and from GitHub when the cache is older than an hour.
+// An unavailable lookup warns and allows the command to continue.
 func Check(noCache bool) error {
 	return check(project.Version(), noCache, os.Stderr)
 }
 
 func check(version string, noCache bool, warnings io.Writer) error {
-	if version == env.DevctlUnsafeForceVersion.Val() {
+	if env.DevctlUnsafeSkipVersionCheck.Val() || version == env.DevctlUnsafeForceVersion.Val() {
 		return nil
 	}
 
 	u, err := newUpdater(version, noCache, warnings)
 	if err != nil {
-		return microerror.Mask(err)
+		fmt.Fprintln(warnings, "warning: could not check the latest devctl release:", err)
+		return nil
 	}
 
 	latest, err := u.GetLatest()
@@ -42,7 +46,7 @@ func check(version string, noCache bool, warnings io.Writer) error {
 		return fmt.Errorf("version %[2]s of %[1]s is released; this is %[3]s: update with `%[1]s version update`, or run this version anyway with %[4]s=%[3]s",
 			project.Name(), latest, version, env.DevctlUnsafeForceVersion.Key())
 	} else if err != nil {
-		return microerror.Mask(err)
+		fmt.Fprintln(warnings, "warning: could not check the latest devctl release:", err)
 	}
 
 	return nil
@@ -76,13 +80,14 @@ func newUpdater(version string, noCache bool, warnings io.Writer) (*updater.Upda
 }
 
 // githubToken is the optional token of a version lookup, a read of public
-// releases: [authstore.ResolveGitHub]'s token, its override warning written
-// to warnings once, or "" to read anonymously when none is configured. Any
-// other error of the resolver is returned.
+// releases: [authstore.ResolveGitHub]'s token from [lookupEnvVars], its
+// override warning written to warnings once, or "" to read anonymously when
+// none is configured or the environment has no keychain. Any other error of
+// the resolver is returned.
 func githubToken(warnings io.Writer) func(context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
-		token, err := authstore.ResolveGitHub(ctx)
-		if errors.Is(err, authstore.ErrAuthRequired) {
+		token, err := authstore.ResolveGitHub(ctx, lookupEnvVars()...)
+		if errors.Is(err, authstore.ErrAuthRequired) || errors.Is(err, authstore.ErrKeychainUnreachable) {
 			return "", nil
 		} else if err != nil {
 			return "", err
@@ -90,4 +95,34 @@ func githubToken(warnings io.Writer) func(context.Context) (string, error) {
 		token.WarnOnce(warnings)
 		return token.Value, nil
 	}
+}
+
+// annotation marks a command the gate does not precede.
+const annotation = "devctl.giantswarm.io/no-version-gate"
+
+// Exempt is the annotation of a command that runs without the gate: one that
+// hands another program what it needs (`auth exec`), where an outdated
+// devctl must not stop that program.
+func Exempt() map[string]string {
+	return map[string]string{annotation: "true"}
+}
+
+// IsExempt reports whether a command's annotations carry [Exempt].
+func IsExempt(annotations map[string]string) bool {
+	return annotations[annotation] == "true"
+}
+
+// envGH is the variable gh reads its token from, the one a workflow step
+// sets for gh.
+const envGH = "GH_TOKEN"
+
+// lookupEnvVars are the variables a version lookup reads a token from:
+// [authstore.GitHubEnvVars], and under CI then $GH_TOKEN, so a workflow step
+// that hands only gh the job's token does not read anonymously from a shared
+// runner IP. Outside CI the App login comes before $GH_TOKEN.
+func lookupEnvVars() []string {
+	if os.Getenv(authstore.EnvCI) == "" {
+		return authstore.GitHubEnvVars
+	}
+	return append(slices.Clone(authstore.GitHubEnvVars), envGH)
 }

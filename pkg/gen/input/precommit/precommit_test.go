@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"text/template"
 
 	"golang.org/x/mod/module"
+	"gopkg.in/yaml.v3"
 )
 
 func renderConfig(t *testing.T, c Config) string {
@@ -30,6 +32,56 @@ func renderConfig(t *testing.T, c Config) string {
 		t.Fatalf("execute template: %v", err)
 	}
 	return out.String()
+}
+
+// The upstream hook forwards these args to golangci-lint run. Without the
+// parallel-runner flag, another session holding its shared lock fails the hook.
+func Test_GolangciLintParallelRunners(t *testing.T) {
+	const parallelFlag = "--allow-parallel-runners"
+	for _, language := range []string{"go", "node", "python", "generic"} {
+		t.Run(language, func(t *testing.T) {
+			got := renderConfig(t, Config{Language: language, RepoName: "github.com/giantswarm/my-repo"})
+			var config struct {
+				Repos []struct {
+					Hooks []struct {
+						ID   string   `yaml:"id"`
+						Args []string `yaml:"args"`
+					} `yaml:"hooks"`
+				} `yaml:"repos"`
+			}
+			if err := yaml.Unmarshal([]byte(got), &config); err != nil {
+				t.Fatalf("parse generated config: %v", err)
+			}
+
+			lintHooks := 0
+			for _, repo := range config.Repos {
+				for _, hook := range repo.Hooks {
+					if hook.ID != "golangci-lint" {
+						if slices.Contains(hook.Args, parallelFlag) {
+							t.Errorf("parallel-runner flag passed to unrelated hook %q", hook.ID)
+						}
+						continue
+					}
+					lintHooks++
+					if !slices.Contains(hook.Args, parallelFlag) {
+						t.Errorf("golangci-lint would refuse another session's lock: missing %s in %q", parallelFlag, hook.Args)
+					}
+					for _, arg := range []string{"--max-same-issues=0", "--max-issues-per-linter=0"} {
+						if !slices.Contains(hook.Args, arg) {
+							t.Errorf("golangci-lint lost issue-reporting argument %s", arg)
+						}
+					}
+				}
+			}
+			wantHooks := 0
+			if language == "go" {
+				wantHooks = 1
+			}
+			if lintHooks != wantHooks {
+				t.Errorf("golangci-lint hooks = %d, want %d", lintHooks, wantHooks)
+			}
+		})
+	}
 }
 
 // renderHelmChartConfig renders the config for a repo carrying one helm chart, from a
@@ -149,7 +201,16 @@ func Test_HelmSchemaFixHook(t *testing.T) {
 		"id: helm-schema-test-chart",
 		"helm-values-schema-json --config helm/test-chart/.schema.yaml",
 		"unevaluatedProperties",
-		"helm-values-schema-json/issues/317",
+		// The rationale must keep its upstream provenance: #378 (in v2.6.0) is what
+		// stopped the GENERATOR from emitting the defect, and the named repo is the
+		// one that still needs the step for a schema the generator BUNDLES. Whoever
+		// deletes this step next has to know both, or they regress that repo.
+		// A full URL, not GitHub shorthand: this text ships into every chart repo's
+		// .pre-commit-config.yaml, where `#378` resolves nowhere. Keep both numbers --
+		// #378 is the fix, #317 is the defect it describes.
+		"losisin/helm-values-schema-json/pull/378",
+		"(fixing #317)",
+		"security-profiles-operator-app",
 		"schemalint normalize",
 		// Both binaries are installed AND pinned by the hook itself, so no tooling comes
 		// from the environment and dev machines run the same versions CI does. Versions

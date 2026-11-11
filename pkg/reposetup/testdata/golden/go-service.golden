@@ -58,7 +58,7 @@ workflows:
 # workflow in .circleci/config.yml merges into this file at pipeline runtime.
 version: 2.1
 orbs:
-  architect: giantswarm/architect@10.12.0
+  architect: giantswarm/architect@10.17.4
 
 workflows:
   build:
@@ -77,106 +77,6 @@ workflows:
         filters:
           tags:
             only: /^v.*/
-
---- .cursor/rules/zz_generated.base-llm-rules.mdc
----
-description: Instructions for AI/LLM assistants
-alwaysApply: true
----
-
-# Instructions for AI/LLM assistants
-
-You are an AI assistant acting as an expert software developer and platform engineer working on Giant Swarm platform components. Your task is to act as a pair programmer and help others working in this codebase to keep the code delightful to work with. This includes ensuring that the code adheres to Giant Swarm's quality standards, keeping the project well-architected and organized, and maintaining supporting documentation, diagrams, and rules for other AI assistants.
-
-# Persona: Senior Giant Swarm Platform Engineer
-
-- **Technical Depth**: You are a domain expert in Go (formerly, golang), Helm, Kubernetes APIs and development, software design patterns, software architecture, Go application security, software testing, and software performance optimization,
-- **Problem-Solver**: You approach issues methodically, prioritizing safety and stability. You first investigate deeply with the tools provided to you, before suggesting changes. You find and fix the root cause, not the symptoms.
-- **Clear Communicator**: You explain complex topics clearly and provide actionable steps.
-- **Collaborative**: You guide users, suggest diagnostic paths, and help them think through problems.
-- **Best Practices**: You adhere to Giant Swarm operational and technical standards.
-
-# Reviewer Guidelines
-
-## Core Behaviors
-
-- Unless directed by the user, never use or recommend external linters, code analysis, or other tooling which isn't already recommended in Giant Swarm agent rules or style guides.
-- Always adhere to the central coding guidelines and best practices maintained at: @https://github.com/giantswarm/fmt/
-- Prioritize readability, maintainability, and security.
-- Write comprehensive tests and documentation.
-- If documentation is available in the `docs` folder, keep this up-to-date when changing code.
-- Maintain the main README.md file for correctness.
-- If a changelog is available as CHANGELOG.md, add your changes to it.
-
-## Release Management
-
-- Follow the changelog and release guidelines from @https://github.com/giantswarm/fmt/tree/main/releases
-- Use semantic versioning and conventional commits
-
-
-## Language-Specific Guidelines
-
-Additional language-specific rules can be found in the general style guide and in the other rules files in this repository.
-
-
-### Go Development
-
-- Go code must always adhere to the Go language-specific development guidelines and patterns rules in this repository.
-
-### Go Application Security
-
-- Ensure all Go dependencies are up to date.
-- Follow best security practices for Go applications.
-
-
----
-
-For detailed guidelines and examples, always refer to: @https://github.com/giantswarm/fmt/
-
-
-<!--
-DO NOT EDIT. Generated with devctl.
-This file is maintained at:
-https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/base_llm_rules.mdc.template
-Manual changes will be overwritten.
--->
-
---- .cursor/rules/zz_generated.go-llm-rules.mdc
----
-description: Go language-specific development guidelines and patterns
-globs: **/*.go,go.mod,go.sum
----
-
-These guidelines apply to Go code and supplement any other general development instructions or workflows.
-
-# Go Code Guidelines
-
-- All Go code is expected to adhere to the rules outlined in the Giant Swarm style guide located at @https://github.com/giantswarm/fmt/tree/main/go .
-- Always fetch and fully understand the style guide before reviewing any code.
-- The Giant Swarm style guide linked above must always be considered definitive. ALL rules and provisions contained in the style guide MUST be met.
-- When applying the style guide, always list all instances of a particular issue, grouped by the finding type.
-
-## Formatting
-
-CI will perform the following check for proper code formatting and sorting/grouping of imports:
-
-```bash
-go install golang.org/x/tools/cmd/goimports@latest && \
-if [[ -n $(goimports -local github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME} -l .) ]];
-then
-  goimports -local github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME} -d . && exit 1;
-fi
-```
-
-When creating or modifying Go files, perform the according check and mitigate any issues before committing.
-
-
-<!--
-DO NOT EDIT. Generated with devctl.
-This file is maintained at:
-https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/go_rules.mdc.template
-Manual changes will be overwritten.
--->
 
 --- .github/pull_request_template.md
 ### What does this PR do?
@@ -197,10 +97,6 @@ Manual changes will be overwritten.
 
 ### Do the docs need to be updated?
 
-### Should this change be mentioned in the release notes?
-
-- [ ] CHANGELOG.md has been updated (if it exists)
-
 --- .github/workflows/zz_generated.add-team-labels.yaml
 name: Add appropriate labels to issue
 
@@ -215,17 +111,29 @@ jobs:
     permissions:
       contents: read
     steps:
+    # giantswarm/github is private: the App reads the mapping through its
+    # single-file permission on the two mapping files, nothing else there.
+    - name: Mint App token for the user mapping
+      id: app-token
+      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      with:
+        client-id: ${{ secrets.PROJECT_AUTOMATION_CLIENT_ID }}
+        private-key: ${{ secrets.PROJECT_AUTOMATION_PRIVATE_KEY }}
+        owner: giantswarm
+        repositories: github
+        permission-single-file: read
     - name: Get user-mapping
       env:
-        GH_TOKEN: ${{ secrets.ISSUE_AUTOMATION }}
+        GH_TOKEN: ${{ steps.app-token.outputs.token }}
       run: |
         mkdir -p artifacts
-        gh api -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+        # The raw media type returns the file itself. No pipe after gh api, so
+        # a 404 fails the step under bash -e instead of writing garbage.
+        gh api -H "Accept: application/vnd.github.raw" -H "X-GitHub-Api-Version: 2022-11-28" \
           /repos/giantswarm/github/contents/tools/issue-automation/user-mapping.yaml \
-          | jq -r '.content' \
-          | base64 -d > artifacts/users.yaml
+          > artifacts/users.yaml
     - name: Upload Artifact
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: users
         path: artifacts/users.yaml
@@ -236,7 +144,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build_user_list
     steps:
-    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
       id: download-users
       with:
         name: users
@@ -253,11 +161,21 @@ jobs:
           echo "team/${team}" >> $GITHUB_ENV
         done
         echo "EOF" >> $GITHUB_ENV
+    # An App token, unlike GITHUB_TOKEN, lets the `labeled` event it causes run
+    # add-to-project-board, which puts the issue on the team's board.
+    - name: Mint App token for the label
+      id: app-token
+      if: ${{ env.LABEL != '' && env.LABEL != 'null' && env.LABEL != null }}
+      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      with:
+        client-id: ${{ secrets.PROJECT_AUTOMATION_CLIENT_ID }}
+        private-key: ${{ secrets.PROJECT_AUTOMATION_PRIVATE_KEY }}
+        permission-issues: write
     - name: Apply label to issue
       if: ${{ env.LABEL != '' && env.LABEL != 'null' && env.LABEL != null }}
       uses: actions-ecosystem/action-add-labels@18f1af5e3544586314bbe15c0273249c770b2daf  # v1.1.3
       with:
-        github_token: ${{ secrets.ISSUE_AUTOMATION }}
+        github_token: ${{ steps.app-token.outputs.token }}
         labels: |
           ${{ env.LABEL }}
 
@@ -267,6 +185,7 @@ name: Add Issue to Project when assigned
 on:
   issues:
     types:
+    - opened
     - assigned
     - labeled
 
@@ -274,35 +193,47 @@ jobs:
   build_user_list:
     name: Get yaml config of GS users
     runs-on: ubuntu-latest
+    if: github.event.action != 'opened'
     permissions:
       contents: read
     steps:
+    # giantswarm/github is private: the App reads the mappings through its
+    # single-file permission on the two mapping files, nothing else there.
+    - name: Mint App token for the mappings
+      id: app-token
+      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      with:
+        client-id: ${{ secrets.PROJECT_AUTOMATION_CLIENT_ID }}
+        private-key: ${{ secrets.PROJECT_AUTOMATION_PRIVATE_KEY }}
+        owner: giantswarm
+        repositories: github
+        permission-single-file: read
     - name: Get user-mapping
       env:
-        GH_TOKEN: ${{ secrets.ISSUE_AUTOMATION }}
+        GH_TOKEN: ${{ steps.app-token.outputs.token }}
       run: |
         mkdir -p artifacts
-        gh api -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+        # The raw media type returns the file itself. No pipe after gh api, so
+        # a 404 fails the step under bash -e instead of writing garbage.
+        gh api -H "Accept: application/vnd.github.raw" -H "X-GitHub-Api-Version: 2022-11-28" \
           /repos/giantswarm/github/contents/tools/issue-automation/user-mapping.yaml \
-          | jq -r '.content' \
-          | base64 -d > artifacts/users.yaml
+          > artifacts/users.yaml
     - name: Upload Artifact
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: users
         path: artifacts/users.yaml
         retention-days: 1
     - name: Get label-mapping
       env:
-        GH_TOKEN: ${{ secrets.ISSUE_AUTOMATION }}
+        GH_TOKEN: ${{ steps.app-token.outputs.token }}
       run: |
         mkdir -p artifacts
-        gh api -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" \
+        gh api -H "Accept: application/vnd.github.raw" -H "X-GitHub-Api-Version: 2022-11-28" \
           /repos/giantswarm/github/contents/tools/issue-automation/label-mapping.yaml \
-          | jq -r '.content' \
-          | base64 -d > artifacts/labels.yaml
+          > artifacts/labels.yaml
     - name: Upload Artifact
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: labels
         path: artifacts/labels.yaml
@@ -314,7 +245,7 @@ jobs:
     needs: build_user_list
     if: github.event.action == 'assigned'
     steps:
-    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
       id: download-users
       with:
         name: users
@@ -327,12 +258,21 @@ jobs:
         echo "Personal board URL: ${BOARD}"
 
         echo "BOARD=${BOARD}" >> $GITHUB_ENV
+    - name: Mint App token for the board
+      id: app-token
+      if: ${{ env.BOARD != 'null' && env.BOARD != ''  && env.BOARD != null }}
+      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      with:
+        client-id: ${{ secrets.PROJECT_AUTOMATION_CLIENT_ID }}
+        private-key: ${{ secrets.PROJECT_AUTOMATION_PRIVATE_KEY }}
+        permission-issues: read
+        permission-organization-projects: write
     - name: Add issue to personal board
       if: ${{ env.BOARD != 'null' && env.BOARD != ''  && env.BOARD != null }}
-      uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0
+      uses: actions/add-to-project@f2c1f1fa649a891be84948ea89b5dfba1526ef05 # v2.0.1
       with:
         project-url: ${{ env.BOARD }}
-        github-token: ${{ secrets.ISSUE_AUTOMATION }}
+        github-token: ${{ steps.app-token.outputs.token }}
 
   add_to_team_board:
     name: Add issue to team board
@@ -340,7 +280,7 @@ jobs:
     needs: build_user_list
     if: github.event.action == 'labeled'
     steps:
-    - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
       id: download-labels
       with:
         name: labels
@@ -353,12 +293,45 @@ jobs:
         echo "Team board URL: ${BOARD}"
 
         echo "BOARD=${BOARD}" >> $GITHUB_ENV
+    - name: Mint App token for the board
+      id: app-token
+      if: ${{ env.BOARD != 'null' && env.BOARD != '' && env.BOARD != null }}
+      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      with:
+        client-id: ${{ secrets.PROJECT_AUTOMATION_CLIENT_ID }}
+        private-key: ${{ secrets.PROJECT_AUTOMATION_PRIVATE_KEY }}
+        permission-issues: read
+        permission-organization-projects: write
     - name: Add issue to team board
       if: ${{ env.BOARD != 'null' && env.BOARD != '' && env.BOARD != null }}
-      uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0
+      uses: actions/add-to-project@f2c1f1fa649a891be84948ea89b5dfba1526ef05 # v2.0.1
       with:
         project-url: ${{ env.BOARD }}
-        github-token: ${{ secrets.ISSUE_AUTOMATION }}
+        github-token: ${{ steps.app-token.outputs.token }}
+
+  # An issue opened with a label or an assignee also fires `labeled` or
+  # `assigned`, which add it above; only a bare one is added here.
+  add_unlabelled_to_roadmap_board:
+    name: Add unlabelled, unassigned issue to roadmap board
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.action == 'opened' &&
+      join(github.event.issue.labels.*.name, '') == '' &&
+      join(github.event.issue.assignees.*.login, '') == ''
+    steps:
+    - name: Mint App token for the board
+      id: app-token
+      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      with:
+        client-id: ${{ secrets.PROJECT_AUTOMATION_CLIENT_ID }}
+        private-key: ${{ secrets.PROJECT_AUTOMATION_PRIVATE_KEY }}
+        permission-issues: read
+        permission-organization-projects: write
+    - name: Add issue to roadmap board
+      uses: actions/add-to-project@f2c1f1fa649a891be84948ea89b5dfba1526ef05 # v2.0.1
+      with:
+        project-url: https://github.com/orgs/giantswarm/projects/273
+        github-token: ${{ steps.app-token.outputs.token }}
 
 --- .github/workflows/zz_generated.auto_release.yaml
 # DO NOT EDIT. Generated with:
@@ -375,17 +348,26 @@ jobs:
 # exact pattern). Inspects conventional commits reachable from the pushed
 # ref since the latest reachable v*.*.* tag via git-cliff, and:
 #
-#   1. creates the next vX.Y.Z-rc.N git tag if a bump is warranted: every
-#      releasable push cuts a release candidate
+#   1. creates the next git tag if a bump is warranted: a minor or major
+#      bump cuts the next vX.Y.0-rc.N release candidate, a patch of the last
+#      stable release (only fixes and chores since it) is tagged vX.Y.Z
+#      stable directly, so there is never a patch candidate
 #   2. creates the matching GitHub Release with notes generated by git-cliff,
-#      flagged as a pre-release
+#      a candidate flagged as a pre-release
 #   3. checks that CircleCI picked the tag up and triggers the pipeline if
 #      the webhook got lost (repos with a .circleci/config.yml only)
 #
-# A stable vX.Y.Z is cut only by running this workflow by hand with
-# `release-type: stable`, which promotes the latest release candidate: the
-# stable tag lands on that candidate's commit, so what ships is what was
-# tested.
+# A minor or major vX.Y.0 is cut only by running this workflow by hand with
+# `release-type: stable`, which promotes the latest release candidate, or
+# the one `version` names: the stable tag lands on that candidate's commit,
+# so what ships is what was tested.
+#
+# Tags and releases are created with the giantswarm-release GitHub App token,
+# so GitHub Actions workflows listening on push.tags or release can start.
+# Requires the App installed on this repository with Contents write and the
+# RELEASE_BOT_CLIENT_ID / RELEASE_BOT_PRIVATE_KEY secrets available to this
+# workflow. Missing or unusable App credentials fail before creating a release;
+# there is no GITHUB_TOKEN fallback, whose events cannot start those workflows.
 #
 # The tag push then triggers downstream publishing (for chart/service/CLI
 # repos, this is the CircleCI architect pipeline firing on the same /^v.*/
@@ -410,7 +392,8 @@ on:
       - 'release-v[0-9]+.[0-9]+.x'
   # `auto` applies the same rule as a push, which is what a re-run wants.
   # `stable` promotes the latest release candidate since the last stable
-  # release, and fails when there is none.
+  # release, and fails when there is none; `version` names an older one of
+  # those candidates to promote instead.
   workflow_dispatch:
     inputs:
       release-type:
@@ -418,14 +401,13 @@ on:
         type: choice
         options: [auto, stable]
         default: auto
+      version:
+        description: 'With stable: the release candidate to promote, vX.Y.Z-rc.N; empty promotes the latest'
+        type: string
+        required: false
+        default: ''
 
-permissions:
-  contents: write       # push tags and create the GitHub Release
-  # git-cliff's GitHub API lookups (commit.remote.pr_number / username
-  # in release notes) need PR read access via GITHUB_TOKEN.
-  pull-requests: read
-  # The stable run reads the commit statuses of the candidate it promotes.
-  statuses: read
+permissions: {}
 
 # Scope the concurrency lock per branch so a backport tag on release-2.x
 # doesn't block (or get blocked by) a main release, and vice versa. A second
@@ -437,7 +419,22 @@ concurrency:
 jobs:
   tag:
     name: Tag
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read        # checkout and fetch; the App creates tags/releases
+      # git-cliff's GitHub API lookups (commit.remote.pr_number / username
+      # in release notes) need PR read access via GITHUB_TOKEN.
+      pull-requests: read
+      # The stable run reads the commit statuses of the candidate it promotes,
+      # and every run with a tag those of the tag's CircleCI build.
+      statuses: read
+      # A promotion queues an auto run for commits left on the branch.
+      actions: write
+    outputs:
+      # The stable tag this run released, empty for a candidate or no release.
+      # Read from the release step, so a failure of the CircleCI check after
+      # it still reaches the changelog job.
+      stable: ${{ steps.release.outcome == 'success' && steps.decide.outputs.prerelease == 'false' && steps.decide.outputs.tag || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -469,6 +466,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          PROMOTE_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
           # The same baseline as the decide step below.
@@ -478,18 +476,31 @@ jobs:
           # contains. `sort -V` orders rc.10 after rc.9 and a moved target
           # (v2.0.0-rc.1 after v1.3.0-rc.2) after the one it replaced.
           # `|| true`: grep exits 1 when there is no candidate at all.
-          rc=$(git tag --list --merged HEAD ${last:+--no-merged "$last"} 'v*.*.*-rc.*' \
-            | { grep -E -- '-rc\.[0-9]+$' || true; } | sort -V | tail -1)
-          if [ -z "$rc" ]; then
-            echo "::error title=No release candidate to promote::no release candidate since ${last:-inception} on ${GITHUB_REF_NAME}. A releasable push cuts one; promote it once it is good."
+          candidates=$(git tag --list --merged HEAD ${last:+--no-merged "$last"} 'v*.*.*-rc.*' \
+            | { grep -E -- '-rc\.[0-9]+$' || true; } | sort -V)
+          if [ -z "$candidates" ]; then
+            echo "::error title=No release candidate to promote::no release candidate since ${last:-inception} on ${GITHUB_REF_NAME}. A minor or major push cuts one; a patch is tagged stable on its push and has none."
             exit 1
+          fi
+          rc=$(tail -n 1 <<<"$candidates")
+          # A named candidate (`devctl release promote --version`) is promoted
+          # instead of the latest, when it is one of the same candidates: one
+          # that is built while a later one still builds, or the one proven.
+          if [ -n "${PROMOTE_VERSION:-}" ]; then
+            if ! grep -qxF -- "$PROMOTE_VERSION" <<<"$candidates"; then
+              echo "::error title=Not a release candidate to promote::${PROMOTE_VERSION} is not a release candidate since ${last:-inception} on ${GITHUB_REF_NAME}; the candidates are $(paste -sd ' ' <<<"$candidates")."
+              exit 1
+            fi
+            rc=$PROMOTE_VERSION
           fi
 
           # The tag alone does not say the candidate was built. Its GitHub
           # pre-release is created with the tag, and the pipelines that build
           # and publish it report on its commit: a failed or still running one
           # refuses the promotion. A commit no pipeline reports on has nothing
-          # to wait for.
+          # to wait for. A failed CircleCI job the release does not require
+          # (advisory_jobs, the rule `devctl release wait` and `devctl release
+          # promote` apply) is a warning, not a refusal.
           if ! prerelease=$(gh release view "$rc" --json isPrerelease --jq .isPrerelease 2>/dev/null); then
             echo "::error title=Candidate not released::${rc} has no GitHub release; the run that cut it did not finish. Cut a new candidate."
             exit 1
@@ -498,15 +509,54 @@ jobs:
             echo "::error title=Candidate not a pre-release::the GitHub release of ${rc} is not a pre-release."
             exit 1
           fi
-          if ! status=$(gh api "repos/${GH_REPO}/commits/${rc}/status" --jq '"\(.state) \(.total_count)"'); then
-            echo "::error title=Candidate status unreadable::the commit statuses of ${rc} could not be read (the job needs statuses: read); nothing is promoted."
+          # The API now and then answers with an empty or truncated body or a
+          # 5xx: the read is retried with backoff, and only a failure on every
+          # try refuses the promotion. The answer's first line is the number
+          # of contexts, every further one a context's latest
+          # "<state> <context>".
+          request="repos/${GH_REPO}/commits/${rc}/status"
+          tries=4
+          for try in $(seq 1 "$tries"); do
+            if statuses=$(gh api -X GET "$request" -F per_page=100 --jq '.total_count, (.statuses[] | "\(.state) \(.context)")') \
+              && count=$(head -n 1 <<<"$statuses") && [[ "$count" =~ ^[0-9]+$ ]]; then
+              break
+            fi
+            if [ "$try" = "$tries" ]; then
+              echo "::error title=Candidate status unreadable::GET ${request} failed ${tries} times (the job needs statuses: read); nothing is promoted."
+              exit 1
+            fi
+            echo "GET ${request} failed (try ${try} of ${tries}), retrying in $((2 ** try))s"
+            sleep $((2 ** try))
+          done
+          advisory_jobs=" sync-china-registry "
+          failed=() running=() advisory=()
+          while read -r state context; do
+            case "$state" in
+              success) ;;
+              failure | error)
+                if [[ "$context" == "ci/circleci: "* && "$advisory_jobs" == *" ${context#ci/circleci: } "* ]]; then
+                  advisory+=("$context")
+                else
+                  failed+=("${context} (${state})")
+                fi
+                ;;
+              *) running+=("$context") ;;
+            esac
+          done < <(tail -n +2 <<<"$statuses")
+          commit="https://github.com/${GH_REPO}/commit/$(git rev-parse "${rc}^{commit}")"
+          if [ "${#failed[@]}" != 0 ]; then
+            printf -v list '%s, ' "${failed[@]}"
+            echo "::error title=Candidate not built::the commit statuses of ${rc} are failure: ${list%, } on ${commit}. Promote it once its pipelines passed."
             exit 1
           fi
-          read -r state count <<<"$status"
-          if [ "$count" != 0 ] && [ "$state" != success ]; then
-            echo "::error title=Candidate not built::the commit statuses of ${rc} are ${state}: https://github.com/${GH_REPO}/commit/$(git rev-parse "${rc}^{commit}"). Promote it once its pipelines passed."
+          if [ "${#running[@]}" != 0 ]; then
+            printf -v list '%s, ' "${running[@]}"
+            echo "::error title=Candidate not built::the commit statuses of ${rc} are pending: ${list%, } on ${commit}. Promote it once its pipelines passed."
             exit 1
           fi
+          for context in "${advisory[@]}"; do
+            echo "::warning title=Advisory status failed::the commit status ${context} of ${rc} failed; the release does not require it, so the candidate is judged without it."
+          done
 
           after=$(git log --format='%h %s' "${rc}..HEAD")
           git checkout -q --detach "$rc"
@@ -530,7 +580,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # Single expensive call: walks commits, queries the GitHub API for
+          # One context read: walks commits, queries the GitHub API for
           # per-commit PR lookups, emits the JSON context for ONLY the bumped
           # release.
           #
@@ -547,7 +597,27 @@ jobs:
           # Without either filter, --bump --context returns the full release
           # history in JSON and the render step below would concatenate every
           # past release into each new release's notes.
-          git-cliff --unreleased --bump --context > cliff-context.json
+          # GitHub metadata reads can fail on a transient timeout, truncated
+          # response or 5xx. Retry with bounded backoff. Keep stderr in the
+          # log, including the final cause, and replace any partial context
+          # on each attempt before downstream steps can use it.
+          cliff_context() {
+            local try tries=3 status
+            for ((try=1; try<=tries; try++)); do
+              if git-cliff "$@" > cliff-context.json; then
+                return 0
+              else
+                status=$?
+              fi
+              if [ "$try" -eq "$tries" ]; then
+                echo "::error title=git-cliff failed::git-cliff failed after ${tries} attempts (exit ${status}); see its error above." >&2
+                return "$status"
+              fi
+              echo "git-cliff failed (attempt ${try} of ${tries}, exit ${status}); retrying in $((2 ** try))s" >&2
+              sleep $((2 ** try))
+            done
+          }
+          cliff_context --unreleased --bump --context
           NEXT=$(jq -r '.[0].version // empty' cliff-context.json)
           echo "next computed: ${NEXT:-<empty>}"
           echo "version=${NEXT}" >> "$GITHUB_OUTPUT"
@@ -583,9 +653,8 @@ jobs:
 
           unconventional=0
           while IFS= read -r -d '' subject; do
-            # A leftover -rc type is still conventional: cliff.toml normalises
-            # it to its plain type.
-            if ! printf '%s' "$subject" | grep -qE '^[a-z]+(-rc)?(\([^)]*\))?!?: '; then
+            # git-cliff takes letters, digits, `_` and `-` as a type.
+            if ! printf '%s' "$subject" | grep -qE '^[A-Za-z0-9_-]+(\([^)]*\))?!?: '; then
               # git-cliff drops a subject it cannot parse as conventional
               # (`filter_unconventional`): the commit neither bumps the
               # version nor appears in any release's notes, silently. The
@@ -617,16 +686,34 @@ jobs:
             exit 0
           fi
 
+          # A patch of the last stable release (`NEXT` keeps its major and
+          # minor: only fixes and chores since it) takes the fast path and is
+          # tagged stable on this push: there is no patch candidate. A fix
+          # during a minor or major cycle moves no target and rides that
+          # cycle's next candidate.
+          if [ "$is_rc" = true ] && [ -n "$last" ] && [ "${NEXT%.*}" = "${last%.*}" ]; then
+            is_rc=false
+            echo "${NEXT} is a patch of ${last}: tagged stable, no candidate"
+          fi
+
           if [ "$is_rc" = true ]; then
             # Highest existing RC for this exact target, so a moved target
             # (a breaking change during a cycle) restarts at rc.1, and rc.9 is
             # followed by rc.10 rather than rc.2. `--merged HEAD` scopes the
             # search the way the describe baseline above is scoped: a candidate
             # for the same target cut on another branch must not shift the
-            # numbering on this one.
+            # numbering on this one. A re-pinned fork line is the exception:
+            # its earlier candidates for the same target are on the history
+            # the rebase left behind, unreachable but this branch's own, and
+            # their tags still exist, so the count takes every tag of the
+            # target or the push would try to cut a tag that already exists.
             # `|| true`: grep exits 1 on the first candidate of a series,
             # when no ${NEXT}-rc.* tag exists yet, and pipefail would abort.
-            n=$(git tag --list --merged HEAD "${NEXT}-rc.*" | sed 's/.*-rc\.//' | { grep -E '^[0-9]+$' || true; } | sort -n | tail -1)
+            scope=(--merged HEAD)
+            if [ "${LINE_REPINNED:-}" = true ]; then
+              scope=()
+            fi
+            n=$(git tag --list ${scope[@]+"${scope[@]}"} "${NEXT}-rc.*" | sed 's/.*-rc\.//' | { grep -E '^[0-9]+$' || true; } | sort -n | tail -1)
 
             # `NEXT` stays ahead of `last` until the stable release, so the
             # comparison above cannot stop a push that carries only commits
@@ -637,6 +724,9 @@ jobs:
             # cliff-context.json holds exactly the commits git-cliff counted
             # for this release, so intersecting it with the range since the
             # last candidate needs no second copy of cliff.toml's skip rules.
+            # A new conventional `test:` commit is also enough once this
+            # target has a candidate: a test fix must be able to replace a
+            # red candidate. It opens no cycle and changes no version or notes.
             if [ -n "${n}" ]; then
               counted=$(jq -r '.[0].commits[].id' "$CLIFF_CONTEXT")
               since=$(git rev-list "${NEXT}-rc.${n}..HEAD")
@@ -645,13 +735,29 @@ jobs:
                 fresh=$(printf '%s\n' "$since" | { grep -cxF "$counted" || true; })
               fi
               if [ "$fresh" -eq 0 ]; then
+                fresh=$(git log --format='%s' "${NEXT}-rc.${n}..HEAD" \
+                  | { grep -cE '^test(\([^)]*\))?!?: ' || true; })
+              fi
+              if [ "$fresh" -eq 0 ]; then
                 echo "No releasable commits since ${NEXT}-rc.${n}; skipping tag."
                 echo "tag=" >> "$GITHUB_OUTPUT"
                 echo "prerelease=" >> "$GITHUB_OUTPUT"
                 exit 0
               fi
             fi
-            tag="${NEXT}-rc.$(( ${n:-0} + 1 ))"
+            # The next number skips a name a tag already holds off this
+            # branch: a candidate tagged by hand on a pull request's branch to
+            # prove it, whose commits a rebase merge rewrote. The release is
+            # created through the API by its tag name, and GitHub attaches it
+            # to an existing tag's commit instead of creating the tag here.
+            n=${n:-0}
+            while git rev-parse -q --verify "refs/tags/${NEXT}-rc.$(( n + 1 ))" >/dev/null; do
+              echo "${NEXT}-rc.$(( n + 1 )) is taken by $(git rev-parse --short "${NEXT}-rc.$(( n + 1 ))^{commit}"), not on ${GITHUB_REF_NAME}; skipping the number"
+              n=$(( n + 1 ))
+            done
+            tag="${NEXT}-rc.$(( n + 1 ))"
+          elif [ "$WANT" != stable ]; then
+            tag="${NEXT}"
           else
             # git-cliff ran on the promoted candidate, so it has to land on
             # that candidate's own version. A mismatch means the candidate's
@@ -666,6 +772,68 @@ jobs:
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "prerelease=${is_rc}" >> "$GITHUB_OUTPUT"
           echo "target=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # One commit releases one version: the release tags of two versions on
+      # one commit give two answers to "which version is this", and every
+      # reader (a release wait, a rollout, a person) picks its own. A
+      # candidate and its promoted stable share a commit by design, and an
+      # upstream pre-release outside the release pattern names no release of
+      # this repository. The tags are read from the remote, not from this
+      # checkout: the fork baseline step may move one here, and a run on
+      # another branch may have tagged the commit since the checkout.
+      - name: Refuse another version's tag on the commit
+        id: one-version
+        if: steps.decide.outputs.tag != ''
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+          TARGET: ${{ steps.decide.outputs.target }}
+        run: |
+          set -euo pipefail
+          release='^v?([0-9]+\.[0-9]+\.[0-9]+)(-rc\.[0-9]+)?$'
+          [[ "$TAG" =~ $release ]]
+          version=${BASH_REMATCH[1]}
+          # An annotated tag is listed twice, its peeled commit under ^{}:
+          # only that line matches the commit.
+          conflicts=()
+          while read -r sha ref; do
+            tag=${ref#refs/tags/}
+            tag=${tag%'^{}'}
+            if [ "$sha" = "$TARGET" ] && [[ "$tag" =~ $release ]] && [ "${BASH_REMATCH[1]}" != "$version" ]; then
+              conflicts+=("$tag")
+            fi
+          done < <(git ls-remote --tags origin)
+          if [ "${#conflicts[@]}" -gt 0 ]; then
+            echo "::error title=Another version on the commit::${TAG} would land on ${TARGET:0:8}, which already carries the release tag of another version: ${conflicts[*]}. One commit releases one version: no tag and no release are cut. Merge a change to cut the next candidate on a commit of its own."
+            exit 1
+          fi
+          echo "${TARGET:0:8} carries no other version's release tag: ${TAG} is its only version"
+
+      # A stable release can carry rules only the repository knows (a fork
+      # line's pins, its release ledger). Checked in the tag's own pipeline
+      # they come too late: the tag and the GitHub release exist by then, and
+      # a refusal leaves a release that looks published with nothing built.
+      # The repository-owned `.github/release-gate.custom.sh`, when the
+      # released commit carries it (the promoted candidate, or the push's head
+      # for a patch), runs here on its checkout with the version about to be
+      # tagged; a non-zero exit cuts no tag and no release. A repository
+      # without the script has no gate.
+      - name: Run the repository's stable gate
+        id: gate
+        if: steps.decide.outputs.prerelease == 'false' && steps.decide.outputs.tag != ''
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gate=.github/release-gate.custom.sh
+          if [ ! -f "$gate" ]; then
+            echo "no ${gate} on the released commit: no repository gate for ${TAG}"
+            exit 0
+          fi
+          if ! bash "$gate" "$TAG"; then
+            echo "::error title=Stable gate refused::${gate} refused ${TAG}: no tag and no release are cut. Fix the cause on the branch and release it again."
+            exit 1
+          fi
+          echo "${gate} passed ${TAG}"
 
       # cliff-context.json names the stable target git-cliff bumped to, and
       # the tag actually cut is ${NEXT}-rc.N for a candidate. cliff.toml puts
@@ -691,6 +859,17 @@ jobs:
           # create --notes-file expects.
           git-cliff --from-context cliff-context.tagged.json --strip all --output release-notes.md
 
+      # Mint just before publishing, after the release guards have passed.
+      # With owner/repositories unset, the token is scoped to this repository.
+      - name: Generate the giantswarm-release token
+        id: release-token
+        if: steps.decide.outputs.tag != ''
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+
       # Create the tag AND the GitHub Release in one atomic API call. GitHub's
       # release-create endpoint accepts a tag_name + target_commitish and, if
       # the tag doesn't already exist, creates it pointing at that commitish
@@ -707,7 +886,7 @@ jobs:
         id: release
         if: steps.decide.outputs.tag != ''
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ steps.decide.outputs.tag }}
           PRERELEASE: ${{ steps.decide.outputs.prerelease }}
@@ -731,126 +910,225 @@ jobs:
             --title "$TAG" \
             --notes-file release-notes.md \
             --target "$TARGET" \
-            "${flags[@]}"
+            ${flags[@]+"${flags[@]}"}
+
+      # The stable tag is on the promoted candidate, not the branch head.
+      # A push already handled before that tag used the previous stable as
+      # its baseline, so its candidate may now be older than the new stable.
+      # Re-run auto against the branch with the new baseline without waiting
+      # for another push. Fetch the branch again: it may have advanced during
+      # promotion. Queue this before the CircleCI check, whose failure must
+      # not strand commits after an already published stable release.
+      - name: Queue releases for commits after the promoted candidate
+        id: catch-up
+        if: inputs.release-type == 'stable' && steps.release.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TARGET: ${{ steps.decide.outputs.target }}
+          STABLE: ${{ steps.decide.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "refs/heads/${GITHUB_REF_NAME}"
+          head=$(git rev-parse 'FETCH_HEAD^{commit}')
+          if ! git merge-base --is-ancestor "$TARGET" "$head"; then
+            echo "::error::${GITHUB_REF_NAME} no longer contains the promoted commit ${TARGET}; inspect the branch before releasing it."
+            exit 1
+          fi
+          if [ "$head" = "$TARGET" ]; then
+            echo "${GITHUB_REF_NAME} has no commits after the promoted candidate; nothing to queue."
+            exit 0
+          fi
+          # A superseded RC on the head cannot acquire another version's
+          # tag. Land a preparation PR through the normal checks instead:
+          # its merge supplies the new commit and triggers auto-release.
+          # Read remote tags, including peeled annotated tags, as the guard
+          # does; the checkout can predate the branch's latest candidate.
+          rc='^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$'
+          tags=$(git ls-remote --tags origin)
+          while read -r sha ref; do
+            tag=${ref#refs/tags/}
+            tag=${tag%'^{}'}
+            if [ "$sha" = "$head" ] && [[ "$tag" =~ $rc ]] && [ "${tag%-rc.*}" = "$STABLE" ]; then
+              echo "${tag} already tags ${head:0:8}; preparing a checked catch-up PR."
+              echo "prepare=true" >> "$GITHUB_OUTPUT"
+              echo "head=$head" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done <<<"$tags"
+          echo "Queuing auto-release for commits on ${GITHUB_REF_NAME} after the promoted candidate:"
+          git log --format='%h %s' "${TARGET}..${head}"
+          gh workflow run zz_generated.auto_release.yaml --ref "$GITHUB_REF_NAME" -f release-type=auto
+
+      # The release App bypasses the review rule for its generated PRs,
+      # never the required checks. Its push/merge triggers CI, unlike a
+      # GITHUB_TOKEN push. No write to the protected branch happens here.
+      - name: Generate the release token for catch-up
+        id: catch-up-token
+        if: steps.catch-up.outputs.prepare == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Check out the catch-up head
+        if: steps.catch-up.outputs.prepare == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.catch-up.outputs.head }}
+          fetch-depth: 0
+          token: ${{ steps.catch-up-token.outputs.token }}
+          # Keep the promoted checkout for its CircleCI verification below.
+          path: .release-catch-up-worktree
+      - name: Prepare a new commit for catch-up through a checked PR
+        id: catch-up-pr
+        if: steps.catch-up.outputs.prepare == 'true'
+        working-directory: .release-catch-up-worktree
+        env:
+          GH_TOKEN: ${{ steps.catch-up-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          STABLE: ${{ steps.decide.outputs.tag }}
+          CATCH_UP_HEAD: ${{ steps.catch-up.outputs.head }}
+          GIT_AUTHOR_NAME: giantswarm-release[bot]
+          GIT_AUTHOR_EMAIL: giantswarm-release[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: giantswarm-release[bot]
+          GIT_COMMITTER_EMAIL: giantswarm-release[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          branch="release/catch-up-${STABLE}-${CATCH_UP_HEAD:0:12}"
+          # A rerun reuses the same PR, including one already merged. Never
+          # rewrite its head or cut a second preparation commit for it.
+          pr=$(gh pr list --head "$branch" --base "$GITHUB_REF_NAME" --state all --json url --jq '.[0].url // empty')
+          if [ -z "$pr" ]; then
+            # The branch push can succeed before PR creation fails. Reuse
+            # that branch on a retry, without a force push.
+            remote=$(git ls-remote --heads origin "refs/heads/${branch}")
+            if [ -z "$remote" ]; then
+              git checkout -q --detach "$CATCH_UP_HEAD"
+              mkdir -p .github
+              printf 'stable=%s\nhead=%s\n' "$STABLE" "$CATCH_UP_HEAD" > .github/release-catch-up
+              git add .github/release-catch-up
+              git commit -m "docs(release): resume releases after ${STABLE}"
+              git push origin "HEAD:refs/heads/${branch}"
+            fi
+            pr=$(gh pr create --head "$branch" --base "$GITHUB_REF_NAME" \
+              --title "docs(release): resume releases after ${STABLE}" \
+              --body "Promotion of ${STABLE} left a superseded candidate on the branch head. This marker gives catch-up its own commit, preserving one version per commit. Merge after required checks; the merge triggers auto-release for the remaining changes.")
+          fi
+          state=$(gh pr view "$pr" --json state --jq .state)
+          if [ "$state" = MERGED ]; then
+            echo "Catch-up PR already merged: ${pr}"
+          elif [ "$state" = OPEN ]; then
+            gh pr merge "$pr" --auto --squash
+            echo "Catch-up waits for the required checks: ${pr}"
+          else
+            echo "::error::Catch-up PR was closed without merging: ${pr}; reopen it to resume releases."
+            exit 1
+          fi
+          echo "Catch-up PR: ${pr}" >> "$GITHUB_STEP_SUMMARY"
 
       # A tag that never reaches CircleCI is a silent failure: the GitHub
       # Release above exists and looks finished, but nothing gets built or
       # published. GitHub delivers the tag-push webhook exactly once and never
       # retries it; on 2026-09-04 ~22:00 UTC CircleCI's receiver answered
       # three of ~55 tag pushes with an empty HTTP 400 and those releases had
-      # no pipeline until somebody noticed. So ask CircleCI directly: poll its
-      # pipeline list for this tag and, if nothing shows up, trigger the
-      # pipeline through the API.
+      # no pipeline until somebody noticed. So watch for the tag's build: a
+      # CircleCI commit status on the tag's commit from a workflow that
+      # started after the release. The commit's statuses are the commit's,
+      # not the tag's: the branch build of the same commit posts the same
+      # contexts, and keeps posting when its jobs finish after the tag, but
+      # its workflows started before the release.
       #
-      # CIRCLECI_API_TOKEN is an org-level secret holding a CircleCI personal
-      # API token (a machine account's -- CircleCI's v2 API accepts no other
-      # kind for triggering, and needs one to read private projects). Without
-      # it the step still reads public projects and stays a detector: a
-      # missing pipeline fails the run with the exact command to fix it by
-      # hand. Private projects and repos without a CircleCI project both read
-      # as 404 unauthenticated, so without the token that case is a warning.
-      #
-      # Only a positively observed empty list (HTTP 200) triggers: a CircleCI
-      # API outage fails the step instead of risking a second pipeline on the
-      # tag, which would race the image and chart pushes.
+      # This step reads GitHub with the workflow's own token and holds no
+      # CircleCI credential, so it detects and never triggers: CircleCI has
+      # no service accounts, and a pipeline started through its API is a
+      # person's. The fix is a person's `devctl repo follow-circleci`, which
+      # runs an unbuilt latest release on the GitHub App pipeline (and sets
+      # that pipeline up when it is missing). A commit without any CircleCI
+      # status has no pipeline building the repository yet -- a new
+      # repository before its creator's set-up -- and is a warning.
       - name: Verify CircleCI picked up the tag
         if: steps.decide.outputs.tag != '' && hashFiles('.circleci/config.yml') != ''
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.decide.outputs.tag }}
-          CIRCLECI_API_TOKEN: ${{ secrets.CIRCLECI_API_TOKEN }}
-          # A healthy CircleCI creates the pipeline 1-2 s after the tag push.
-          CIRCLECI_PIPELINE_WAIT_SECONDS: "120"
+          TARGET: ${{ steps.decide.outputs.target }}
+          # A healthy CircleCI posts the first status 1-10 s after the tag push.
+          CIRCLECI_STATUS_WAIT_SECONDS: "120"
         run: |
           set -euo pipefail
-          api="https://circleci.com/api/v2/project/gh/${GITHUB_REPOSITORY}/pipeline"
-          auth=()
-          if [ -n "${CIRCLECI_API_TOKEN}" ]; then
-            auth=(-H "Circle-Token: ${CIRCLECI_API_TOKEN}")
-          fi
-          manual="curl -X POST -H 'Circle-Token: <token>' -H 'Content-Type: application/json' -d '{\"tag\":\"${TAG}\"}' ${api}"
-
-          deadline=$((SECONDS + CIRCLECI_PIPELINE_WAIT_SECONDS))
-          last_code=""
-          found=""
+          fix="devctl repo follow-circleci ${GITHUB_REPOSITORY}"
+          # counts: "<CircleCI statuses on the commit> <of them the GitHub App
+          # pipeline's> <tag pipelines started since the release>". Only the
+          # App pipeline's statuses (circleci-app[bot]) are judged: they link
+          # their workflow (…/workflow/<id>/job/<id>), while an OAuth
+          # follow's link a job alone, which tells a branch job from the
+          # tag's no better than its time. A generated (dynamic) pipeline
+          # starts with one setup workflow, so its setup workflows started
+          # since the release are the tag's; the branch build's continuation,
+          # started after its own setup, never counts. A commit without any
+          # setup status (a static configuration) counts every App workflow
+          # started since the release.
+          counts() {
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${TARGET}/statuses?per_page=100" \
+              --jq '[.[] | select(.context | startswith("ci/circleci"))]' |
+              jq -rs --argjson since "$since" '
+                add // [] |
+                def wf: (.target_url // "") as $u | (($u | capture("/workflows?/(?<id>[^/]+)")? | .id) // $u);
+                (length) as $all |
+                (map(select((.creator.login // "") != "" and .creator.login != "circleci-app[bot]" and (.created_at | fromdateiso8601) >= $since)) | length) as $oauth |
+                map(select(.creator.login == "circleci-app[bot]")) |
+                (length) as $app |
+                (if any(.[]; .context == "ci/circleci: setup") then map(select(.context == "ci/circleci: setup")) else . end) as $starts |
+                ($starts | group_by(wf) | map(min_by(.created_at)) | map(select((.created_at | fromdateiso8601) >= $since)) | length) as $tag |
+                "\($all) \($app) \($tag) \($oauth)"'
+          }
+          deadline=$((SECONDS + CIRCLECI_STATUS_WAIT_SECONDS))
+          since="" all="" app="" tag="" oauth=""
           while :; do
-            # Newest first; the tag pipeline is created within seconds of the
-            # push, so two pages (40 pipelines) cover even a merge burst.
-            url="$api"
-            pages=0
-            while [ -n "$url" ] && [ "$pages" -lt 2 ]; do
-              resp=$(curl -sS "${auth[@]}" -w '\n%{http_code}' "$url" || printf '\n000')
-              last_code=${resp##*$'\n'}
-              body=${resp%$'\n'*}
-              [ "$last_code" = "200" ] || break
-              found=$(jq -r --arg tag "$TAG" '[.items[] | select(.vcs.tag == $tag)][0] | select(. != null) | .number' <<<"$body")
-              [ -z "$found" ] || break
-              next=$(jq -r '.next_page_token // empty' <<<"$body")
-              url=${next:+"${api}?page-token=${next}"}
-              pages=$((pages + 1))
-            done
-            if [ -n "$found" ]; then
-              echo "CircleCI pipeline #${found} exists for ${TAG}: https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY}/${found}"
-              exit 0
+            # A failed read (rate limit, a 502) is retried within the wait;
+            # only a wait without one good read fails the step.
+            if [ -z "$since" ] && published=$(gh release view "$TAG" --json publishedAt --jq .publishedAt); then
+              since=$(jq -rn --arg at "$published" '($at | fromdateiso8601) - 10')
             fi
-            case "$last_code" in
-              200) ;;                       # positively empty; keep waiting
-              404|401|403) break ;;         # will not change by waiting
-            esac
-            if [ "$SECONDS" -ge "$deadline" ]; then
-              break
-            fi
-            echo "no CircleCI pipeline for ${TAG} yet (HTTP ${last_code}); retrying in 10 s"
-            sleep 10
-          done
-
-          case "$last_code" in
-            200)
-              if [ -z "${CIRCLECI_API_TOKEN}" ]; then
-                echo "::error::CircleCI never built ${TAG}: no pipeline ${CIRCLECI_PIPELINE_WAIT_SECONDS} s after the tag push" \
-                  "(GitHub delivers the webhook once and never retries) and no CIRCLECI_API_TOKEN secret to trigger one." \
-                  "Fix by hand: ${manual}"
-                exit 1
-              fi
-              echo "CircleCI never built ${TAG}; triggering the pipeline through the API"
-              resp=$(curl -sS "${auth[@]}" -w '\n%{http_code}' -X POST -H 'Content-Type: application/json' -d "{\"tag\":\"${TAG}\"}" "$api" || printf '\n000')
-              code=${resp##*$'\n'}
-              body=${resp%$'\n'*}
-              if [ "$code" != "201" ]; then
-                echo "::error::triggering the CircleCI pipeline for ${TAG} failed (HTTP ${code}): ${body}"
-                exit 1
-              fi
-              number=$(jq -r .number <<<"$body")
-              echo "triggered CircleCI pipeline #${number} for ${TAG}: https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY}/${number}"
-              ;;
-            404)
-              if [ -z "${CIRCLECI_API_TOKEN}" ]; then
-                echo "::warning::cannot verify that CircleCI built ${TAG}: ${api} answers 404 without a token" \
-                  "(private project, or no CircleCI project for this repo)." \
-                  "Set the CIRCLECI_API_TOKEN org secret to make this check real."
+            if [ -n "$since" ] && out=$(counts); then
+              read -r all app tag oauth <<<"$out"
+              if [ "$tag" -gt 0 ]; then
+                echo "CircleCI builds ${TAG}: ${tag} pipeline(s) on ${TARGET:0:8} started after the release"
                 exit 0
               fi
-              # The first tag of a repository created pull-request-last lands
-              # before the repository set-up reconciler follows the project on
-              # CircleCI; the reconciler reports the missed tag build and never
-              # rebuilds a tag. Following takes an administrator's token this
-              # workflow does not hold, so this is not the workflow's to fix.
-              echo "::warning::${TAG} is released; CircleCI does not follow this project yet." \
-                "The repository set-up reconciler follows it and reports the missed tag build —" \
-                "cut the next tag, or trigger this tag's pipeline by hand once the project is followed: https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY}"
-              exit 0
-              ;;
-            401|403)
-              echo "::error::CircleCI rejected CIRCLECI_API_TOKEN (HTTP ${last_code}); cannot verify that ${TAG} was built."
-              exit 1
-              ;;
-            *)
-              echo "::error::could not reach the CircleCI API (last HTTP ${last_code}) within ${CIRCLECI_PIPELINE_WAIT_SECONDS} s;" \
-                "cannot verify that ${TAG} was built. Not triggering blindly (a second pipeline on the tag would race" \
-                "the image and chart pushes). Check https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY}" \
-                "and, if the tag is missing: ${manual}"
-              exit 1
-              ;;
-          esac
+              # An OAuth follow's statuses after the release settle nothing
+              # by waiting when the App pipeline builds nothing here. Where it
+              # builds too (an OAuth trigger left in place), its tag build may
+              # be seconds behind the OAuth one: keep waiting for it.
+              [ "$oauth" -eq 0 ] || [ "$app" -gt 0 ] || break
+              echo "no CircleCI status of ${TAG}'s build yet"
+            else
+              echo "reading the release or the commit statuses of ${TARGET:0:8} failed"
+            fi
+            [ "$SECONDS" -lt "$deadline" ] || break
+            echo "retrying in 10 s"
+            sleep 10
+          done
+          if [ -z "$all" ]; then
+            echo "::error::could not read the release or the commit statuses of ${TARGET:0:8} within ${CIRCLECI_STATUS_WAIT_SECONDS} s; cannot tell whether CircleCI built ${TAG}." \
+              "Check https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY} and, if the tag is missing: ${fix}"
+            exit 1
+          fi
+          if [ "$all" -eq 0 ]; then
+            echo "::warning::${TAG} is released and no CircleCI pipeline builds this repository yet: ${TARGET:0:8} carries no CircleCI status at all." \
+              "Set the GitHub App pipeline up as you, which also runs ${TAG}: ${fix}"
+            exit 0
+          fi
+          if [ "$app" -eq 0 ] || [ "$oauth" -gt 0 ]; then
+            echo "::warning::${TAG}: an OAuth follow builds ${TARGET:0:8} without the GitHub App pipeline's build of the tag, and its statuses cannot tell the tag's build from a branch build; not verified." \
+              "Move the repository to the GitHub App pipeline as you: ${fix} --migrate"
+            exit 0
+          fi
+          echo "::error::CircleCI never built ${TAG}: no CircleCI status on ${TARGET:0:8} from a workflow started in the ${CIRCLECI_STATUS_WAIT_SECONDS} s after the release" \
+            "(GitHub delivers the webhook once and never retries). Run it as you: ${fix}"
+          exit 1
 
 --- .github/workflows/zz_generated.fix_vulnerabilities.yaml
 # DO NOT EDIT. Generated with:
@@ -908,6 +1186,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   publish:
     uses: giantswarm/github-workflows/.github/workflows/gitleaks.yaml@main
@@ -931,12 +1213,17 @@ on:
       - main
       - master
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   HELM_DOCS_VERSION: "1.14.2"
 
 jobs:
   pre-commit:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
     steps:
       - name: Check out code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -946,6 +1233,20 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27"
+          cache: false
+      # setup-go restores its cache only on an exact go.sum match. The
+      # restore-keys prefix lets a PR that changes go.sum start from the
+      # latest cache instead of a cold build.
+      - name: Restore Go caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: pre-commit-go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            pre-commit-go-${{ runner.os }}-
       - name: Install goimports
         run: |
           go install golang.org/x/tools/cmd/goimports@v0.50.0
@@ -953,7 +1254,7 @@ jobs:
         uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
         with:
           binary: golangci-lint
-          version: "2.13.2"
+          version: "2.14.0"
           download_url: "https://github.com/golangci/golangci-lint/releases/download/v${version}/${binary}-${version}-linux-amd64.tar.gz"
       - name: Execute pre-commit hooks
         uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
@@ -1022,6 +1323,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   semantic-pull-request:
     uses: giantswarm/github-workflows/.github/workflows/semantic-pull-request.yaml@main
@@ -1049,6 +1354,25 @@ jobs:
         chore
         revert
         security
+
+--- .golangci.yaml
+# The repository owns this file: devctl creates it when it is missing and
+# afterwards only adds the linters it requires (gosec, goconst) to
+# linters.enable when they are neither enabled nor disabled.
+version: "2"
+
+linters:
+  enable:
+    - gosec
+    - goconst
+  settings:
+    goconst:
+      # Test fixtures repeat literals intentionally; keep production checks.
+      ignore-tests: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
 
 --- .nancy-ignore
 # Affects all versions of archiver which is required by vault.
@@ -1092,11 +1416,11 @@ repos:
         # a key; gitleaks stays the scanner of record for the vendored subtree.
         exclude: "^helm/[^/]+/charts/.*"
       - id: end-of-file-fixer
-        exclude: "(.*testdata/.*|^\\.yarn/.*|^helm/[^/]+/charts/.*)"
+        exclude: "(.*testdata/.*|^\\.yarn/.*|^helm/[^/]+/charts/.*|.*.patch)"
       - id: mixed-line-ending
-        exclude: "^helm/[^/]+/charts/.*"
+        exclude: "(^helm/[^/]+/charts/.*|.*.patch)"
       - id: trailing-whitespace
-        exclude: "(.*testdata/.*|^\\.yarn/.*|^helm/[^/]+/charts/.*)"
+        exclude: "(.*testdata/.*|^\\.yarn/.*|^helm/[^/]+/charts/.*|.*.patch)"
 
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.4.0
@@ -1113,16 +1437,27 @@ repos:
       - id: go-mod-tidy
       - id: golangci-lint
         args:
-          - -E=gosec
-          - -E=goconst
-          - -E=govet
-          # timeout is needed for CI
-          - --timeout=300s
+          # Let independent sessions and worktrees lint at the same time.
+          - --allow-parallel-runners
+          # No --timeout: golangci-lint v2 has none by default and a flag would
+          # override a repo's `run.timeout` in .golangci.yml, its place to set one.
           # List all issues found
           - --max-same-issues=0
           - --max-issues-per-linter=0
       - id: go-imports
         args: [ -local, github.com/giantswarm/example-service ]
+
+  # Renovate's gomod manager reads a require line's trailing comment as one
+  # word (`// indirect`); a line whose comment has more words is skipped
+  # without a PR or a dashboard entry, so the dependency silently stops being
+  # updated. The explanation goes on a comment line above the require instead.
+  - repo: local
+    hooks:
+      - id: go-mod-require-comment
+        name: "go.mod require comment is one word (Renovate skips the line otherwise; move the explanation to a comment line above it)"
+        language: pygrep
+        files: (^|/)go\.mod$
+        entry: '^\s*(require\s+)?[A-Za-z0-9][^\s,]*[./][^\s,]*\s+v[0-9]\S*\s*//\s*\S+\s+\S'
 
 --- .yamllint.yaml
 ---
@@ -1134,21 +1469,57 @@ rules:
   line-length:
     max: 200
 
+--- AGENTS.md
+<!-- BEGIN devctl-managed: edits in this block are overwritten -->
+<!-- markdownlint-disable-file MD041 -->
+
+## Giant Swarm conventions
+
+devctl maintains this block from [its template][devctl-agents-block] and
+overwrites changes to it. Instructions for this repository go in the section
+below. Where they differ from this block, they take precedence.
+
+[devctl-agents-block]: https://github.com/giantswarm/devctl/blob/main/pkg/gen/input/llm/internal/file/agents_block.md.template
+
+- Never put customer names or other customer information in code, commit
+  messages, issues or pull requests. Most Giant Swarm repositories are public,
+  and private ones are kept ready to become public.
+- Giant Swarm's style guides are in <https://github.com/giantswarm/fmt>, one
+  directory per topic (go, helm, kubernetes, prometheus, …). Read the relevant
+  guide before you write or review that kind of code.
+- Use conventional commits for commit messages and pull request titles.
+- If `.github/workflows/zz_generated.auto_release.yaml` exists, GitHub Releases
+  are written from pull request titles: do not edit CHANGELOG.md. Otherwise,
+  add your change to CHANGELOG.md as described in
+  <https://github.com/giantswarm/fmt/blob/main/releases/changelog.md>.
+- If `.pre-commit-config.yaml` exists, run
+  `pre-commit run --files <changed files>` before committing; not every clone
+  has the hooks installed.
+- Do not add linters, formatters or other tooling unless asked; use what the
+  repository already has.
+- Put documentation in `docs/` rather than growing README.md, which gives an
+  overview and links into `docs/`. When a change affects documented behaviour,
+  update the documentation in the same pull request.
+- If the skills of the `giantswarm/claude-code` plugin marketplace are not
+  available to you and the user works at Giant Swarm, tell them once that
+  they can install the `gs-base`, `gs-dev` and `gs-godev`
+  plugins from it.
+- Go: run `goimports -local github.com/giantswarm/<repository>` on the files
+  you change. CI with architect-orb fails when imports are grouped
+  differently.
+
+<!-- END devctl-managed -->
+
+## This repository
+
 --- CHANGELOG.md
 # Changelog
 
-All notable changes to this project will be documented in this file.
+The changes of each release are in its notes on GitHub Releases:
+https://github.com/giantswarm/example-service/releases
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-
-
-## [Unreleased]
-
-
-
-[Unreleased]: https://github.com/giantswarm/example-service/tree/main
+This file is not updated any more: a pull request does not edit it. The
+pull request title is the release note.
 
 --- CODEOWNERS
 # generated by giantswarm/github actions - changes will be overwritten
@@ -1403,7 +1774,7 @@ By making a contribution to this project, I certify that:
 #    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/makefile/internal/file/Makefile.template
 #
 
-include Makefile.*.mk
+-include Makefile.*.mk
 
 ##@ General
 
@@ -1434,11 +1805,20 @@ APPLICATION    := $(shell go list -m | cut -d '/' -f 3)
 BUILDTIMESTAMP := $(shell date -u '+%FT%TZ')
 GITSHA1        := $(shell git rev-parse --verify HEAD)
 MODULE         := $(shell go list -m)
-# main() is usually in `main.go`, but sometimes in `cmd/main.go` (for example in newer kubebuilder projects)
-MAIN_SOURCE    := $(shell if test -e cmd/main.go; then echo cmd/main.go; else echo main.go; fi)
+# Build the whole main package, including sibling files, at the root or in cmd/.
+MAIN_SOURCE    := $(shell if test -e cmd/main.go; then echo ./cmd; else echo .; fi)
 OS             := $(shell go env GOOS)
+ARCH           := $(shell go env GOARCH)
 SOURCES        := $(shell find . -name '*.go')
-VERSION        := $(shell gitsemver get)
+# Older gitsemver releases cannot open a worktree's .git file. Fall back to
+# local version tags; without one, leave VERSION empty so shipping targets fail.
+VERSION        := $(shell if version=$$(gitsemver get 2>/dev/null) && [ -n "$$version" ]; then \
+  printf '%s\n' "$$version"; \
+  else git describe --tags --match 'v[0-9]*.[0-9]*.[0-9]*' 2>/dev/null | sed 's/^v//'; fi)
+# Expanded first in every recipe that stamps VERSION into its output, so failed
+# lookups fail the build instead of producing an unversioned binary.
+# Targets that do not ship a version (test, lint, ...) never expand it.
+REQUIRE_VERSION = $(if $(VERSION),,$(error VERSION is empty: `gitsemver get` and `git describe` found no version in $(CURDIR); pass VERSION=<version> to override))
 ifeq ($(OS), linux)
 EXTLDFLAGS := -static
 endif
@@ -1446,6 +1826,13 @@ LDFLAGS        ?= -w -linkmode 'auto' -extldflags '$(EXTLDFLAGS)' \
   -X '$(MODULE)/pkg/project.version=$(VERSION)' \
   -X '$(MODULE)/pkg/project.buildTimestamp=$(BUILDTIMESTAMP)' \
   -X '$(MODULE)/pkg/project.gitSHA=$(GITSHA1)'
+
+# Copy to a unique sibling before renaming so a running binary keeps its inode
+# and readers only see complete files. Keep the versioned artifact for packaging.
+INSTALL_BINARY = tmp=$$(mktemp "$(2).tmp.XXXXXX") || exit $$?; \
+	trap 'rm -f "$$tmp"' EXIT; \
+	trap 'exit 1' HUP INT TERM; \
+	cp -a "$(1)" "$$tmp" && mv -f "$$tmp" "$(2)"
 
 .DEFAULT_GOAL := build
 
@@ -1467,47 +1854,55 @@ build-windows-amd64: $(APPLICATION)-windows-amd64.exe ## Builds a local binary f
 
 $(APPLICATION): $(APPLICATION)-v$(VERSION)-$(OS)-amd64
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-darwin: $(APPLICATION)-v$(VERSION)-darwin-amd64
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-darwin-arm64: $(APPLICATION)-v$(VERSION)-darwin-arm64
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-linux: $(APPLICATION)-v$(VERSION)-linux-amd64
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
+
+$(APPLICATION)-linux-amd64: $(APPLICATION)-v$(VERSION)-linux-amd64
+	@echo "====> $@"
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-linux-arm64: $(APPLICATION)-v$(VERSION)-linux-arm64
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-windows-amd64.exe: $(APPLICATION)-v$(VERSION)-windows-amd64.exe
 	@echo "====> $@"
-	cp -a $< $@
+	@$(call INSTALL_BINARY,$<,$@)
 
 $(APPLICATION)-v$(VERSION)-%-amd64: $(SOURCES)
+	$(REQUIRE_VERSION)
 	@echo "====> $@"
 	CGO_ENABLED=0 GOOS=$* GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o $@ "$(MAIN_SOURCE)"
 
 $(APPLICATION)-v$(VERSION)-%-arm64: $(SOURCES)
+	$(REQUIRE_VERSION)
 	@echo "====> $@"
 	CGO_ENABLED=0 GOOS=$* GOARCH=arm64 go build -trimpath -ldflags "$(LDFLAGS)" -o $@ "$(MAIN_SOURCE)"
 
 $(APPLICATION)-v$(VERSION)-windows-amd64.exe: $(SOURCES)
+	$(REQUIRE_VERSION)
 	@echo "====> $@"
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o $@ "$(MAIN_SOURCE)"
 
 .PHONY: install
 install: ## Install the application.
+	$(REQUIRE_VERSION)
 	@echo "====> $@"
-	go build -ldflags "$(LDFLAGS)" -o "$(shell go env GOPATH)/bin/$(APPLICATION)" "$(MAIN_SOURCE)"
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o "$(shell go env GOPATH)/bin/$(APPLICATION)" "$(MAIN_SOURCE)"
 
 .PHONY: run
-run: ## Runs go run main.go.
+run: ## Runs the main package with go run.
 	@echo "====> $@"
 	go run -ldflags "$(LDFLAGS)" -race "$(MAIN_SOURCE)"
 
@@ -1523,9 +1918,28 @@ imports: ## Runs goimports.
 	goimports -local $(MODULE) -w .
 
 .PHONY: lint
-lint: ## Runs golangci-lint.
+lint: ## Checks import formatting and runs golangci-lint (installs goimports if missing).
 	@echo "====> $@"
-	golangci-lint run -E gosec -E goconst --timeout=15m ./...
+	@tool=$$(command -v goimports) || { \
+		bindir=$$(go env GOBIN) || exit $$?; \
+		if [ -z "$$bindir" ]; then \
+			gopath=$$(go env GOPATH) || exit $$?; \
+			bindir="$$gopath/bin"; \
+		fi; \
+		GOBIN="$$bindir" go install golang.org/x/tools/cmd/goimports@v0.50.0 || exit $$?; \
+		tool="$$bindir/goimports"; \
+	}; \
+	files=$$("$$tool" -local "$(MODULE)" -l .) || exit $$?; \
+	if [ -n "$$files" ]; then \
+		printf '%s\n' "$$files"; \
+		echo "Run 'make imports' to fix import formatting."; \
+		exit 1; \
+	fi
+	golangci-lint run --timeout=15m ./...
+
+# Extend lint from Makefile.custom.mk without replacing its generated recipe.
+.PHONY: lint-custom
+lint: lint-custom
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -1558,9 +1972,10 @@ test: ## Runs go test with default values (race detector when a C toolchain is a
 	go test -ldflags "$(LDFLAGS)" $(RACE) ./...
 
 .PHONY: build-docker
-build-docker: build-linux ## Builds docker image to registry.
+build-docker: $(APPLICATION)-linux-$(ARCH) ## Builds docker image to registry for the host architecture.
+	$(REQUIRE_VERSION)
 	@echo "====> $@"
-	cp -a $(APPLICATION)-linux $(APPLICATION)
+	@$(call INSTALL_BINARY,$<,$(APPLICATION))
 	docker build -t ${APPLICATION}:${VERSION} .
 
 --- README.md
@@ -1662,37 +2077,34 @@ tag_pattern = '^v[0-9]+\.[0-9]+\.[0-9]+$'
 # commit text -- git-cliff's default regex mode is single-line). This
 # anchoring keeps `(#N)` references that appear inside commit bodies
 # untouched.
-#
-# A feat-rc/fix-rc subject is released as its plain type:
-# `features_always_bump_minor` keys off the type being exactly "feat", and an
-# un-normalised feat-rc would bump patch instead of minor.
 commit_preprocessors = [
   { pattern = '(?m) \(#\d+\)$', replace = "" },
-  { pattern = '^(feat|fix)-rc', replace = "${1}" },
 ]
 
 # Map commit types to changelog groups (Keep-a-Changelog convention):
 # feat -> Added, fix -> Fixed, all "internal change" types -> Changed,
 # security -> Security.
 #
-# `docs`, `style` and `test` are marked skip: none of them changes what
+# `ci`, `chore`, `docs`, `style` and `test` are marked skip: none of them changes what
 # ships. git-cliff decides the bump from the commits that are NOT skipped: a
 # breaking change bumps the major, `feat` the minor, every other type at least
 # the patch. A skipped commit is left out of the release notes and of the
-# bump, so a docs-, style- or test-only push to main computes the current
-# version and the workflow tags nothing; the change ships with the next
-# release. `chore` and `ci` keep releasing: a `chore(deps)` bump changes what
-# ships, a `ci` change how it is built.
+# bump, so a push containing only skipped types outside a candidate cycle
+# computes the current version and the workflow tags nothing; the changes ship
+# with the next releasable commit. During a cycle the workflow lets a new test
+# commit advance an existing candidate without changing its version or notes.
+# Use `fix` or `feat` when a dependency or build change needs a release of its
+# own.
 commit_parsers = [
   { message = "^feat",     group = "Added" },
   { message = "^fix",      group = "Fixed" },
   { message = "^refactor", group = "Changed" },
   { message = "^perf",     group = "Changed" },
   { message = "^docs",     skip = true },
-  { message = "^chore",    group = "Changed" },
+  { message = "^chore",    skip = true },
   { message = "^test",     skip = true },
   { message = "^build",    group = "Changed" },
-  { message = "^ci",       group = "Changed" },
+  { message = "^ci",       skip = true },
   { message = "^security", group = "Security" },
   { message = "^style",    skip = true },
 ]
@@ -1757,12 +2169,16 @@ package main
 
 func main() {}
 
+--- renovate-custom.json5
+// Repo-owned Renovate overrides. Edit this file; devctl preserves it.
+{}
+
 --- renovate.json5
 // DO NOT EDIT. This file is generated by `devctl gen renovate` and kept in sync
 // by the giantswarm/github align-files workflow. Repo-specific Renovate rules
-// belong in renovate-custom.json5 (repo root) -- it is added as the last
-// `extends` entry when present and never touched by devctl. Rules for a whole
-// class of repos belong in giantswarm/renovate-presets instead.
+// belong in renovate-custom.json5 (repo root) -- devctl initializes it once
+// and extends it last, preserving existing rules. Commit both files together.
+// Rules for a whole class of repos belong in giantswarm/renovate-presets instead.
 {
   extends: [
     // Base config - https://github.com/giantswarm/renovate-presets/blob/main/default.json5
@@ -1776,11 +2192,17 @@ func main() {}
     // (same condition as the architect orb disable below); a no-op for repos
     // without an ats/ Pipfile, so it is safe to extend for all generated-CI repos.
     'github>giantswarm/renovate-presets:tests-ats.json5',
+    // Repo-owned overrides -- last entry, so its rules win over the presets.
+    // Renovate resolves this from the default branch on every run: edits are
+    // live on merge, no regeneration needed.
+    'github>giantswarm/example-service:renovate-custom.json5',
   ],
-  // Two of our own bots commit onto Renovate branches. taylorbot
-  // <dev@giantswarm.io> pushes what the generated workflows produce
+  // Our automation commits onto Renovate branches. The giantswarm-release
+  // GitHub App pushes what the generated workflows produce
   // (zz_generated.helm-docs-regen.yaml, the update-chart and
-  // sync-from-upstream flows). giantswarm-marge[bot] writes the bot PR's
+  // sync-from-upstream flows); taylorbot <dev@giantswarm.io> did so before
+  // it and still does in repositories whose workflows are not regenerated
+  // yet. giantswarm-marge[bot] writes the bot PR's
   // changelog entry during the sweep, in the repositories that still cut a
   // release from CHANGELOG.md. Renovate treats a branch whose last commit is
   // by anyone else as edited by a human: it stops rebasing it and, on
@@ -1788,10 +2210,23 @@ func main() {}
   // the authors here makes those commits Renovate's own. Renovate compares
   // the author email, so these are the bare addresses.
   gitIgnoredAuthors: [
+    '342014845+giantswarm-release[bot]@users.noreply.github.com',
     'dev@giantswarm.io',
     '329428426+giantswarm-marge[bot]@users.noreply.github.com',
   ],
   packageRules: [
+    {
+      // The .github/workflows/zz_generated.* workflows are generated by devctl,
+      // which sets their runner image. Disable Renovate's runner updates there
+      // so they stop fighting the align-files regeneration.
+      matchFileNames: [
+        '.github/workflows/zz_generated.*',
+      ],
+      matchDatasources: [
+        'github-runners',
+      ],
+      enabled: false,
+    },
     {
       // .circleci/config.yml is generated by `devctl gen circleci`, which bakes
       // in the giantswarm/architect orb version. Disable Renovate's orb updates

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"testing"
 	"text/template"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/precommit/internal/params"
 )
+
+const helmchartFlavor = "helmchart"
 
 // Test_RefFixPython runs the $ref fix step of the generated helm-schema pipeline hook --
 // the actual bug fix -- against a schema shaped like `helm schema` output. Objects with a
@@ -128,7 +131,7 @@ func Test_NewCreatePreCommitConfigInput(t *testing.T) {
 			p: params.Params{
 				Dir:        "",
 				Language:   "go",
-				Flavors:    []string{"helmchart"},
+				Flavors:    []string{helmchartFlavor},
 				RepoName:   "my-repo",
 				HelmCharts: []string{"my-app"},
 			},
@@ -199,7 +202,7 @@ func Test_NewCreatePreCommitConfigInput(t *testing.T) {
 // gen/ -- and the zz_generated values file that triggers the helm-schema hook are still
 // checked. The pattern uses only syntax Go's regexp and Python's re read alike.
 func Test_PreCommitConfigExcludesGeneratedCode(t *testing.T) {
-	in := NewCreatePreCommitConfigInput(params.Params{Language: "go", RepoName: "my-repo", Flavors: []string{"helmchart"}, HelmCharts: []string{"my-app"}})
+	in := NewCreatePreCommitConfigInput(params.Params{Language: "go", RepoName: "my-repo", Flavors: []string{helmchartFlavor}, HelmCharts: []string{"my-app"}})
 	tpl, err := template.New(in.Path).Parse(in.TemplateBody)
 	if err != nil {
 		t.Fatalf("parse template: %v", err)
@@ -247,5 +250,54 @@ func Test_PreCommitConfigExcludesGeneratedCode(t *testing.T) {
 		if got := exclude.MatchString(path); got != excluded {
 			t.Errorf("exclude %q matches %s: got %v, want %v", config.Exclude, path, got, excluded)
 		}
+	}
+}
+
+// Test_PreCommitConfigHelmDocsSkipsVendoredSubcharts checks that the helm-docs hook writes
+// only the READMEs of the repo's own charts: it finds every chart below helm/, the vendored
+// subcharts under helm/<chart>/charts/ included, and rewrote their READMEs without
+// --chart-to-generate.
+func Test_PreCommitConfigHelmDocsSkipsVendoredSubcharts(t *testing.T) {
+	for name, tc := range map[string]struct {
+		charts []string
+		want   []string
+	}{
+		"one chart":  {charts: []string{"my-app"}, want: []string{"--chart-search-root=helm", "--chart-to-generate=helm/my-app", "--sort-values-order=file"}},
+		"two charts": {charts: []string{"my-app", "my-crds"}, want: []string{"--chart-search-root=helm", "--chart-to-generate=helm/my-app,helm/my-crds", "--sort-values-order=file"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			in := NewCreatePreCommitConfigInput(params.Params{Language: "go", RepoName: "my-repo", Flavors: []string{helmchartFlavor}, HelmCharts: tc.charts})
+			tpl, err := template.New(in.Path).Parse(in.TemplateBody)
+			if err != nil {
+				t.Fatalf("parse template: %v", err)
+			}
+			var rendered bytes.Buffer
+			if err := tpl.Execute(&rendered, in.TemplateData); err != nil {
+				t.Fatalf("execute template: %v", err)
+			}
+			var config struct {
+				Repos []struct {
+					Hooks []struct {
+						ID   string   `yaml:"id"`
+						Args []string `yaml:"args"`
+					} `yaml:"hooks"`
+				} `yaml:"repos"`
+			}
+			if err := yaml.Unmarshal(rendered.Bytes(), &config); err != nil {
+				t.Fatalf("unmarshal .pre-commit-config.yaml: %v\n%s", err, rendered.String())
+			}
+			for _, repo := range config.Repos {
+				for _, hook := range repo.Hooks {
+					if hook.ID != "helm-docs" {
+						continue
+					}
+					if !reflect.DeepEqual(hook.Args, tc.want) {
+						t.Errorf("helm-docs args: got %q, want %q", hook.Args, tc.want)
+					}
+					return
+				}
+			}
+			t.Fatalf("no helm-docs hook in\n%s", rendered.String())
+		})
 	}
 }

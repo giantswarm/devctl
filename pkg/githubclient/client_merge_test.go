@@ -58,7 +58,7 @@ func Test_MergePullRequest_wire(t *testing.T) {
 }
 
 func Test_MergePullRequest_declined(t *testing.T) {
-	for _, status := range []int{http.StatusMethodNotAllowed, http.StatusConflict} {
+	for _, status := range []int{http.StatusMethodNotAllowed, http.StatusConflict, http.StatusForbidden} {
 		c, _ := newWireClient(t, status, `{"message":"Base branch was modified. Review and try the merge again.","documentation_url":"https://docs.github.com/rest"}`)
 		_, err := c.MergePullRequest(context.Background(), "o", "r", 42, MergeOptions{Method: MergeSquash, HeadSHA: "abc123"})
 		if !IsMergeDeclined(err) || !strings.Contains(err.Error(), "Base branch was modified") {
@@ -78,6 +78,27 @@ func Test_UpdatePullRequestBranch_acceptsThe202(t *testing.T) {
 	}
 	if got.method != http.MethodPut || got.path != "/repos/o/r/pulls/42/update-branch" || got.body["expected_head_sha"] != "abc123" {
 		t.Errorf("want PUT update-branch with the expected head, got %s %s %v", got.method, got.path, got.body)
+	}
+}
+
+func Test_RebasePullRequestBranch_wire(t *testing.T) {
+	c, got := newWireClient(t, http.StatusOK, `{"data":{"updatePullRequestBranch":{"pullRequest":{"id":"PR_1"}}}}`)
+	if err := c.RebasePullRequestBranch(context.Background(), "PR_1", "abc123"); err != nil {
+		t.Fatal(err)
+	}
+	if got.method != http.MethodPost || got.path != "/graphql" {
+		t.Errorf("want POST /graphql, got %s %s", got.method, got.path)
+	}
+	if query, _ := got.body["query"].(string); !strings.Contains(query, "updatePullRequestBranch") || !strings.Contains(query, "updateMethod: REBASE") {
+		t.Errorf("want updatePullRequestBranch with updateMethod REBASE, got %v", got.body["query"])
+	}
+	if variables, _ := got.body["variables"].(map[string]any); variables["id"] != "PR_1" || variables["head"] != "abc123" {
+		t.Errorf("variables: %v", got.body["variables"])
+	}
+
+	c, _ = newWireClient(t, http.StatusOK, `{"data":null,"errors":[{"message":"expected head sha didn't match current head ref"}]}`)
+	if err := c.RebasePullRequestBranch(context.Background(), "PR_1", "abc123"); err == nil || !strings.Contains(err.Error(), "update-branch: expected head sha") {
+		t.Errorf("GraphQL errors are errors naming GitHub's message, got %v", err)
 	}
 }
 
@@ -126,5 +147,33 @@ func Test_EnqueuePullRequest_wire(t *testing.T) {
 	c, _ = newWireClient(t, http.StatusOK, `{"data":null,"errors":[{"message":"The pull request is already in the merge queue"}]}`)
 	if err := c.EnqueuePullRequest(context.Background(), "PR_1"); err == nil || !strings.Contains(err.Error(), "already in the merge queue") {
 		t.Errorf("GraphQL errors are errors, got %v", err)
+	}
+}
+
+func Test_BehindBy_wire(t *testing.T) {
+	c, got := newWireClient(t, http.StatusOK, `{"status":"diverged","ahead_by":1,"behind_by":2}`)
+	by, err := c.BehindBy(context.Background(), "o", "r", "main", "abc123")
+	if err != nil || by != 2 {
+		t.Fatalf("want 2, got %d, %v", by, err)
+	}
+	if got.method != http.MethodGet || got.path != "/repos/o/r/compare/main...abc123" {
+		t.Errorf("want GET /repos/o/r/compare/main...abc123, got %s %s", got.method, got.path)
+	}
+}
+
+func Test_BehindBy_failure(t *testing.T) {
+	c, _ := newWireClient(t, http.StatusNotFound, `{"message":"Not Found"}`)
+	if _, err := c.BehindBy(context.Background(), "o", "r", "main", "gone"); err == nil {
+		t.Fatal("want an error for a comparison GitHub cannot make")
+	}
+}
+
+func Test_IsMergeRetryable(t *testing.T) {
+	for status, want := range map[int]bool{http.StatusBadGateway: true, http.StatusInternalServerError: true, http.StatusUnauthorized: false, http.StatusNotFound: false, http.StatusConflict: false} {
+		c, _ := newWireClient(t, status, `{"message":"x"}`)
+		_, err := c.MergePullRequest(context.Background(), "o", "r", 42, MergeOptions{})
+		if got := IsMergeRetryable(err); got != want {
+			t.Errorf("%d: want %v, got %v", status, want, got)
+		}
 	}
 }

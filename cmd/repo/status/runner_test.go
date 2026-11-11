@@ -193,3 +193,15 @@ func TestPrintMissingRun(t *testing.T) {
 	require.NoError(t, r.print(&output{Result: result(), MissingRun: &manager.MissingRun{DispatchedAt: at, By: "alice", RunsURL: "https://github.com/giantswarm/github/actions/workflows/reconcile-repositories.yaml"}}))
 	require.Contains(t, out.String(), "missing run: the run expected since 2026-09-22T10:00:00Z by alice never reported: https://github.com/giantswarm/github/actions/workflows/reconcile-repositories.yaml")
 }
+
+// An app catalog keeps its own default branch: the declaration line names
+// the repository's branch on GitHub, not the baseline's main.
+func TestRunTextKeptDefaultBranch(t *testing.T) {
+	catalog := strings.Replace(record, `componentType: service\n  align: true\n  gen:\n    flavours: [app]\n    language: go\n`, `componentType: appcatalog\n  align: true\n  gen:\n    flavours: [generic]\n    language: generic\n`, 1)
+	catalog = strings.Replace(catalog, `"reality": {"url": "https://github.com/giantswarm/my-service"}`, `"reality": {"url": "https://github.com/giantswarm/my-service", "defaultBranch": "master"}`, 1)
+	require.NotEqual(t, record, catalog)
+	r, _, out := newRunner(catalog, client.OutputText)
+	require.NoError(t, r.run(context.Background(), "my-service"))
+	lines := strings.Split(out.String(), "\n")
+	require.Equal(t, "default branch master, flavours generic", lines[2])
+}

@@ -13,6 +13,7 @@ import (
 	githubmock "github.com/giantswarm/devctl/v8/e2e/mock/github"
 	"github.com/giantswarm/devctl/v8/e2e/mock/sequence"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/authexec"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 )
 
@@ -35,11 +36,13 @@ func newRunner(t *testing.T, routes sequence.Routes, github func(context.Context
 		stdout:        stdout,
 		stderr:        stderr,
 		requireGitHub: github,
+		personGitHub:  github,
 		requireCircleCI: func(context.Context) (authstore.Token, error) {
 			return authstore.Token{}, &authstore.AuthRequiredError{Identity: "CircleCI", Cause: "no token in the keychain", Hint: "devctl auth login --circleci-only"}
 		},
 		endpoints: func() agentcli.Endpoints { return endpoints },
 		clock:     func() (agentcli.Clock, error) { return agentcli.NewClock(0.001, nil), nil },
+		github:    newClients,
 	}
 	return r, stdout, stderr, server
 }
@@ -68,11 +71,12 @@ func decode(t *testing.T, stdout *bytes.Buffer) map[string]any {
 // green is o/r#42 opened by the caller with one passed check, merging as m1.
 func green() sequence.Routes {
 	return sequence.Routes{
+		"GET /repos/o/r": {{Body: map[string]any{"full_name": "o/r", "allow_merge_commit": false, "allow_squash_merge": true, "allow_rebase_merge": true}}},
 		"GET /repos/o/r/pulls/42": {{Body: map[string]any{
 			"number": 42, "state": "open", "draft": false, "mergeable_state": "clean", "title": "feat: thing", "node_id": "PR_1",
 			"user": map[string]any{"login": "someone", "type": "User"},
 			"head": map[string]any{"sha": "abc123", "ref": "feature", "repo": map[string]any{"full_name": "o/r"}},
-			"base": map[string]any{"ref": "main", "repo": map[string]any{"full_name": "o/r"}},
+			"base": map[string]any{"ref": "main", "sha": "base123", "repo": map[string]any{"full_name": "o/r"}},
 		}}},
 		"GET /repos/o/r/commits/abc123/check-runs": {{Body: map[string]any{"total_count": 1, "check_runs": []any{
 			map[string]any{"id": 1, "name": "go-build", "status": "completed", "conclusion": "success", "html_url": "https://github.com/o/r/runs/1"},
@@ -81,6 +85,14 @@ func green() sequence.Routes {
 		"GET /repos/o/r/actions/runs?head_sha=abc123": {{Body: map[string]any{"total_count": 0, "workflow_runs": []any{}}}},
 		"PUT /repos/o/r/pulls/42/merge":               {{Body: map[string]any{"sha": "m1", "merged": true, "message": "Pull Request successfully merged"}}},
 		"DELETE /repos/o/r/git/refs/heads/feature":    {{Status: http.StatusNoContent}},
+		"GET /repos/o/r/pulls/42/reviews":             {{Body: []any{}}},
+		"GET /repos/o/r/pulls/42/comments":            {{Body: []any{}}},
+		"GET /repos/o/r/issues/42/comments":           {{Body: []any{}}},
+		"GET /repos/o/r/git/commits/abc123":           {{Body: map[string]any{"sha": "abc123", "committer": map[string]any{"date": "2026-10-01T10:00:00Z"}}}},
+		"GET /repos/o/r/compare/main...abc123":        {{Body: map[string]any{"status": "ahead", "ahead_by": 1, "behind_by": 0}}},
+		"GET /repos/o/r/compare/base123...abc123": {{Body: map[string]any{"total_commits": 1, "commits": []any{
+			map[string]any{"sha": "abc123", "commit": map[string]any{"message": "feat: thing"}},
+		}}}},
 	}
 }
 
@@ -124,6 +136,53 @@ func Test_run_rebaseFlag(t *testing.T) {
 	}
 	if doc := decode(t, stdout); doc["method"] != "rebase" {
 		t.Errorf("--rebase: want method rebase, got %v", doc["method"])
+	}
+}
+
+func Test_run_autosquashRefusal(t *testing.T) {
+	routes := green()
+	routes["GET /repos/o/r/compare/base123...abc123"][0].Body = map[string]any{
+		"total_commits": 1, "commits": []any{map[string]any{
+			"sha": "abc123", "commit": map[string]any{"message": "fixup! fix: thing"},
+		}},
+	}
+	r, stdout, _, server := newRunner(t, routes, loggedIn, &flag{Timeout: time.Minute, Rebase: true, NoReleaseWait: true, AcceptRed: []string{"e2e"}})
+	err := r.run(context.Background(), []string{"o/r", "42"})
+	if agentcli.Exit(err) != agentcli.ExitNotApplicable {
+		t.Fatalf("want exit 3, got %v", err)
+	}
+	doc := decode(t, stdout)
+	if doc["verdict"] != "not_applicable" || doc["exitCode"] != 3.0 || doc["method"] != "rebase" || !strings.Contains(doc["reason"].(string), "abc123 fixup! fix: thing") {
+		t.Errorf("want a history refusal in the command document, got %v", doc)
+	}
+	for _, request := range server.Requests() {
+		if request.Method != http.MethodGet {
+			t.Errorf("a history refusal must not write: %s", request)
+		}
+	}
+}
+
+func Test_run_squashFlag(t *testing.T) {
+	r, stdout, _, _ := newRunner(t, green(), loggedIn, &flag{Timeout: time.Minute, Squash: true, NoReleaseWait: true})
+	if err := r.run(context.Background(), []string{"o/r", "42"}); err != nil {
+		t.Fatal(err)
+	}
+	if doc := decode(t, stdout); doc["method"] != "squash" {
+		t.Errorf("--squash: want method squash, got %v", doc["method"])
+	}
+}
+
+func Test_run_rebaseAndSquashExcludeEachOther(t *testing.T) {
+	r, stdout, _, server := newRunner(t, green(), loggedIn, &flag{Timeout: time.Minute, Rebase: true, Squash: true, NoReleaseWait: true})
+	err := r.run(context.Background(), []string{"o/r", "42"})
+	if agentcli.Exit(err) != agentcli.ExitUsage || !strings.Contains(err.Error(), "--rebase and --squash exclude each other") {
+		t.Fatalf("want exit 7 naming both flags, got %v", err)
+	}
+	if doc := decode(t, stdout); doc["verdict"] != "usage" {
+		t.Errorf("document: %v", doc)
+	}
+	if n := len(server.Requests()); n != 0 {
+		t.Errorf("want no request, got %d", n)
 	}
 }
 
@@ -195,23 +254,23 @@ func Test_run_authRequiredBeforeAnyRequest(t *testing.T) {
 	}
 }
 
-// A pull request the App's token cannot see (e.g. a private repository
-// outside its installation) answers 404 like one that does not exist; the
-// keychain token's App login gets a hint naming what it reaches, so this
-// stays distinguishable from a genuinely missing pull request.
+// A pull request the App's token cannot see in an owner it is installed on
+// answers 404 like one that does not exist; the keychain token's App login
+// gets a hint naming what it reaches, so this stays distinguishable from a
+// genuinely missing pull request.
 func Test_run_notFoundHint(t *testing.T) {
 	routes := sequence.Routes{
-		"GET /repos/o/r/pulls/42": {{Status: 404, Body: map[string]any{"message": "Not Found"}}},
+		"GET /repos/giantswarm/r/pulls/42": {{Status: 404, Body: map[string]any{"message": "Not Found"}}},
 	}
 	r, stdout, _, _ := newRunner(t, routes, loggedInFromKeychain, nil)
 
-	err := r.run(context.Background(), []string{"o/r", "42"})
+	err := r.run(context.Background(), []string{"giantswarm/r", "42"})
 	if agentcli.Exit(err) != agentcli.ExitUsage {
 		t.Fatalf("want exit 7, got %v", err)
 	}
 	doc := decode(t, stdout)
 	reason, _ := doc["reason"].(string)
-	if !strings.Contains(reason, "not found error: pull request o/r#42") {
+	if !strings.Contains(reason, "not found error: pull request giantswarm/r#42") {
 		t.Errorf("reason lost the original not-found error: %v", doc)
 	}
 	if !strings.Contains(reason, "reaches the giantswarm organization and public repositories only") {
@@ -235,5 +294,195 @@ func Test_run_usage(t *testing.T) {
 		if n := len(server.Requests()); n != 0 {
 			t.Errorf("%q: want no request, got %d", args, n)
 		}
+	}
+}
+
+// The App is installed on giantswarm only: a pull request there is acted on
+// with the App login, one of any other owner with the person's own gh login,
+// and the document names which.
+func Test_run_identityPerOwner(t *testing.T) {
+	refused := func(context.Context) (authstore.Token, error) {
+		return authstore.Token{}, errors.New("the wrong identity was asked")
+	}
+	ghLogin := func(context.Context) (authstore.Token, error) {
+		return authstore.Token{Value: "gho_test", Source: authexec.SourceGHLogin}, nil
+	}
+	for _, tc := range []struct {
+		repository  string
+		app, person func(context.Context) (authstore.Token, error)
+		want        string
+	}{
+		{repository: "giantswarm/r", app: loggedInFromKeychain, person: refused, want: "app"},
+		{repository: "o/r", app: refused, person: ghLogin, want: "gh"},
+	} {
+		t.Run(tc.repository, func(t *testing.T) {
+			r, stdout, _, _ := newRunner(t, sequence.Routes{}, tc.app, nil)
+			r.personGitHub = tc.person
+			_ = r.run(context.Background(), []string{tc.repository, "42"})
+			doc := decode(t, stdout)
+			if doc["identity"] != tc.want {
+				t.Errorf("identity: want %q, got %v (reason %v)", tc.want, doc["identity"], doc["reason"])
+			}
+		})
+	}
+}
+
+// A repository outside the App's owners that the person's gh login cannot
+// read either is exit 7 naming the missing installation and the access the
+// gh login lacks.
+func Test_run_notFoundHintGHLogin(t *testing.T) {
+	routes := sequence.Routes{
+		"GET /repos/o/r/pulls/42": {{Status: 404, Body: map[string]any{"message": "Not Found"}}},
+	}
+	r, stdout, _, _ := newRunner(t, routes, func(context.Context) (authstore.Token, error) {
+		return authstore.Token{Value: "gho_test", Source: authexec.SourceGHLogin}, nil
+	}, nil)
+
+	err := r.run(context.Background(), []string{"o/r", "42"})
+	if agentcli.Exit(err) != agentcli.ExitUsage {
+		t.Fatalf("want exit 7, got %v", err)
+	}
+	reason, _ := decode(t, stdout)["reason"].(string)
+	for _, want := range []string{"installed on giantswarm only", "your own gh login", "needs read access"} {
+		if !strings.Contains(reason, want) {
+			t.Errorf("reason lacks %q: %s", want, reason)
+		}
+	}
+}
+
+// dispatching is the magazine repository x/y whose refresh.yaml accepts a
+// dispatch on its default branch.
+func dispatching() sequence.Routes {
+	r := green()
+	r["GET /repos/x/y"] = []sequence.Response{{Body: map[string]any{"full_name": "x/y", "default_branch": "main"}}}
+	r["POST /repos/x/y/actions/workflows/refresh.yaml/dispatches"] = []sequence.Response{{Status: http.StatusNoContent}}
+	return r
+}
+
+func dispatched(t *testing.T, stdout *bytes.Buffer, server *githubmock.Server) map[string]any {
+	t.Helper()
+	doc := decode(t, stdout)
+	dispatch, _ := doc["dispatch"].(map[string]any)
+	if dispatch == nil || dispatch["dispatched"] != true || dispatch["workflow"] != "x/y/refresh.yaml" || dispatch["ref"] != "main" || dispatch["reason"] != "" {
+		t.Fatalf("dispatch: %v", doc["dispatch"])
+	}
+	inputs, _ := dispatch["inputs"].(map[string]any)
+	for key, want := range map[string]any{"repository": "o/r", "pull_request": "42", "release": ""} {
+		if inputs[key] != want {
+			t.Errorf("input %s: want %v, got %v", key, want, inputs[key])
+		}
+	}
+	n := 0
+	for _, req := range server.Requests() {
+		if req.Method == http.MethodPost && req.Path == "/repos/x/y/actions/workflows/refresh.yaml/dispatches" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("want one dispatch, got %d", n)
+	}
+	return doc
+}
+
+// --dispatch runs the workflow after the merge with the merged pull request
+// as inputs; o/r releases nothing, so release is empty.
+func Test_run_dispatchFlag(t *testing.T) {
+	f := &flag{Timeout: time.Minute, ReleaseTimeout: time.Minute, Dispatch: "x/y/refresh.yaml", Progress: true,
+		getenv: func(string) string { return "a/b/other.yaml" }}
+	r, stdout, stderr, server := newRunner(t, dispatching(), loggedIn, f)
+	if err := r.run(context.Background(), []string{"o/r", "42"}); err != nil {
+		t.Fatalf("want exit 0, got %v\n%s", err, stderr.String())
+	}
+	doc := dispatched(t, stdout, server)
+	if doc["exitCode"] != 0.0 || len(doc["warnings"].([]any)) != 0 {
+		t.Errorf("document: %v", doc)
+	}
+	if !strings.Contains(stderr.String(), "dispatched: x/y/refresh.yaml on main with pull_request=42 release= repository=o/r") {
+		t.Errorf("--progress names the dispatch:\n%s", stderr.String())
+	}
+}
+
+// DEVCTL_MERGE_DISPATCH is the flag's value for every merge on a machine.
+func Test_run_dispatchEnv(t *testing.T) {
+	f := &flag{Timeout: time.Minute, NoReleaseWait: true, getenv: func(key string) string {
+		if key != "DEVCTL_MERGE_DISPATCH" {
+			t.Errorf("read %s", key)
+		}
+		return "x/y/refresh.yaml"
+	}}
+	r, stdout, _, server := newRunner(t, dispatching(), loggedIn, f)
+	if err := r.run(context.Background(), []string{"o/r", "42"}); err != nil {
+		t.Fatal(err)
+	}
+	dispatched(t, stdout, server)
+}
+
+// The environment variable is read from the process environment.
+func Test_run_dispatchEnvProcess(t *testing.T) {
+	t.Setenv("DEVCTL_MERGE_DISPATCH", "x/y/refresh.yaml")
+	r, stdout, _, server := newRunner(t, dispatching(), loggedIn, &flag{Timeout: time.Minute, NoReleaseWait: true})
+	if err := r.run(context.Background(), []string{"o/r", "42"}); err != nil {
+		t.Fatal(err)
+	}
+	dispatched(t, stdout, server)
+}
+
+// A dispatch in the wrong form is exit 7 before any request, naming the
+// flag, the variable and the form.
+func Test_run_dispatchUsage(t *testing.T) {
+	for name, f := range map[string]*flag{
+		"flag": {Timeout: time.Minute, NoReleaseWait: true, Dispatch: "x/y"},
+		"env":  {Timeout: time.Minute, NoReleaseWait: true, getenv: func(string) string { return "refresh.yaml" }},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r, stdout, _, server := newRunner(t, dispatching(), loggedIn, f)
+			err := r.run(context.Background(), []string{"o/r", "42"})
+			if agentcli.Exit(err) != agentcli.ExitUsage {
+				t.Fatalf("want exit 7, got %v", err)
+			}
+			reason, _ := decode(t, stdout)["reason"].(string)
+			for _, want := range []string{"--dispatch", "$DEVCTL_MERGE_DISPATCH", "<owner>/<repo>/<workflow file>[@<ref>]"} {
+				if !strings.Contains(reason, want) {
+					t.Errorf("reason lacks %q: %s", want, reason)
+				}
+			}
+			if n := len(server.Requests()); n != 0 {
+				t.Errorf("want no request, got %d", n)
+			}
+		})
+	}
+}
+
+// A dispatch GitHub refuses is a warning in the document; the merge is exit 0.
+func Test_run_dispatchRefusedIsAWarning(t *testing.T) {
+	routes := dispatching()
+	routes["POST /repos/x/y/actions/workflows/refresh.yaml/dispatches"] = []sequence.Response{{Status: http.StatusUnprocessableEntity, Body: map[string]any{"message": "Unexpected inputs provided: [\"release\"]"}}}
+	r, stdout, _, _ := newRunner(t, routes, loggedIn, &flag{Timeout: time.Minute, NoReleaseWait: true, Dispatch: "x/y/refresh.yaml"})
+	if err := r.run(context.Background(), []string{"o/r", "42"}); err != nil {
+		t.Fatalf("want exit 0, got %v", err)
+	}
+	doc := decode(t, stdout)
+	dispatch, _ := doc["dispatch"].(map[string]any)
+	if dispatch["dispatched"] != false || !strings.Contains(dispatch["reason"].(string), "Unexpected inputs provided") {
+		t.Errorf("dispatch: %v", dispatch)
+	}
+	warnings, _ := doc["warnings"].([]any)
+	if len(warnings) != 1 || !strings.Contains(warnings[0].(string), "the dispatch of x/y/refresh.yaml after the merge failed") {
+		t.Errorf("warnings: %v", warnings)
+	}
+	if doc["mergeCommitSha"] != "m1" || doc["exitCode"] != 0.0 {
+		t.Errorf("document: %v", doc)
+	}
+}
+
+// Without the flag or the variable nothing changes: dispatch is null.
+func Test_run_withoutDispatch(t *testing.T) {
+	r, stdout, _, _ := newRunner(t, green(), loggedIn, &flag{Timeout: time.Minute, NoReleaseWait: true, getenv: func(string) string { return "" }})
+	if err := r.run(context.Background(), []string{"o/r", "42"}); err != nil {
+		t.Fatal(err)
+	}
+	doc := decode(t, stdout)
+	if dispatch, ok := doc["dispatch"]; !ok || dispatch != nil {
+		t.Errorf("want dispatch null, got %v (present %v)", dispatch, ok)
 	}
 }

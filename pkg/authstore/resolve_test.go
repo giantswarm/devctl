@@ -195,3 +195,93 @@ func TestGitHubAppOnlyNotFoundHint(t *testing.T) {
 		t.Error("a command with no environment override must not suggest setting one")
 	}
 }
+
+func TestResolveCircleCI(t *testing.T) {
+	login := &Record{Login: "octocat", Token: "cci_keychain", ExpiresAt: testNow.Add(60 * 24 * time.Hour)}
+
+	cases := []struct {
+		name   string
+		env    map[string]string
+		envVar string
+		record *Record
+
+		wantValue   string
+		wantSource  string
+		wantWarning string // substring; empty means no warning
+		wantErr     []string
+		wantStore   bool
+	}{
+		{name: "variable wins over the keychain", env: map[string]string{CircleCIEnvVar: "cci_env"}, record: login,
+			wantValue: "cci_env", wantSource: "$CIRCLECI_TOKEN"},
+		{name: "variable set with CI", env: map[string]string{CircleCIEnvVar: "cci_env", EnvCI: "true"}, record: login,
+			wantValue: "cci_env", wantSource: "$CIRCLECI_TOKEN"},
+		{name: "named variable only", env: map[string]string{CircleCIEnvVar: "cci_ignored", "MY_TOKEN": "cci_named"}, envVar: "MY_TOKEN",
+			wantValue: "cci_named", wantSource: "$MY_TOKEN"},
+		{name: "keychain login only", record: login,
+			wantValue: "cci_keychain", wantSource: SourceKeychain, wantStore: true},
+		{name: "keychain login near its expiry", record: &Record{Token: "cci_keychain", ExpiresAt: testNow.Add(24 * time.Hour)},
+			wantValue: "cci_keychain", wantSource: SourceKeychain, wantWarning: "expires", wantStore: true},
+		{name: "keychain login expired", record: &Record{Token: "cci_keychain", ExpiresAt: testNow.Add(-time.Hour)},
+			wantErr: []string{"CircleCI", "the token expired"}, wantStore: true},
+		{name: "neither",
+			wantErr: []string{"CircleCI", "no token in the keychain"}, wantStore: true},
+		{name: "neither with CI", env: map[string]string{EnvCI: "1"}, record: login,
+			wantErr: []string{"$CI is set", "no token in $CIRCLECI_TOKEN"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, name := range []string{EnvCI, CircleCIEnvVar, "MY_TOKEN"} {
+				t.Setenv(name, "")
+			}
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			store := &countingStore{Store: &FileStore{Path: filepath.Join(t.TempDir(), "keyring.json")}}
+			if tc.record != nil {
+				if err := store.Store.Set(UserCircleCI, *tc.record); err != nil {
+					t.Fatal(err)
+				}
+			}
+			opened := false
+			open := func() (*Auth, error) {
+				opened = true
+				return New(Config{Store: store, Clock: agentcli.NewClock(1, func() time.Time { return testNow })})
+			}
+
+			token, err := resolveCircleCI(context.Background(), open, tc.envVar)
+
+			if opened != tc.wantStore || (store.calls > 0) != tc.wantStore {
+				t.Fatalf("store opened %v, %d call(s), want read %v", opened, store.calls, tc.wantStore)
+			}
+			if tc.wantErr != nil {
+				if !errors.Is(err, ErrAuthRequired) || agentcli.Exit(err) != agentcli.ExitAuthRequired {
+					t.Fatalf("err = %#v, want exit 8", err)
+				}
+				for _, want := range tc.wantErr {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("error %q lacks %q", err.Error(), want)
+					}
+				}
+				if strings.Contains(err.Error(), "cci_") {
+					t.Errorf("error %q carries token material", err.Error())
+				}
+				if token != (Token{}) {
+					t.Errorf("token = %+v with the error", token)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("err = %v", err)
+			}
+			if token.Value != tc.wantValue || token.Source != tc.wantSource {
+				t.Fatalf("token = %q from %q, want %q from %q", token.Value, token.Source, tc.wantValue, tc.wantSource)
+			}
+			if (tc.wantWarning == "") != (token.Warning == "") || !strings.Contains(token.Warning, tc.wantWarning) {
+				t.Fatalf("warning = %q, want %q", token.Warning, tc.wantWarning)
+			}
+			if token.Warning != "" && strings.Contains(token.Warning, token.Value) {
+				t.Errorf("warning %q carries the token", token.Warning)
+			}
+		})
+	}
+}

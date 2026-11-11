@@ -1,0 +1,46 @@
+# The caller's own pull request carries a COMMENTED review of its head by a
+# colleague, with one inline comment, and nobody answered either. The
+# review guard reads them after the other refusals and refuses with 5
+# before the wait: no check, status or workflow route is scripted, so a
+# request to any of them would be answered 404 and fail the command with 7
+# instead. The document lists both items. No merge.
+description: an unanswered COMMENTED review refuses the merge with 5 before the wait
+args: [pr, merge, giantswarm/devctl, "42", --timeout, 30m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - body:
+          number: 42
+          node_id: PR_e2e_42
+          title: "feat: the change"
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: clean
+          user: {login: e2e-engineer, type: User}
+          head: {sha: abc123, ref: feature, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}
+    "GET /repos/giantswarm/github/contents/repositories":
+      - body:
+          - {type: file, name: team-e2e.yaml, path: repositories/team-e2e.yaml, sha: t1}
+    "GET /repos/giantswarm/github/contents/repositories/team-e2e.yaml":
+      - body: {type: file, name: team-e2e.yaml, path: repositories/team-e2e.yaml, sha: t2, encoding: base64, content: "LSBuYW1lOiBkZXZjdGwKICBjb21wb25lbnRUeXBlOiBjbGkKICBnZW46CiAgICBmbGF2b3VyczoKICAgICAgLSBjbGkKICAgIGxhbmd1YWdlOiBnbwo="}
+    "GET /repos/giantswarm/devctl/pulls/42/reviews":
+      - body:
+          - {id: 7, state: COMMENTED, commit_id: abc123, submitted_at: "2026-09-21T10:05:00Z", user: {login: colleague, type: User}, html_url: "https://github.com/giantswarm/devctl/pull/42#pullrequestreview-7"}
+    "GET /repos/giantswarm/devctl/pulls/42/comments":
+      - body:
+          - {id: 8, original_commit_id: abc123, created_at: "2026-09-21T10:05:00Z", user: {login: colleague, type: User}, html_url: "https://github.com/giantswarm/devctl/pull/42#discussion_r8"}
+    "GET /repos/giantswarm/devctl/issues/42/comments":
+      - body:
+          - {id: 9, created_at: "2026-09-21T10:01:00Z", user: {login: e2e-engineer, type: User}, html_url: "https://github.com/giantswarm/devctl/pull/42#issuecomment-9"}
+    "GET /repos/giantswarm/devctl/git/commits/abc123":
+      - body: {sha: abc123, committer: {date: "2026-09-21T09:59:00Z"}}

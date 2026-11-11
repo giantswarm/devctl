@@ -11,7 +11,7 @@ import (
 
 	"github.com/giantswarm/microerror"
 	"github.com/giantswarm/releases/sdk/api/v1alpha1"
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/sirupsen/logrus"
 )
 

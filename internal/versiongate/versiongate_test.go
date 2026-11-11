@@ -3,8 +3,12 @@ package versiongate
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -20,11 +24,23 @@ func brokenKeychain(t *testing.T) {
 	t.Setenv(agentcli.EnvKeyringFile, t.TempDir())
 }
 
+// noSessionBus is the OS keychain of a container: the Secret Service's
+// session bus is not there.
+func noSessionBus(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("the session bus is the keychain on Linux only")
+	}
+	t.Setenv(agentcli.EnvKeyringFile, "")
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path="+filepath.Join(t.TempDir(), "no-bus"))
+}
+
 // clearGitHubEnv unsets CI and every GitHub token variable for the test: the
 // CI running the tests sets some of them.
 func clearGitHubEnv(t *testing.T) {
 	t.Helper()
-	for _, name := range append([]string{authstore.EnvCI}, authstore.GitHubEnvVars...) {
+	t.Setenv("DEVCTL_UNSAFE_SKIP_VERSION_CHECK", "")
+	for _, name := range append([]string{authstore.EnvCI, envGH, "DEVCTL_UNSAFE_SKIP_VERSION_CHECK"}, authstore.GitHubEnvVars...) {
 		t.Setenv(name, "")
 	}
 }
@@ -43,6 +59,8 @@ func TestGitHubToken(t *testing.T) {
 			env: map[string]string{authstore.EnvCI: "true"}, keychain: brokenKeychain},
 		{name: "without CI the keychain is opened, and its failure returned",
 			keychain: brokenKeychain, wantErr: true},
+		{name: "no session bus reads anonymously",
+			keychain: noSessionBus},
 		{name: "no App login reads anonymously",
 			keychain: func(t *testing.T) { t.Setenv(agentcli.EnvKeyringFile, filepath.Join(t.TempDir(), "keyring.json")) }},
 		{name: "a token in the environment overrides with the warning",
@@ -51,6 +69,15 @@ func TestGitHubToken(t *testing.T) {
 		{name: "a token in the environment under CI, without the warning",
 			env: map[string]string{"OPSCTL_GITHUB_TOKEN": "ghp_ci", authstore.EnvCI: "true"}, keychain: brokenKeychain,
 			want: "ghp_ci"},
+		{name: "gh's $GH_TOKEN alone under CI, the token a workflow step sets for gh",
+			env: map[string]string{envGH: "ghs_job", authstore.EnvCI: "true"}, keychain: brokenKeychain,
+			want: "ghs_job"},
+		{name: "a devctl token variable wins over $GH_TOKEN under CI",
+			env: map[string]string{authstore.GitHubEnvVars[1]: "devctl-token", envGH: "ghs_job", authstore.EnvCI: "true"}, keychain: brokenKeychain,
+			want: "devctl-token"},
+		{name: "without CI $GH_TOKEN is not read: the App login is",
+			env:      map[string]string{envGH: "ghs_job"},
+			keychain: func(t *testing.T) { t.Setenv(agentcli.EnvKeyringFile, filepath.Join(t.TempDir(), "keyring.json")) }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -105,7 +132,214 @@ func TestCheckWithAFreshCacheDoesNotOpenTheKeychain(t *testing.T) {
 	if err := check("0.9.0", false, &warnings); err == nil || !strings.Contains(err.Error(), "version 1.0.0 of devctl is released") {
 		t.Errorf("check of an older build: %v, want the cached release named", err)
 	}
+	for _, value := range []string{"true", "false", "", "invalid"} {
+		t.Setenv("DEVCTL_UNSAFE_SKIP_VERSION_CHECK", value)
+		err := check("0.9.0", false, &warnings)
+		if (err == nil) != (value == "true") {
+			t.Errorf("outdated build with skip=%q: %v", value, err)
+		}
+	}
 	if warnings.Len() != 0 {
 		t.Errorf("warned %q", warnings.String())
+	}
+}
+
+// An override left in a shell only permits the version it names; it must
+// not turn into a permanent opt-out when a different build is installed.
+func TestCheckUnsafeForceVersionMustMatch(t *testing.T) {
+	clearGitHubEnv(t)
+	brokenKeychain(t)
+	t.Setenv(agentcli.EnvGitHubAPIURL, "http://127.0.0.1:1")
+	config := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", config)
+	dir := filepath.Join(config, "devctl")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cache := "last_update: " + time.Now().UTC().Format(time.RFC3339) + "\nlatest_version: 2.0.0\n"
+	if err := os.WriteFile(filepath.Join(dir, "selfupdate.yaml"), []byte(cache), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name     string
+		override string
+		allowed  bool
+	}{
+		{name: "unset"},
+		{name: "boolean", override: "true"},
+		{name: "another build", override: "0.9.0"},
+		{name: "different spelling", override: "v1.0.0"},
+		{name: "exact running version", override: "1.0.0", allowed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DEVCTL_UNSAFE_FORCE_VERSION", tc.override)
+			var warnings bytes.Buffer
+			err := check("1.0.0", false, &warnings)
+			if tc.allowed {
+				if err != nil {
+					t.Fatalf("matching override refused: %v", err)
+				}
+			} else {
+				if err == nil {
+					t.Fatal("outdated build allowed without an exact override")
+				}
+				for _, want := range []string{
+					"version 2.0.0 of devctl is released", "this is 1.0.0",
+					"`devctl version update`", "DEVCTL_UNSAFE_FORCE_VERSION=1.0.0",
+				} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("refusal %q lacks %q", err, want)
+					}
+				}
+			}
+			if warnings.Len() != 0 {
+				t.Errorf("warned %q", warnings.String())
+			}
+		})
+	}
+}
+
+// The escape hatch must still work when updater setup itself would fail,
+// including a local build whose identifier is not a semantic version.
+func TestCheckUnsafeForceVersionBeforeUpdaterSetup(t *testing.T) {
+	clearGitHubEnv(t)
+	brokenKeychain(t)
+	t.Setenv(agentcli.EnvGitHubAPIURL, "://invalid")
+	config := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", config)
+
+	for _, version := range []string{"1.0.0", "dev"} {
+		t.Run(version, func(t *testing.T) {
+			t.Setenv("DEVCTL_UNSAFE_FORCE_VERSION", version)
+			for _, noCache := range []bool{false, true} {
+				var warnings bytes.Buffer
+				if err := check(version, noCache, &warnings); err != nil {
+					t.Errorf("check(noCache=%v): %v", noCache, err)
+				}
+				if warnings.Len() != 0 {
+					t.Errorf("check(noCache=%v) warned %q", noCache, warnings.String())
+				}
+			}
+		})
+	}
+	entries, err := os.ReadDir(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("override created configuration files: %v", entries)
+	}
+}
+
+// TestCheckInAWorkflowStepWithGHTokenAuthenticates is a generated workflow
+// step that hands devctl the job's token in $GH_TOKEN only: the version
+// check's releases call carries it, where GitHub answers an anonymous one
+// from a shared runner IP with the rate limit.
+func TestCheckInAWorkflowStepWithGHTokenAuthenticates(t *testing.T) {
+	clearGitHubEnv(t)
+	t.Setenv("DEVCTL_UNSAFE_FORCE_VERSION", "")
+	t.Setenv(authstore.EnvCI, "true")
+	t.Setenv(envGH, "ghs_job")
+	brokenKeychain(t)
+
+	var auths []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /repos/giantswarm/devctl/releases", func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		auths = append(auths, auth)
+		if auth == "" {
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"message":"API rate limit exceeded for 4.242.196.129."}`))
+			return
+		}
+		asset := "devctl-" + runtime.GOOS + "-" + runtime.GOARCH
+		_ = json.NewEncoder(w).Encode([]map[string]any{{
+			"id": 1, "tag_name": "v1.0.0", "name": "v1.0.0",
+			"assets": []map[string]any{{"id": 2, "name": asset, "size": 3, "browser_download_url": "https://example.test/" + asset}},
+		}})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	t.Setenv(agentcli.EnvGitHubAPIURL, srv.URL)
+
+	var warnings bytes.Buffer
+	if err := check("1.0.0", true, &warnings); err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	if len(auths) != 1 || auths[0] != "Bearer ghs_job" {
+		t.Errorf("releases requests carried Authorization %q, want one with the job's token", auths)
+	}
+	if warnings.Len() != 0 {
+		t.Errorf("warned %q", warnings.String())
+	}
+}
+
+// Failed release discovery must not prevent the command's real work. A known
+// newer version still refuses in TestCheckWithAFreshCacheDoesNotOpenTheKeychain.
+func TestCheckUnavailableReleaseWarnsAndContinues(t *testing.T) {
+	for _, status := range []int{http.StatusForbidden, http.StatusInternalServerError} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			clearGitHubEnv(t)
+			t.Setenv("DEVCTL_UNSAFE_FORCE_VERSION", "")
+			t.Setenv(authstore.EnvCI, "true")
+			brokenKeychain(t)
+			requests := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				if r.URL.Path != "/repos/giantswarm/devctl/releases" {
+					t.Errorf("unexpected release request: %s", r.URL.Path)
+				}
+				w.Header().Set("X-RateLimit-Remaining", "0")
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"message":"API rate limit exceeded"}`))
+			}))
+			t.Cleanup(srv.Close)
+			t.Setenv(agentcli.EnvGitHubAPIURL, srv.URL)
+			var warnings bytes.Buffer
+			if err := check("1.0.0", true, &warnings); err != nil {
+				t.Fatalf("lookup failure blocked the command: %v", err)
+			}
+			if requests == 0 || !strings.Contains(warnings.String(), "warning: could not check the latest devctl release:") {
+				t.Fatalf("requests=%d warnings=%q", requests, warnings.String())
+			}
+		})
+	}
+}
+
+// The component-owned opt-out works independently of the installed version,
+// cache and updater configuration. Only the documented literal enables it.
+func TestCheckUnsafeSkipVersionCheck(t *testing.T) {
+	clearGitHubEnv(t)
+	brokenKeychain(t)
+	t.Setenv("DEVCTL_UNSAFE_FORCE_VERSION", "")
+	t.Setenv(agentcli.EnvGitHubAPIURL, "://invalid")
+	config := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", config)
+
+	for _, value := range []string{"", "false", "1", "TRUE", " true ", "invalid", "true"} {
+		t.Run("value="+value, func(t *testing.T) {
+			t.Setenv("DEVCTL_UNSAFE_SKIP_VERSION_CHECK", value)
+			for _, version := range []string{"1.0.0", "2.0.0", "dev"} {
+				for _, noCache := range []bool{false, true} {
+					var warnings bytes.Buffer
+					err := check(version, noCache, &warnings)
+					if err != nil {
+						t.Errorf("check(%q, noCache=%v) = %v, skip=%q", version, noCache, err, value)
+					}
+					if (warnings.Len() == 0) != (value == "true") {
+						t.Errorf("warnings=%q, skip=%q", warnings.String(), value)
+					}
+				}
+			}
+		})
+	}
+	entries, err := os.ReadDir(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("check created configuration files: %v", entries)
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"text/template"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/precommit/internal/params"
 )
@@ -28,7 +30,7 @@ func Test_NewCreatePreCommitActionInput(t *testing.T) {
 		},
 		{
 			name:         "case 3: helmchart flavor",
-			p:            params.Params{Dir: "", Flavors: []string{"helmchart"}},
+			p:            params.Params{Dir: "", Flavors: []string{helmchartFlavor}},
 			expectedPath: ".github/workflows/zz_generated.pre-commit.yaml",
 		},
 	}
@@ -119,4 +121,31 @@ func Test_PreCommitActionGoGenerate(t *testing.T) {
 			t.Errorf("rendered workflow runs the generate step outside a go repository:\n%s", got)
 		}
 	})
+}
+
+// Test_PreCommitActionConcurrency verifies the pre-commit workflow groups runs
+// by workflow and pull request number (falling back to ref) and cancels
+// in-progress runs only on pull_request events, leaving main/master pushes and
+// merge_group checks running.
+func Test_PreCommitActionConcurrency(t *testing.T) {
+	got := renderAction(t, params.Params{Language: "go"})
+
+	var wf struct {
+		Concurrency struct {
+			Group            string `yaml:"group"`
+			CancelInProgress string `yaml:"cancel-in-progress"`
+		} `yaml:"concurrency"`
+	}
+	if err := yaml.Unmarshal([]byte(got), &wf); err != nil {
+		t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, got)
+	}
+
+	wantGroup := "${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
+	if wf.Concurrency.Group != wantGroup {
+		t.Errorf("concurrency.group = %q, want %q", wf.Concurrency.Group, wantGroup)
+	}
+	wantCancel := "${{ github.event_name == 'pull_request' }}"
+	if wf.Concurrency.CancelInProgress != wantCancel {
+		t.Errorf("concurrency.cancel-in-progress = %q, want %q", wf.Concurrency.CancelInProgress, wantCancel)
+	}
 }

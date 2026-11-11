@@ -18,9 +18,10 @@ var createAppPlatformValuesTemplateFiles embed.FS
 var createAppPlatformValuesTemplateSha = input.TemplateSHA(createAppPlatformValuesTemplateFiles, "app-platform-values.yaml.template")
 
 // NewCreateAppPlatformValuesInput generates the schema-only values file with
-// the keys the Giant Swarm app platform injects into every App via the
-// <cluster>-cluster-values ConfigMap. It is listed before values.yaml in the
-// generated .schema.yaml so the chart's own definitions take precedence.
+// the keys the Giant Swarm app platform injects into Apps: the
+// <cluster>-cluster-values ConfigMap, the catalog config and legacy
+// extraConfigs. It is listed before values.yaml in the generated .schema.yaml
+// so the chart's own annotations take precedence.
 func NewCreateAppPlatformValuesInput(p params.Params, chartName string) input.Input {
 	return input.Input{
 		Path:         filepath.Join(p.Dir, "helm", chartName, "zz_generated.app-platform.values.yaml"),

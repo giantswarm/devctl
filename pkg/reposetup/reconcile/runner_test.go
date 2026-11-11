@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 
@@ -43,12 +43,18 @@ const (
 	// agentMergeFalseEntryYAML opts the repository out of agent merges: the
 	// ruleset has no bypass actor.
 	agentMergeFalseEntryYAML = entryYAML + "  agentMerge: false\n"
+	// renovateFalseEntryYAML switches Renovate off for the repository.
+	renovateFalseEntryYAML = entryYAML + "  renovate: false\n"
 	// declaredRulesetEntryYAML declares a ruleset of the repository's own the
 	// team keeps beside the engine's.
 	declaredRulesetEntryYAML = entryYAML + "  rulesets: [\"protect-giantswarm\"]\n"
 	// pruneRulesetsEntryYAML makes the declaration the whole ruleset set:
 	// every undeclared active ruleset is deleted.
 	pruneRulesetsEntryYAML = declaredRulesetEntryYAML + "  pruneRulesets: true\n"
+	// lineGateEntryYAML gates a fork line's direct pushes: the sync's App
+	// replaces the line, and no actor lands an unchecked commit on it or on
+	// the maintenance line.
+	lineGateEntryYAML = entryYAML + "  lineGate:\n    app: 414149\n    requiredChecks: [run-tests, govulncheck]\n    branches: [release-1.3]\n"
 	// configurationEntryYAML is a configuration repository: no template, no
 	// generated pipeline.
 	configurationEntryYAML = `- name: sample-service
@@ -60,6 +66,19 @@ const (
     language: generic
     ci:
       generate: false
+`
+	// actionsOnlyEntryYAML is a repository on generated CI without a CircleCI
+	// job: generic, no chart, no image, its generated CI is GitHub Actions
+	// only (auto-release).
+	actionsOnlyEntryYAML = `- name: sample-service
+  componentType: unspecified
+  description: A repository released by GitHub Actions
+  visibility: private
+  gen:
+    flavours: [generic]
+    language: generic
+    ci:
+      generate: true
 `
 	// templateContentEntryYAML is a template repository whose
 	// .circleci/config.yml is content for the repositories created from it.
@@ -82,6 +101,16 @@ const (
     flavours: [app]
     language: go
 `
+	// multiImageEntryYAML declares a multi-image repository: one image per
+	// toolchains/<name>/ directory, each released as <name>/vX.Y.Z.
+	multiImageEntryYAML = `- name: sample-service
+  componentType: service
+  description: A sample service
+  visibility: public
+  gen:
+    flavours: [multi-image]
+    language: generic
+`
 	// customerEntryYAML declares a customer repository: the flavour is the
 	// profile, the component type the catalog's type.
 	customerEntryYAML = `- name: sample-service
@@ -90,6 +119,18 @@ const (
   visibility: private
   gen:
     flavours: [customer]
+    language: generic
+    ci:
+      generate: false
+`
+	// appCatalogEntryYAML declares an app catalog: GitHub Pages serves its
+	// index from the repository's default branch, master on the older ones.
+	appCatalogEntryYAML = `- name: sample-service
+  componentType: appcatalog
+  description: An app catalog
+  visibility: public
+  gen:
+    flavours: [generic]
     language: generic
     ci:
       generate: false
@@ -148,6 +189,10 @@ const (
 
 	// testAppID is the devctl App's id the harness configures.
 	testAppID int64 = 424242
+	// testAlignAppID is the align-files App the review ruleset lets past the review.
+	testAlignAppID int64 = 434343
+	// testReleaseAppID is the release App the review ruleset lets past the review.
+	testReleaseAppID int64 = 454545
 )
 
 // harness wires a Runner to the two fakes with a validated entry.
@@ -161,6 +206,9 @@ type harness struct {
 	// codeownersOverride is the repository's CODEOWNERS override the runs
 	// hand in with the entry; nil: none.
 	codeownersOverride []byte
+	// unarchived passes the entry as one the change took lifecycle:
+	// archived from (Request.Unarchived).
+	unarchived bool
 }
 
 // newHarness wires the fakes to an entry validated for its creation, the
@@ -177,8 +225,6 @@ func newHarnessMode(t *testing.T, yaml string, mode reposetup.Mode) *harness {
 	t.Helper()
 	ctx := context.Background()
 	gh, cc := newFakeGitHub(), newFakeCircleCI()
-	cc.onFollow = gh.installHook // a follow by an admin with the hook scope
-	cc.isAdmin = gh.isAdmin
 	t.Cleanup(gh.srv.Close)
 	t.Cleanup(cc.srv.Close)
 
@@ -211,7 +257,7 @@ func newHarnessMode(t *testing.T, yaml string, mode reposetup.Mode) *harness {
 
 func (h *harness) run(mode Mode, added bool, steps ...Step) *Result {
 	h.t.Helper()
-	res, err := h.runner.Run(context.Background(), Request{Team: team, Entry: h.entry, Added: added, Mode: mode, Steps: steps, CodeownersOverride: h.codeownersOverride})
+	res, err := h.runner.Run(context.Background(), Request{Team: team, Entry: h.entry, Added: added, Unarchived: h.unarchived, Mode: mode, Steps: steps, CodeownersOverride: h.codeownersOverride})
 	require.NoError(h.t, err)
 	return res
 }
@@ -317,6 +363,9 @@ type stepCase struct {
 	name  string
 	entry string
 	added bool
+	// unarchived passes the entry as one the change took lifecycle:
+	// archived from.
+	unarchived bool
 	// existing validates the entry as an existing repository's
 	// (reposetup.ModeExisting), free of the creation rules.
 	existing bool
@@ -334,6 +383,13 @@ type stepCase struct {
 	wantAfter Verdict
 	// verify inspects the fakes after the repair.
 	verify func(t *testing.T, h *harness, repair *Result)
+}
+
+// seedMetadata adds the repository as the entry declares its description and
+// visibility, carrying the topics given.
+func seedMetadata(h *harness, topics []string) {
+	r := h.gh.addRepo(owner, name)
+	r.description, r.private, r.topics = "A sample service", false, topics
 }
 
 func TestSteps(t *testing.T) {
@@ -1101,6 +1157,224 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			name: "protection: lineGate adds the sync's App to the default branch's ruleset and writes the gate no actor bypasses", step: StepProtection, entry: lineGateEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictDrift, wantChange: `create ruleset "devctl: line gate" on ~DEFAULT_BRANCH, refs/heads/release-1.3, deletion forbidden, no bypass actor; require run-tests, govulncheck`,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				line := &github.BypassActor{ActorID: new(int64(414149)), ActorType: new(github.BypassActorTypeIntegration), BypassMode: new(github.BypassModeAlways)}
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass(), teamBypass(testTeamID), line}, h.repo().ruleset(RulesetName).BypassActors, "the sync's App passes the pull-request rule in every mode")
+				gate := h.repo().ruleset(LineGateRulesetName)
+				require.NotNil(t, gate)
+				require.Empty(t, gate.BypassActors, "no actor bypasses the gate")
+				require.Equal(t, []string{"~DEFAULT_BRANCH", "refs/heads/release-1.3"}, gate.Conditions.RefName.Include)
+				require.Equal(t, []*github.RuleStatusCheck{actionsCheck("run-tests"), actionsCheck("govulncheck")}, gate.Rules.RequiredStatusChecks.RequiredStatusChecks, "pinned to GitHub Actions")
+				require.NotNil(t, gate.Rules.Deletion)
+				require.Nil(t, gate.Rules.PullRequest, "a checked commit lands by push")
+				require.Nil(t, gate.Rules.NonFastForward, "the sync's land replaces the line")
+				require.Equal(t, []string{
+					"bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 414149 always",
+					`create ruleset "devctl: line gate" on ~DEFAULT_BRANCH, refs/heads/release-1.3, deletion forbidden, no bypass actor; require run-tests, govulncheck`,
+				}, res.Step(StepProtection).Changes)
+			},
+		},
+		{
+			name: "protection: lineGate alongside agentMerge false keeps the sync's App alone", step: StepProtection, entry: lineGateEntryYAML + "  agentMerge: false\n",
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)})
+			},
+			wantCheck: VerdictDrift, wantChange: "bypass actor: App 414149 always",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Len(t, h.repo().ruleset(RulesetName).BypassActors, 1)
+				require.NotNil(t, h.repo().ruleset(LineGateRulesetName))
+			},
+		},
+		{
+			name: "protection: the align-files App id moves the review into a ruleset the App bypasses, the checks stay binding", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictDrift, wantChange: `create ruleset "devctl: review", 1 required review(s)`,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				review := h.repo().ruleset(ReviewRulesetName)
+				require.NotNil(t, review)
+				require.Equal(t, []*github.BypassActor{appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID), appBypass(renovateAppID)}, review.BypassActors, "the align-files and Renovate Apps bypass the review beside the default branch's actors")
+				require.Equal(t, 1, review.Rules.PullRequest.RequiredApprovingReviewCount)
+				require.Nil(t, review.Rules.RequiredStatusChecks, "the review ruleset carries no checks")
+				main := h.repo().ruleset(RulesetName)
+				require.Nil(t, main.Rules.PullRequest, "the review rule moved out")
+				require.Equal(t, []string{ctxGoBuild}, checkContexts(main), "the checks stay where the align-files App has no bypass")
+				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(testAlignAppID)))
+				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(renovateAppID)), "the Renovate App waits for the checks")
+				require.Equal(t, []string{
+					`create ruleset "devctl: review", 1 required review(s); bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests`,
+					"stop requiring pull requests",
+				}, res.Step(StepProtection).Changes, "the review ruleset is written before the default branch drops the rule")
+			},
+		},
+		{
+			name: "protection: a review ruleset without the Renovate App gains it, the checks stay binding", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictDrift, wantChange: "bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{"bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests"}, res.Step(StepProtection).Changes, "one change: the review ruleset's bypass list")
+				require.Contains(t, actorKeys(h.repo().ruleset(ReviewRulesetName).BypassActors), actorKey(appBypass(renovateAppID)))
+				main := h.repo().ruleset(RulesetName)
+				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(renovateAppID)), "the Renovate App waits for the checks")
+				require.Equal(t, []string{ctxGoBuild}, checkContexts(main))
+			},
+		},
+		{
+			name: "protection: the release App id adds the release App to a review ruleset without it, the checks stay binding", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				h.runner.ReleaseAppID = testReleaseAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID), appBypass(renovateAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictDrift, wantChange: "bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests, App 454545 on pull requests",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{"bypass actors: App 424242 on pull requests, repository admins on pull requests, team team-bumblebee on pull requests, App 434343 on pull requests, App 2740 on pull requests, App 454545 on pull requests"}, res.Step(StepProtection).Changes, "one change: the review ruleset's bypass list")
+				require.Contains(t, actorKeys(h.repo().ruleset(ReviewRulesetName).BypassActors), actorKey(appBypass(testReleaseAppID)))
+				main := h.repo().ruleset(RulesetName)
+				require.NotContains(t, actorKeys(main.BypassActors), actorKey(appBypass(testReleaseAppID)), "the release App waits for the checks")
+				require.Equal(t, []string{ctxGoBuild}, checkContexts(main))
+			},
+		},
+		{
+			name: "protection: a review ruleset with the release App is clean on a run with its id", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				h.runner.ReleaseAppID = testReleaseAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID), appBypass(renovateAppID), appBypass(testReleaseAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, res.Step(StepProtection).Changes, "the next night repairs nothing")
+			},
+		},
+		{
+			name: "protection: the align-files App id leaves agentMerge false's review in the default branch's ruleset, without bypass", step: StepProtection, entry: entryYAML + "  agentMerge: false\n",
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)})
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Nil(t, h.repo().ruleset(ReviewRulesetName))
+				require.NotNil(t, h.repo().ruleset(RulesetName).Rules.PullRequest)
+				require.Empty(t, h.repo().ruleset(RulesetName).BypassActors, "nothing bypasses the review, the Renovate App neither")
+			},
+		},
+		{
+			name: "protection: without the align-files App id the review returns to the default branch's ruleset before the review ruleset goes", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictDrift, wantChange: `delete ruleset "devctl: review" (the review rule is back in "devctl: default branch")`,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Nil(t, h.repo().ruleset(ReviewRulesetName))
+				require.Equal(t, 1, h.repo().ruleset(RulesetName).Rules.PullRequest.RequiredApprovingReviewCount)
+				require.Equal(t, []string{
+					"require pull requests; required reviews 0 → 1",
+					`delete ruleset "devctl: review" (the review rule is back in "devctl: default branch")`,
+				}, res.Step(StepProtection).Changes)
+				require.Empty(t, res.Step(StepProtection).Findings, "the engine's own ruleset is never foreign")
+			},
+		},
+		{
+			name: "protection: without the devctl App id a missing review ruleset is reported for the run with the id, not written", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				h.runner.AlignFilesAppID = testAlignAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)})
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRulesetPending, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Nil(t, h.repo().ruleset(ReviewRulesetName))
+				require.NotNil(t, h.repo().ruleset(RulesetName).Rules.PullRequest, "nothing written")
+				var messages []string
+				for _, f := range res.Step(StepProtection).Findings {
+					messages = append(messages, f.Message)
+				}
+				require.Contains(t, strings.Join(messages, "\n"), `the ruleset "devctl: review" differs from the declared review rule: create ruleset`)
+			},
+		},
+		{
+			name: "protection: a run without either App id reads the review ruleset it finds as the layout, not a drift", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.NotNil(t, h.repo().ruleset(ReviewRulesetName))
+				require.Empty(t, res.Step(StepProtection).Findings)
+			},
+		},
+		{
+			name: "protection: without lineGate the gate ruleset is deleted", step: StepProtection,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+				r.addRuleset(LineGateRulesetName, []*github.RuleStatusCheck{actionsCheck("run-tests")})
+			},
+			wantCheck: VerdictDrift, wantChange: `delete ruleset "devctl: line gate" (no lineGate)`,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Nil(t, h.repo().ruleset(LineGateRulesetName))
+				require.Empty(t, res.Step(StepProtection).Findings, "the engine's own ruleset is never foreign")
+			},
+		},
+		{
+			name: "protection: without the App id a missing gate is reported for the run with the id, not written", step: StepProtection, entry: lineGateEntryYAML,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)})
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRulesetPending, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Nil(t, h.repo().ruleset(LineGateRulesetName))
+				require.Contains(t, res.Step(StepProtection).Findings[0].Message, `the ruleset "devctl: line gate" differs from the declared lineGate: create ruleset`)
+			},
+		},
+		{
 			name: "protection: under pruneRulesets a run without the App id reports the undeclared ruleset for the run with the id, deletes nothing", step: StepProtection, entry: pruneRulesetsEntryYAML,
 			seed: func(h *harness) {
 				h.runner.DevctlAppID = 0
@@ -1184,166 +1458,350 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			name: "circleci: follow, setup workflows, checkout key", step: StepCircleCI,
-			seed:      func(h *harness) { h.gh.addRepo(owner, name) },
-			wantCheck: VerdictDrift, wantChange: "follow giantswarm/sample-service; enable setup workflows; create a deploy key",
-			verify: func(t *testing.T, h *harness, _ *Result) {
-				p := h.cc.projects[owner+"/"+name]
-				require.NotNil(t, p)
-				require.True(t, p.setupWorkflows)
-				require.Len(t, p.keys, 1)
-			},
-		},
-		{
-			// CircleCI refuses the follow, the settings and the key to a user
-			// who is no GitHub admin of the repository (the fake's isAdmin).
-			name: "circleci: the follow identity without admin is granted it for the set-up and revoked after", step: StepCircleCI,
+			// The reconciler's person-run twin: a project with a GitHub App
+			// definition and an enabled trigger is the pipeline. The implicit
+			// OAuth definition beside it has no trigger and is no finding.
+			name: "circleci: a GitHub App pipeline with an enabled trigger reads ok", step: StepCircleCI,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)
-				h.gh.permission = "write" // architectbot holds push through the bots team
-			},
-			wantCheck:  VerdictDrift,
-			wantChange: "grant architectbot admin for the CircleCI set-up, revoked after it; follow giantswarm/sample-service; enable setup workflows; create a deploy key",
-			verify: func(t *testing.T, h *harness, _ *Result) {
-				p := h.cc.projects[owner+"/"+name]
-				require.NotNil(t, p)
-				require.True(t, p.setupWorkflows)
-				require.Len(t, p.keys, 1)
-				require.Empty(t, h.repo().collaborators, "the grant is revoked once the project is set up")
-				require.Equal(t, []string{
-					"PUT /repos/giantswarm/sample-service/collaborators/architectbot",
-					"DELETE /repos/giantswarm/sample-service/collaborators/architectbot",
-				}, collaboratorMutations(h.gh.mutations), "one grant for the step's three writes")
-			},
-		},
-		{
-			// A followed project without setup workflows and key repaired by
-			// an identity without admin: the grant spans the step's writes,
-			// not the follow alone.
-			name: "circleci: the repair of a followed project is made under the grant", step: StepCircleCI,
-			seed: func(h *harness) {
-				r := h.gh.addRepo(owner, name)
-				r.hooks = []*github.Hook{circleCIHook()}
-				h.cc.projects[owner+"/"+name] = &fakeProject{following: true}
-				h.gh.permission = "write"
-			},
-			wantCheck:  VerdictDrift,
-			wantChange: "grant architectbot admin for the CircleCI set-up, revoked after it; enable setup workflows; create a deploy key",
-			verify: func(t *testing.T, h *harness, _ *Result) {
-				p := h.cc.projects[owner+"/"+name]
-				require.True(t, p.setupWorkflows)
-				require.Len(t, p.keys, 1)
-				require.Empty(t, h.repo().collaborators)
-			},
-		},
-		{
-			// An identity that is an admin already needs no grant, and none is
-			// taken back: the step never lowers a permission it did not raise.
-			name: "circleci: an admin identity is neither granted nor revoked", step: StepCircleCI,
-			seed: func(h *harness) {
-				h.gh.addRepo(owner, name).collaborators["architectbot"] = "admin"
-				h.gh.permission = "write"
-			},
-			wantCheck: VerdictDrift, wantChange: "follow giantswarm/sample-service; enable setup workflows; create a deploy key",
-			verify: func(t *testing.T, h *harness, res *Result) {
-				require.NotContains(t, strings.Join(res.Step(StepCircleCI).Changes, "; "), "grant")
-				require.Empty(t, collaboratorMutations(h.gh.mutations))
-				require.Equal(t, "admin", h.repo().collaborators["architectbot"])
-			},
-		},
-		{
-			name: "circleci: a followed project with its webhook reads ok", step: StepCircleCI,
-			seed: func(h *harness) {
-				h.gh.addRepo(owner, name)
-				h.cc.follow(owner, name)
+				h.cc.addApp(owner, name)
 			},
 			wantCheck: VerdictOK,
-			verify: func(t *testing.T, _ *harness, res *Result) {
-				require.Equal(t, "followed, setup workflows on, checkout key present, webhook present", res.Step(StepCircleCI).Summary)
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "GitHub App pipeline build", res.Step(StepCircleCI).Summary)
+				require.Empty(t, res.Findings())
+				require.Empty(t, h.cc.mutations, "the engine writes nothing on CircleCI")
 			},
 		},
 		{
-			// giantswarm/mcp-toolkit: followed, with setup workflows and a
-			// deploy key, and GET /repos/{owner}/{repo}/hooks answered []:
-			// no push and no tag reached CircleCI, and the step read ok. An
-			// inactive CircleCI hook or another system's hook is no webhook
-			// either.
-			name: "circleci: a followed project without CircleCI's webhook is reported", step: StepCircleCI,
-			seed: func(h *harness) {
-				r := h.gh.addRepo(owner, name)
-				h.cc.onFollow = nil
-				h.cc.follow(owner, name)
-				inactive := circleCIHook()
-				inactive.Active = new(false)
-				r.hooks = []*github.Hook{inactive, {ID: new(int64(7)), Name: new("web"), Active: new(true), Events: []string{"push"}, Config: &github.HookConfig{URL: new("https://github-pr-webhook.ci.giantswarm.io")}}}
-			},
-			wantCheck: VerdictReported, wantFinding: FindingCircleCIWebhookMissing, wantAfter: VerdictReported,
-			verify: func(t *testing.T, _ *harness, res *Result) {
-				sr := res.Step(StepCircleCI)
-				require.Equal(t, "followed, setup workflows on, checkout key present, webhook missing", sr.Summary)
-				require.Len(t, sr.Findings, 1)
-				require.False(t, sr.Findings[0].Advisory, "a deaf project is not set up")
-				require.Contains(t, sr.Findings[0].Fix, "POST /api/v1.1/project/github/giantswarm/sample-service/follow")
-				require.False(t, sr.Converges())
-			},
-		},
-		{
-			// The reconciler's follow as architectbot under a temporary admin
-			// grant: CircleCI followed the project and installed no hook,
-			// because that account's CircleCI grant lacks the hook scope. The
-			// follow is repaired, the missing hook reported in the same run.
-			name: "circleci: a follow whose grant lacks the hook scope leaves the webhook missing", step: StepCircleCI,
+			// An OAuth definition that is triggered beside the App's builds
+			// every push twice: the advisory circleci-oauth-follow names the
+			// migration, and the run converges.
+			name: "circleci: an App pipeline with a triggered OAuth definition beside it is an advisory double build", step: StepCircleCI,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)
-				h.cc.onFollow = nil
+				p := h.cc.addApp(owner, name)
+				p.definitions[0].triggers = []circleciclient.Trigger{{EventSource: circleciclient.DefinitionSource{Provider: circleciclient.ProviderGitHubOAuth}}}
 			},
-			wantCheck: VerdictDrift, wantChange: "follow giantswarm/sample-service; enable setup workflows; create a deploy key",
-			wantAfter: VerdictReported,
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIOAuthFollow, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, res *Result) {
-				require.Contains(t, h.cc.projects, owner+"/"+name)
-				require.Equal(t, []FindingKind{FindingCircleCIWebhookMissing}, kinds(res.Step(StepCircleCI).Findings))
+				sr := res.Step(StepCircleCI)
+				require.Contains(t, sr.Summary, "GitHub App pipeline build; OAuth pipeline "+name+" triggered too")
+				require.Len(t, sr.Findings, 1)
+				require.True(t, sr.Findings[0].Advisory)
+				require.Contains(t, sr.Findings[0].Message, "every push builds twice")
+				require.Contains(t, sr.Findings[0].Fix, "devctl repo follow-circleci "+owner+"/"+name+" --migrate")
+				require.True(t, sr.Converges(), "an advisory finding keeps the run converging")
+				require.Empty(t, h.cc.mutations, "the OAuth trigger is deleted by a person, not by the engine")
 			},
 		},
 		{
-			name: "circleci: webhooks the identity cannot read are unchecked", step: StepCircleCI,
+			// Only the OAuth definition is triggered: it builds through the
+			// GitHub grant of whoever followed the project and stops when
+			// they leave. The fix migrates, deleting the OAuth trigger.
+			name: "circleci: an OAuth-only project is an advisory OAuth follow with --migrate in the fix", step: StepCircleCI,
 			seed: func(h *harness) {
-				r := h.gh.addRepo(owner, name)
-				h.cc.follow(owner, name)
-				r.hooksStatus = 404
+				h.gh.addRepo(owner, name)
+				h.cc.addOAuth(owner, name)
 			},
-			wantCheck: VerdictReported, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
-			verify: func(t *testing.T, _ *harness, res *Result) {
-				require.Equal(t, "followed, setup workflows on, checkout key present, webhook not readable by this identity", res.Step(StepCircleCI).Summary)
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIOAuthFollow, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				sr := res.Step(StepCircleCI)
+				require.Equal(t, "OAuth follow, no GitHub App pipeline", sr.Summary)
+				require.Len(t, sr.Findings, 1)
+				require.True(t, sr.Findings[0].Advisory)
+				require.Contains(t, sr.Findings[0].Message, "OAuth pipeline "+name)
+				require.Contains(t, sr.Findings[0].Fix, "devctl repo follow-circleci "+owner+"/"+name+" --migrate")
+				require.True(t, sr.Converges(), "it builds today: the fleet does not flip to non-converged")
+				require.Empty(t, h.cc.mutations, "nothing is followed, created or migrated by the engine")
 			},
 		},
 		{
-			name: "circleci: a followed project without setup workflows and key (template-app's defects)", step: StepCircleCI,
+			// A GitHub App definition whose only trigger is disabled builds
+			// nothing: the pipeline is missing, and with no OAuth trigger the
+			// fix needs no --migrate.
+			name: "circleci: a GitHub App definition whose only trigger is disabled is no pipeline", step: StepCircleCI,
 			seed: func(h *harness) {
-				r := h.gh.addRepo(owner, name)
-				r.hooks = []*github.Hook{circleCIHook()}
-				h.cc.projects[owner+"/"+name] = &fakeProject{}
+				h.gh.addRepo(owner, name)
+				p := h.cc.addApp(owner, name)
+				p.definitions[1].triggers[0].Disabled = true
 			},
-			wantCheck: VerdictDrift, wantChange: "enable setup workflows; create a deploy key",
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIPipelineMissing, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				f := res.Step(StepCircleCI).Findings[0]
+				require.Contains(t, f.Fix, "devctl repo follow-circleci "+owner+"/"+name)
+				require.NotContains(t, f.Fix, "--migrate")
+				require.Empty(t, h.cc.mutations)
+			},
 		},
 		{
-			name: "circleci: a renamed repository is followed under its new slug", step: StepCircleCI,
+			// A GitHub App definition without any trigger starts no pipeline.
+			name: "circleci: a GitHub App definition without a trigger is no pipeline", step: StepCircleCI,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name)
+				h.cc.project(owner, name).addDefinition("build", circleciclient.ProviderGitHubApp, nil)
+			},
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIPipelineMissing, wantAfter: VerdictReported,
+		},
+		{
+			// CircleCI knows no project: nothing builds the repository. The
+			// step reports and never follows (the fake would record the POST).
+			name: "circleci: no CircleCI project is reported and never followed", step: StepCircleCI,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name) },
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIPipelineMissing, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				sr := res.Step(StepCircleCI)
+				require.Equal(t, "no CircleCI project", sr.Summary)
+				require.Contains(t, sr.Findings[0].Fix, "devctl repo follow-circleci "+owner+"/"+name)
+				require.NotContains(t, sr.Findings[0].Fix, "--migrate")
+				require.Empty(t, h.cc.projects, "no project is created")
+				require.Empty(t, h.cc.mutations)
+				require.Empty(t, h.mutations(), "no grant, no deploy key, no setting")
+			},
+		},
+		{
+			// A renamed repository: CircleCI keeps the project under the new
+			// slug, which is the one the step reads.
+			name: "circleci: a renamed repository is read under its new slug", step: StepCircleCI,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name+"-v2")
 				h.gh.redirects[owner+"/"+name] = owner + "/" + name + "-v2"
+				h.cc.addApp(owner, name+"-v2")
 			},
-			wantCheck: VerdictDrift, wantChange: "follow giantswarm/sample-service-v2 under its new slug (declared as sample-service)",
-			verify: func(t *testing.T, h *harness, _ *Result) {
-				require.Contains(t, h.cc.projects, owner+"/"+name+"-v2")
-				require.NotContains(t, h.cc.projects, owner+"/"+name)
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "GitHub App pipeline build", res.Step(StepCircleCI).Summary)
+			},
+		},
+		{
+			// The reconciler holds no CircleCI client: the statuses of the
+			// default branch's head say who builds. The App's login is a
+			// GitHub App pipeline.
+			name: "circleci: without a client, App statuses on the default branch read ok", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.addStatus("main", "go-build", "success", "wf-1", CircleCIAppLogin, time.Now().Add(-time.Hour))
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "CircleCI statuses on main from "+CircleCIAppLogin+": GitHub App pipeline", res.Step(StepCircleCI).Summary)
+				require.Empty(t, res.Findings())
+				require.Zero(t, h.runner.CircleCIRequests.Count(), "no CircleCI request")
+			},
+		},
+		{
+			// Statuses posted by a person are an OAuth follow's: it stops
+			// building when that person leaves. The fix migrates.
+			name: "circleci: without a client, statuses posted by a person are an OAuth follow", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.addStatus("main", "go-build", "success", "wf-1", "alice", time.Now().Add(-time.Hour))
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIOAuthFollow, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				sr := res.Step(StepCircleCI)
+				require.Equal(t, "OAuth follow, no GitHub App pipeline", sr.Summary)
+				require.Contains(t, sr.Findings[0].Message, "alice")
+				require.Contains(t, sr.Findings[0].Fix, "devctl repo follow-circleci "+owner+"/"+name+" --migrate")
+				require.True(t, sr.Converges(), "advisory")
+				require.Empty(t, h.mutations())
+			},
+		},
+		{
+			// The App and a person both post on the head: two pipelines build
+			// every push. The advisory finding names the migration.
+			name: "circleci: without a client, statuses from the App and a person are an advisory double build", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.addStatus("main", "go-build", "success", "wf-1", "alice", time.Now().Add(-time.Hour))
+				r.addStatus("main", "go-build", "success", "wf-2", CircleCIAppLogin, time.Now().Add(-time.Hour))
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIOAuthFollow, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				sr := res.Step(StepCircleCI)
+				require.Contains(t, sr.Findings[0].Message, "every push builds twice")
+				require.Contains(t, sr.Findings[0].Fix, "--migrate")
+				require.True(t, sr.Converges())
+			},
+		},
+		{
+			// The head was pushed seconds ago (or skips CI) and carries no
+			// status yet; the commit before it does, from the App: ok.
+			name: "circleci: without a client, the App's statuses on a recent commit before the head read ok", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.history = []*github.RepositoryCommit{{SHA: new("older")}}
+				r.addStatus("older", "go-build", "success", "wf-1", CircleCIAppLogin, time.Now().Add(-time.Hour))
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Contains(t, res.Step(StepCircleCI).Summary, "GitHub App pipeline")
+			},
+		},
+		{
+			// A pipeline that ignores the default branch builds the release
+			// tags and the pull requests' branches only (envoy-gateway-app,
+			// ingress-nginx-app): the latest release's tag carries the
+			// statuses, an OAuth follow's. Advisory, not a missing pipeline.
+			name: "circleci: without a client, a pipeline that skips the default branch is read on the latest release", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "v1.2.0", time.Now().Add(-time.Hour)
+				r.addStatus("v1.2.0", "push-to-registries", "success", "job-4", "taylorbot", time.Now().Add(-time.Hour))
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIOAuthFollow, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				sr := res.Step(StepCircleCI)
+				require.Contains(t, sr.Findings[0].Message, "on the latest release v1.2.0 come from taylorbot")
+				require.True(t, sr.Converges())
+			},
+		},
+		{
+			// No release yet: the head of the last merged pull request carries
+			// the App pipeline's statuses.
+			name: "circleci: without a client, a pipeline that skips the default branch is read on a merged pull request", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				merged := github.Timestamp{Time: time.Now().Add(-time.Hour)}
+				r.merged = append(r.merged, &github.PullRequest{Number: new(12), State: new("closed"), MergedAt: &merged, Head: &github.PullRequestBranch{Ref: new("feature"), SHA: new("pr-head")}})
+				r.addStatus("pr-head", "go-build", "success", "wf-pr", CircleCIAppLogin, merged.Time)
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "CircleCI statuses on the head of the merged pull request #12 from circleci-app[bot]: GitHub App pipeline", res.Step(StepCircleCI).Summary)
+			},
+		},
+		{
+			// GitHub lists closed pull requests by their last update: a comment
+			// on a pull request merged long ago, built by a departed OAuth
+			// follower, lists it first. The newest merges are read first, so
+			// the App pipeline's statuses decide.
+			name: "circleci: without a client, merged pull requests are read by merge time, not by update", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				old := github.Timestamp{Time: time.Now().Add(-60 * 24 * time.Hour)}
+				recent := github.Timestamp{Time: time.Now().Add(-2 * time.Hour)}
+				r.merged = append(r.merged,
+					&github.PullRequest{Number: new(3), State: new("closed"), MergedAt: &old, Head: &github.PullRequestBranch{Ref: new("old"), SHA: new("old-head")}},
+					&github.PullRequest{Number: new(40), State: new("closed"), MergedAt: &recent, Head: &github.PullRequestBranch{Ref: new("new"), SHA: new("new-head")}},
+				)
+				r.addStatus("old-head", "go-build", "success", "job-1", "alice", old.Time)
+				r.addStatus("new-head", "go-build", "success", "wf-new", CircleCIAppLogin, recent.Time)
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "CircleCI statuses on the head of the merged pull request #40 from circleci-app[bot]: GitHub App pipeline", res.Step(StepCircleCI).Summary)
+			},
+		},
+		{
+			// A quiet repository whose pipeline ignores the default branch:
+			// nothing merged or released for months, its last pull request
+			// built by the App. No age limit: it reads as built. A pull request
+			// into another branch counts for nothing.
+			name: "circleci: without a client, a quiet repository's old merged pull request still counts", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				long := github.Timestamp{Time: time.Now().Add(-200 * 24 * time.Hour)}
+				r.merged = append(r.merged,
+					&github.PullRequest{Number: new(9), State: new("closed"), MergedAt: &long, Base: &github.PullRequestBranch{Ref: new("release-1.x")}, Head: &github.PullRequestBranch{Ref: new("y"), SHA: new("other-base")}},
+					&github.PullRequest{Number: new(5), State: new("closed"), MergedAt: &long, Base: &github.PullRequestBranch{Ref: new("main")}, Head: &github.PullRequestBranch{Ref: new("x"), SHA: new("x-head")}},
+				)
+				r.addStatus("other-base", "go-build", "failure", "job-2", "alice", long.Time)
+				r.addStatus("x-head", "go-build", "success", "wf-x", CircleCIAppLogin, long.Time)
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "CircleCI statuses on the head of the merged pull request #5 from circleci-app[bot]: GitHub App pipeline", res.Step(StepCircleCI).Summary)
+			},
+		},
+		{
+			// The last release was built by an OAuth follower who has left;
+			// the repository moved to the App pipeline since, and its newer
+			// merged pull request carries the App's statuses: the newest of
+			// release and pull requests is read first, so it reads as built.
+			name: "circleci: without a client, a merged pull request newer than the release is read first", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "v1.0.0", time.Now().Add(-120*24*time.Hour)
+				r.addStatus("v1.0.0", "go-build", "success", "job-9", "alice", r.releaseAt)
+				recent := github.Timestamp{Time: time.Now().Add(-24 * time.Hour)}
+				r.merged = append(r.merged, &github.PullRequest{Number: new(77), State: new("closed"), MergedAt: &recent, Head: &github.PullRequestBranch{Ref: new("z"), SHA: new("z-head")}})
+				r.addStatus("z-head", "go-build", "success", "wf-z", CircleCIAppLogin, recent.Time)
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "CircleCI statuses on the head of the merged pull request #77 from circleci-app[bot]: GitHub App pipeline", res.Step(StepCircleCI).Summary)
+			},
+		},
+		{
+			// The release's statuses are refused (403) and nothing else
+			// carries any: unchecked, naming the refused read, not failed.
+			name: "circleci: without a client, refused statuses of the release are unchecked, not a failed step", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt = "v2.0.0", time.Now().Add(-time.Hour)
+				r.refStatusesStatus = map[string]int{"v2.0.0": http.StatusForbidden}
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictReported, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				f := res.Step(StepCircleCI).Findings[0]
+				read, refused, _ := strings.Cut(f.Message, "and GitHub refused")
+				require.NotContains(t, read, "v2.0.0", "the refused release is not named as read")
+				require.Contains(t, refused, "the statuses of the latest release v2.0.0")
+				require.Contains(t, f.Fix, "statuses: read")
+			},
+		},
+		{
+			// An identity without pull-request read is answered 403 on the
+			// list: the step reports what it read and what it could not, as
+			// unchecked, not as a missing pipeline, and does not fail.
+			name: "circleci: without a client, an unreadable pull request list is unchecked, not a missing pipeline", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.pullsStatus = http.StatusForbidden
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictReported, wantFinding: FindingUnchecked, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				f := res.Step(StepCircleCI).Findings[0]
+				require.Contains(t, f.Message, "GitHub refused the pull requests")
+				require.NotContains(t, f.Message, "heads of the last")
+			},
+		},
+		{
+			// Neither the App nor a person posted a CircleCI status on the
+			// head; another system's status is no CircleCI status.
+			name: "circleci: without a client, no CircleCI status on the head is a missing pipeline", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.refStatuses = map[string][]fakeStatus{"main": {{context: "semantic-pull-request", state: "success", creator: "alice", at: time.Now()}}}
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIPipelineMissing, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				sr := res.Step(StepCircleCI)
+				require.Equal(t, "no CircleCI status on the head of main, the head of a pull request merged into main", sr.Summary)
+				require.Contains(t, sr.Findings[0].Fix, "devctl repo follow-circleci "+owner+"/"+name)
+				require.NotContains(t, sr.Findings[0].Fix, "--migrate")
+				require.Empty(t, h.mutations())
 			},
 		},
 		{
 			// A configuration repository, or one released by GitHub Actions,
 			// has no .circleci/config.yml and declares no generated pipeline:
-			// CircleCI has nothing to build, so the repository is neither
-			// followed nor given a key, and its release is not held against
-			// a pipeline. A project followed by hand is left as it is.
-			name: "circleci: a repository without a pipeline is not followed, its release not verified", step: StepCircleCI,
+			// CircleCI has nothing to build, so neither step reads CircleCI
+			// or reports a missing pipeline or tag build.
+			name: "circleci: a repository without a pipeline is not read, its release not verified", step: StepCircleCI,
 			entry: configurationEntryYAML,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
@@ -1353,29 +1811,24 @@ func TestSteps(t *testing.T) {
 			},
 			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
 			verify: func(t *testing.T, h *harness, _ *Result) {
-				require.NotContains(t, h.cc.projects, owner+"/"+name)
 				config := "/repos/" + owner + "/" + name + "/contents/" + circleCIConfig
 				before := h.gh.reads(config)
 				res := h.run(ModeCheck, false, StepCircleCI, StepRelease)
 				for _, step := range []Step{StepCircleCI, StepRelease} {
 					require.Equal(t, VerdictSkipped, res.Step(step).Verdict, "%s: %+v", step, res.Step(step))
 					require.Equal(t, "no CircleCI pipeline", res.Step(step).Summary)
+					require.Empty(t, res.Step(step).Findings)
 				}
 				require.Equal(t, before+1, h.gh.reads(config), "one read of the branch serves both steps")
-
-				h.cc.projects[owner+"/"+name] = &fakeProject{} // followed by hand, no setup workflows, no key
-				res = h.run(ModeRepair, false, StepCircleCI, StepRelease)
-				require.Equal(t, VerdictSkipped, res.Step(StepCircleCI).Verdict, "%+v", res.Step(StepCircleCI))
-				require.Equal(t, VerdictSkipped, res.Step(StepRelease).Verdict, "%+v", res.Step(StepRelease))
-				require.Empty(t, h.mutations(), "a followed project of a repository without a pipeline is left as it is")
+				require.Empty(t, h.mutations())
 			},
 		},
 		{
 			// A template repository's .circleci/config.yml is content for the
-			// repositories created from it (gen.ci.templateContent): the branch
-			// carries the file, yet CircleCI has nothing to build, so the
-			// repository is neither followed nor given a key, its release is
-			// not held against a pipeline, and the branch is not read.
+			// repositories created from it (gen.ci.templateContent): the
+			// branch carries the file, yet CircleCI has nothing to build, so
+			// no pipeline is looked for, its release is not held against a
+			// build, and the branch is not read.
 			name: "circleci: template content is no pipeline, whatever the branch carries", step: StepCircleCI, existing: true,
 			entry: templateContentEntryYAML,
 			seed: func(h *harness) {
@@ -1384,7 +1837,6 @@ func TestSteps(t *testing.T) {
 			},
 			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
 			verify: func(t *testing.T, h *harness, _ *Result) {
-				require.NotContains(t, h.cc.projects, owner+"/"+name)
 				res := h.run(ModeCheck, false, StepCircleCI, StepRelease)
 				for _, step := range []Step{StepCircleCI, StepRelease} {
 					require.Equal(t, VerdictSkipped, res.Step(step).Verdict, "%s: %+v", step, res.Step(step))
@@ -1396,31 +1848,60 @@ func TestSteps(t *testing.T) {
 		},
 		{
 			// On a first creation the generated pipeline is not on the branch
-			// yet: the entry declares it (gen.ci.generate: true, the default
-			// the validator renders for a service with a CI job), and the
-			// follow neither waits for the scaffold's commit nor reads the
-			// branch.
-			name: "circleci: a generated pipeline is followed before its config is on the branch", step: StepCircleCI,
+			// yet: the entry declares it (gen.ci.generate: true), so the step
+			// checks for it without reading the branch. Nothing is created:
+			// the pipeline is a person's `devctl repo follow-circleci`.
+			name: "circleci: a generated pipeline is looked for before its config is on the branch", step: StepCircleCI,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				delete(r.files, ".circleci/config.yml")
 				delete(r.files, ".circleci/workflows.yml")
 			},
-			wantCheck: VerdictDrift, wantChange: "follow giantswarm/sample-service; enable setup workflows; create a deploy key",
-			verify: func(t *testing.T, h *harness, _ *Result) {
-				require.Contains(t, h.cc.projects, owner+"/"+name)
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIPipelineMissing, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "no CircleCI project", res.Step(StepCircleCI).Summary)
 				require.Zero(t, h.gh.reads("/repos/"+owner+"/"+name+"/contents/"+circleCIConfig), "a declared pipeline is not looked up")
+				require.Empty(t, h.cc.mutations)
+			},
+		},
+		{
+			// Generated CI without a CircleCI job is GitHub Actions only:
+			// gen.ci.generate: true declares no pipeline the CircleCI
+			// generator writes, so the branch decides, and a branch without
+			// .circleci/config.yml has none. Neither step reads CircleCI, and
+			// a project that exists is left as it is.
+			name: "circleci: generated CI without a CircleCI job is no pipeline", step: StepCircleCI, existing: true,
+			entry: actionsOnlyEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				delete(r.files, ".circleci/config.yml")
+				delete(r.files, ".circleci/workflows.yml")
+				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				res := h.run(ModeCheck, false, StepCircleCI, StepRelease)
+				for _, step := range []Step{StepCircleCI, StepRelease} {
+					require.Equal(t, VerdictSkipped, res.Step(step).Verdict, "%s: %+v", step, res.Step(step))
+					require.Equal(t, "no CircleCI pipeline", res.Step(step).Summary)
+					require.Empty(t, res.Step(step).Changes, "%s plans nothing", step)
+				}
+				require.Empty(t, res.Step(StepRelease).Findings, "a release CircleCI never built is no missed tag build")
+
+				h.cc.addOAuth(owner, name) // a project followed earlier
+				res = h.run(ModeRepair, false, StepCircleCI, StepRelease)
+				require.Equal(t, VerdictSkipped, res.Step(StepCircleCI).Verdict, "%+v", res.Step(StepCircleCI))
+				require.Empty(t, h.mutations(), "a project of a repository without a pipeline is left as it is")
 			},
 		},
 		{
 			// The reconciler validates a declared repository's entry as an
 			// existing one, rendered as declared: an entry with gen and no
-			// gen.ci does not get the creation default gen.ci.generate: true
-			// — the schema's word is that it keeps the repository's own
-			// CircleCI configuration — so the branch decides. A repository
-			// released by GitHub Actions has no .circleci/config.yml there:
-			// it is neither followed nor given a key, and its release is not
-			// held against a tag build CircleCI never ran.
+			// gen.ci does not get the creation default gen.ci.generate: true,
+			// so the branch decides. A repository released by GitHub Actions
+			// has no .circleci/config.yml there: no pipeline is looked for,
+			// and its release is not held against a tag build CircleCI never
+			// ran.
 			name: "circleci: an existing entry without gen.ci and without a config on the branch has no pipeline", step: StepCircleCI, existing: true,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
@@ -1431,7 +1912,6 @@ func TestSteps(t *testing.T) {
 			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				require.NotContains(t, h.entry.Rendered, "generate:", "an existing entry is rendered as declared")
-				require.NotContains(t, h.cc.projects, owner+"/"+name)
 				res := h.run(ModeCheck, false, StepCircleCI, StepRelease)
 				for _, step := range []Step{StepCircleCI, StepRelease} {
 					require.Equal(t, VerdictSkipped, res.Step(step).Verdict, "%s: %+v", step, res.Step(step))
@@ -1442,12 +1922,15 @@ func TestSteps(t *testing.T) {
 		},
 		{
 			// The same entry over a hand-maintained .circleci/config.yml: the
-			// branch says there is a pipeline, and the step keeps it followed.
-			name: "circleci: an existing entry without gen.ci follows the pipeline the branch carries", step: StepCircleCI, existing: true,
-			seed:      func(h *harness) { h.gh.addRepo(owner, name) },
-			wantCheck: VerdictDrift, wantChange: "follow giantswarm/sample-service; enable setup workflows; create a deploy key",
+			// branch says there is a pipeline, and the step looks for the
+			// project's App pipeline.
+			name: "circleci: an existing entry without gen.ci checks the pipeline the branch carries", step: StepCircleCI, existing: true,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name)
+				h.cc.addApp(owner, name)
+			},
+			wantCheck: VerdictOK,
 			verify: func(t *testing.T, h *harness, _ *Result) {
-				require.Contains(t, h.cc.projects, owner+"/"+name)
 				require.Equal(t, 2, h.gh.reads("/repos/"+owner+"/"+name+"/contents/"+circleCIConfig), "the branch is read once per run: the check and the repair")
 			},
 		},
@@ -1554,6 +2037,42 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
+			name: "renovate: false without a configuration is ok, and no trace is read", step: StepRenovate, entry: renovateFalseEntryYAML,
+			seed: func(h *harness) {
+				delete(h.gh.addRepo(owner, name).files, "renovate.json5")
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "renovate: false; no Renovate configuration", res.Step(StepRenovate).Summary)
+				require.Empty(t, res.Findings())
+			},
+		},
+		{
+			name: "renovate: false with a configuration that disables Renovate is ok", step: StepRenovate, entry: renovateFalseEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).files["renovate.json5"] = "{\n  enabled: false,\n}\n"
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "renovate: false; renovate.json5 disables Renovate", res.Step(StepRenovate).Summary)
+			},
+		},
+		{
+			name: "renovate: false with a configuration that keeps Renovate on is reported", step: StepRenovate, entry: renovateFalseEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).addIssue(renovateLogin, "Dependency Dashboard", false)
+				h.gh.installation.status = 403
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRenovateDeclaredOff, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				f := res.Findings()[0]
+				require.Contains(t, f.Message, "declares renovate: false, but renovate.json5 keeps Renovate on")
+				require.Contains(t, f.Fix, "delete renovate.json5")
+			},
+		},
+		{
 			name: "renovate: the installation's list is detail when the token reads it, never the verdict", step: StepRenovate,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)
@@ -1657,45 +2176,114 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			// CircleCI's deploy key goes on GitHub — CircleCI's own way to
-			// stop a project it refuses to stop for a renamed repository — and
-			// its webhook stays, a hook the reconciler cannot delete and an
-			// archived repository sends nothing through.
-			name: "lifecycle: archived unfollows on CircleCI and deletes CircleCI's deploy key, then archives on GitHub", step: StepLifecycle, entry: archivedEntryYAML,
+			name: "metadata: the topics follow the declaration, whatever their order on GitHub", step: StepMetadata,
+			entry: entryYAML + "  topics: [agentlab, fixture]\n",
 			seed: func(h *harness) {
-				h.gh.addRepo(owner, name)
-				h.cc.follow(owner, name)
+				seedMetadata(h, []string{"stale"})
 			},
-			wantCheck: VerdictDrift, wantChange: "unfollow on CircleCI; delete CircleCI's deploy key 164277013; archive on GitHub",
+			wantCheck: VerdictDrift, wantChange: "topics [stale] → [agentlab, fixture]",
 			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Equal(t, []string{"agentlab", "fixture"}, h.repo().topics)
+			},
+		},
+		{
+			name: "metadata: topics declared in another order are as declared", step: StepMetadata,
+			entry: entryYAML + "  topics: [fixture, agentlab]\n",
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"agentlab", "fixture"})
+			},
+			wantCheck: VerdictOK,
+		},
+		{
+			name: "metadata: an empty topics list removes every topic", step: StepMetadata,
+			entry: entryYAML + "  topics: []\n",
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"stale"})
+			},
+			wantCheck: VerdictDrift, wantChange: "topics [stale] → []",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Empty(t, h.repo().topics)
+			},
+		},
+		{
+			name: "metadata: an entry without topics leaves them alone", step: StepMetadata,
+			seed: func(h *harness) {
+				seedMetadata(h, []string{"kept"})
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Equal(t, []string{"kept"}, h.repo().topics)
+			},
+		},
+		{
+			name: "labels: a missing owning-team label is created in the default colour", step: StepLabels,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).labels = map[string]*github.Label{}
+			},
+			wantCheck: VerdictDrift, wantChange: "create the label team/bumblebee (#ededed)",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				l := h.repo().labels["team/bumblebee"]
+				require.NotNil(t, l)
+				require.Equal(t, DefaultLabelColor, l.Color)
+				require.Empty(t, l.GetDescription())
+			},
+		},
+		{
+			name: "labels: an existing owning-team label is left as it is, whatever its case, colour and description", step: StepLabels,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).labels = map[string]*github.Label{
+					"team/bumblebee": {Name: "Team/Bumblebee", Color: "1D76DB", Description: new("Team Bumblebee")},
+				}
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "has team/bumblebee", res.Step(StepLabels).Summary)
+				require.Equal(t, "1D76DB", h.repo().labels["team/bumblebee"].Color)
+				require.Empty(t, h.mutations())
+			},
+		},
+		{
+			// CircleCI's deploy key goes on GitHub — CircleCI's own way to
+			// stop an OAuth project it refuses to stop for a renamed
+			// repository — and its webhook stays, a hook an archived
+			// repository sends nothing through. The engine holds no CircleCI
+			// identity: it unfollows nothing and makes no CircleCI request.
+			name: "lifecycle: archived deletes CircleCI's deploy key on GitHub, then archives, with no CircleCI request", step: StepLifecycle, entry: archivedEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.deployKeys = []*github.Key{circleCIDeployKey()}
+				r.hooks = []*github.Hook{{ID: new(int64(683979223)), Name: new("web"), Active: new(true), Events: []string{"push"}, Config: &github.HookConfig{URL: new("https://circleci.com/hooks/github")}}}
+				h.cc.addOAuth(owner, name)
+			},
+			wantCheck: VerdictDrift, wantChange: "delete CircleCI's deploy key 164277013; archive on GitHub",
+			verify: func(t *testing.T, h *harness, repair *Result) {
+				require.Equal(t, []string{"delete CircleCI's deploy key 164277013", "archive on GitHub"}, repair.Step(StepLifecycle).Changes, "no unfollow")
+				require.Equal(t, "archived", repair.Step(StepLifecycle).Summary)
 				require.True(t, h.repo().archived)
 				require.Empty(t, h.repo().deployKeys, "CircleCI can no longer check the repository out")
 				require.Len(t, h.repo().hooks, 1, "the webhook stays")
-				p := h.cc.projects[owner+"/"+name]
-				require.NotNil(t, p, "the project stays on CircleCI, as it does live")
-				require.False(t, p.following, "the token's user unfollowed")
+				require.Empty(t, h.cc.mutations, "the project is left as it is on CircleCI")
+				require.Zero(t, h.runner.CircleCIRequests.Count(), "no CircleCI request at all")
 			},
 		},
 		{
 			// The case of devctl#2409: CircleCI refused "stop building" for a
-			// renamed repository even from an admin. The step asks CircleCI
-			// for the unfollow alone, which any follower may make, under the
-			// new slug, where CircleCI keeps the project after a rename; the
-			// push-only identity needs no admin grant.
-			name: "lifecycle: a renamed repository archived by a push-only identity is left by CircleCI without an admin grant", step: StepLifecycle, entry: archivedEntryYAML,
+			// renamed repository even from an admin. The key goes under the
+			// repository's new slug on GitHub; the push-only identity needs
+			// no admin grant and CircleCI is not asked anything.
+			name: "lifecycle: a renamed repository archived by a push-only identity loses CircleCI's deploy key without an admin grant", step: StepLifecycle, entry: archivedEntryYAML,
 			seed: func(h *harness) {
-				h.gh.addRepo(owner, name+"-v2")
+				r := h.gh.addRepo(owner, name+"-v2")
 				h.gh.redirects[owner+"/"+name] = owner + "/" + name + "-v2"
 				h.gh.permission = "write"
-				h.cc.follow(owner, name+"-v2")
+				r.deployKeys = []*github.Key{circleCIDeployKey()}
 			},
-			wantCheck: VerdictDrift, wantChange: "unfollow on CircleCI; delete CircleCI's deploy key 164277013; archive on GitHub",
+			wantCheck: VerdictDrift, wantChange: "delete CircleCI's deploy key 164277013; archive on GitHub",
 			verify: func(t *testing.T, h *harness, _ *Result) {
 				r := h.gh.repos[owner+"/"+name+"-v2"]
 				require.True(t, r.archived)
 				require.Empty(t, r.deployKeys)
-				require.False(t, h.cc.projects[owner+"/"+name+"-v2"].following, "the token's user unfollowed the project CircleCI knows")
-				require.Equal(t, []string{"POST /api/v1.1/project/github/giantswarm/sample-service-v2/unfollow"}, h.cc.mutations, "CircleCI is asked for the unfollow alone")
+				require.Empty(t, h.cc.mutations, "CircleCI is asked nothing")
 				require.Equal(t, []string{
 					"DELETE /repos/giantswarm/sample-service-v2/keys/164277013",
 					"PATCH /repos/giantswarm/sample-service-v2",
@@ -1703,12 +2291,13 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			// An archive left half done — archived, unfollowed, CircleCI's key
-			// still on the repository — is finished on the next run.
+			// An archive left half done — archived, CircleCI's key still on
+			// the repository — is finished on the next run.
 			name: "lifecycle: an archived repository still carrying CircleCI's deploy key loses it", step: StepLifecycle, entry: archivedEntryYAML,
 			seed: func(h *harness) {
-				h.gh.addRepo(owner, name).archived = true
-				h.cc.follow(owner, name).following = false
+				r := h.gh.addRepo(owner, name)
+				r.archived = true
+				r.deployKeys = []*github.Key{circleCIDeployKey()}
 			},
 			wantCheck: VerdictDrift, wantChange: "delete CircleCI's deploy key 164277013",
 			verify: func(t *testing.T, h *harness, _ *Result) {
@@ -1723,27 +2312,51 @@ func TestSteps(t *testing.T) {
 				r := h.gh.addRepo(owner, name)
 				r.archived = true
 				r.deployKeys = []*github.Key{{ID: new(int64(7)), Title: new("argocd"), ReadOnly: new(true)}}
-				h.cc.projects[owner+"/"+name] = &fakeProject{} // set up by someone else, or unfollowed by an earlier run
 			},
 			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, repair *Result) {
+				require.Equal(t, "archived", repair.Step(StepLifecycle).Summary, "no note about CircleCI")
+				require.Len(t, h.repo().deployKeys, 1)
+			},
 		},
 		{
-			name: "lifecycle: deleted unfollows on CircleCI and deletes on GitHub, without an admin grant; the next run finds the record", step: StepLifecycle, entry: deletedEntryYAML,
+			// An identity without the administration permission reads no
+			// deploy keys (404 to a user, 403 to an App): the archive goes
+			// on, and whether CircleCI's key is still there is reported as
+			// unchecked, for an identity that reads the keys.
+			name: "lifecycle: deploy keys the identity cannot read are unchecked, the archive proceeds", step: StepLifecycle, entry: archivedEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.deployKeys = []*github.Key{circleCIDeployKey()}
+				r.keysStatus = 403
+			},
+			wantCheck: VerdictDrift, wantChange: "archive on GitHub", wantFinding: FindingUnchecked,
+			wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, repair *Result) {
+				require.True(t, h.repo().archived)
+				require.Equal(t, []string{"archive on GitHub"}, repair.Step(StepLifecycle).Changes)
+				require.Equal(t, []FindingKind{FindingUnchecked}, kinds(repair.Findings()))
+				require.Contains(t, repair.Findings()[0].Message, "CircleCI's deploy key")
+				require.Equal(t, []string{"PATCH /repos/giantswarm/sample-service"}, h.gh.mutations)
+			},
+		},
+		{
+			name: "lifecycle: deleted deletes on GitHub alone, without an admin grant or a CircleCI request; the next run finds the record", step: StepLifecycle, entry: deletedEntryYAML,
 			seed: func(h *harness) {
 				h.gh.addRepo(owner, name)
 				h.gh.permission = "write"
-				h.cc.follow(owner, name)
+				h.cc.addApp(owner, name)
 			},
-			wantCheck: VerdictDrift, wantChange: "unfollow on CircleCI; delete on GitHub",
+			wantCheck: VerdictDrift, wantChange: "delete on GitHub",
 			// The second repair finds no repository: the create step reads the
 			// declaration as the record and the lifecycle step is skipped on it.
 			wantAfter: VerdictSkipped,
 			verify: func(t *testing.T, h *harness, repair *Result) {
 				_, exists := h.gh.repos[owner+"/"+name]
 				require.False(t, exists, "deleted on GitHub")
-				p := h.cc.projects[owner+"/"+name]
-				require.NotNil(t, p, "the project stays on CircleCI, as it does live")
-				require.False(t, p.following, "the token's user unfollowed")
+				require.Equal(t, []string{"delete on GitHub"}, repair.Step(StepLifecycle).Changes, "no unfollow")
+				require.Empty(t, h.cc.mutations, "the project stays on CircleCI untouched")
+				require.Zero(t, h.runner.CircleCIRequests.Count(), "no CircleCI request at all")
 				require.Equal(t, []string{"DELETE /repos/giantswarm/sample-service"}, h.gh.mutations, "no admin grant, no key deleted before the repository")
 				require.Equal(t, "deleted", repair.Step(StepLifecycle).Summary)
 			},
@@ -1757,6 +2370,39 @@ func TestSteps(t *testing.T) {
 			name: "lifecycle: archived on GitHub without the lifecycle is reported", step: StepLifecycle,
 			seed:      func(h *harness) { h.gh.addRepo(owner, name).archived = true },
 			wantCheck: VerdictReported, wantFinding: FindingArchivedUndeclared, wantAfter: VerdictReported,
+		},
+		{
+			// The way back: the change took lifecycle: archived from the entry.
+			name: "lifecycle: a change that took lifecycle: archived from the entry unarchives the repository", step: StepLifecycle, unarchived: true,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).archived = true },
+			wantCheck: VerdictDrift, wantChange: "unarchive on GitHub",
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.False(t, h.repo().archived)
+				require.Equal(t, []string{"PATCH /repos/giantswarm/sample-service"}, h.gh.mutations)
+			},
+		},
+		{
+			name: "lifecycle: an entry declared archived is archived, whatever the change says", step: StepLifecycle, entry: archivedEntryYAML, unarchived: true,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).archived = true },
+			wantCheck: VerdictOK,
+		},
+		{
+			name: "lifecycle: archiving reports the pull requests still open", step: StepLifecycle, entry: archivedEntryYAML,
+			seed: func(h *harness) {
+				h.gh.addRepo(owner, name).prs = []*github.PullRequest{
+					{Number: new(7), State: new("open"), Head: &github.PullRequestBranch{Ref: new("feature")}},
+					{Number: new(9), State: new("open"), Head: &github.PullRequestBranch{Ref: new("renovate/x")}},
+				}
+			},
+			wantCheck: VerdictDrift, wantChange: "archive on GitHub", wantFinding: FindingOpenPullRequests,
+			verify: func(t *testing.T, h *harness, repair *Result) {
+				require.True(t, h.repo().archived)
+				sr := repair.Step(StepLifecycle)
+				require.Len(t, sr.Findings, 1)
+				require.Contains(t, sr.Findings[0].Message, "#7, #9")
+				require.Contains(t, sr.Findings[0].Fix, "devctl repo update sample-service --unset lifecycle")
+				require.True(t, sr.Converges(), "the finding is advisory: the archive is done as declared")
+			},
 		},
 		{
 			name: "catalog: a missing component dispatches the regeneration", step: StepCatalog,
@@ -1919,51 +2565,226 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			// Outside a creation the reconciler never rebuilds a tag: a
-			// trigger would publish a chart or an image nobody asked for.
-			// The missed build is a finding in every mode and no request is
-			// written.
-			name: "release: a tag without a pipeline is a missed build, reported and never triggered", step: StepRelease,
+			// The release step reads GitHub statuses of the tag's commit and
+			// never CircleCI. A tag whose commit carries no status of a build
+			// started after the release, beyond the grace, is a missed
+			// build: reported in every mode, never triggered.
+			name: "release: a tag without a build is a missed build, reported and never triggered", step: StepRelease,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
-				h.cc.follow(owner, name)
 			},
 			wantCheck: VerdictReported, wantFinding: FindingMissedTagBuild, wantAfter: VerdictReported,
 			verify: func(t *testing.T, h *harness, res *Result) {
 				f := res.Findings()[0]
-				require.Equal(t, "release v0.1.0 of "+owner+"/"+name+" has no pipeline: nothing was built or published for the tag", f.Message)
-				require.Equal(t, "cut the next tag, or trigger the tag's pipeline by hand", f.Fix)
+				require.Equal(t, "release v0.1.0 of "+owner+"/"+name+" carries no CircleCI status of a build started after the release: nothing was built or published for the tag", f.Message)
+				require.Contains(t, f.Fix, "`devctl repo follow-circleci "+owner+"/"+name+"`")
+				require.Equal(t, "release v0.1.0: no tag build", res.Step(StepRelease).Summary)
 				require.Empty(t, h.cc.mutations, "no pipeline is triggered")
-				require.Empty(t, h.cc.projects[owner+"/"+name].pipelines)
+				require.Zero(t, h.runner.CircleCIRequests.Count(), "the release step reads GitHub, not CircleCI")
 			},
 		},
 		{
-			name: "release: a red tag pipeline is reported, the fix a rerun from failed", step: StepRelease,
+			// CircleCI posts the first status within seconds of the tag push:
+			// a release published half a minute ago may simply not have one
+			// yet, which is neither a finding nor a build.
+			name: "release: a tag published within the grace without a status yet reports nothing", step: StepRelease,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
-				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
-				h.cc.addPipeline(h.cc.follow(owner, name), "v0.1.0", "failed")
+				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-30*time.Second)
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, res.Findings())
+				require.Regexp(t, `^release v0\.1\.0: published \d+s ago, no status of its build yet$`, res.Step(StepRelease).Summary)
+				require.Empty(t, h.cc.mutations)
+			},
+		},
+		{
+			// The creation's first release (the scaffold's tag) is no
+			// different: no tag build after the grace is reported as missed,
+			// whatever the change, and nothing is triggered.
+			name: "release: the scaffold tag of a creation without a build is reported, never triggered", step: StepRelease, added: true,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.release, r.releaseAt, r.releaseSubject = "v0.1.0", time.Now().Add(-time.Hour), scaffoldSubject
+			},
+			wantCheck: VerdictReported, wantFinding: FindingMissedTagBuild, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Empty(t, h.cc.mutations, "no pipeline is triggered")
+				require.Empty(t, h.mutations())
+			},
+		},
+		{
+			name: "release: a green tag build reads built", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				published := time.Now().Add(-time.Hour)
+				r.release, r.releaseAt = "v0.1.0", published
+				r.addTagBuild("v0.1.0", "wf-tag", published, jobState{"go-build", "success"}, jobState{"push-to-registries-release", "success"})
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "release v0.1.0 built: go-build, push-to-registries-release succeeded", res.Step(StepRelease).Summary)
+				require.Empty(t, res.Findings())
+				require.Empty(t, h.cc.mutations)
+			},
+		},
+		{
+			// A tag commit built by an OAuth follow alone: its statuses name
+			// jobs, not workflows, so a late branch job cannot be told from
+			// the tag's. Skipped, not verified, and no finding of its own.
+			name: "release: a tag built by an OAuth follow is not verified from statuses", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				published := time.Now().Add(-time.Hour)
+				r.release, r.releaseAt = "v0.1.0", published
+				r.addStatus("v0.1.0", "go-build", "failure", "job-12", "alice", published.Add(5*time.Minute))
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				sr := res.Step(StepRelease)
+				require.Contains(t, sr.Summary, "built on an OAuth follow (alice), not verified from statuses")
+				require.Contains(t, sr.Summary, "--migrate")
+				require.Empty(t, res.Findings())
+			},
+		},
+		{
+			// The App pipeline built the branch before the release, and only
+			// an OAuth follow posted after it: the tag may have been built
+			// there. Not verified, not missed, as follow-circleci reads it.
+			name: "release: an OAuth build after the release beside an earlier App branch build is not verified", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				published := time.Now().Add(-time.Hour)
+				r.release, r.releaseAt = "v0.1.0", published
+				r.addStatus("v0.1.0", "go-build", "success", "wf-branch", CircleCIAppLogin, published.Add(-time.Minute))
+				r.addStatus("v0.1.0", "go-build", "success", "job-7", "alice", published.Add(time.Minute))
+			},
+			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Contains(t, res.Step(StepRelease).Summary, "built on an OAuth follow (alice), not verified")
+				require.Empty(t, res.Findings())
+			},
+		},
+		{
+			// The real shape (release-automation-sandbox): the release was
+			// published 11:20:53Z. The branch build of the same commit started
+			// at 11:20:41Z, before the release, and its go-build failed at
+			// 11:21:34Z, after the tag's own go-build went green at 11:21:30Z.
+			// The commit's statuses carry both; only the tag's workflow
+			// counts, so the newest go-build is not the branch's failure.
+			name: "release: a branch build of the same commit that started before the release is ignored", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				ts := func(clock string) time.Time {
+					at, err := time.Parse(time.RFC3339, "2026-10-30T"+clock+"Z")
+					require.NoError(t, err)
+					return at
+				}
+				r.release, r.releaseAt = "v0.1.0", ts("11:20:53")
+				r.addStatus("v0.1.0", "go-build", "pending", "wf-branch", CircleCIAppLogin, ts("11:20:41"))
+				r.addStatus("v0.1.0", "go-build", "failure", "wf-branch", CircleCIAppLogin, ts("11:21:34"))
+				r.addStatus("v0.1.0", "go-build", "pending", "wf-tag", CircleCIAppLogin, ts("11:20:55"))
+				r.addStatus("v0.1.0", "go-build", "success", "wf-tag", CircleCIAppLogin, ts("11:21:30"))
+				r.addStatus("v0.1.0", "push-to-registries-release", "pending", "wf-tag", CircleCIAppLogin, ts("11:20:56"))
+				r.addStatus("v0.1.0", "push-to-registries-release", "success", "wf-tag", CircleCIAppLogin, ts("11:22:10"))
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, "release v0.1.0 built: go-build, push-to-registries-release succeeded", res.Step(StepRelease).Summary)
+				require.Empty(t, res.Findings())
+			},
+		},
+		{
+			// A commit whose only statuses are the branch build's, started
+			// before the release, has no tag build: it was never built.
+			name: "release: only a branch build that started before the release is a missed tag build", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				published := time.Now().Add(-time.Hour)
+				r.release, r.releaseAt = "v0.1.0", published
+				r.addStatus("v0.1.0", "go-build", "success", "wf-branch", CircleCIAppLogin, published.Add(-5*time.Minute))
+			},
+			wantCheck: VerdictReported, wantFinding: FindingMissedTagBuild, wantAfter: VerdictReported,
+		},
+		{
+			name: "release: a red tag build is reported, the fix a rerun from failed", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				published := time.Now().Add(-time.Hour)
+				r.release, r.releaseAt = "v0.1.0", published
+				r.addTagBuild("v0.1.0", "wf-tag", published, jobState{"go-build", "success"}, jobState{"push-to-registries-release", "failure"})
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRedRelease, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				f := res.Findings()[0]
+				require.Contains(t, f.Message, "push-to-registries-release (failure)")
+				require.Contains(t, f.Fix, "rerun the failed workflow from failed")
+				require.Contains(t, f.Fix, "devctl release wait "+owner+"/"+name+" v0.1.0")
+				require.Equal(t, "release v0.1.0: red", res.Step(StepRelease).Summary)
+				require.Empty(t, h.cc.mutations, "nothing is rerun by the engine")
+			},
+		},
+		{
+			// An error state is red like a failure.
+			name: "release: a job in error state is red", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				published := time.Now().Add(-time.Hour)
+				r.release, r.releaseAt = "v0.1.0", published
+				r.addTagBuild("v0.1.0", "wf-tag", published, jobState{"go-build", "error"})
 			},
 			wantCheck: VerdictReported, wantFinding: FindingRedRelease, wantAfter: VerdictReported,
 			verify: func(t *testing.T, _ *harness, res *Result) {
-				f := res.Findings()[0]
-				require.Contains(t, f.Message, "push-to-registries-release")
-				require.Contains(t, f.Fix, "rerun the failed workflow from failed")
-				require.Contains(t, f.Fix, "devctl release wait "+owner+"/"+name+" v0.1.0")
+				require.Contains(t, res.Findings()[0].Message, "go-build (error)")
 			},
 		},
 		{
-			// A rerun from failed is a second workflow of the same name in
-			// the same pipeline; the run it replaced keeps its failed status.
-			// The newest run decides, so the revived tag reads built.
-			name: "release: a red tag pipeline rerun green reads built", step: StepRelease,
+			// auto-release creates the GitHub release before the tag
+			// pipeline runs; the pipeline's publish-github-release then
+			// fails on the release being there, after every artifact was
+			// pushed. The release is published, not red.
+			name: "release: a tag build red only in publish-github-release reads built", step: StepRelease,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
-				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
-				p := h.cc.follow(owner, name)
-				h.cc.addPipeline(p, "v0.1.0", "failed")
-				h.cc.rerun(p, "success")
+				published := time.Now().Add(-time.Hour)
+				r.release, r.releaseAt = "v0.1.0", published
+				r.addTagBuild("v0.1.0", "wf-tag", published, jobState{"go-build", "success"}, jobState{"push-to-registries-release", "success"}, jobState{GitHubReleaseJob, "failure"})
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Empty(t, res.Findings())
+				require.Equal(t, "release v0.1.0 built: go-build, push-to-registries-release succeeded; publish-github-release failed, the GitHub release it publishes exists", res.Step(StepRelease).Summary)
+			},
+		},
+		{
+			// An artifact job red beside publish-github-release leaves the
+			// artifact unpublished: still red, the artifact job named alone.
+			name: "release: a tag build red in an artifact job and publish-github-release is red", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				published := time.Now().Add(-time.Hour)
+				r.release, r.releaseAt = "v0.1.0", published
+				r.addTagBuild("v0.1.0", "wf-tag", published, jobState{"go-build", "success"}, jobState{"push-to-registries-release", "failure"}, jobState{GitHubReleaseJob, "failure"})
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRedRelease, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Contains(t, res.Findings()[0].Message, "push-to-registries-release")
+				require.NotContains(t, res.Findings()[0].Message, GitHubReleaseJob)
+			},
+		},
+		{
+			// A rerun from failed is a second workflow of the tag's build;
+			// the run it replaced keeps its failed status. The newest status
+			// of each context decides, so the revived tag reads built.
+			name: "release: a red tag build rerun green reads built", step: StepRelease,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				published := time.Now().Add(-time.Hour)
+				r.release, r.releaseAt = "v0.1.0", published
+				r.addTagBuild("v0.1.0", "wf-tag", published, jobState{"go-build", "success"}, jobState{"push-to-registries-release", "failure"})
+				r.addStatus("v0.1.0", "push-to-registries-release", "success", "wf-rerun", CircleCIAppLogin, published.Add(10*time.Minute))
 			},
 			wantCheck: VerdictOK,
 			verify: func(t *testing.T, _ *harness, res *Result) {
@@ -1972,109 +2793,165 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			name: "release: a green tag pipeline", step: StepRelease,
+			// A job still running: the release is building, which is no
+			// finding and no built release.
+			name: "release: a pending job reads building", step: StepRelease,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
-				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
-				h.cc.addPipeline(h.cc.follow(owner, name), "v0.1.0", "success")
+				published := time.Now().Add(-time.Hour)
+				r.release, r.releaseAt = "v0.1.0", published
+				r.addTagBuild("v0.1.0", "wf-tag", published, jobState{"go-build", "success"}, jobState{"push-to-registries-release", "pending"})
 			},
 			wantCheck: VerdictOK,
 			verify: func(t *testing.T, _ *harness, res *Result) {
-				require.Contains(t, res.Step(StepRelease).Summary, "release v0.1.0 built")
+				require.Equal(t, "release v0.1.0: building: push-to-registries-release", res.Step(StepRelease).Summary)
+				require.Empty(t, res.Findings())
 			},
 		},
 		{
-			// A repository created pull-request-last: the tag exists before
-			// the project is followed, and the follow builds the default
-			// branch first. The newer pipeline is no evidence for the tag.
-			name: "release: a newer pipeline of another ref does not hide the missed tag build", step: StepRelease,
+			// The reconciler holds no CircleCI client, and the release step
+			// does not need one: it is never skipped for that reason.
+			name: "release: without a CircleCI client the release is verified from the statuses", step: StepRelease,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
-				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
-				h.cc.seedPipeline(h.cc.follow(owner, name), circleciclient.PipelineVCS{Branch: "main"}, time.Now(), "success")
-			},
-			wantCheck: VerdictReported, wantFinding: FindingMissedTagBuild, wantAfter: VerdictReported,
-			verify: func(t *testing.T, h *harness, _ *Result) {
-				require.Empty(t, h.cc.mutations, "no pipeline is triggered")
-				require.Len(t, h.cc.projects[owner+"/"+name].pipelines, 1, "the default branch's pipeline alone")
-			},
-		},
-		{
-			// The creation's first release on a project followed before
-			// this run — a creation whose run could not build it (v8.71.0
-			// to v8.97.x) — is no longer the follow's to build: the missed
-			// build is reported, whatever the change, and nothing is
-			// triggered (TestRunBuildsTheFirstReleaseRightAfterTheFollow).
-			name: "release: a scaffold tag of a project followed before the run is reported, never triggered", step: StepRelease, added: true,
-			seed: func(h *harness) {
-				r := h.gh.addRepo(owner, name)
-				r.release, r.releaseAt, r.releaseSubject = "v0.1.0", time.Now().Add(-time.Hour), scaffoldSubject
-				h.cc.follow(owner, name)
-			},
-			wantCheck: VerdictReported, wantFinding: FindingMissedTagBuild, wantAfter: VerdictReported,
-			verify: func(t *testing.T, h *harness, _ *Result) {
-				require.Empty(t, h.cc.mutations, "no pipeline is triggered")
-			},
-		},
-		{
-			// The tag's pipeline is behind a full first page of newer
-			// pipelines: the step pages on and finds it.
-			name: "release: the tag pipeline on a later page is verified", step: StepRelease,
-			seed: func(h *harness) {
-				r := h.gh.addRepo(owner, name)
-				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
-				h.cc.pageSize = 1
-				p := h.cc.follow(owner, name)
-				h.cc.seedPipeline(p, circleciclient.PipelineVCS{Tag: "v0.1.0"}, time.Now().Add(-time.Minute), "success")
-				h.cc.seedPipeline(p, circleciclient.PipelineVCS{Branch: "main"}, time.Now(), "success")
+				published := time.Now().Add(-time.Hour)
+				r.release, r.releaseAt = "v0.1.0", published
+				r.addTagBuild("v0.1.0", "wf-tag", published, jobState{"go-build", "success"})
+				h.runner.CircleCI = nil
 			},
 			wantCheck: VerdictOK,
-			verify: func(t *testing.T, h *harness, res *Result) {
-				require.Contains(t, res.Step(StepRelease).Summary, "release v0.1.0 built")
-				require.Len(t, h.cc.projects[owner+"/"+name].pipelines, 2)
-				require.Contains(t, h.cc.pages, "1", "the second page was read")
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, VerdictOK, res.Step(StepRelease).Verdict)
+				require.Equal(t, "release v0.1.0 built: go-build succeeded", res.Step(StepRelease).Summary)
 			},
 		},
 		{
-			// Paging stops at the first pipeline older than the release: the
-			// tag's pipeline would have been listed before it. The pages
-			// behind it are never read; the missed build is reported.
-			name: "release: paging stops behind the release and reports the missed tag build", step: StepRelease,
+			name: "release: without a CircleCI client a missed build is still reported", step: StepRelease,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.release, r.releaseAt = "v0.1.0", time.Now().Add(-time.Hour)
-				h.cc.pageSize = 1
-				p := h.cc.follow(owner, name)
-				h.cc.seedPipeline(p, circleciclient.PipelineVCS{Branch: "main"}, time.Now().Add(-3*time.Hour), "success")
-				h.cc.seedPipeline(p, circleciclient.PipelineVCS{Branch: "main"}, time.Now().Add(-2*time.Hour), "success")
-				h.cc.seedPipeline(p, circleciclient.PipelineVCS{Branch: "main"}, time.Now(), "success")
+				h.runner.CircleCI = nil
 			},
 			wantCheck: VerdictReported, wantFinding: FindingMissedTagBuild, wantAfter: VerdictReported,
-			verify: func(t *testing.T, h *harness, _ *Result) {
-				require.Empty(t, h.cc.mutations, "no pipeline is triggered")
-				require.Len(t, h.cc.projects[owner+"/"+name].pipelines, 3)
-				require.Contains(t, h.cc.pages, "1", "the page with the older pipeline was read")
-				require.NotContains(t, h.cc.pages, "2", "the pages behind the release were not read")
-			},
 		},
 		{
 			// A repository tagging per component (base/v0.1.0) releases
 			// outside the flow the step verifies: auto-release cuts vX.Y.Z
 			// and the generated pipeline builds /^v.*/. Its latest release
 			// is not held against CircleCI: the step is skipped naming the
-			// tag, no pipeline list is read and nothing is reported.
+			// tag, no status is read and nothing is reported.
 			name: "release: a release whose tag is not vX.Y.Z is not verified", step: StepRelease,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
 				r.release, r.releaseAt = "base/v0.1.0", time.Now().Add(-time.Hour)
-				h.cc.follow(owner, name)
 			},
 			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
 			verify: func(t *testing.T, h *harness, res *Result) {
 				require.Equal(t, "release base/v0.1.0: not a vX.Y.Z tag, not verified", res.Step(StepRelease).Summary)
 				require.Empty(t, res.Findings())
-				require.Empty(t, h.cc.pages, "no pipeline list is read")
+				require.Zero(t, h.gh.reads("/repos/"+owner+"/"+name+"/commits/base/v0.1.0/statuses"), "no status is read")
+				require.Empty(t, h.cc.mutations)
+			},
+		},
+		{
+			// A multi-image repository releases one line per image. GitHub's
+			// latest release is the newest of any line; the step verifies the
+			// newest published release of each line instead, older ones,
+			// drafts, pre-releases and tags outside the grammar left out.
+			name: "release: a multi-image repository verifies the newest release of each image line", step: StepRelease, entry: multiImageEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				now := time.Now()
+				r.release, r.releaseAt = "python/v0.2.0", now.Add(-time.Hour)
+				r.releases = []fakeRelease{
+					{tag: "go/v0.3.0-rc.1", at: now.Add(-50 * time.Minute), prerelease: true},
+					{tag: "node/v0.3.0", at: now.Add(-55 * time.Minute), draft: true},
+					{tag: "python/v0.2.0", at: now.Add(-40 * time.Minute)},
+					{tag: "node/v0.2.0", at: now.Add(-time.Hour)},
+					{tag: "go/v0.10.0", at: now.Add(-time.Hour)},
+					{tag: "go/v0.9.0", at: now.Add(-2 * time.Hour)},
+					{tag: "v1.0.0", at: now.Add(-3 * time.Hour)},
+				}
+				r.releasesPage = 2
+				for _, rel := range r.releases[2:5] {
+					r.addTagBuild(rel.tag, "wf-"+rel.tag, rel.at, jobState{"build-image", "success"})
+				}
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Empty(t, res.Findings())
+				summary := res.Step(StepRelease).Summary
+				// python/v0.2.0 is GitHub's latest, the newest published
+				// release: it leads, the others follow by image name.
+				require.Equal(t, "release python/v0.2.0 built: build-image succeeded; release go/v0.10.0 built: build-image succeeded; release node/v0.2.0 built: build-image succeeded", summary)
+			},
+		},
+		{
+			// Each line is held against its own tag build: a red release
+			// of one image is reported beside the built ones. Release wait
+			// follows vX.Y.Z tags only, so the fix does not name it.
+			name: "release: a multi-image repository reports a red image release", step: StepRelease, entry: multiImageEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				published := time.Now().Add(-time.Hour)
+				r.releases = []fakeRelease{{tag: "node/v0.2.0", at: published}, {tag: "go/v0.2.0", at: published}}
+				r.addTagBuild("go/v0.2.0", "wf-go", published, jobState{"build-image", "success"})
+				r.addTagBuild("node/v0.2.0", "wf-node", published, jobState{"build-image", "failure"})
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRedRelease, wantAfter: VerdictReported,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Len(t, res.Findings(), 1)
+				f := res.Findings()[0]
+				require.Contains(t, f.Message, "release node/v0.2.0 of "+owner+"/"+name+" is red")
+				require.NotContains(t, f.Fix, "devctl release wait")
+				require.Contains(t, res.Step(StepRelease).Summary, "release go/v0.2.0 built")
+				require.Contains(t, res.Step(StepRelease).Summary, "release node/v0.2.0: red")
+			},
+		},
+		{
+			// An image tag nobody built is a missed build of that line.
+			name: "release: a multi-image repository reports an image release without a build", step: StepRelease, entry: multiImageEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.releases = []fakeRelease{{tag: "go/v0.2.0", at: time.Now().Add(-time.Hour)}}
+			},
+			wantCheck: VerdictReported, wantFinding: FindingMissedTagBuild, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Contains(t, res.Findings()[0].Message, "release go/v0.2.0 of "+owner+"/"+name+" carries no CircleCI status")
 				require.Empty(t, h.cc.mutations, "no pipeline is triggered")
+			},
+		},
+		{
+			name: "release: a multi-image repository without an image release has none yet", step: StepRelease, entry: multiImageEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.releases = []fakeRelease{{tag: "v0.1.0", at: time.Now().Add(-time.Hour)}}
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "no <name>/vX.Y.Z release yet", res.Step(StepRelease).Summary)
+			},
+		},
+		{
+			// giantswarm-repo-manager runs the engine without a CircleCI
+			// client: GitHub's latest release leads the summary, the one
+			// its inventory reads, and each line is verified from statuses.
+			name: "release: a multi-image repository without a CircleCI client is verified from statuses, GitHub's latest first", step: StepRelease, entry: multiImageEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				at := time.Now().Add(-time.Hour)
+				// Two releases of one commit tie on its date: GitHub's
+				// answer, not the list, names node/v0.2.1 its latest.
+				r.release, r.releaseAt = "node/v0.2.1", at
+				r.releases = []fakeRelease{{tag: "github/v0.1.0", at: at}, {tag: "node/v0.2.1", at: at}}
+				r.addTagBuild("github/v0.1.0", "wf-github", at, jobState{"build-image", "success"})
+				r.addTagBuild("node/v0.2.1", "wf-node", at, jobState{"build-image", "success"})
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, _ *harness, res *Result) {
+				require.Equal(t, VerdictOK, res.Step(StepRelease).Verdict, "never skipped for the missing client")
+				require.Equal(t, "release node/v0.2.1 built: build-image succeeded; release github/v0.1.0 built: build-image succeeded", res.Step(StepRelease).Summary)
 			},
 		},
 		{
@@ -2111,6 +2988,29 @@ func TestSteps(t *testing.T) {
 			wantCheck: VerdictSkipped, wantAfter: VerdictSkipped,
 		},
 		{
+			name: "settings: an app catalog's default branch is never renamed", step: StepSettings, entry: appCatalogEntryYAML,
+			seed:      func(h *harness) { h.gh.addRepo(owner, name).defaultBranch = "master" },
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, "master", h.repo().defaultBranch)
+				require.Empty(t, res.Step(StepSettings).Changes)
+			},
+		},
+		{
+			name: "protection: an app catalog's own default branch is the one protected", step: StepProtection, entry: appCatalogEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.defaultBranch = "master"
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, `master: ruleset "devctl: default branch"; required: `+ctxGoBuild, res.Step(StepProtection).Summary)
+				require.Equal(t, "master", h.repo().defaultBranch)
+			},
+		},
+		{
 			name: "settings: a fork line stays on its declared default branch", step: StepSettings, entry: forkEntryYAML,
 			seed:      func(h *harness) { h.gh.addRepo(owner, name).forkLine() },
 			wantCheck: VerdictOK,
@@ -2121,6 +3021,22 @@ func TestSteps(t *testing.T) {
 			seed:      func(h *harness) { h.gh.addRepo(owner, name).allowRebase = true },
 			wantCheck: VerdictDrift, wantChange: `default branch "main" → "giantswarm"`,
 			verify: func(t *testing.T, h *harness, _ *Result) { require.Equal(t, "giantswarm", h.repo().defaultBranch) },
+		},
+		{
+			// A fork registered with the upstream mirror on main and the
+			// consumed branch beside it: GitHub refuses to rename main onto
+			// the existing branch, so the step switches the default to it and
+			// main stays the mirror.
+			name: "settings: a declared default branch that exists becomes the default", step: StepSettings, entry: forkEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.allowRebase, r.heads["giantswarm"] = true, "line"
+			},
+			wantCheck: VerdictDrift, wantChange: `default branch "main" → "giantswarm" (switch to the existing branch)`,
+			verify: func(t *testing.T, h *harness, _ *Result) {
+				require.Equal(t, "giantswarm", h.repo().defaultBranch)
+				require.True(t, h.repo().hasBranch("main"), "the old default stays")
+			},
 		},
 		{
 			// The carried patches land by rebase merge, one upstream-ready
@@ -2208,6 +3124,7 @@ func TestSteps(t *testing.T) {
 				mode = reposetup.ModeExisting
 			}
 			h := newHarnessMode(t, yaml, mode)
+			h.unarchived = tc.unarchived
 			if tc.seed != nil {
 				tc.seed(h)
 			}
@@ -2277,96 +3194,64 @@ func kinds(findings []Finding) []FindingKind {
 	return out
 }
 
-// collaboratorMutations is the collaborator grants and revocations among
-// mutations, in order.
-func collaboratorMutations(mutations []string) []string {
-	var out []string
-	for _, m := range mutations {
-		if strings.Contains(m, "/collaborators/") {
-			out = append(out, m)
-		}
-	}
-	return out
-}
-
-// TestRunCircleCIGrantRevokedOnFailure: a write CircleCI refuses fails the
-// step, and the admin grant made for it is revoked all the same.
-func TestRunCircleCIGrantRevokedOnFailure(t *testing.T) {
-	h := newHarness(t, entryYAML)
-	h.gh.addRepo(owner, name)
-	h.gh.permission = "write"
-	h.cc.keyStatus = 422
-
-	res := h.run(ModeRepair, false, StepCircleCI)
-	sr := res.Step(StepCircleCI)
-	require.Equal(t, VerdictFailed, sr.Verdict, "%+v", sr)
-	require.Contains(t, sr.Summary, "Error creating deploy key")
-	require.Empty(t, h.repo().collaborators, "the grant is revoked when a write fails")
-	require.Equal(t, []string{
-		"PUT /repos/giantswarm/sample-service/collaborators/architectbot",
-		"DELETE /repos/giantswarm/sample-service/collaborators/architectbot",
-	}, collaboratorMutations(h.gh.mutations))
-}
-
-// TestRunBuildsTheFirstReleaseRightAfterTheFollow: a chart repository (Go +
-// app) created pull-request-last has its scaffold tagged before the
-// reconciler follows the project, and CircleCI never saw the tag, so its
-// chart was never published (devctl#2408). The run whose circleci step
-// follows the project builds that first release once — the check plans the
-// follow and the trigger, the repair triggers one pipeline for the tag, the
-// next run finds it and writes nothing. The reconciler passes no --added,
-// so the follow alone marks the run. The first follow of a repository whose
-// latest tag names the team's own commit — an adoption — reports the missed
-// build and triggers nothing.
-func TestRunBuildsTheFirstReleaseRightAfterTheFollow(t *testing.T) {
+// TestRunMissedFirstReleaseIsReportedNeverBuilt: a chart repository (Go +
+// app) created pull-request-last has its scaffold tagged before anyone
+// follows the project on CircleCI. The engine holds no CircleCI identity and
+// writes nothing there: whatever the grace says, it never triggers the tag.
+// Past the two-minute grace the missing build is the finding
+// missed-tag-build, whose fix is `devctl repo follow-circleci`, a person's
+// command; within the grace the first status may not have been posted yet,
+// and nothing is reported (devctl#2408 was the follow building this tag
+// itself, which the engine no longer does).
+func TestRunMissedFirstReleaseIsReportedNeverBuilt(t *testing.T) {
 	steps := []Step{StepCircleCI, StepRelease}
-	trigger := "POST /api/v2/project/gh/" + owner + "/" + name + "/pipeline"
 
-	t.Run("the scaffold's tag", func(t *testing.T) {
+	t.Run("past the grace", func(t *testing.T) {
 		h := newHarnessMode(t, entryYAML, reposetup.ModeExisting)
 		r := h.gh.addRepo(owner, name)
-		r.release, r.releaseAt, r.releaseSubject = "v0.1.0", time.Now().Add(-time.Minute), scaffoldSubject
+		r.release, r.releaseAt, r.releaseSubject = "v0.1.0", time.Now().Add(-10*time.Minute), scaffoldSubject
 
-		check := h.run(ModeCheck, false, steps...)
-		sr := check.Step(StepRelease)
-		require.Equal(t, VerdictDrift, sr.Verdict, "%+v", sr)
-		require.Equal(t, []string{"trigger the pipeline of v0.1.0, the first release of the created repository"}, sr.Changes)
-		require.NotContains(t, h.cc.mutations, trigger, "a check triggers nothing")
-
-		repair := h.run(ModeRepair, false, steps...)
-		require.Equal(t, VerdictRepaired, repair.Step(StepRelease).Verdict, "%+v", repair.Step(StepRelease))
-		require.Empty(t, repair.Findings())
-		require.Equal(t, 1, countOf(h.cc.mutations, trigger), "one trigger: %v", h.cc.mutations)
-		require.Equal(t, "v0.1.0", h.cc.projects[owner+"/"+name].pipelines[0].VCS.Tag)
-
-		h.cc.mutations = nil
-		again := h.run(ModeRepair, false, steps...)
-		require.Equal(t, VerdictOK, again.Step(StepRelease).Verdict, "%+v", again.Step(StepRelease))
-		require.Contains(t, again.Step(StepRelease).Summary, "release v0.1.0 built")
-		require.Empty(t, h.cc.mutations, "the next run finds the pipeline and writes nothing")
-	})
-
-	t.Run("an adoption's own tag", func(t *testing.T) {
-		h := newHarnessMode(t, entryYAML, reposetup.ModeExisting)
-		r := h.gh.addRepo(owner, name)
-		r.release, r.releaseAt, r.releaseSubject = "v1.4.0", time.Now().Add(-time.Hour), "fix: the team's own change"
-
-		repair := h.run(ModeRepair, true, steps...)
-		require.Equal(t, VerdictReported, repair.Step(StepRelease).Verdict, "%+v", repair.Step(StepRelease))
-		require.Equal(t, []FindingKind{FindingMissedTagBuild}, kinds(repair.Step(StepRelease).Findings))
-		require.NotContains(t, h.cc.mutations, trigger, "no pipeline is triggered")
-	})
-}
-
-// countOf is how often item occurs in list.
-func countOf(list []string, item string) int {
-	n := 0
-	for _, s := range list {
-		if s == item {
-			n++
+		for _, mode := range []Mode{ModeCheck, ModeRepair, ModeRepair} {
+			res := h.run(mode, true, steps...)
+			sr := res.Step(StepRelease)
+			require.Equal(t, VerdictReported, sr.Verdict, "%s: %+v", mode, sr)
+			require.Equal(t, []FindingKind{FindingMissedTagBuild}, kinds(sr.Findings))
+			require.Contains(t, sr.Findings[0].Fix, "devctl repo follow-circleci "+owner+"/"+name)
+			require.Empty(t, sr.Changes, "nothing is planned, nothing triggered")
+			// The circleci step reports the missing pipeline, too: nobody
+			// followed the project.
+			require.Equal(t, []FindingKind{FindingCircleCIPipelineMissing}, kinds(res.Step(StepCircleCI).Findings))
+			require.False(t, res.Converged)
 		}
-	}
-	return n
+		require.Empty(t, h.mutations(), "no CircleCI write, no GitHub write")
+		require.Empty(t, h.cc.projects, "no project is followed or created")
+	})
+
+	t.Run("within the grace", func(t *testing.T) {
+		h := newHarnessMode(t, entryYAML, reposetup.ModeExisting)
+		r := h.gh.addRepo(owner, name)
+		r.release, r.releaseAt, r.releaseSubject = "v0.1.0", time.Now().Add(-30*time.Second), scaffoldSubject
+
+		res := h.run(ModeRepair, true, StepRelease)
+		sr := res.Step(StepRelease)
+		require.Equal(t, VerdictOK, sr.Verdict, "%+v", sr)
+		require.Empty(t, sr.Findings)
+		require.Contains(t, sr.Summary, "ago, no status of its build yet")
+		require.Empty(t, h.mutations())
+	})
+
+	t.Run("built once the first status lands", func(t *testing.T) {
+		h := newHarnessMode(t, entryYAML, reposetup.ModeExisting)
+		r := h.gh.addRepo(owner, name)
+		published := time.Now().Add(-time.Hour)
+		r.release, r.releaseAt, r.releaseSubject = "v0.1.0", published, scaffoldSubject
+		r.addTagBuild("v0.1.0", "wf-tag", published, jobState{"go-build", "success"}, jobState{"push-to-registries-release", "success"})
+
+		res := h.run(ModeRepair, true, StepRelease)
+		require.Equal(t, VerdictOK, res.Step(StepRelease).Verdict, "%+v", res.Step(StepRelease))
+		require.Contains(t, res.Step(StepRelease).Summary, "release v0.1.0 built")
+		require.Empty(t, h.mutations())
+	})
 }
 
 // TestRenovateWaitsForScaffold: on an empty repository the renovate step
@@ -2382,10 +3267,63 @@ func TestRenovateWaitsForScaffold(t *testing.T) {
 	require.Equal(t, "repository is empty: the scaffold comes first", sr.Summary)
 }
 
+// TestRunUnarchive takes a set-up repository through lifecycle: archived and
+// back: the change that took the lifecycle from the entry unarchives the
+// repository, and the same run reads its CircleCI pipeline, which the
+// archive never touched; a run that does not carry the change, or leaves out
+// the lifecycle step, leaves an archive alone.
+func TestRunUnarchive(t *testing.T) {
+	h := newHarness(t, entryYAML)
+	h.seedCatalog(false, false)
+	h.gh.installation.selection = "all"
+	h.cc.addApp(owner, name) // a person ran `devctl repo follow-circleci`
+	require.True(t, h.run(ModeRepair, true).Converged)
+
+	// What the lifecycle step's archive left: CircleCI's deploy key gone
+	// from GitHub, the repository archived, the CircleCI project untouched.
+	h.repo().deployKeys = nil
+	h.repo().archived = true
+	h.resetMutations()
+
+	reported := h.run(ModeRepair, false)
+	require.Equal(t, []FindingKind{FindingArchivedUndeclared}, kinds(reported.Step(StepLifecycle).Findings))
+	unselected := h.run(ModeRepair, false, StepSettings)
+	require.Equal(t, VerdictSkipped, unselected.Step(StepSettings).Verdict)
+	h.unarchived = true
+	unselected = h.run(ModeRepair, false, StepSettings)
+	require.Equal(t, VerdictSkipped, unselected.Step(StepSettings).Verdict, "no lifecycle step, no unarchive")
+	require.Empty(t, h.mutations())
+
+	check := h.run(ModeCheck, false)
+	require.Equal(t, VerdictDrift, check.Step(StepLifecycle).Verdict)
+	require.Equal(t, "archived on GitHub until the lifecycle step's unarchive", check.Step(StepSettings).Summary)
+	require.True(t, check.Unarchived)
+	require.Empty(t, h.mutations(), "a check must not write")
+
+	repair := h.run(ModeRepair, false)
+	for _, sr := range repair.Steps {
+		require.NotEqual(t, VerdictFailed, sr.Verdict, "%s: %s", sr.Step, sr.Summary)
+	}
+	require.Equal(t, []string{"unarchive on GitHub"}, repair.Step(StepLifecycle).Changes)
+	require.Equal(t, VerdictOK, repair.Step(StepCircleCI).Verdict, "%+v", repair.Step(StepCircleCI))
+	require.False(t, h.repo().archived)
+	require.Empty(t, h.cc.mutations, "the engine writes nothing on CircleCI")
+	require.True(t, repair.Converged, "%+v", repair.Steps)
+
+	h.resetMutations()
+	h.unarchived = false
+	again := h.run(ModeRepair, false)
+	require.True(t, again.Converged, "%+v", again.Steps)
+	require.Empty(t, h.mutations())
+}
+
 // TestRunFullRepositorySetUp runs every step over a repository that only
-// exists as an added entry: the first repair converges the whole set-up
-// (bar the pull request and the findings for a person), the second changes
-// nothing.
+// exists as an added entry: the first repair sets up what the engine owns
+// (bar the pull request and the findings for a person). The CircleCI
+// pipeline is a person's: the circleci step reports it missing and creates
+// nothing, so the run does not converge until someone ran `devctl repo
+// follow-circleci`; with the pipeline there the second run converges and
+// changes nothing.
 func TestRunFullRepositorySetUp(t *testing.T) {
 	h := newHarness(t, entryYAML)
 	h.seedCatalog(false, false)
@@ -2398,14 +3336,20 @@ func TestRunFullRepositorySetUp(t *testing.T) {
 	require.Equal(t, VerdictRepaired, first.Step(StepCreate).Verdict)
 	require.Equal(t, VerdictRepaired, first.Step(StepScaffold).Verdict)
 	require.Equal(t, VerdictRepaired, first.Step(StepProtection).Verdict)
-	require.Equal(t, VerdictRepaired, first.Step(StepCircleCI).Verdict)
+	circle := first.Step(StepCircleCI)
+	require.Equal(t, VerdictReported, circle.Verdict, "no CircleCI pipeline is created by the engine: %+v", circle)
+	require.Equal(t, []FindingKind{FindingCircleCIPipelineMissing}, kinds(circle.Findings))
+	require.Empty(t, circle.Changes)
+	require.Empty(t, h.cc.mutations, "nothing is written on CircleCI")
+	require.Empty(t, h.cc.projects, "no project is followed")
 	require.Equal(t, VerdictRepaired, first.Step(StepCatalog).Verdict)
 	require.Equal(t, VerdictOK, first.Step(StepCodeowners).Verdict, "the scaffold's CODEOWNERS names the team")
 	require.Equal(t, VerdictOK, first.Step(StepRelease).Verdict, "no release yet")
 	require.Empty(t, checkContexts(h.repo().ruleset(RulesetName)), "nothing has reported on a fresh repository, so nothing is required")
 	require.Nil(t, h.repo().protection, "the protection is the ruleset, no classic protection")
-	require.True(t, first.Converged)
+	require.False(t, first.Converged, "the missing CircleCI pipeline is a finding for a person")
 
+	h.cc.addApp(owner, name) // a person ran `devctl repo follow-circleci`
 	h.resetMutations()
 	second := h.run(ModeRepair, true)
 	require.True(t, second.Converged, "%+v", second.Steps)
@@ -2421,15 +3365,14 @@ func TestRunFullRepositorySetUp(t *testing.T) {
 	require.Contains(t, string(data), `"repository":"giantswarm/sample-service"`)
 
 	// The budget: a check of the converged repository, every step, costs at
-	// most twenty-one GitHub requests (the webhooks read the circleci step
-	// added is the twenty-first), and the count is the fake's own.
+	// most twenty-four GitHub requests, and the count is the fake's own.
 	before := len(h.gets())
 	check := h.run(ModeCheck, false)
 	require.True(t, check.Converged, "%+v", check.Steps)
 	gets := h.gets()[before:]
 	require.Equal(t, len(gets), check.Requests.GitHub, "the counter and the fake agree")
-	require.LessOrEqual(t, check.Requests.GitHub, 21, "a converged check within the budget of twenty-one; the reads:\n%s", strings.Join(gets, "\n"))
-	require.Positive(t, check.Requests.CircleCI, "the circleci and release steps read CircleCI")
+	require.LessOrEqual(t, check.Requests.GitHub, 24, "a converged check within the budget of twenty-four; the reads:\n%s", strings.Join(gets, "\n"))
+	require.Positive(t, check.Requests.CircleCI, "the circleci step reads the project, its definitions and their triggers")
 
 	// The override costs nothing: the caller hands it in with the entry
 	// (--team-file reads it from the checkout), and the converged check

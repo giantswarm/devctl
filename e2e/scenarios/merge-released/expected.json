@@ -7,12 +7,14 @@
     "finishedAt": "*",
     "warnings": [],
     "repository": "giantswarm/e2e-app",
+    "identity": "app",
     "number": 42,
     "headSha": "abc123",
     "baseRef": "main",
     "checks": [
       {
         "name": "go-test",
+        "id": 101,
         "source": "check_run",
         "status": "completed",
         "conclusion": "success",
@@ -40,13 +42,17 @@
         "url": "*"
       }
     ],
+    "merged": true,
     "mergeCommitSha": "aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44",
+    "mergedBy": "e2e-engineer",
     "method": "squash",
     "branchDeleted": true,
     "enqueued": false,
+    "dispatch": null,
     "exitCode": 0,
     "verdict": "green",
     "reason": "",
+    "unansweredReviews": [],
     "release": {
       "verdict": "available",
       "reason": "",
@@ -82,7 +88,8 @@
         "failedJobs": [],
         "unfinished": []
       },
-      "actions": []
+      "actions": [],
+      "statuses": []
     }
   }
 }

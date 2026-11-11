@@ -1,6 +1,7 @@
 package ami
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -108,4 +109,19 @@ func Test_scrapeVersionAMIs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_withChinaAMIs(t *testing.T) {
+	t.Run("china AMIs are added", func(t *testing.T) {
+		got, ok := withChinaAMIs(map[string]string{"eu-west-1": "ami-1"}, map[string]string{"cn-north-1": "ami-2"})
+		if want := map[string]string{"eu-west-1": "ami-1", "cn-north-1": "ami-2"}; !ok || !reflect.DeepEqual(got, want) {
+			t.Fatalf("got %v, %v; want %v, true", got, ok, want)
+		}
+	})
+
+	t.Run("a release without china AMIs is left out", func(t *testing.T) {
+		if got, ok := withChinaAMIs(map[string]string{"eu-west-1": "ami-1"}, nil); ok || got != nil {
+			t.Fatalf("got %v, %v; want nil, false", got, ok)
+		}
+	})
 }

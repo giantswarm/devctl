@@ -25,6 +25,8 @@ github:
           - {name: Dockerfile, path: Dockerfile, type: file}
           - {name: helm, path: helm, type: dir}
           - {name: main.go, path: main.go, type: file}
+    "GET /repos/giantswarm/e2e-app/contents/.github/workflows/zz_generated.auto_release.yaml?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body: {type: file, name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, sha: c0ffee, encoding: base64, content: b246IHB1c2gK}
     "GET /repos/giantswarm/e2e-app/contents/.github/workflows?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
       - body:
           - {name: zz_generated.auto_release.yaml, path: .github/workflows/zz_generated.auto_release.yaml, type: file}
@@ -42,6 +44,16 @@ github:
             apiVersion: v2
             name: e2e-app
             version: 1.2.3
+    "GET /repos/giantswarm/e2e-app/contents/.circleci/custom.yml?ref=aa11bb22cc33dd44ee55ff66aa11bb22cc33dd44":
+      - body:
+          name: custom.yml
+          path: .circleci/custom.yml
+          type: file
+          content: |
+            workflows:
+              build:
+                jobs:
+                - guest-image
     "GET /repos/giantswarm/github/contents/repositories":
       - body:
           - {name: team-e2e.yaml, path: repositories/team-e2e.yaml, type: file}

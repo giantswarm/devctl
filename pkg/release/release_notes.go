@@ -86,6 +86,7 @@ type releaseNotesTemplateData struct {
 
 var providerTitleMap = map[string]string{
 	providerAWS:           "CAPA",
+	providerAKS:           "AKS",
 	providerAzure:         "Azure",
 	providerEKS:           "EKS",
 	"kvm":                 "KVM",
@@ -93,7 +94,7 @@ var providerTitleMap = map[string]string{
 	providerCloudDirector: "VMware Cloud Director",
 }
 
-func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, changelogNoisePatterns []string) (string, error) {
+func createReleaseNotes(githubToken string, release, baseRelease v1alpha1.Release, provider string, changelogNoisePatterns []string) (string, error) {
 	templ, err := template.New("release-notes").Parse(releaseNotesTemplate)
 	if err != nil {
 		return "", microerror.Mask(err)
@@ -125,7 +126,7 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, 
 			continue
 		}
 
-		componentChangelog, err := changelog.ParseChangelog(component.Name, component.Version, previousComponentVersion, changelogNoisePatterns...)
+		componentChangelog, err := changelog.ParseChangelog(githubToken, component.Name, component.Version, previousComponentVersion, changelogNoisePatterns...)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
@@ -145,6 +146,7 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, 
 	// Include cluster chart changelog when a provider chart bumps its cluster dependency
 	providerCharts := map[string]bool{
 		"cluster-aws":            true,
+		"cluster-aks":            true,
 		"cluster-azure":          true,
 		"cluster-vsphere":        true,
 		"cluster-cloud-director": true,
@@ -182,7 +184,7 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, 
 		}
 
 		if currentClusterVer != "" && previousClusterVer != "" && currentClusterVer != previousClusterVer {
-			clusterChangelog, err := changelog.ParseChangelog(clusterComponentName, currentClusterVer, previousClusterVer, changelogNoisePatterns...)
+			clusterChangelog, err := changelog.ParseChangelog(githubToken, clusterComponentName, currentClusterVer, previousClusterVer, changelogNoisePatterns...)
 			if err != nil {
 				logrus.Warnf("Could not parse cluster changelog for %s...%s: %v", previousClusterVer, currentClusterVer, err)
 				continue
@@ -223,7 +225,7 @@ func createReleaseNotes(release, baseRelease v1alpha1.Release, provider string, 
 			continue
 		}
 
-		componentChangelog, err := changelog.ParseChangelog(app.Name, app.Version, previousAppVersion, changelogNoisePatterns...)
+		componentChangelog, err := changelog.ParseChangelog(githubToken, app.Name, app.Version, previousAppVersion, changelogNoisePatterns...)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}

@@ -9,7 +9,10 @@ import (
 // refFixGo is the in-process Go port of refFixPython (see precommit.go): for every JSON
 // object that has both `$ref` and `additionalProperties: false` it drops
 // `additionalProperties` and sets `unevaluatedProperties: false` instead
-// (losisin/helm-values-schema-json#317).
+// (losisin/helm-values-schema-json#317). The generator stopped producing that defect in
+// v2.6.0; the step stays for schemas the generator BUNDLES rather than generates. See the
+// rationale on refFixPython in precommit.go -- it is the one place that carries the whole
+// story, and both ports share it.
 //
 // Key order is not preserved (decoding into map[string]any loses it), but that is fine:
 // `schemalint normalize`, the pipeline's last step, re-serializes the whole document into

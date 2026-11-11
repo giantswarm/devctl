@@ -6,10 +6,12 @@ import (
 	"maps"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/giantswarm/devctl/v8/e2e/mock/sequence"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/releasewait"
+	"github.com/giantswarm/devctl/v8/pkg/releasewait/releasewaittest"
 )
 
 // releaseCall records what the merge handed the release wait.
@@ -39,12 +41,25 @@ func Test_Merge_release(t *testing.T) {
 		wantReason  string
 	}{
 		{name: "available", tag: "v1.2.3", wantCode: 0, wantRelease: agentcli.VerdictAvailable},
+		{
+			name:     "a transient read after merging",
+			err:      &agentcli.RetriesExhaustedError{Attempts: 15, Last: "context deadline exceeded", Elapsed: 10 * time.Minute},
+			wantCode: agentcli.ExitReleaseUnconfirmed, wantVerdict: agentcli.VerdictReleaseUnconfirmed, wantRelease: agentcli.VerdictTransient,
+			wantReason: "merged as m1, and the release is not confirmed: failed 15 times in a row: context deadline exceeded; transient API or network failure after 10m0s",
+		},
 		{name: "no release follows", err: &releasewait.NoReleaseError{Reason: "the Auto-release run finished without a tag"}, wantCode: 0, wantRelease: agentcli.VerdictNoRelease, wantReason: "finished without a tag"},
+		{name: "base excluded by auto-release", err: &releasewait.NoReleaseError{Reason: "the auto-release workflow of o/r triggers on giantswarm; nothing tags a merge into release-1.3"}, wantCode: 0, wantRelease: agentcli.VerdictNoRelease, wantReason: "triggers on giantswarm; nothing tags a merge into release-1.3"},
 		{
 			name: "the tag pipeline failed", tag: "v1.2.3",
 			err:      agentcli.NewExitError(agentcli.ExitRed, agentcli.VerdictCIFailed, "the tag pipeline of v1.2.3 failed: build/push-to-registries-release"),
 			wantCode: agentcli.ExitReleaseFailed, wantVerdict: agentcli.VerdictReleaseFailed, wantRelease: agentcli.VerdictCIFailed,
 			wantReason: "merged as m1, and the release failed: the tag pipeline of v1.2.3 failed: build/push-to-registries-release",
+		},
+		{
+			name: "the tag pipeline is empty", tag: "v1.2.3",
+			err:      agentcli.NewExitError(agentcli.ExitTagPipelineEmpty, agentcli.VerdictTagPipelineEmpty, "the tag pipeline 12 (https://app.circleci.com/pipelines/github/o/r/12) of v1.2.3 is created with no workflows; re-trigger the pipeline for tag v1.2.3"),
+			wantCode: agentcli.ExitTagPipelineEmpty, wantVerdict: agentcli.VerdictTagPipelineEmpty, wantRelease: agentcli.VerdictTagPipelineEmpty,
+			wantReason: "merged as m1: the tag pipeline 12 (https://app.circleci.com/pipelines/github/o/r/12)",
 		},
 		{
 			name: "timeout", tag: "v1.2.3",
@@ -59,9 +74,21 @@ func Test_Merge_release(t *testing.T) {
 			wantReason: "run devctl auth login --circleci-only; devctl release wait o/r --pr 42 resumes the wait",
 		},
 		{
+			name: "a persistent CircleCI refusal", tag: "v1.2.3",
+			err:      &agentcli.RemoteError{Err: errors.New("CircleCI: HTTP 401 Invalid token provided")},
+			wantCode: agentcli.ExitReleaseUnconfirmed, wantVerdict: agentcli.VerdictReleaseUnconfirmed, wantRelease: agentcli.VerdictRemoteError,
+			wantReason: "merged as m1, and the release is not confirmed: CircleCI: HTTP 401 Invalid token provided; devctl release wait o/r --pr 42 resumes the wait",
+		},
+		{
 			name: "a tooling failure", err: errors.New("listing tags: connection reset"),
 			wantCode: agentcli.ExitReleaseUnconfirmed, wantVerdict: agentcli.VerdictReleaseUnconfirmed, wantRelease: agentcli.VerdictUsage,
 			wantReason: "merged as m1, and the release is not confirmed: listing tags: connection reset",
+		},
+		{
+			name: "a commit status failed", tag: "v1.2.3-rc.1",
+			err:      agentcli.NewExitError(agentcli.ExitStatusFailed, agentcli.VerdictStatusFailed, "the commit m1 of v1.2.3-rc.1 carries a failed commit status, so devctl release promote refuses it: ci/circleci: go-test (failure, https://circleci.com/gh/o/r/1)"),
+			wantCode: agentcli.ExitReleaseUnconfirmed, wantVerdict: agentcli.VerdictReleaseUnconfirmed, wantRelease: agentcli.VerdictStatusFailed,
+			wantReason: "merged as m1, and the release is not confirmed: the commit m1 of v1.2.3-rc.1 carries a failed commit status",
 		},
 		{
 			name:     "superseded by a newer push",
@@ -102,6 +129,47 @@ func Test_Merge_release(t *testing.T) {
 				t.Errorf("want verdict %s with %q, got %s %q", tc.wantVerdict, tc.wantReason, exitErr.Verdict, exitErr.Reason)
 			}
 		})
+	}
+}
+
+func Test_Merge_emptyTagPipeline(t *testing.T) {
+	sources, err := releasewaittest.GeneratedRelease("o", "r", &releasewaittest.Registry{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gh := sources.GitHub.(*releasewaittest.GitHub)
+	gh.Tags["v1.2.3"] = "m1"
+	ci, err := sources.CircleCI(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ci.(*releasewaittest.CircleCI).Pipeline.State = "created"
+	clock := agentcli.NewVirtualClock(time.Now())
+	start := clock.Now()
+	h := newHarness(t, routes(pull(nil)), func(c *Config) {
+		c.Release = func(ctx context.Context, owner, repo string, number int, sha string, result *releasewait.Result) error {
+			waiter, err := releasewait.New(releasewait.Config{
+				Owner: owner, Repo: repo, PR: number, MergeCommitSHA: sha,
+				GitHub: sources.GitHub, Entries: sources.Entries, CircleCI: sources.CircleCI,
+				Registry: sources.Registry, Clock: clock,
+			})
+			if err != nil {
+				return err
+			}
+			return waiter.Wait(ctx, result)
+		}
+	})
+	result, err := h.merge(t)
+	code, verdict := agentcli.Outcome(err)
+	if code != agentcli.ExitTagPipelineEmpty || verdict != agentcli.VerdictTagPipelineEmpty {
+		t.Fatalf("want the empty tag pipeline outcome after the merge, got %d %s: %v", code, verdict, err)
+	}
+	if result.MergeCommitSHA != "m1" || !result.BranchDeleted || result.Release == nil || result.Release.Verdict != agentcli.VerdictTagPipelineEmpty || !clock.Now().Equal(start) {
+		t.Fatalf("merge/release evidence: %+v, elapsed %s", result, clock.Now().Sub(start))
+	}
+	pipeline := result.Release.Pipeline
+	if pipeline == nil || pipeline.Number != 12 || pipeline.URL != "https://app.circleci.com/pipelines/github/o/r/12" || !strings.Contains(err.Error(), "merged as m1:") || !strings.Contains(result.Release.Reason, "re-trigger the pipeline for tag v1.2.3") {
+		t.Fatalf("missing pipeline or recovery evidence: %+v, %v", result.Release, err)
 	}
 }
 

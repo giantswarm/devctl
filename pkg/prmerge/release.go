@@ -17,7 +17,8 @@ type ReleaseWait func(ctx context.Context, owner, repo string, number int, merge
 // reports it: its verdict and reason, and its result.
 type Release struct {
 	// Verdict is the release wait's: available, no_release (none follows
-	// the merge), ci_failed, timeout, not_applicable, usage, auth_required.
+	// the merge), ci_failed, timeout, not_applicable, ambiguous_release,
+	// status_failed, tag_pipeline_empty, usage, remote_error, auth_required.
 	Verdict agentcli.Verdict `json:"verdict"`
 	// Reason is the release wait's reason; empty when available.
 	Reason string `json:"reason"`
@@ -26,7 +27,8 @@ type Release struct {
 
 // awaitRelease runs the release wait after the merge and returns the
 // merge's outcome: nil when the release is available or none follows the
-// merge, exit 6 when the release failed, exit 9 when it was not confirmed.
+// merge, exit 6 when the release failed, exit 14 when its tag pipeline is
+// empty, exit 9 when it was not confirmed.
 func (m *Merger) awaitRelease(ctx context.Context, owner, repo string, number int, result *Result) error {
 	release := &Release{Result: releasewait.NewResult(result.Repository)}
 	result.Release = release
@@ -46,9 +48,11 @@ func (m *Merger) awaitRelease(ctx context.Context, owner, repo string, number in
 		return nil
 	case code == agentcli.ExitRed:
 		return agentcli.NewExitError(agentcli.ExitReleaseFailed, agentcli.VerdictReleaseFailed, "merged as %s, and the release failed: %s", result.MergeCommitSHA, err)
+	case verdict == agentcli.VerdictTagPipelineEmpty:
+		return agentcli.NewExitError(agentcli.ExitTagPipelineEmpty, agentcli.VerdictTagPipelineEmpty, "merged as %s: %s", result.MergeCommitSHA, err)
 	}
 	resume := ""
-	if verdict == agentcli.VerdictTimeout || verdict == agentcli.VerdictAuthRequired {
+	if verdict == agentcli.VerdictTimeout || verdict == agentcli.VerdictAuthRequired || verdict == agentcli.VerdictRemoteError {
 		resume = fmt.Sprintf("; devctl release wait %s --pr %d resumes the wait", result.Repository, number)
 	}
 	return agentcli.NewExitError(agentcli.ExitReleaseUnconfirmed, agentcli.VerdictReleaseUnconfirmed, "merged as %s, and the release is not confirmed: %s%s", result.MergeCommitSHA, err, resume)

@@ -1,13 +1,12 @@
 package prwait
 
-import "github.com/google/go-github/v92/github"
+import "github.com/google/go-github/v93/github"
 
-// NotApplicable is the rule Wait applies before its first poll, for a caller
-// that reads the pull request itself first (pr merge, whose refusals come
-// before the wait): exit 3 for a pull request no wait can turn green, nil
-// otherwise. The verdict is the one Wait would give.
+// NotApplicable is the gate for pr merge before and after its wait: exit 3
+// for a draft, closed, merged, conflicting or behind pull request, nil
+// otherwise. Wait applies the same gate but allows drafts to wait for CI.
 func NotApplicable(pr *github.PullRequest) error {
-	return notApplicable(pr)
+	return notApplicable(pr, false)
 }
 
 // IsFork says whether the head lives in another repository than the base.

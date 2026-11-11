@@ -1,6 +1,9 @@
 version: "2"
 
 linters:
+  enable:
+    - gosec
+    - goconst
   settings:
     errcheck:
       # The runners print to an injected io.Writer, so these read as Fprint

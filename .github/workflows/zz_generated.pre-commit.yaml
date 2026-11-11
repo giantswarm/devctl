@@ -2,7 +2,7 @@
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob/e4e201cc3265e82992dfbe3cce6b285df431e2df/pkg/gen/input/precommit/internal/file/pre-commit-action.yaml.template
+#    https://github.com/giantswarm/devctl/blob/7141e9a44c23ab8bc9aaf8ef9fdb92c9beed7422/pkg/gen/input/precommit/internal/file/pre-commit-action.yaml.template
 #
 name: pre-commit
 
@@ -14,21 +14,48 @@ on:
       - main
       - master
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   HELM_DOCS_VERSION: "1.14.2"
 
 jobs:
   pre-commit:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
     steps:
       - name: Check out code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Python environment
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - name: Install helm-docs
+        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
+        with:
+          binary: helm-docs
+          version: "${{ env.HELM_DOCS_VERSION }}"
+          download_url: "https://github.com/norwoodj/helm-docs/releases/download/v${version}/helm-docs_${version}_Linux_x86_64.tar.gz"
+          tarball_binary_path: "helm-docs"
+          smoke_test: "${binary} --version"
       - name: Set up Go environment
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27"
+          cache: false
+      # setup-go restores its cache only on an exact go.sum match. The
+      # restore-keys prefix lets a PR that changes go.sum start from the
+      # latest cache instead of a cold build.
+      - name: Restore Go caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: pre-commit-go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            pre-commit-go-${{ runner.os }}-
       - name: Install goimports
         run: |
           go install golang.org/x/tools/cmd/goimports@v0.50.0
@@ -36,7 +63,7 @@ jobs:
         uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
         with:
           binary: golangci-lint
-          version: "2.13.2"
+          version: "2.14.0"
           download_url: "https://github.com/golangci/golangci-lint/releases/download/v${version}/${binary}-${version}-linux-amd64.tar.gz"
       # golangci-lint compiles the packages it analyses. A repository that
       # embeds a file `go generate` writes does not compile from a bare

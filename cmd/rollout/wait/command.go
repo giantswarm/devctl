@@ -6,58 +6,104 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/internal/laptop"
 	"github.com/giantswarm/devctl/v8/internal/versiongate"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
-	"github.com/giantswarm/devctl/v8/pkg/releasewait"
-	"github.com/giantswarm/devctl/v8/pkg/rolloutwait"
 )
 
 const (
-	name        = "wait <installation> <owner/repo> [<vX.Y.Z|X.Y.Z>]"
-	description = "Block until a release's charts run on an installation; one JSON document, exit codes for the outcome."
-	long        = `Wait until a release runs on an installation.
+	name        = "wait <installation> [<owner/repo> [<vX.Y.Z|X.Y.Z>]]"
+	description = "Block until a release's charts or a component chart version run on an installation; one JSON document, exit codes for the outcome."
+	long        = `Wait until a release or component runs on an installation.
 
-The wait has two parts. The release first, exactly as devctl release wait
-does it (a version, or --pr for the tag auto-release put on the merge
-commit): its images and charts pullable, its tag pipeline green. The
-release names the charts. Then the installation's management cluster,
+The wait ignores SIGHUP and reads no stdin, so it outlives its terminal.
+
+For a component rolled by a chart version range under an unchanged meta
+chart, omit the repository and pass --chart <name> --version <vX.Y.Z>.
+This waits directly on the installation for that chart version or a newer
+one, Ready at its current generation and with its workloads rolled out.
+--chart is the chart name here, without a registry, path or tag; repeat it
+to wait for several charts at that version. The document names the target
+in charts and version, and the deployed version in deployments[].runningVersion.
+Repository release checks are skipped (release.verdict is not_applicable),
+so no GitHub login or tag pipeline is needed. --pr, --image and --failed-log
+require a repository; --release-timeout has no effect without one.
+
+With a repository and one bare --chart <chart-name>, the version argument
+or --version names the component version. The repository is carried in the
+document but is not queried. This form takes one chart and no --pr, --image
+or --failed-log. OCI chart paths keep the repository release wait.
+
+With a repository and release artifacts, the wait has two parts. The release first, exactly as
+devctl release wait does it (a version, as the argument or --version, or --pr for the release
+that carries the merge commit on the pull request's base branch, a release
+branch's included): its images
+and charts pullable, its tag pipeline green. The
+release names the charts, a second chart its custom.yml pushes off the same
+tag included. Then the installation's management cluster,
 read through the kube context tsh kube login writes
-(teleport.giantswarm.io-<installation>, or --context), as you:
+(teleport.giantswarm.io-<installation>), as you. An installation reached
+through another context (kubectl gs login's gs-<installation>, a kind lab)
+is read through the one --context names. The contexts come from KUBECONFIG
+or ~/.kube/config, or from the one file --kubeconfig names; neither is
+written. The context is checked before the release wait: when the
+kubeconfig lacks the Teleport context and tsh is logged in, tsh kube login
+<installation> runs into a private temporary kubeconfig for that one
+command, which is read and removed; a tsh not logged in is exit 8. Any
+other context the kubeconfig does not have is exit 7 at once, the contexts
+that mention the installation named as candidates. It reads:
 
   HelmRelease  every Flux HelmRelease whose chart source (an OCIRepository
                whose URL ends in the chart's name, a HelmChart, or
                spec.chart) serves one of the charts
   App          every App CR whose spec.name is one of the charts
 
+and every HelmRelease --helmrelease names (<name> or <namespace>/<name>,
+repeatable) whatever chart it deploys; a name no HelmRelease answers to is
+exit 3. A named HelmRelease of none of the charts (a component a meta
+chart renders, on a version line of its own) is judged by itself, not by
+the version: rolled out once it is Ready at its current generation with no
+reconcile in flight and its workloads are rolled out, failed when it is
+Stalled or not Ready after a failed install, upgrade or test.
+
 A deployment has rolled out when it runs the version or a newer one
 (status.history of the HelmRelease, status.version and a deployed release
 of the App), is Ready at its current generation, and every Deployment,
-StatefulSet and DaemonSet of its Helm release (Helm's release annotations,
-in the release namespace) is rolled out the way kubectl rollout status
-judges it. The workloads of a HelmRelease with spec.kubeConfig or an App
+StatefulSet, DaemonSet and Flux HelmRelease (a meta chart's components) of
+its Helm release (Helm's release annotations) is rolled out the way kubectl
+rollout status judges it, a HelmRelease once its generation is observed and
+it is Ready, its dependencies included. The workloads of a HelmRelease with spec.kubeConfig or an App
 into a workload cluster are not read; a warning says so.
 
 A deployment that will not get there is reported in the document and a
 warning, and the wait goes on for the others: its source pins another tag
 or a digest, its semver range or the App's spec.version excludes the
 version (a workload cluster's App pinned to an older release), or the
-HelmRelease is suspended; when no deployment follows the version, exit 3.
-The wait ends at once when the version was attempted and failed: the
-HelmRelease Stalled, or not Ready after a failed install, upgrade or test
-of the version, the App's release failed, a Deployment past its progress
-deadline (exit 1).
+HelmRelease is suspended. When no deployment follows the version yet, the
+wait polls until --timeout so GitOps can apply a new selector, then waits
+for the rollout within that same timeout. Still no follower at the deadline
+is exit 3; all HelmReleases suspended is exit 3 at once.
+The wait ends when the version was attempted and failed: the HelmRelease
+Stalled, or not Ready after a failed install, upgrade or test of the
+version once helm-controller settled it (its current generation observed,
+no retry in flight), the App's release failed, a Deployment past its
+progress deadline (exit 1). A HelmRelease mid-upgrade is waited for until
+it settles; the wait never ends with exit 0 without a version.
 
 The cluster is polled with a backoff from 5 to 30 seconds; --reconcile asks
 Flux once to reconcile the sources and HelmReleases still behind, the only
 write the command makes.
 
-Output: one JSON document on stdout at the end and nothing else (--progress
-writes one line per step to stderr): the envelope (command, schemaVersion,
-exitCode, verdict, reason, warnings, startedAt, finishedAt), installation,
+Output: one JSON document on stdout at the end; on stderr the release wait's
+heartbeat naming what it still waits for, every two minutes and when it
+changes (--progress writes one line per step instead): the envelope (command,
+schemaVersion, exitCode, verdict, reason, warnings, startedAt, finishedAt), installation,
 context, version, charts, deployments[{kind, namespace, name, chart,
 source, follows, runningVersion, state, message, workloads[{kind,
 namespace, name, ready, message}]}] and release, the release wait's
-{verdict, reason} and its result.
+{verdict, reason} and its result. --failed-log is the release wait's: when
+the release's CI failed, release.failedJobs[] carries the tail of each failed
+job's log, printed to stderr as well.
 
 Exit codes:
   0  rolled out: every deployment of the charts that follows the version
@@ -65,16 +111,21 @@ Exit codes:
   1  the release's CI failed, or the rollout failed; the reason names the
      deployment and its condition
   2  timeout, of the release (--release-timeout) or of the rollout
-     (--timeout); the document shows what is still missing
+     (--timeout), or SIGINT/SIGTERM; reason identifies an interrupted
+     wait, the document shows what is still missing
   3  not applicable: no release follows the pull request, the release
      ships no chart, nothing on the installation deploys its charts, or
-     no deployment follows the version
-  7  usage or tooling: a bad argument, a kube context that does not exist,
+     no deployment follows the version; rollout_unknown: a configuration
+     change is applied and nothing takes the values of an app it changed
+  7  usage or tooling: a bad argument, a kube context that does not exist
+     (the candidates and --context named),
      a request the cluster refused
   8  authentication required: devctl auth login for GitHub, tsh kube login
-     <installation> for the cluster
+     <installation> for the cluster, tsh login for a missing context
+ 13  remote_error: a CircleCI request failed; the command line was valid
 
 Examples:
+  devctl rollout wait myinstallation --chart kagent --version v1.2.4
   devctl rollout wait myinstallation giantswarm/app-operator v7.5.4
   devctl rollout wait myinstallation giantswarm/app-operator --pr 1234 --reconcile --progress`
 )
@@ -99,8 +150,9 @@ func New(config Config) (*cobra.Command, error) {
 		flag:        f,
 		stderr:      config.Stderr,
 		stdout:      config.Stdout,
-		openRelease: releasewait.OpenSources,
-		openCluster: rolloutwait.OpenCluster,
+		openRelease: laptop.ReleaseWaitSources,
+		openCluster: laptop.OpenCluster,
+		teleport:    laptop.Tsh{},
 	}
 
 	c := &cobra.Command{

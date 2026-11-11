@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,6 +23,7 @@ const (
 	genMakefile  = "makefile"
 	genWorkflows = "workflows"
 	genLLM       = "llm"
+	genPlans     = "plans"
 	genPrecommit = "precommit"
 	genCircleCI  = "circleci"
 	genRenovate  = "renovate"
@@ -51,8 +53,9 @@ type genContext struct {
 }
 
 // genCommands returns the `devctl gen …` command lines align-files runs for
-// a declaration, in align-files' order: makefile, workflows, llm,
-// pre-commit, CircleCI when gen.ci.generate is on, then Renovate. Each
+// a declaration, in align-files' order: makefile, workflows, llm, plans
+// (the plans flavour only), pre-commit, CircleCI when gen.ci.generate is on, then Renovate as
+// [PlanRenovate] decides. Each
 // line is an argv starting with devctl gen. The declaration has to have
 // gen.flavours and gen.language; the validator refuses one that has not. A
 // fork line gets nothing generated ([generates]) but its release flow: the
@@ -70,16 +73,7 @@ func genCommands(f Fields, gc genContext) [][]string {
 	flavour := strings.Join(g.Flavours, ",")
 	ci := g.CI
 	generateCI := ci != nil && ci.Generate != nil && *ci.Generate
-
-	// The release workflow follows the CI surface: generated CI implies
-	// auto-release, a repository without it stays on legacy.
-	releaseWorkflow := releaseWorkflowLegacy
-	if generateCI {
-		releaseWorkflow = releaseWorkflowAutoRelease
-	}
-	if ci != nil && ci.ReleaseWorkflow != "" {
-		releaseWorkflow = ci.ReleaseWorkflow
-	}
+	releaseWorkflow := effectiveReleaseWorkflow(ci)
 
 	line := func(generator string, args ...string) []string {
 		return append([]string{"devctl", "gen", generator}, args...)
@@ -92,6 +86,12 @@ func genCommands(f Fields, gc genContext) [][]string {
 	releaseArgs := []string{"--release-workflow", releaseWorkflow}
 	if releaseWorkflow == releaseWorkflowAutoRelease && f.DefaultBranch != "" && f.DefaultBranch != "main" && knows(genWorkflows, "--release-branch") {
 		releaseArgs = append(releaseArgs, "--release-branch", f.DefaultBranch)
+	}
+	if releaseWorkflow == releaseWorkflowAutoRelease && ci != nil && ci.MaintenanceBranches && knows(genWorkflows, "--maintenance-branches") {
+		releaseArgs = append(releaseArgs, "--maintenance-branches")
+	}
+	if releaseWorkflow == releaseWorkflowAutoRelease && ci != nil && ci.PatchCandidates && knows(genWorkflows, "--patch-candidates") {
+		releaseArgs = append(releaseArgs, "--patch-candidates")
 	}
 
 	if !generates(g.Flavours) {
@@ -112,6 +112,18 @@ func genCommands(f Fields, gc genContext) [][]string {
 	if g.HelmDocsRegen {
 		workflows = append(workflows, "--helm-docs-regen")
 	}
+	// The chart unit tests are on for every app repository unless the entry
+	// switches them off; align-files would otherwise put the workflow back on
+	// every run. A devctl that predates the flag generates it regardless.
+	if g.ChartTests != nil && !*g.ChartTests && knows(genWorkflows, "--chart-tests") {
+		workflows = append(workflows, "--chart-tests=false")
+	}
+	// The README link check is on for every app repository unless the entry
+	// switches it off; align-files would otherwise put the workflow back on
+	// every run. A devctl that predates the flag generates it regardless.
+	if g.CheckReadmeLinks != nil && !*g.CheckReadmeLinks && knows(genWorkflows, "--check-readme-links") {
+		workflows = append(workflows, "--check-readme-links=false")
+	}
 	scorecard := (g.RunSecurityScorecard == nil || *g.RunSecurityScorecard) && f.Visibility != VisibilityPrivate
 	if !scorecard {
 		workflows = append(workflows, "--run-security-scorecard=false")
@@ -127,6 +139,10 @@ func genCommands(f Fields, gc genContext) [][]string {
 
 	if g.GenerateLlmRules == nil || *g.GenerateLlmRules {
 		commands = append(commands, line(genLLM, flagFlavour, flavour, flagLanguage, g.Language))
+	}
+
+	if slices.Contains(g.Flavours, gen.FlavourPlans.String()) {
+		commands = append(commands, line(genPlans, flagFlavour, flavour))
 	}
 
 	// Pre-commit: generated for every repository on generated CI, and for
@@ -156,25 +172,49 @@ func genCommands(f Fields, gc genContext) [][]string {
 		commands = append(commands, line(genCircleCI, circleCIArgs(f, flavour, knows)...))
 	}
 
-	// Renovate: every repository that generates at all gets its
-	// configuration. On generated CI the architect orb is pinned by the
-	// generated config, so --circleci-generated keeps Renovate off it; without
-	// generated CI there is no orb to leave alone. --repo-name is what
-	// align-files' devctl reads from the checkout's origin remote.
-	renovate := []string{flagLanguage, g.Language}
-	if generateCI {
-		renovate = append(renovate, "--circleci-generated")
+	// Renovate, as align-files decides it: [PlanRenovate] for a repository
+	// without a configuration of its own -- a template's is none -- so the
+	// scaffold carries the generated one and align-files keeps it. On
+	// generated CI the architect orb is pinned by the generated config, so
+	// --circleci-generated keeps Renovate off it; without generated CI there
+	// is no orb to leave alone. --repo-name is what align-files' devctl reads
+	// from the checkout's origin remote.
+	if PlanRenovate(f, false).Generate {
+		commands = append(commands, line(genRenovate, renovateArgs(f, generateCI, knows)...))
 	}
-	renovate = append(renovate, flagRepoName, f.Name)
-	if f.Lifecycle == lifecycleDeprecated {
-		renovate = append(renovate, "--deprecated")
-	}
-	for _, reviewer := range f.ChoreReviewers {
-		renovate = append(renovate, "-r", reviewer)
-	}
-	commands = append(commands, line(genRenovate, renovate...))
 
 	return commands
+}
+
+// renovateArgs are the arguments of the `devctl gen renovate` line of a
+// declaration that keeps Renovate on.
+func renovateArgs(f Fields, generateCI bool, knows func(generator, flag string) bool) []string {
+	g := f.Gen
+	args := []string{flagLanguage, g.Language}
+	if generateCI {
+		args = append(args, "--circleci-generated")
+	}
+	args = append(args, flagRepoName, f.Name)
+	if f.Lifecycle == lifecycleDeprecated {
+		args = append(args, "--deprecated")
+	}
+	args = append(args, reviewerArgs(f)...)
+	if g.Renovate != nil && knows(genRenovate, "--extends") {
+		for _, preset := range g.Renovate.Extends {
+			args = append(args, "--extends", preset)
+		}
+	}
+	return args
+}
+
+// reviewerArgs are the -r flags of the entry's chore reviewers, the form
+// both `devctl gen renovate` and its reviewers subcommand take.
+func reviewerArgs(f Fields) []string {
+	var args []string
+	for _, reviewer := range f.ChoreReviewers {
+		args = append(args, "-r", reviewer)
+	}
+	return args
 }
 
 // circleCIArgs are the arguments of the `devctl gen circleci` line of a
@@ -280,6 +320,20 @@ func circleCIArgs(f Fields, flavour string, knows func(generator, flag string) b
 // flavours, as [gen.FlavourSlice.Generates] says it for the parsed ones: a
 // fork line carries its upstream's files plus the carried patches and gets
 // nothing generated.
+// effectiveReleaseWorkflow is the release workflow a gen.ci block resolves
+// to: gen.ci.releaseWorkflow when set, else the one the CI surface implies,
+// auto-release for generated CI and legacy without it.
+func effectiveReleaseWorkflow(ci *CIFields) string {
+	switch {
+	case ci != nil && ci.ReleaseWorkflow != "":
+		return ci.ReleaseWorkflow
+	case ci != nil && ci.Generate != nil && *ci.Generate:
+		return releaseWorkflowAutoRelease
+	default:
+		return releaseWorkflowLegacy
+	}
+}
+
 func generates(flavours []string) bool {
 	fl := make(gen.FlavourSlice, len(flavours))
 	for i, f := range flavours {

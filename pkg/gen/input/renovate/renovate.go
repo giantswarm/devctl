@@ -22,13 +22,21 @@ type Config struct {
 	RepoName string
 	// HasCustomConfig, when true, appends the repo-owned renovate-custom.json5
 	// as the last `extends` entry so repo-specific rules win over the shared
-	// presets. The file itself is never generated or touched by devctl.
+	// presets. The command initializes an absent file before generation and
+	// preserves an existing file.
 	HasCustomConfig bool
 	// Deprecated, when true, extends the renovate-presets deprecated.json5
 	// preset, which disables all routine updates and keeps only
 	// security/vulnerability remediation. Set for repos marked
 	// lifecycle: deprecated.
 	Deprecated bool
+	// Extends lists extra giantswarm/renovate-presets presets by file name,
+	// each extended as `github>giantswarm/renovate-presets:<name>`.
+	Extends []string
+	// Fork, when true, renders the config as JSONC into renovate.json with
+	// forkProcessing "enabled": the one file and key Renovate's fork check
+	// reads before it scans a GitHub fork.
+	Fork bool
 }
 
 type Renovate struct {
@@ -47,6 +55,8 @@ func New(config Config) (*Renovate, error) {
 			RepoName:          config.RepoName,
 			HasCustomConfig:   config.HasCustomConfig,
 			Deprecated:        config.Deprecated,
+			Extends:           config.Extends,
+			Fork:              config.Fork,
 		},
 	}
 

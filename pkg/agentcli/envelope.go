@@ -29,8 +29,11 @@ const (
 	VerdictGreen              Verdict = "green"
 	VerdictRed                Verdict = "red"
 	VerdictTimeout            Verdict = "timeout"
+	VerdictTransient          Verdict = "transient"
 	VerdictNotApplicable      Verdict = "not_applicable"
 	VerdictRequiredMissing    Verdict = "required_missing"
+	VerdictApprovalRequired   Verdict = "approval_required"
+	VerdictNoChecks           Verdict = "no_checks"
 	VerdictRefused            Verdict = "refused"
 	VerdictAvailable          Verdict = "available"
 	VerdictCIFailed           Verdict = "ci_failed"
@@ -39,9 +42,27 @@ const (
 	VerdictReleaseUnconfirmed Verdict = "release_unconfirmed"
 	VerdictAuthRequired       Verdict = "auth_required"
 	VerdictUsage              Verdict = "usage"
+	VerdictRemoteError        Verdict = "remote_error"
+	// VerdictAmbiguousRelease: the commit carries the release tags of more
+	// than one version; the caller names the version.
+	VerdictAmbiguousRelease Verdict = "ambiguous_release"
+	// VerdictStatusFailed: the artifacts are available and the tag's CI is
+	// green, and a commit status of the tag's commit failed.
+	VerdictStatusFailed Verdict = "status_failed"
+	// VerdictDetached: devctl pr merge --detach started the merge in a
+	// process of its own; the handle reads its outcome.
+	VerdictDetached Verdict = "detached"
+	// VerdictRunning: a detached merge has no outcome yet.
+	VerdictRunning Verdict = "running"
+	// VerdictListed: a read-only view (devctl ci jobs) was read in full; the
+	// document, not the verdict, says where the pipeline stands.
+	VerdictListed Verdict = "listed"
+	// VerdictTagPipelineEmpty: the tag pipeline settled without workflows
+	// although its configuration admits the tag; re-trigger the pipeline.
+	VerdictTagPipelineEmpty Verdict = "tag_pipeline_empty"
 )
 
-// The exit codes of every agent-facing command. 6 and 9 say that devctl pr
+// The exit codes of every agent-facing command. 6, 9 and 14 say that devctl pr
 // merge merged: they are never a reason to merge again.
 const (
 	// ExitOK: the wait ended green, the merge happened, the release is
@@ -49,12 +70,15 @@ const (
 	ExitOK = 0
 	// ExitRed: a check is red or the tag's CI failed.
 	ExitRed = 1
-	// ExitTimeout: the deadline passed; the document names what was unfinished.
+	// ExitTimeout: the deadline or a read's retry window passed; the
+	// document names what was unfinished or the transient read failure.
 	ExitTimeout = 2
 	// ExitNotApplicable: draft, closed, conflicting, behind a strict base, a
 	// version that does not resolve.
 	ExitNotApplicable = 3
-	// ExitRequiredMissing: a required context never reported.
+	// ExitRequiredMissing: a required context never reported, the head
+	// waits only for Actions runs a member has to approve, or its
+	// pull_request workflows never started.
 	ExitRequiredMissing = 4
 	// ExitRefused: the command declines (another author, an opt-out).
 	ExitRefused = 5
@@ -69,6 +93,25 @@ const (
 	// pullable: the release timeout passed first, or the release wait could
 	// not judge it.
 	ExitReleaseUnconfirmed = 9
+	// ExitRunning: devctl pr merge status found the detached merge still
+	// running.
+	ExitRunning = 10
+	// ExitAmbiguousRelease: the commit a release wait resolves to carries
+	// the release tags of more than one version; the reason names them, and
+	// a wait given the version waits on it.
+	ExitAmbiguousRelease = 11
+	// ExitStatusFailed: a release wait found every artifact available and
+	// the tag's CI green, and a commit status of the tag's commit (a branch
+	// pipeline's, another CI's) failed: devctl release promote refuses the
+	// commit. The reason names the failed statuses.
+	ExitStatusFailed = 12
+	// ExitRemoteError: a CircleCI request failed; retrying the command may
+	// succeed. The command line itself was valid.
+	ExitRemoteError = 13
+	// ExitTagPipelineEmpty: the tag pipeline settled without workflows
+	// although its configuration admits the tag. After pr merge, the merge
+	// already happened: re-trigger the tag pipeline, never merge again.
+	ExitTagPipelineEmpty = 14
 )
 
 // Envelope is the head of every command's JSON document. A command's document
@@ -103,8 +146,7 @@ func (e *Envelope) Warn(message string) {
 }
 
 // Finish completes the envelope at now from the command's error: nil is exit
-// 0 with the ok verdict, an [ExitCoder] carries its own code and verdict, and
-// anything else is a tooling failure ([ExitUsage]).
+// 0 with the ok verdict, otherwise the code and verdict of [Outcome].
 func (e *Envelope) Finish(now time.Time, ok Verdict, err error) {
 	e.FinishedAt = now.UTC()
 	if err == nil {
@@ -207,7 +249,9 @@ func (e *ExitError) ExitCode() int { return e.Code }
 func (e *ExitError) ExitVerdict() Verdict { return e.Verdict }
 
 // Exit maps err to the process exit code: 0 for nil, the code of an
-// [ExitCoder] anywhere in the chain, [ExitUsage] for any other error.
+// [ExitCoder] anywhere in the chain, [ExitTimeout] for an exhausted read,
+// [ExitRemoteError] for a [RemoteError],
+// [ExitUsage] for any other error.
 func Exit(err error) int {
 	if err == nil {
 		return ExitOK
@@ -217,12 +261,22 @@ func Exit(err error) int {
 }
 
 // Outcome is err's place in the exit-code table: the code and verdict of an
-// [ExitCoder] anywhere in the chain, [ExitUsage] for any other error. err
-// must not be nil.
+// [ExitCoder] anywhere in the chain, or a transient outcome for an exhausted
+// read not handled by its wait, [ExitRemoteError] for a [RemoteError]. Any
+// other error is [ExitUsage]. err must not
+// be nil.
 func Outcome(err error) (int, Verdict) {
 	var coder ExitCoder
 	if errors.As(err, &coder) {
 		return coder.ExitCode(), coder.ExitVerdict()
+	}
+	var exhausted *RetriesExhaustedError
+	if errors.As(err, &exhausted) {
+		return ExitTimeout, VerdictTransient
+	}
+	var remote *RemoteError
+	if errors.As(err, &remote) {
+		return ExitRemoteError, VerdictRemoteError
 	}
 	return ExitUsage, VerdictUsage
 }

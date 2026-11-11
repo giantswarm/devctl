@@ -1,0 +1,27 @@
+apiVersion: v2
+name: devctl
+description: devctl serve on a Giant Swarm management cluster — devctl's agent-facing commands as MCP tools behind muster, acting on GitHub as the calling person through the installation's agents App
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/giantswarm/devctl
+icon: https://s.giantswarm.io/app-icons/giantswarm/1/dark.svg
+sources:
+  - https://github.com/giantswarm/devctl
+keywords:
+  - mcp
+  - github
+  - agent-platform
+maintainers:
+  - name: Giant Swarm
+    email: team-bumblebee@giantswarm.io
+annotations:
+  # Team ownership (OCI-compliant format): the team that runs the server
+  # on gazelle for the Agent Platform's coding agents.
+  io.giantswarm.application.team: bumblebee
+  # Giant Swarm-specific: devctl's waits and merges know Giant Swarm's team
+  # files, gsoci and catalogs; registered on gazelle only, never part of the
+  # Agent Platform chart.
+  io.giantswarm.application.audience: giantswarm
+  # App is managed/supported by Giant Swarm
+  io.giantswarm.application.managed: "true"

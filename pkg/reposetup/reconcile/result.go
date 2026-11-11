@@ -18,20 +18,20 @@
 // as added — never from a missing repository), scaffold (rendered by the
 // front half and pushed as the first commit before protection), settings
 // baseline, team permissions, branch protection with the required checks on
-// the reported-only rule, CircleCI (follow, setup workflows, checkout key,
-// and the webhook CircleCI installs on the follow, verified), webhooks,
+// the reported-only rule, CircleCI (check only: a GitHub App pipeline builds
+// the repository; nothing is written on CircleCI), webhooks,
 // Renovate (check only), CODEOWNERS (a pull request), description
-// and visibility, lifecycle (archived → unfollowed on CircleCI and
-// CircleCI's deploy key deleted, then archived on GitHub; deleted →
-// unfollowed, then deleted on GitHub, the entry the record),
+// and visibility, labels (the owning team's team/<team>, created when
+// missing), lifecycle (archived → CircleCI's deploy key deleted, then
+// archived on GitHub; deleted → deleted on GitHub, the entry the record),
 // catalog and mapping (the giantswarm/github workflows), first-release
-// verification (a vX.Y.Z tag → pipeline → workflows; a missed tag build is
-// reported, never rebuilt, except a creation's first release, which is
-// built once; a release tagged otherwise is not verified).
+// verification (a vX.Y.Z tag → the GitHub App pipeline's statuses on its
+// commit; a missed tag build is reported, never rebuilt; a release tagged
+// otherwise, or built by an OAuth follow alone, is not verified).
 //
 // What a run costs in requests is counted at the clients' transports
 // ([Counter]) into [Result.Requests], and per step in the log. A check of a
-// converged repository with every step costs at most twenty-one GitHub
+// converged repository with every step costs at most twenty-three GitHub
 // requests, the budget of the nightly reconciler: the repository (one read,
 // shared by the create, metadata and lifecycle steps); the root listing and
 // the chart's Chart.yaml and values.schema.json; the workflow permission;
@@ -41,13 +41,14 @@
 // newest head, three requests once per run, shared by every step that asks
 // — the pipeline files workflows.yml and custom.yml (and .circleci/
 // config.yml once when the entry does not declare the pipeline); the
-// webhooks (one read, shared by the circleci and webhooks steps);
-// renovate.json5 and the Dependency Dashboard issue; CODEOWNERS; the
-// catalog and the mapping; the latest release. Measured in check mode with
-// a person's token: giantswarm/backstage 18, giantswarm/klaus 19 (one of
-// them a CODEOWNERS drift, which also lists the open pull requests); the
-// ruleset reads add two to each. A planned change costs the same reads; a
-// repair adds one write per change.
+// deploy keys (one read, the circleci step); the webhooks (one read, shared
+// by the circleci and webhooks steps); renovate.json5 and the Dependency
+// Dashboard issue; CODEOWNERS; the owning team's label; the catalog and the
+// mapping; the latest release. Measured in check mode with a person's token: giantswarm/backstage
+// 18, giantswarm/klaus 19 (one of them a CODEOWNERS drift, which also lists
+// the open pull requests); the ruleset reads add two to each and the deploy
+// keys one. A planned change costs the same reads; a repair adds one write
+// per change.
 //
 // The reconciler workflow of giantswarm/github runs the steps under the App
 // identity, `devctl repo reconcile` runs them as the person, `devctl repo
@@ -72,6 +73,7 @@ const (
 	StepRenovate    Step = "renovate"
 	StepCodeowners  Step = "codeowners"
 	StepMetadata    Step = "metadata"
+	StepLabels      Step = "labels"
 	StepLifecycle   Step = "lifecycle"
 	StepCatalog     Step = "catalog"
 	StepRelease     Step = "release"
@@ -85,7 +87,7 @@ const (
 var Steps = []Step{
 	StepCreate, StepScaffold, StepSettings, StepPermissions, StepProtection,
 	StepCircleCI, StepWebhooks, StepRenovate, StepCodeowners, StepMetadata,
-	StepLifecycle, StepCatalog, StepRelease,
+	StepLabels, StepLifecycle, StepCatalog, StepRelease,
 }
 
 // Mode is what a run does with the drift it finds.
@@ -138,24 +140,41 @@ const (
 	FindingABSPrerequisite FindingKind = "abs-prerequisite"
 	// FindingDefaultIcon: the chart still carries the default icon.
 	FindingDefaultIcon FindingKind = "default-icon"
-	// FindingRedRelease: the latest release's tag pipeline failed.
+	// FindingRedRelease: the latest release's tag pipeline failed in a job
+	// that leaves something unpublished (UnpublishedJobs).
 	FindingRedRelease FindingKind = "red-release"
-	// FindingMissedTagBuild: the latest release's tag has no pipeline. The
-	// reconciler rebuilds no tag but a creation's first release; the fix is
-	// the next tag, or the tag's pipeline triggered by hand.
+	// FindingMissedTagBuild: the latest release's tag carries no CircleCI
+	// status of its own build. The reconciler rebuilds no tag; the fix is
+	// `devctl repo follow-circleci`, which runs it as the person, or the
+	// next tag.
 	FindingMissedTagBuild FindingKind = "missed-tag-build"
-	// FindingCircleCIWebhookMissing: the project is followed on CircleCI
-	// but the repository carries no active CircleCI webhook for push
-	// events, so no push and no tag reaches CircleCI: no branch builds,
-	// and the first release tag goes unbuilt. CircleCI installs the hook on
-	// a follow by a GitHub admin of the repository whose CircleCI grant
-	// carries the hook scope; devctl cannot create it, CircleCI signs it
-	// with its own secret.
+	// FindingCircleCIPipelineMissing: the repository has a CircleCI
+	// configuration but no CircleCI pipeline builds it (an OAuth follow is
+	// FindingCircleCIOAuthFollow). CircleCI has no service accounts, so a
+	// person creates the GitHub App pipeline with their own CircleCI login:
+	// `devctl repo follow-circleci`.
+	FindingCircleCIPipelineMissing FindingKind = "circleci-pipeline-missing"
+	// FindingCircleCIOAuthFollow: the repository builds through an OAuth
+	// follow, alone or beside a GitHub App pipeline. It builds today, through
+	// the follower's GitHub grant, and stops when they leave; beside the App
+	// pipeline every push builds twice. Advisory: the repository is built.
+	// The fix is the person's `devctl repo follow-circleci --migrate`.
+	FindingCircleCIOAuthFollow FindingKind = "circleci-oauth-follow"
+	// FindingCircleCIWebhookMissing was the finding of an OAuth follow
+	// without CircleCI's webhook.
+	//
+	// Deprecated: the engine no longer follows on CircleCI and never reports
+	// it; it stays for readers of older run artifacts, such as
+	// giantswarm-repo-manager. Use FindingCircleCIPipelineMissing.
 	FindingCircleCIWebhookMissing FindingKind = "circleci-webhook-missing"
 	// FindingRenovateNotScanned: the repository shows no sign that Renovate
 	// scans it — no configuration, or a configuration without a trace of a
 	// run (the Dependency Dashboard issue, a pull request, a commit).
 	FindingRenovateNotScanned FindingKind = "renovate-not-scanned"
+	// FindingRenovateDeclaredOff: the entry declares renovate: false and
+	// the repository carries a Renovate configuration that keeps Renovate
+	// on. The engine deletes no file; the fix names the configuration.
+	FindingRenovateDeclaredOff FindingKind = "renovate-declared-off"
 	// FindingArchivedUndeclared: archived on GitHub without lifecycle:
 	// archived.
 	FindingArchivedUndeclared FindingKind = "archived-undeclared"
@@ -192,6 +211,11 @@ const (
 	// alone and a member's own pull request does not merge through the API
 	// without a second review; the fix names the team's privacy.
 	FindingTeamBypassRefused FindingKind = "team-bypass-refused" //nolint:gosec // G101: a finding kind, not a credential
+	// FindingOpenPullRequests: pull requests were open when the lifecycle
+	// step archived the repository; they stay open and read-only in the
+	// archive. The fix is the way back: the entry without lifecycle:
+	// archived, which unarchives the repository.
+	FindingOpenPullRequests FindingKind = "open-pull-requests"
 )
 
 // Advisory says whether findings of the kind are for a person only and do
@@ -200,7 +224,8 @@ const (
 // something a person must fix before the repository counts as in sync.
 func (k FindingKind) Advisory() bool {
 	switch k {
-	case FindingDefaultIcon, FindingForeignRuleset, FindingDeclaredRulesetMissing, FindingRulesetsNotEnabled:
+	case FindingDefaultIcon, FindingForeignRuleset, FindingDeclaredRulesetMissing, FindingRulesetsNotEnabled, FindingOpenPullRequests,
+		FindingCircleCIOAuthFollow:
 		return true
 	}
 	return false
@@ -211,8 +236,9 @@ type Finding struct {
 	Kind    FindingKind `json:"kind"`
 	Message string      `json:"message"`
 	Fix     string      `json:"fix"`
-	// Advisory mirrors [FindingKind.Advisory] in the artifact, so a reader
-	// knows the weight of the finding without knowing the kinds.
+	// Advisory says this finding does not prevent convergence. It defaults
+	// to [FindingKind.Advisory]; a skipped classic protection read in check
+	// mode is advisory too. The artifact carries the weight for its readers.
 	Advisory bool `json:"advisory,omitempty"`
 }
 
@@ -261,7 +287,11 @@ type Result struct {
 	Mode     Mode   `json:"mode"`
 	// Added says whether the entry was passed as added by the triggering
 	// change, which alone allows the create step to create.
-	Added      bool         `json:"added"`
+	Added bool `json:"added"`
+	// Unarchived says whether the entry was passed as one the triggering
+	// change took lifecycle: archived from, which alone allows the
+	// lifecycle step to unarchive.
+	Unarchived bool         `json:"unarchived,omitempty"`
 	StartedAt  time.Time    `json:"startedAt"`
 	FinishedAt time.Time    `json:"finishedAt"`
 	Steps      []StepResult `json:"steps"`

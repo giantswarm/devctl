@@ -8,6 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+
+	"github.com/giantswarm/devctl/v8/pkg/gen"
 )
 
 // Test_Run_RepoName runs the command in a checkout named like a worktree
@@ -42,8 +44,20 @@ func Test_Run_RepoName(t *testing.T) {
 			wantExtends:  "'github>giantswarm/valkey-app:renovate-custom.json5'",
 		},
 		{
+			name:         "dot-prefixed repository name",
+			repoNameFlag: ".github",
+			customConfig: true,
+			wantExtends:  "'github>giantswarm/.github:renovate-custom.json5'",
+		},
+		{
+			name:         "repository name with all permitted characters",
+			repoNameFlag: "Fixture_repo.name-2",
+			customConfig: true,
+			wantExtends:  "'github>giantswarm/Fixture_repo.name-2:renovate-custom.json5'",
+		},
+		{
 			name:         "origin remote outside giantswarm",
-			remote:       "git@github.com:teemow/valkey-app.git",
+			remote:       "git@github.com:fixture-person/valkey-app.git",
 			customConfig: true,
 			wantErr:      "pass --repo-name <name>",
 		},
@@ -53,7 +67,13 @@ func Test_Run_RepoName(t *testing.T) {
 			wantErr:      "pass --repo-name <name>",
 		},
 		{
-			name: "no renovate-custom.json5 needs no name",
+			name:    "no custom config still needs a repository name",
+			wantErr: "pass --repo-name <name>",
+		},
+		{
+			name:        "origin names the preset before custom rules exist",
+			remote:      "https://github.com/giantswarm/valkey-app.git",
+			wantExtends: "'github>giantswarm/valkey-app:renovate-custom.json5'",
 		},
 	}
 
@@ -74,6 +94,9 @@ func Test_Run_RepoName(t *testing.T) {
 			if tc.wantErr != "" {
 				require.ErrorContains(t, err, tc.wantErr)
 				require.NoFileExists(t, "renovate.json5")
+				if !tc.customConfig {
+					require.NoFileExists(t, "renovate-custom.json5")
+				}
 				return
 			}
 			require.NoError(t, err)
@@ -85,6 +108,109 @@ func Test_Run_RepoName(t *testing.T) {
 				require.Contains(t, string(got), tc.wantExtends)
 			} else {
 				require.NotContains(t, string(got), "renovate-custom.json5'")
+			}
+		})
+	}
+}
+
+// Test_Run_Fork asserts which file each flavour writes and removes, and that a
+// fork line's opt-out stays as it is.
+func Test_Run_Fork(t *testing.T) {
+	testCases := []struct {
+		name      string
+		flavours  gen.FlavourSlice
+		existing  map[string]string
+		wantFile  string
+		wantGone  string
+		wantErr   string
+		wantForks bool
+	}{
+		{
+			name:      "a fork gets renovate.json, the hand-written renovate.json5 goes",
+			flavours:  gen.FlavourSlice{gen.FlavourFork},
+			existing:  map[string]string{"renovate.json5": "{\n  dependencyDashboard: true,\n}\n"},
+			wantFile:  "renovate.json",
+			wantGone:  "renovate.json5",
+			wantForks: true,
+		},
+		{
+			name:     "another flavour keeps renovate.json5, renovate.json goes",
+			flavours: gen.FlavourSlice{gen.FlavourApp},
+			existing: map[string]string{"renovate.json": "{}\n"},
+			wantFile: "renovate.json5",
+			wantGone: "renovate.json",
+		},
+		{
+			name:     "a fork line's opt-out in renovate.json5 stays",
+			flavours: gen.FlavourSlice{gen.FlavourFork},
+			existing: map[string]string{"renovate.json5": "{\n  reviewers: ['fixture-person'],\n  enabled: false,\n}\n"},
+			wantErr:  "renovate.json5 turns Renovate off for this fork line",
+		},
+		{
+			name:     "a fork line's opt-out in renovate.json stays",
+			flavours: gen.FlavourSlice{gen.FlavourFork},
+			existing: map[string]string{"renovate.json": "{\n  \"enabled\": false\n}\n"},
+			wantErr:  "renovate.json turns Renovate off for this fork line",
+		},
+		{
+			name:     "an enabled root config does not bypass an alternate opt-out",
+			flavours: gen.FlavourSlice{gen.FlavourFork},
+			existing: map[string]string{
+				"renovate.json":         "{\n  \"enabled\": true\n}\n",
+				".github/renovate.json": "{\n  \"enabled\": false\n}\n",
+			},
+			wantErr: ".github/renovate.json turns Renovate off for this fork line",
+		},
+		{
+			name:      "an enabled alternate config does not prevent fork generation",
+			flavours:  gen.FlavourSlice{gen.FlavourFork},
+			existing:  map[string]string{".github/renovate.json": "{\n  \"enabled\": true\n}\n"},
+			wantFile:  "renovate.json",
+			wantGone:  "renovate.json5",
+			wantForks: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			require.NoError(t, os.Mkdir(".github", 0o750))
+			require.NoError(t, os.WriteFile(".github/dependabot.yml", []byte("version: 2\n"), 0o600))
+			for name, content := range tc.existing {
+				require.NoError(t, os.WriteFile(name, []byte(content), 0o600))
+			}
+
+			r := &runner{flag: &flag{Language: "go", RepoName: "some-repo", Flavours: tc.flavours}}
+			err := r.Run(&cobra.Command{}, nil)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				require.NoFileExists(t, "renovate-custom.json5")
+				for name, content := range tc.existing {
+					got, err := os.ReadFile(name) // #nosec G304 -- the test's own file
+					require.NoError(t, err)
+					require.Equal(t, content, string(got))
+				}
+				return
+			}
+			require.NoError(t, err)
+
+			for name, content := range tc.existing {
+				if name != tc.wantFile && name != tc.wantGone {
+					got, err := os.ReadFile(name) // #nosec G304 -- the test's own file
+					require.NoError(t, err)
+					require.Equal(t, content, string(got))
+				}
+			}
+			got, err := os.ReadFile(tc.wantFile)
+			require.NoError(t, err)
+			require.NoFileExists(t, tc.wantGone)
+			if tc.wantForks {
+				require.Contains(t, string(got), `"forkProcessing": "enabled",`)
+				// A fork line's dependabot.yml is upstream's.
+				require.FileExists(t, ".github/dependabot.yml")
+			} else {
+				require.NotContains(t, string(got), "forkProcessing")
+				require.NoFileExists(t, ".github/dependabot.yml")
 			}
 		})
 	}

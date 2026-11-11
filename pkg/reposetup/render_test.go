@@ -29,8 +29,15 @@ var renderCases = []struct {
 	options  map[string]string
 }{
 	{name: "go-service", team: "team-bumblebee", template: TemplateGo},
+	// go-service-no-ci declares gen.ci.generate: false: the Go template's
+	// .circleci/ stays out of the scaffold.
+	{name: "go-service-no-ci", team: "team-bumblebee", template: TemplateGo},
 	{name: "go-app", team: "team-bumblebee", template: TemplateGo, chart: TemplateChart},
+	// chart-app declares no visibility, so it is created private and its
+	// README drops the CircleCI and Scorecard badges; chart-app-public keeps
+	// them.
 	{name: "chart-app", team: "team-shield", template: TemplateChart},
+	{name: "chart-app-public", team: "team-shield", template: TemplateChart},
 	{name: "chart-app-vendir", team: "team-shield", template: TemplateChart, options: map[string]string{
 		OptionSync:          SyncVendir,
 		OptionPatch:         PatchScript,
@@ -50,6 +57,17 @@ var renderCases = []struct {
 var headerURL = regexp.MustCompile(`https://github\.com/giantswarm/devctl/blob/[0-9a-f]+/`)
 
 const fixedHeaderURL = "https://github.com/giantswarm/devctl/blob/<commit>/"
+
+// anyProvenance matches the provenance link in both forms: the commit and
+// template path of a checkout where `go generate` wrote the gitignored .sha
+// files (what the goldens carry), and the bare module-ref tree link a
+// checkout without them falls back to (input.TemplateSHA). Comparing with
+// both masked keeps the test independent of whether `go generate` ran.
+var anyProvenance = regexp.MustCompile(`https://github\.com/giantswarm/devctl/(?:blob/(?:[0-9a-f]+|<commit>)/\S+|tree/[^/\s]+)`)
+
+func maskProvenance(s string) string {
+	return anyProvenance.ReplaceAllString(s, "<provenance>")
+}
 
 func testRenderer() Renderer {
 	return Renderer{Templates: DirTemplates{Root: filepath.Join("testdata", "templates")}}
@@ -114,9 +132,32 @@ func Test_Render(t *testing.T) {
 			if !strings.Contains(got, "\n--- renovate.json5\n") {
 				t.Errorf("the scaffold has no renovate.json5")
 			}
+			if !strings.Contains(got, "\n--- renovate-custom.json5\n") {
+				t.Errorf("the scaffold has no repo-owned Renovate preset")
+			}
+			// A scaffold carries a CircleCI pipeline only where `devctl gen
+			// circleci` wrote it, never the template's.
+			hasPipeline := strings.Contains(got, "\n--- .circleci/config.yml\n")
+			if want := GeneratesCircleCI(declarationFields(t, entry)); hasPipeline != want {
+				t.Errorf(".circleci/config.yml in the scaffold = %t, want %t", hasPipeline, want)
+			}
 			assertGolden(t, filepath.Join("testdata", "golden", tc.name+".golden"), got)
 		})
 	}
+}
+
+// declarationFields are the fields of the entry as the dry run rendered it.
+func declarationFields(t *testing.T, entry Entry) Fields {
+	t.Helper()
+	tf, err := ParseTeamFile("team", strings.NewReader(entry.Rendered))
+	if err != nil {
+		t.Fatalf("parse rendered entry: %v", err)
+	}
+	fields, err := tf.Entries[0].Fields()
+	if err != nil {
+		t.Fatalf("fields: %v", err)
+	}
+	return fields
 }
 
 // Test_Render_alignRunIsNoop is the acceptance criterion: the generated
@@ -253,19 +294,121 @@ func manifest(t *testing.T, s *Scaffold) string {
 func assertGolden(t *testing.T, golden, got string) {
 	t.Helper()
 
+	want, err := os.ReadFile(golden) // #nosec G304 -- fixed in-package testdata path or t.TempDir()
+	if err != nil && (!*update || !os.IsNotExist(err)) {
+		t.Fatalf("read golden %s: %v (run with -update to create it)", golden, err)
+	}
+
 	if *update {
+		got = preserveGoldenProvenance(string(want), got)
 		if err := os.WriteFile(golden, []byte(got), 0o644); err != nil { // #nosec G306 -- test fixture
 			t.Fatalf("update golden %s: %v", golden, err)
 		}
 		return
 	}
 
-	want, err := os.ReadFile(golden) // #nosec G304 -- fixed in-package testdata path
-	if err != nil {
-		t.Fatalf("read golden %s: %v (run with -update to create it)", golden, err)
+	if maskProvenance(got) != maskProvenance(string(want)) {
+		t.Errorf("scaffold does not match %s (run with -update to regenerate)\n%s", golden, firstDifference(maskProvenance(string(want)), maskProvenance(got)))
 	}
-	if got != string(want) {
-		t.Errorf("scaffold does not match %s (run with -update to regenerate)\n%s", golden, firstDifference(string(want), got))
+}
+
+// preserveGoldenProvenance keeps each file's old link when its generator had
+// no .sha file. Match by file name so added, removed or reordered files cannot
+// inherit another template's link. New files keep the module-ref fallback;
+// available commit/path links from .sha files always take precedence.
+func preserveGoldenProvenance(want, got string) string {
+	links := map[string]string{}
+	for _, file := range strings.Split(want, "\n--- ")[1:] {
+		name, _, _ := strings.Cut(file, "\n")
+		links[strings.TrimSuffix(name, " (executable)")] = anyProvenance.FindString(file)
+	}
+	files := strings.Split(got, "\n--- ")
+	for i, file := range files[1:] {
+		name, _, _ := strings.Cut(file, "\n")
+		oldURL := links[strings.TrimSuffix(name, " (executable)")]
+		url := anyProvenance.FindString(file)
+		if oldURL != "" && strings.HasPrefix(url, "https://github.com/giantswarm/devctl/tree/") {
+			files[i+1] = strings.Replace(file, url, oldURL, 1)
+		}
+	}
+	return strings.Join(files, "\n--- ")
+}
+
+func Test_AssertGolden_update(t *testing.T) {
+	previousUpdate := *update
+	*update = true
+	t.Cleanup(func() { *update = previousUpdate })
+
+	const fallback = "https://github.com/giantswarm/devctl/tree/main"
+	const firstURL = fixedHeaderURL + "pkg/first.template"
+	const secondURL = fixedHeaderURL + "pkg/second.template"
+	file := func(name, url, body string) string {
+		return "\n--- " + name + "\n# DO NOT EDIT. Generated with devctl.\n# " + url + "\n" + body + "\n"
+	}
+	const prefix = "template: template\n"
+	first := file("first.yaml", firstURL, "first: unchanged")
+	second := file("second.yaml", secondURL, "second: unchanged")
+	old := prefix + first + second
+
+	cases := []struct {
+		name     string
+		existing string
+		got      string
+		want     string
+	}{
+		{
+			name:     "case 0: unchanged content without sha files",
+			existing: old,
+			got:      prefix + file("first.yaml", fallback, "first: unchanged") + file("second.yaml", fallback, "second: unchanged"),
+			want:     old,
+		},
+		{
+			name:     "case 1: changed content keeps each file's provenance",
+			existing: old,
+			got:      prefix + file("first.yaml", fallback, "first: changed") + file("second.yaml", fallback, "second: unchanged"),
+			want:     prefix + file("first.yaml", firstURL, "first: changed") + second,
+		},
+		{
+			name:     "case 2: added removed and reordered files",
+			existing: old,
+			got:      prefix + file("second.yaml", fallback, "second: changed") + file("new.yaml", fallback, "new: true"),
+			want:     prefix + file("second.yaml", secondURL, "second: changed") + file("new.yaml", fallback, "new: true"),
+		},
+		{
+			name:     "case 3: available provenance is retained",
+			existing: old,
+			got:      prefix + file("first.yaml", fixedHeaderURL+"pkg/replacement.template", "first: changed") + file("second.yaml", fallback, "second: unchanged"),
+			want:     prefix + file("first.yaml", fixedHeaderURL+"pkg/replacement.template", "first: changed") + second,
+		},
+		{
+			name: "case 4: a new golden can be created without sha files",
+			got:  prefix + file("first.yaml", fallback, "first: new"),
+			want: prefix + file("first.yaml", fallback, "first: new"),
+		},
+		{
+			name:     "case 5: an executable mode change keeps provenance",
+			existing: old,
+			got:      prefix + file("first.yaml (executable)", fallback, "first: changed"),
+			want:     prefix + file("first.yaml (executable)", firstURL, "first: changed"),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			golden := filepath.Join(t.TempDir(), "scaffold.golden")
+			if tc.existing != "" {
+				if err := os.WriteFile(golden, []byte(tc.existing), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			assertGolden(t, golden, tc.got)
+			got, err := os.ReadFile(golden) // #nosec G304 -- golden is created in t.TempDir() above
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != tc.want {
+				t.Errorf("updated golden differs:\n%s", firstDifference(tc.want, string(got)))
+			}
+		})
 	}
 }
 

@@ -3,12 +3,15 @@ package releasewait
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/giantswarm/microerror"
 	"github.com/sirupsen/logrus"
 
 	circlecimock "github.com/giantswarm/devctl/v8/e2e/mock/circleci"
@@ -38,9 +41,12 @@ type fixture struct {
 	version         string
 	pr              int
 	mergeCommit     string
+	preferPromoted  bool
 	timeout         time.Duration
 	catalog         bool
 	catalogLists    bool
+	catalogIndex    CatalogReader
+	ctx             context.Context
 	// catalogChart, when set, is the only chart the catalog index lists.
 	catalogChart string
 	// catalogName, when set, is the only catalog that lists it.
@@ -49,6 +55,17 @@ type fixture struct {
 	warn func(string)
 	// images are the images named with --image.
 	images []string
+	charts []string
+	// wrapCircleCI, when set, stands in front of the CircleCI client.
+	wrapCircleCI func(CircleCI) CircleCI
+	// circleCIFromStatuses reads CircleCI through GitHub alone.
+	circleCIFromStatuses bool
+	// failedLogLines is --failed-log-lines with --failed-log; 0 without.
+	failedLogLines int
+	// clock, when set, is the wait's clock; a virtual clock otherwise.
+	clock *agentcli.Clock
+	// checkGitHub inspects the reads made by a regression scenario.
+	checkGitHub func([]sequence.Request)
 }
 
 type entries struct{ fields *reposetup.Fields }
@@ -104,13 +121,30 @@ func baseGitHub(root, workflows, circleci []string) sequence.Routes {
 	if circleci != nil {
 		routes[repoRoute("/contents/.circleci")] = []sequence.Response{{Body: dirListing(circleci...)}}
 	}
+	if slices.Contains(circleci, "custom.yml") {
+		routes[repoRoute("/contents/.circleci/custom.yml")] = []sequence.Response{{Body: fileContent(".circleci/custom.yml", ownTagJob)}}
+	}
 	if slices.Contains(root, "helm") {
 		routes = withChart(routes, testRepo, testRepo)
+	}
+	for _, name := range workflows {
+		if strings.Contains(name, "auto_release") {
+			file := workflowsDir + "/" + name
+			routes[repoRoute("/contents/"+file)] = []sequence.Response{{Body: fileContent(file, "on: push\n")}}
+		}
 	}
 	return routes
 }
 
 // withChart scripts helm/<dir>/Chart.yaml at the tag, declaring name.
+// ownTagJob is a custom.yml whose tag job is the repository's own, opaque
+// to the wait: vm-manager's guest-image job.
+const ownTagJob = `workflows:
+  build:
+    jobs:
+    - guest-image
+`
+
 func withChart(routes sequence.Routes, dir, name string) sequence.Routes {
 	path := "helm/" + dir + "/Chart.yaml"
 	routes[repoRoute("/contents/"+path)] = []sequence.Response{{Body: fileContent(path, "apiVersion: v2\nname: "+name+"\nversion: [[ .Version ]]\n")}}
@@ -180,25 +214,44 @@ func run(t *testing.T, fx fixture) (Result, error) {
 		GitHubAPIURL: gh.URL, CircleCIAPIURL: cc.APIURL(),
 		RegistryPublic: reg.Host(), RegistryPrivate: preg.Host(), RegistryInsecure: true,
 	}
-	ghClient, conditional, err := githubclient.NewConditional(githubclient.Config{Logger: discardLogger(), AccessToken: "ghu_test", BaseURL: gh.URL})
+	// The clients are built from tokens handed in, as a server builds them;
+	// TestMain makes every credential store fail.
+	sources, err := NewSources(endpoints, nil, Credentials{
+		GitHubToken: "ghu_test",
+		CircleCI:    func(context.Context) (string, string, error) { return "cci_test", "", nil },
+	})
 	if err != nil {
-		t.Fatalf("github client: %v", err)
+		t.Fatalf("sources: %v", err)
 	}
 	circleCalls := 0
 	config := Config{
-		Owner: testOwner, Repo: testRepo, Version: fx.version, PR: fx.pr, MergeCommitSHA: fx.mergeCommit, Timeout: fx.timeout, Catalog: fx.catalog, Images: fx.images,
-		GitHub:  ghClient,
+		Owner: testOwner, Repo: testRepo, Version: fx.version, PR: fx.pr, MergeCommitSHA: fx.mergeCommit, PreferPromoted: fx.preferPromoted, Timeout: fx.timeout, Catalog: fx.catalog, Images: fx.images, Charts: fx.charts, FailedLogLines: fx.failedLogLines,
+		GitHub:  sources.GitHub,
 		Entries: entries{fx.entry},
-		CircleCI: func(context.Context) (CircleCI, error) {
+		CircleCI: func(ctx context.Context) (CircleCI, error) {
 			circleCalls++
-			return circleciclient.New(circleciclient.Config{Token: "cci_test", BaseURL: circleciclient.BaseURLFromAPIURL(endpoints.CircleCIAPIURL)})
+			client, err := sources.CircleCI(ctx)
+			if err != nil || fx.wrapCircleCI == nil {
+				return client, err
+			}
+			return fx.wrapCircleCI(client), nil
 		},
-		Registry:     RegistryProber{Endpoints: endpoints},
+		Registry:     sources.Registry,
 		CatalogIndex: catalog{fx.catalogLists, fx.catalogChart, fx.catalogName},
 		Endpoints:    endpoints,
-		Clock:        agentcli.NewClock(0.001, nil),
-		Rate:         conditional.Rate,
+		Clock:        agentcli.NewVirtualClock(time.Now()),
+		Rate:         sources.Rate,
 		Warn:         fx.warn,
+	}
+	config.CircleCIFromStatuses = fx.circleCIFromStatuses
+	if fx.circleCIFromStatuses {
+		config.CircleCI = nil
+	}
+	if fx.clock != nil {
+		config.Clock = *fx.clock
+	}
+	if fx.catalogIndex != nil {
+		config.CatalogIndex = fx.catalogIndex
 	}
 	if config.Timeout == 0 {
 		config.Timeout = 2 * time.Minute
@@ -211,7 +264,14 @@ func run(t *testing.T, fx fixture) (Result, error) {
 		t.Fatalf("New: %v", err)
 	}
 	var result Result
-	err = w.Wait(context.Background(), &result)
+	ctx := fx.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	err = w.Wait(ctx, &result)
+	if fx.checkGitHub != nil {
+		fx.checkGitHub(gh.Requests())
+	}
 	if fx.circleci == nil && circleCalls != 0 {
 		t.Errorf("CircleCI was opened %d time(s) for a repository without CircleCI", circleCalls)
 	}
@@ -261,6 +321,38 @@ func TestWaitGeneratedRenamedImageBecomesAvailable(t *testing.T) {
 	}
 	if result.Pipeline == nil || result.Pipeline.Number != 12 || len(result.Pipeline.Workflows) != 1 || len(result.Pipeline.FailedJobs) != 0 {
 		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+// A chart the registry serves to a pull is available on the first probe,
+// whatever its HEAD answers: a HEAD carries no body, and an edge in front of
+// the registry may answer it without a header the descriptor needs, or not
+// know the tag a GET of the manifest resolves.
+func TestWaitChartAvailableWhenOnlyItsManifestGetAnswers(t *testing.T) {
+	for name, head := range map[string]sequence.Response{
+		"head without digest": {Status: 200, Headers: map[string]string{"Docker-Content-Digest": ""}},
+		"head not found":      {Status: 404},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fx := fixture{
+				entry:    generatedEntry(t),
+				timeout:  30 * time.Second,
+				github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+				circleci: pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}, map[string][]map[string]any{"w1": {job("push-chart-release", "success")}}),
+				registry: sequence.Routes{
+					"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+					"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {head},
+					"GET /v2/charts/giantswarm/kserve/manifests/1.2.3":      {{Status: 200}},
+				},
+			}
+			result, err := run(t, fx)
+			assertExit(t, err, agentcli.ExitOK, "")
+			chart := result.Artifacts[1]
+			want := registrymock.Digest(registrymock.Manifest("charts/giantswarm/kserve"))
+			if chart.Kind != KindChart || chart.State != StateAvailable || chart.Digest != want {
+				t.Errorf("chart: %+v, want available with %s", chart, want)
+			}
+		})
 	}
 }
 
@@ -388,19 +480,16 @@ func TestWaitArtifactsAvailablePipelineUnfinishedIsTimeout(t *testing.T) {
 }
 
 // A repository's own tag job that fails after the named artifacts resolved
-// fails the release: the verdict no longer depends on which came first.
+// fails the release: the verdict no longer depends on which came first. The
+// jobs are read once, when the workflow has failed, to name it.
 func TestWaitRepoOwnedTagJobFailingAfterTheArtifactsIsCIFailure(t *testing.T) {
 	circleci := pipelineRoutes(
 		[][]map[string]any{
 			{wf("w1", "build", "running", "2026-09-23T14:19:18Z")},
 			{wf("w1", "build", "failed", "2026-09-23T14:19:18Z")},
 		},
-		nil,
+		map[string][]map[string]any{"w1": {job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("guest-image", "failed")}},
 	)
-	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{
-		{Body: map[string]any{"items": []map[string]any{job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("guest-image", "running")}}},
-		{Body: map[string]any{"items": []map[string]any{job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("guest-image", "failed")}}},
-	}
 	fx := fixture{
 		entry:    generatedEntry(t),
 		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml", "custom.yml"}),
@@ -428,6 +517,7 @@ func TestWaitUnauthorizedIsToolingNotSlow(t *testing.T) {
 		github: baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
 		registry: sequence.Routes{
 			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 401}},
+			"GET /v2/giantswarm/kserve-controller/manifests/1.2.3":  {{Status: 401}},
 		},
 		circleci: pipelineRoutes(
 			[][]map[string]any{{wf("w1", "build", "running", "2026-09-21T10:00:00Z")}},
@@ -504,6 +594,59 @@ func TestWaitGeneratedChartDirectoryAndNameDiffer(t *testing.T) {
 	assertExit(t, err, agentcli.ExitOK, "")
 	if len(result.Artifacts) != 1 || !strings.HasSuffix(result.Artifacts[0].Reference, "/charts/giantswarm/kserve:1.2.3") {
 		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+}
+
+// A generated pipeline whose custom.yml pushes a second chart off the same
+// tag (giantswarm/agent-platform's connectivity chart): the wait expects the
+// chart of the custom job the tag pipeline runs, not the branch-only one.
+func TestWaitGeneratedCustomPushJobAddsItsChart(t *testing.T) {
+	entry := fieldsFromYAML(t, `- name: kserve
+  gen:
+    flavours: [app]
+    language: generic
+    ci:
+      generate: true
+`)
+	custom := `workflows:
+  build:
+    jobs:
+    - architect/push-to-app-catalog:
+        name: push-connectivity-branch
+        app_catalog: giantswarm-catalog
+        chart: kserve-connectivity
+        filters:
+          branches:
+            ignore: [main]
+    - architect/push-to-app-catalog:
+        name: push-connectivity-tag
+        app_catalog: giantswarm-catalog
+        chart: kserve-connectivity
+`
+	github := baseGitHub([]string{"README.md", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml", "custom.yml"})
+	github[repoRoute("/contents/.circleci/custom.yml")] = []sequence.Response{{Body: fileContent(".circleci/custom.yml", custom)}}
+	fx := fixture{
+		entry:  &entry,
+		github: withChart(github, "kserve-connectivity", "kserve-connectivity"),
+		circleci: pipelineRoutes([][]map[string]any{
+			{wf("w1", "build", "running", "2026-09-21T10:00:00Z")},
+			{wf("w1", "build", "success", "2026-09-21T10:00:00Z")},
+		},
+			map[string][]map[string]any{"w1": {job("push-chart-release", "success"), job("push-connectivity-tag", "success")}}),
+		registry: sequence.Routes{
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":              {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve-connectivity/manifests/1.2.3": {{Status: 404}, {Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	var refs []string
+	for _, a := range result.Artifacts {
+		refs = append(refs, a.Kind+" "+a.Reference[strings.Index(a.Reference, "/"):]+" "+a.State)
+	}
+	want := "chart /charts/giantswarm/kserve:1.2.3 available\nchart /charts/giantswarm/kserve-connectivity:1.2.3 available"
+	if strings.Join(refs, "\n") != want {
+		t.Errorf("artifacts:\n want %s\n got  %s", want, strings.Join(refs, "\n"))
 	}
 }
 
@@ -611,9 +754,346 @@ func TestWaitHandWrittenImageNamedByFlag(t *testing.T) {
 	}
 }
 
-// --image on a generated pipeline: the artifacts are derived from the
-// entry as before, and a warning says the named image is not probed.
-func TestWaitImageOnGeneratedCIWarns(t *testing.T) {
+// A hand-written tag job that pushes a chart with helm itself
+// (giantswarm/kagent-upstream's push-charts, giantswarm/devctl#2472): the
+// chart named with --chart is probed at its own path with the bare version,
+// beside the image, and goes to no catalog.
+func TestWaitHandWrittenChartNamedByFlag(t *testing.T) {
+	github := baseGitHub([]string{"Dockerfile"}, []string{"zz_generated.create_release.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", handWrittenConfig)}}
+	fx := fixture{
+		github: github,
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("build", "success")}},
+		),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/dex/manifests/v1.2.3":               {{Status: 200}},
+			"HEAD /v2/giantswarm/kagent/helm/kagent/manifests/1.2.3": {{Status: 404}, {Status: 200}},
+		},
+		images:  []string{"giantswarm/dex"},
+		charts:  []string{"giantswarm/kagent/helm/kagent"},
+		catalog: true,
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if len(result.Artifacts) != 2 || result.Artifacts[1].Kind != KindChart || !strings.HasSuffix(result.Artifacts[1].Reference, "/giantswarm/kagent/helm/kagent:1.2.3") {
+		t.Errorf("artifacts: want the image and the chart giantswarm/kagent/helm/kagent:1.2.3, got %+v", result.Artifacts)
+	}
+}
+
+// helmPushConfig is a hand-written configuration whose own job packages and
+// pushes charts under charts/ with helm itself, to a registry path its
+// environment names (giantswarm/substrate's charts job).
+const helmPushConfig = `version: 2.1
+orbs:
+  architect: giantswarm/architect@6.0.0
+jobs:
+  scan:
+    executor: architect/architect
+    environment: &publish-environment
+      REGISTRY: gsoci.azurecr.io/giantswarm/kserve
+    steps:
+      - checkout
+  charts:
+    executor: architect/architect
+    environment: *publish-environment
+    steps:
+      - checkout
+      - run:
+          name: Package and push the charts
+          command: |
+            VERSION=$(cat .build_version)
+            for chart in kserve-crds kserve; do
+              helm package "charts/${chart}" --destination dist --version "${VERSION}"
+            done
+            for chart in kserve-crds kserve; do
+              helm push "dist/${chart}-${VERSION}.tgz" "oci://${REGISTRY}/helm"
+            done
+workflows:
+  build:
+    jobs:
+      - architect/push-to-registries:
+          context: architect
+          name: push-controller
+          image: giantswarm/kserve/controller
+      - charts:
+          context: architect
+          requires: [push-controller]
+`
+
+// A hand-written tag job that pushes the charts under charts/ with helm
+// itself (giantswarm/substrate's charts job): the wait expects every chart
+// the job pushes at the repository path the job's environment names, with
+// the bare version, and is not done until they are pullable; a chart
+// directory no job pushes goes unchecked with a warning.
+func TestWaitHandWrittenHelmPushJobChartsAreAwaited(t *testing.T) {
+	github := baseGitHub([]string{"README.md", "charts"}, []string{"zz_generated.create_release.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", helmPushConfig)}}
+	github[repoRoute("/contents/charts")] = []sequence.Response{{Body: dirListing("kserve", "kserve-crds", "kserve-extras")}}
+	for _, dir := range []string{"kserve", "kserve-crds", "kserve-extras"} {
+		path := "charts/" + dir + "/Chart.yaml"
+		github[repoRoute("/contents/"+path)] = []sequence.Response{{Body: fileContent(path, "apiVersion: v2\nname: "+dir+"\nversion: 0.1.0\n")}}
+	}
+	var warnings []string
+	fx := fixture{
+		github: github,
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-controller", "success"), job("charts", "success")}},
+		),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve/controller/manifests/1.2.3":       {{Status: 200}},
+			"HEAD /v2/giantswarm/kserve/helm/kserve-crds/manifests/1.2.3": {{Status: 404}, {Status: 200}},
+			"HEAD /v2/giantswarm/kserve/helm/kserve/manifests/1.2.3":      {{Status: 404}, {Status: 404}, {Status: 200}},
+		},
+		warn: func(w string) { warnings = append(warnings, w) },
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	var refs []string
+	for _, a := range result.Artifacts {
+		refs = append(refs, a.Kind+" "+a.Reference[strings.Index(a.Reference, "/"):]+" "+a.State)
+	}
+	want := "image /giantswarm/kserve/controller:1.2.3 available\nchart /giantswarm/kserve/helm/kserve:1.2.3 available\nchart /giantswarm/kserve/helm/kserve-crds:1.2.3 available"
+	if strings.Join(refs, "\n") != want {
+		t.Errorf("artifacts:\n want %s\n got  %s", want, strings.Join(refs, "\n"))
+	}
+	if !slices.ContainsFunc(warnings, func(w string) bool {
+		return strings.Contains(w, "charts/kserve-extras") && strings.Contains(w, "--chart")
+	}) {
+		t.Errorf("want a warning that charts/kserve-extras goes unchecked, got %q", warnings)
+	}
+}
+
+// A helm push to a path the job's environment does not name (a variable of
+// a context) cannot be derived: its charts go unchecked with a warning naming
+// --chart, and a chart --chart names is awaited.
+func TestWaitHandWrittenHelmPushJobUnresolvedTargetWarns(t *testing.T) {
+	config := strings.ReplaceAll(helmPushConfig, "REGISTRY: gsoci.azurecr.io/giantswarm/kserve", "OTHER: x")
+	github := baseGitHub([]string{"README.md", "charts"}, []string{"zz_generated.create_release.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", config)}}
+	github[repoRoute("/contents/charts")] = []sequence.Response{{Body: dirListing("kserve", "kserve-crds")}}
+	for _, dir := range []string{"kserve", "kserve-crds"} {
+		path := "charts/" + dir + "/Chart.yaml"
+		github[repoRoute("/contents/"+path)] = []sequence.Response{{Body: fileContent(path, "apiVersion: v2\nname: "+dir+"\nversion: 0.1.0\n")}}
+	}
+	var warnings []string
+	fx := fixture{
+		github: github,
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-controller", "success"), job("charts", "success")}},
+		),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve/controller/manifests/1.2.3":  {{Status: 200}},
+			"HEAD /v2/giantswarm/kserve/helm/kserve/manifests/1.2.3": {{Status: 200}},
+		},
+		charts: []string{"giantswarm/kserve/helm/kserve"},
+		warn:   func(w string) { warnings = append(warnings, w) },
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if len(result.Artifacts) != 2 || !strings.HasSuffix(result.Artifacts[1].Reference, "/giantswarm/kserve/helm/kserve:1.2.3") {
+		t.Errorf("artifacts: want the image and the chart --chart names, got %+v", result.Artifacts)
+	}
+	if !slices.ContainsFunc(warnings, func(w string) bool {
+		return strings.Contains(w, "charts/kserve-crds") && strings.Contains(w, "${REGISTRY}") && strings.Contains(w, "--chart")
+	}) {
+		t.Errorf("want a warning that charts/kserve-crds goes unchecked for want of ${REGISTRY}, got %q", warnings)
+	}
+	if slices.ContainsFunc(warnings, func(w string) bool { return strings.Contains(w, "charts/kserve ") }) {
+		t.Errorf("charts/kserve is awaited through --chart, no warning expected, got %q", warnings)
+	}
+}
+
+// makePushConfig is a hand-written configuration whose own job pushes the
+// charts through a make target, to a registry its commands assign and pass
+// on the make command line (giantswarm/kagent-upstream's push-charts job).
+const makePushConfig = `version: 2.1
+orbs:
+  architect: giantswarm/architect@10.10.0
+jobs:
+  push-charts:
+    executor: architect/architect
+    steps:
+      - checkout
+      - run:
+          name: Push both charts
+          command: |
+            set -euo pipefail
+            VERSION=$(cat .build_version)
+            export VERSION
+            registry=gsoci.azurecr.io
+            eval "$(make -s substrate-pin)"
+            for chart in kagent kagent-crds; do
+              printf 'appVersion: %s\n' "${VERSION}" >> "helm/${chart}/Chart-template.yaml"
+            done
+            make helm-publish HELM_REPO="oci://${registry}/giantswarm"
+workflows:
+  publish:
+    jobs:
+      - architect/push-to-registries:
+          context: architect
+          name: push-controller
+          image: giantswarm/kagent/controller
+      - push-charts:
+          context: architect
+          requires: [push-controller]
+`
+
+// makePushMakefile pushes the charts it packages from the rendered
+// Chart-template.yaml files to $(HELM_REPO)/kagent/helm.
+const makePushMakefile = `HELM_REPO ?= oci://ghcr.io/kagent-dev
+HELM_DIST_FOLDER ?= dist
+VERSION ?= $(shell git describe --tags)
+
+.PHONY: helm-version
+helm-version: ## Stamp chart versions and package kagent + kagent-crds
+	VERSION=$(VERSION) envsubst < helm/kagent-crds/Chart-template.yaml > helm/kagent-crds/Chart.yaml
+	VERSION=$(VERSION) envsubst < helm/kagent/Chart-template.yaml > helm/kagent/Chart.yaml
+	helm package -d $(HELM_DIST_FOLDER) helm/kagent-crds
+	helm package -d $(HELM_DIST_FOLDER) helm/kagent
+
+.PHONY: substrate-pin
+substrate-pin:
+	@echo SUBSTRATE_VERSION=1.0.0
+
+.PHONY: helm-publish
+helm-publish: ## Package and push all Helm charts to the OCI registry
+helm-publish: helm-version
+	helm push ./$(HELM_DIST_FOLDER)/kagent-crds-$(VERSION).tgz $(HELM_REPO)/kagent/helm
+	helm push ./$(HELM_DIST_FOLDER)/kagent-$(VERSION).tgz \
+		$(HELM_REPO)/kagent/helm
+`
+
+// chartTemplateRoutes scripts a helm/ directory whose charts carry a
+// Chart-template.yaml and no Chart.yaml, beside a directory with neither.
+func chartTemplateRoutes(github sequence.Routes, charts ...string) sequence.Routes {
+	github[repoRoute("/contents/helm")] = []sequence.Response{{Body: dirListing(append(slices.Clone(charts), "tools")...)}}
+	for _, dir := range charts {
+		path := "helm/" + dir + "/Chart-template.yaml"
+		github[repoRoute("/contents/"+path)] = []sequence.Response{{Body: fileContent(path, "apiVersion: v2\nname: "+dir+"\nversion: ${VERSION}\n")}}
+	}
+	return github
+}
+
+// A hand-written tag job that pushes the charts of a Chart-template.yaml-only
+// layout through a make target (giantswarm/kagent-upstream): the wait reads
+// the charts from their templates and the target's helm push from the
+// Makefile at the tag, and awaits both at the repository the make command
+// line names, without --chart and without a warning.
+func TestWaitHandWrittenMakeHelmPushChartTemplatesAreAwaited(t *testing.T) {
+	github := baseGitHub([]string{"Makefile", "README.md", "helm"}, []string{"zz_generated.create_release.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", makePushConfig)}}
+	github[repoRoute("/contents/Makefile")] = []sequence.Response{{Body: fileContent("Makefile", makePushMakefile)}}
+	github = chartTemplateRoutes(github, "kagent", "kagent-crds")
+	var warnings []string
+	fx := fixture{
+		github: github,
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "publish", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-controller", "success"), job("push-charts", "success")}},
+		),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kagent/controller/manifests/1.2.3":       {{Status: 200}},
+			"HEAD /v2/giantswarm/kagent/helm/kagent/manifests/1.2.3":      {{Status: 404}, {Status: 200}},
+			"HEAD /v2/giantswarm/kagent/helm/kagent-crds/manifests/1.2.3": {{Status: 200}},
+		},
+		warn: func(w string) { warnings = append(warnings, w) },
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	var refs []string
+	for _, a := range result.Artifacts {
+		refs = append(refs, a.Kind+" "+a.Reference[strings.Index(a.Reference, "/"):]+" "+a.State)
+	}
+	want := "image /giantswarm/kagent/controller:1.2.3 available\nchart /giantswarm/kagent/helm/kagent:1.2.3 available\nchart /giantswarm/kagent/helm/kagent-crds:1.2.3 available"
+	if strings.Join(refs, "\n") != want {
+		t.Errorf("artifacts:\n want %s\n got  %s", want, strings.Join(refs, "\n"))
+	}
+	if len(warnings) != 0 {
+		t.Errorf("want no warning, got %q", warnings)
+	}
+}
+
+// A chart that only a Chart-template.yaml declares and no push job of the
+// tag pipeline names goes unchecked with a warning naming --chart, never in
+// silence.
+func TestWaitHandWrittenChartTemplateUncheckedWarns(t *testing.T) {
+	config := strings.ReplaceAll(makePushConfig, `make helm-publish HELM_REPO="oci://${registry}/giantswarm"`, "true")
+	github := baseGitHub([]string{"Makefile", "README.md", "helm"}, []string{"zz_generated.create_release.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", config)}}
+	github[repoRoute("/contents/Makefile")] = []sequence.Response{{Body: fileContent("Makefile", makePushMakefile)}}
+	github = chartTemplateRoutes(github, "kagent", "kagent-crds")
+	var warnings []string
+	fx := fixture{
+		github: github,
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "publish", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-controller", "success"), job("push-charts", "success")}},
+		),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kagent/controller/manifests/1.2.3": {{Status: 200}},
+		},
+		warn: func(w string) { warnings = append(warnings, w) },
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if len(result.Artifacts) != 1 {
+		t.Errorf("artifacts: want the image alone, got %+v", result.Artifacts)
+	}
+	for _, dir := range []string{"helm/kagent ", "helm/kagent-crds "} {
+		if !slices.ContainsFunc(warnings, func(w string) bool { return strings.Contains(w, dir) && strings.Contains(w, "--chart") }) {
+			t.Errorf("want a warning that %sgoes unchecked, got %q", dir, warnings)
+		}
+	}
+	if slices.ContainsFunc(warnings, func(w string) bool { return strings.Contains(w, "helm/tools") }) {
+		t.Errorf("helm/tools declares no chart, no warning expected, got %q", warnings)
+	}
+}
+
+// A make target that pushes to the Makefile's own default registry, outside
+// the ones the wait probes, leaves its charts unchecked with a warning.
+func TestWaitHandWrittenMakeHelmPushDefaultRegistryWarns(t *testing.T) {
+	config := strings.ReplaceAll(makePushConfig, ` HELM_REPO="oci://${registry}/giantswarm"`, "")
+	github := baseGitHub([]string{"Makefile", "README.md", "helm"}, []string{"zz_generated.create_release.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", config)}}
+	github[repoRoute("/contents/Makefile")] = []sequence.Response{{Body: fileContent("Makefile", makePushMakefile)}}
+	github = chartTemplateRoutes(github, "kagent")
+	var warnings []string
+	fx := fixture{
+		github: github,
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "publish", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-controller", "success"), job("push-charts", "success")}},
+		),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kagent/controller/manifests/1.2.3": {{Status: 200}},
+		},
+		warn: func(w string) { warnings = append(warnings, w) },
+	}
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if !slices.ContainsFunc(warnings, func(w string) bool {
+		return strings.Contains(w, "helm/kagent ") && strings.Contains(w, "ghcr.io/kagent-dev/kagent/helm") && strings.Contains(w, "--chart")
+	}) {
+		t.Errorf("want a warning that helm/kagent is pushed to ghcr.io and goes unchecked, got %q", warnings)
+	}
+}
+
+func TestNamedChart(t *testing.T) {
+	endpoints := agentcli.DefaultEndpoints()
+	path, private, err := namedChart("giantswarm/kagent/helm/kagent-crds", endpoints)
+	if err != nil || path != "giantswarm/kagent/helm/kagent-crds" || private != nil {
+		t.Errorf("namedChart = %q, %v, %v", path, private, err)
+	}
+	_, _, err = namedChart("giantswarm/kagent/helm/kagent:1.2.3", endpoints)
+	assertExit(t, err, agentcli.ExitUsage, "--chart \"giantswarm/kagent/helm/kagent:1.2.3\": name the chart without a tag or digest")
+}
+
+// --image on a generated pipeline adds to the entry's artifacts.
+func TestWaitImageOnGeneratedCIIsProbed(t *testing.T) {
 	var warnings []string
 	fx := fixture{
 		entry:  generatedEntry(t),
@@ -625,16 +1105,17 @@ func TestWaitImageOnGeneratedCIWarns(t *testing.T) {
 		registry: sequence.Routes{
 			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
 			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+			"HEAD /v2/giantswarm/other/manifests/v1.2.3":            {{Status: 200}},
 		},
 		images: []string{"giantswarm/other"},
 		warn:   func(w string) { warnings = append(warnings, w) },
 	}
 	result, err := run(t, fx)
 	assertExit(t, err, agentcli.ExitOK, "")
-	if len(result.Artifacts) != 2 {
-		t.Errorf("artifacts: want the entry's two, got %+v", result.Artifacts)
+	if len(result.Artifacts) != 3 || !strings.HasSuffix(result.Artifacts[2].Reference, "/giantswarm/other:v1.2.3") || result.Artifacts[2].State != StateAvailable {
+		t.Errorf("artifacts: want the entry's two and the named image, got %+v", result.Artifacts)
 	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "giantswarm/other is not probed") {
+	if len(warnings) != 0 {
 		t.Errorf("warnings: %q", warnings)
 	}
 }
@@ -704,6 +1185,53 @@ func TestWaitReleaseAssetsOnlyWithoutCircleCI(t *testing.T) {
 	}
 }
 
+// checkRunsBody is the check runs of the tag's commit, as GitHub lists them.
+func checkRunsBody(runs ...map[string]any) sequence.Response {
+	return sequence.Response{Body: map[string]any{"total_count": len(runs), "check_runs": runs}}
+}
+
+func checkRunJSON(id int, name, status string, conclusion any) map[string]any {
+	return map[string]any{"id": id, "name": name, "status": status, "conclusion": conclusion, "html_url": fmt.Sprintf("https://example/runs/%d", id), "app": map[string]any{"slug": "github-actions"}}
+}
+
+func actionsOnlyGitHub() sequence.Routes {
+	github := baseGitHub([]string{"main.go"}, []string{"zz_generated.auto_release.yaml", "ci.yaml"}, nil)
+	github[repoRoute("/releases/tags/"+testTag)] = []sequence.Response{{Body: map[string]any{
+		"tag_name": testTag, "draft": false, "html_url": "https://example/release", "assets": []map[string]any{},
+	}}}
+	github[repoRoute("/actions/runs")] = []sequence.Response{{Body: map[string]any{"total_count": 0, "workflow_runs": []map[string]any{}}}}
+	return github
+}
+
+func TestWaitActionsOnlyWaitsForTheTagsCheckRuns(t *testing.T) {
+	github := actionsOnlyGitHub()
+	check := repoRoute("/commits/" + testSHA + "/check-runs")
+	github[check] = []sequence.Response{
+		checkRunsBody(checkRunJSON(1, "validate", "completed", "success"), checkRunJSON(2, "deploy", "in_progress", nil)),
+		checkRunsBody(checkRunJSON(1, "validate", "completed", "success"), checkRunJSON(2, "deploy", "completed", "success")),
+	}
+	result, err := run(t, fixture{github: github})
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.CIModel != CIModelActions {
+		t.Errorf("ciModel = %q, want %q", result.CIModel, CIModelActions)
+	}
+	if result.Pipeline == nil || len(result.Pipeline.Workflows) != 2 || result.Pipeline.Workflows[0].Name != "deploy" || result.Pipeline.Workflows[0].Conclusion != "success" {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+func TestWaitActionsOnlyFailedCheckRunIsCIFailure(t *testing.T) {
+	github := actionsOnlyGitHub()
+	github[repoRoute("/commits/"+testSHA+"/check-runs")] = []sequence.Response{
+		checkRunsBody(checkRunJSON(1, "validate", "completed", "success"), checkRunJSON(2, "deploy", "completed", "failure")),
+	}
+	result, err := run(t, fixture{github: github})
+	assertExit(t, err, agentcli.ExitRed, "deploy")
+	if result.CIModel != CIModelActions || result.Pipeline == nil || len(result.Pipeline.FailedJobs) != 1 || result.Pipeline.FailedJobs[0] != "deploy" {
+		t.Errorf("result: %s %+v", result.CIModel, result.Pipeline)
+	}
+}
+
 func TestWaitActionsRunFailedIsCIFailure(t *testing.T) {
 	github := baseGitHub([]string{"main.go"}, []string{"zz_generated.auto_release.yaml"}, nil)
 	github[repoRoute("/actions/runs")] = []sequence.Response{{Body: map[string]any{"total_count": 1, "workflow_runs": []map[string]any{
@@ -751,6 +1279,105 @@ func TestWaitPullRequestResolvesTheTagFromTheMergeCommit(t *testing.T) {
 	}
 }
 
+// A multi-image repository's merge commit carries the tag of the image it
+// changed, <name>/vX.Y.Z: the wait follows that tag's pipeline and probes
+// the one image <owner>/<repo>/<name> under X.Y.Z.
+func TestWaitPullRequestFollowsTheImageReleaseOfAMultiImageRepository(t *testing.T) {
+	const tag = "go/v0.3.0"
+	entry := fieldsFromYAML(t, `- name: kserve
+  gen:
+    flavours: [multi-image]
+    language: generic
+    ci:
+      generate: true
+`)
+	github := baseGitHub([]string{"toolchains"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"})
+	github[repoRoute("/pulls/7")] = []sequence.Response{{Body: map[string]any{"number": 7, "state": "closed", "merged": true, "merge_commit_sha": testSHA}}}
+	github[repoRoute("/tags")] = []sequence.Response{{Body: []map[string]any{{"name": tag, "commit": map[string]any{"sha": testSHA}}, {"name": "go/v0.2.0", "commit": map[string]any{"sha": "older"}}}}}
+	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "release-go", "success", "2026-09-21T10:00:00Z")}}, map[string][]map[string]any{"w1": {job("push-go", "success")}})
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/pipeline"] = []sequence.Response{{Body: map[string]any{"items": []map[string]any{{"id": "p1", "number": 12, "vcs": map[string]any{"tag": tag, "revision": testSHA}}}}}}
+	fx := fixture{
+		entry: &entry, github: github, pr: 7, circleci: circleci,
+		registry: sequence.Routes{"HEAD /v2/giantswarm/kserve/go/manifests/0.3.0": {{Status: 200}}},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Tag != tag || result.SHA != testSHA || result.CIModel != CIModelGenerated {
+		t.Errorf("head: %+v", result)
+	}
+	if len(result.Artifacts) != 1 || !strings.HasSuffix(result.Artifacts[0].Reference, "/giantswarm/kserve/go:0.3.0") || result.Artifacts[0].State != StateAvailable {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+}
+
+// An image's release <name>/vX.Y.Z named on the command line, cut by the
+// hand-written pipeline (a setup config that generates its push jobs at run
+// time) that preceded the generated one the entry now declares: the
+// multi-image flavour names the image, and the wait follows the tag's
+// pipeline and probes <owner>/<repo>/<name> under X.Y.Z, with a warning.
+func TestWaitImageTagBeforeTheGeneratedPipeline(t *testing.T) {
+	const tag = "go/v0.1.0"
+	entry := fieldsFromYAML(t, `- name: kserve
+  gen:
+    flavours: [multi-image]
+    language: generic
+    ci:
+      generate: true
+`)
+	github := baseGitHub([]string{"toolchains"}, []string{"toolchain-release.yaml"}, []string{"config.yml", "generate-config.sh"})
+	github[repoRoute("/git/ref/tags/"+tag)] = []sequence.Response{{Body: map[string]any{"ref": "refs/tags/" + tag, "object": map[string]any{"type": "commit", "sha": testSHA}}}}
+	setup := wf("w0", "setup", "success", "2026-09-21T09:59:00Z")
+	setup["tag"] = "setup"
+	circleci := pipelineRoutes(
+		[][]map[string]any{
+			{setup, wf("w1", "build", "running", "2026-09-21T10:00:00Z")},
+			{setup, wf("w1", "build", "success", "2026-09-21T10:00:00Z")},
+		},
+		map[string][]map[string]any{"w1": {job("contract-go", "success"), job("push-go", "success")}},
+	)
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/pipeline"] = []sequence.Response{{Body: map[string]any{"items": []map[string]any{{"id": "p1", "number": 12, "vcs": map[string]any{"tag": tag, "revision": testSHA}}}}}}
+	var warnings []string
+	fx := fixture{
+		entry: &entry, github: github, version: tag, circleci: circleci,
+		registry: sequence.Routes{"HEAD /v2/giantswarm/kserve/go/manifests/0.1.0": {{Status: 404}, {Status: 200}}},
+		warn:     func(w string) { warnings = append(warnings, w) },
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Tag != tag || result.SHA != testSHA || result.CIModel != CIModelHandWritten {
+		t.Errorf("head: %+v", result)
+	}
+	if len(result.Artifacts) != 1 || !strings.HasSuffix(result.Artifacts[0].Reference, "/giantswarm/kserve/go:0.1.0") || result.Artifacts[0].State != StateAvailable {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+	if result.Pipeline == nil || len(result.Pipeline.Unfinished) != 0 {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], tag+" predates the generated pipeline") {
+		t.Errorf("warnings: %q", warnings)
+	}
+}
+
+// A change to the build files the images share releases every image from
+// one merge commit: the wait does not choose, it names each tag.
+func TestWaitPullRequestWithSeveralImageReleasesIsAmbiguous(t *testing.T) {
+	entry := fieldsFromYAML(t, `- name: kserve
+  gen:
+    flavours: [multi-image]
+    language: generic
+    ci:
+      generate: true
+`)
+	github := baseGitHub([]string{"toolchains"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"})
+	github[repoRoute("/pulls/7")] = []sequence.Response{{Body: map[string]any{"number": 7, "state": "closed", "merged": true, "merge_commit_sha": testSHA}}}
+	github[repoRoute("/tags")] = []sequence.Response{{Body: []map[string]any{{"name": "node/v0.2.1", "commit": map[string]any{"sha": testSHA}}, {"name": "go/v0.3.0", "commit": map[string]any{"sha": testSHA}}}}}
+	result, err := run(t, fixture{entry: &entry, github: github, pr: 7})
+	assertExit(t, err, agentcli.ExitAmbiguousRelease, "devctl release wait giantswarm/kserve go/v0.3.0")
+	if !slices.Equal(result.ConflictingTags, []string{"go/v0.3.0", "node/v0.2.1"}) {
+		t.Errorf("conflicting tags: %v", result.ConflictingTags)
+	}
+}
+
 // CircleCI knows the tag pipeline's setup workflow by id before it lists its
 // jobs: GET /workflow/{id}/job is 404 for a short while after the pipeline
 // is created. That is the tag not built yet, not a tooling failure: the
@@ -783,36 +1410,171 @@ func TestWaitJobsNotVisibleYetIsNotYet(t *testing.T) {
 	}
 }
 
-// Jobs that never become visible end the wait at the deadline, exit 2, with
-// the workflow in the pipeline's unfinished list and in the reason.
+// Hand-written CI derives its artifacts from the tag pipeline's jobs; jobs
+// that never become visible leave nothing to probe and end the wait at the
+// deadline, exit 2, with the workflow in the pipeline's unfinished list and
+// in the reason.
 func TestWaitJobsNeverVisibleIsTimeout(t *testing.T) {
-	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "setup", "running", "2026-09-21T10:00:00Z")}}, nil)
+	github := baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.create_release.yaml", "zz_generated.create_release_pr.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", handWrittenConfig)}}
+	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "build", "running", "2026-09-21T10:00:00Z")}}, nil)
 	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{{Status: 404, Body: map[string]any{"message": "Workflow not found"}}}
+	fx := fixture{timeout: 45 * time.Second, github: github, circleci: circleci}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "pipeline 12 unfinished: build (running, jobs not visible yet)")
+	if result.Pipeline == nil || strings.Join(result.Pipeline.Unfinished, ",") != "build (running, jobs not visible yet)" {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+	if len(result.Artifacts) != 0 {
+		t.Errorf("want no artifact derived without the jobs, got %+v", result.Artifacts)
+	}
+}
+
+// A green pipeline is green without its jobs: CircleCI answers 404 on the
+// jobs of a workflow it lists, finished or not, for a while after the
+// workflow exists and for as long as its job data lags (half an hour and
+// more on 2026-10-09, with the release published and every artifact in the
+// registry). Generated CI names its artifacts from the entry, so the jobs
+// are never read and the wait ends available on the first poll.
+func TestWaitGreenWorkflowsWithHiddenJobsAreAvailable(t *testing.T) {
+	circleci := pipelineRoutes(
+		[][]map[string]any{
+			{wf("w1", "setup", "success", "2026-09-21T10:00:00Z"), wf("w2", "build", "success", "2026-09-21T10:01:00Z")},
+		},
+		nil,
+	)
+	notFound := sequence.Response{Status: 404, Body: map[string]any{"message": "Workflow not found"}}
+	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{notFound}
+	circleci["GET /api/v2/workflow/w2/job"] = []sequence.Response{notFound}
 	fx := fixture{
 		entry:    generatedEntry(t),
-		timeout:  45 * time.Second,
 		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
 		circleci: circleci,
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
 	}
 	result, err := run(t, fx)
-	assertExit(t, err, agentcli.ExitTimeout, "pipeline 12 unfinished: setup (running, jobs not visible yet)")
-	if result.Pipeline == nil || strings.Join(result.Pipeline.Unfinished, ",") != "setup (running, jobs not visible yet)" {
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Pipeline == nil || len(result.Pipeline.Workflows) != 2 || len(result.Pipeline.Unfinished) != 0 {
 		t.Errorf("pipeline: %+v", result.Pipeline)
 	}
 }
 
-// A 404 on the jobs of a finished workflow is not a young pipeline: it stays
-// the tooling failure it is.
-func TestWaitJobsNotFoundOnAFinishedWorkflowIsTooling(t *testing.T) {
-	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}, nil)
+// A custom.yml of test and repository-owned jobs alone (beekeeper's
+// test-envtest, vm-manager's guest-image) names no artifact: the pipeline's
+// jobs are never read for it, and a green pipeline whose jobs CircleCI does
+// not list is available.
+func TestWaitCustomWithoutPushJobsReadsNoJobs(t *testing.T) {
+	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-23T14:19:18Z")}}, nil)
+	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{{Status: 404, Body: map[string]any{"message": "Workflow not found"}}}
+	fx := fixture{
+		entry:    generatedEntry(t),
+		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml", "custom.yml"}),
+		circleci: circleci,
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if len(result.Artifacts) != 2 || result.Pipeline == nil || len(result.Pipeline.Unfinished) != 0 {
+		t.Errorf("artifacts %+v, pipeline %+v", result.Artifacts, result.Pipeline)
+	}
+}
+
+// The setup workflow's one job continues the pipeline and names no
+// artifact: hand-written CI derives its artifacts from the build workflow's
+// jobs while CircleCI answers 404 on the setup workflow's.
+func TestWaitSetupWorkflowJobsAreNeverRead(t *testing.T) {
+	github := baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.create_release.yaml", "zz_generated.create_release_pr.yaml"}, []string{"config.yml"})
+	github[repoRoute("/contents/.circleci/config.yml")] = []sequence.Response{{Body: fileContent(".circleci/config.yml", handWrittenConfig)}}
+	setup := wf("w0", "setup", "success", "2026-09-21T09:59:00Z")
+	setup["tag"] = "setup"
+	circleci := pipelineRoutes(
+		[][]map[string]any{{setup, wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+		map[string][]map[string]any{"w1": {job("go-build", "success"), job("push-to-registries-release", "success"), job("push-llmisvc", "success"), job("push-chart", "success")}},
+	)
+	circleci["GET /api/v2/workflow/w0/job"] = []sequence.Response{{Status: 404, Body: map[string]any{"message": "Workflow not found"}}}
+	fx := fixture{
+		github:   github,
+		circleci: circleci,
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+		privateRegistry: sequence.Routes{
+			"HEAD /v2/giantswarm/llmisvc-controller/manifests/1.2.3": {{Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if len(result.Artifacts) != 3 || result.Pipeline == nil || len(result.Pipeline.Unfinished) != 0 {
+		t.Errorf("artifacts %+v, pipeline %+v", result.Artifacts, result.Pipeline)
+	}
+}
+
+// A failed workflow whose jobs CircleCI does not list is the tag's CI
+// failure all the same, named by the workflow.
+func TestWaitFailedWorkflowWithHiddenJobsIsCIFailure(t *testing.T) {
+	circleci := pipelineRoutes([][]map[string]any{{wf("w1", "build", "failed", "2026-09-21T10:00:00Z")}}, nil)
 	circleci["GET /api/v2/workflow/w1/job"] = []sequence.Response{{Status: 404, Body: map[string]any{"message": "Workflow not found"}}}
 	fx := fixture{
 		entry:    generatedEntry(t),
 		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
 		circleci: circleci,
 	}
-	_, err := run(t, fx)
-	assertExit(t, err, agentcli.ExitUsage, "reading the jobs of workflow build")
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitRed, "the tag pipeline of v1.2.3 failed: build")
+	if result.Pipeline == nil || strings.Join(result.Pipeline.FailedJobs, ",") != "build" {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+// A cancelled workflow is the tag's CI failure, its cancelled jobs named.
+func TestWaitCancelledWorkflowIsCIFailure(t *testing.T) {
+	fx := fixture{
+		entry:  generatedEntry(t),
+		github: baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "build", "canceled", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("go-build", "success"), job("push-to-registries-release", "canceled")}},
+		),
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitRed, "build/push-to-registries-release")
+	if result.Pipeline == nil || strings.Join(result.Pipeline.FailedJobs, ",") != "build/push-to-registries-release" {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+// The tag pipeline of a repository's first release: CircleCI lists no
+// pipeline for the project when the wait starts and the tag's on the next
+// poll; the wait holds until then and ends available once it is green.
+func TestWaitFirstTagPipelineAppearsLater(t *testing.T) {
+	circleci := sequence.Routes{
+		"GET /api/v2/project/gh/giantswarm/kserve/pipeline": {
+			{Body: map[string]any{"items": []map[string]any{}, "next_page_token": nil}},
+			{Body: map[string]any{"items": []map[string]any{{"id": "p1", "number": 1, "vcs": map[string]any{"tag": testTag, "revision": testSHA}}}}},
+		},
+		"GET /api/v2/pipeline/p1/workflow": {{Body: map[string]any{"items": []map[string]any{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}}},
+	}
+	fx := fixture{
+		entry:    generatedEntry(t),
+		github:   baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: circleci,
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Pipeline == nil || result.Pipeline.Number != 1 || len(result.Pipeline.Unfinished) != 0 {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
 }
 
 // giantswarm/mcp-toolkit merged its generated pipeline and auto-release
@@ -1050,7 +1812,7 @@ func TestWaitPullRequestAutoReleaseFinishedWithoutTagIsNoRelease(t *testing.T) {
 		github: mergedWithoutTag(autoReleaseRuns(autoReleaseRun("queued", ""), autoReleaseRun("in_progress", ""), autoReleaseRun("completed", "success"))),
 	}
 	result, err := run(t, fx)
-	assertExit(t, err, agentcli.ExitNotApplicable, "finished without a tag: the commits since the last release warrant none")
+	assertExit(t, err, agentcli.ExitNotApplicable, "into main finished without a tag, and no later tag on main carries it: the commits since the last release warrant none")
 	assertNoRelease(t, err)
 	if result.SHA != testSHA || result.Tag != "" || result.ReleaseModel != ReleaseModelAutoRelease {
 		t.Errorf("result: %+v", result)
@@ -1059,6 +1821,121 @@ func TestWaitPullRequestAutoReleaseFinishedWithoutTagIsNoRelease(t *testing.T) {
 
 // The known merge commit is used as is: no pull request is read (the mock
 // scripts none, so a read would fail the wait).
+// rcMerged scripts a merge commit auto-release tagged as the release
+// candidate v1.2.3-rc.1, and the repository's releases.
+func rcMerged(releases ...map[string]any) sequence.Routes {
+	github := mergedWithoutTag(autoReleaseRuns(autoReleaseRun("completed", "success")))
+	github[repoRoute("/tags")] = []sequence.Response{{Body: []map[string]any{{"name": "v1.2.3-rc.1", "commit": map[string]any{"sha": testSHA}}}}}
+	github[repoRoute("/releases")] = []sequence.Response{{Body: releases}}
+	return github
+}
+
+// noPipelineYet answers that CircleCI has no pipeline for the tag yet.
+func noPipelineYet() sequence.Routes {
+	return sequence.Routes{"GET /api/v2/project/gh/giantswarm/kserve/pipeline": {{Body: map[string]any{"items": []any{}}}}}
+}
+
+func release(tag string, prerelease bool) map[string]any {
+	return map[string]any{"tag_name": tag, "draft": false, "prerelease": prerelease}
+}
+
+// A merge tagged as a release candidate is followed to the stable release a
+// promote cut from it: the lowest one that contains the merge commit.
+func TestWaitPullRequestFollowsThePromotedRelease(t *testing.T) {
+	const promotedSHA = "fedcba9876543210fedcba9876543210fedcba98"
+	github := rcMerged(release("v1.3.0", false), release("v1.2.3", false), release("v1.2.3-rc.1", true), release("v1.2.2", false))
+	github[repoRoute("/git/ref/tags/"+testTag)] = []sequence.Response{{Body: map[string]any{"ref": "refs/tags/" + testTag, "object": map[string]any{"type": "commit", "sha": promotedSHA}}}}
+	github[repoRoute("/compare/"+testSHA+"...v1.2.3")] = []sequence.Response{{Body: map[string]any{"status": "ahead"}}}
+	fx := fixture{
+		entry: generatedEntry(t), github: github, pr: 7, mergeCommit: testSHA, preferPromoted: true,
+		circleci: pipelineRoutes([][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}, map[string][]map[string]any{"w1": {job("push-to-registries-release", "success")}}),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Tag != testTag || result.SHA != promotedSHA || result.Candidate != "v1.2.3-rc.1" || result.PromotePending {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// Before the promote the candidate is waited for, and the result says the
+// promote is pending: a stable release above it that does not contain the
+// merge commit (cut from another line) is not its promotion.
+func TestWaitPullRequestCandidateBeforeThePromote(t *testing.T) {
+	github := rcMerged(release("v1.2.4", false), release("v1.2.3-rc.1", true), release("v1.2.2", false))
+	github[repoRoute("/compare/"+testSHA+"...v1.2.4")] = []sequence.Response{{Body: map[string]any{"status": "diverged"}}}
+	fx := fixture{
+		entry: generatedEntry(t), github: github, pr: 7, mergeCommit: testSHA, preferPromoted: true, timeout: 45 * time.Second, circleci: noPipelineYet(),
+	}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "")
+	if result.Tag != "v1.2.3-rc.1" || result.SHA != testSHA || result.Candidate != "v1.2.3-rc.1" || !result.PromotePending {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// Without PreferPromoted (release wait, pr merge) the candidate is the release.
+func TestWaitPullRequestCandidateWithoutPreferPromoted(t *testing.T) {
+	fx := fixture{entry: generatedEntry(t), github: rcMerged(), pr: 7, mergeCommit: testSHA, timeout: 45 * time.Second, circleci: noPipelineYet()}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "")
+	if result.Tag != "v1.2.3-rc.1" || result.Candidate != "" || result.PromotePending {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// A merge commit that carries the release tags of two versions is not
+// followed: the wait names both and ends at once without choosing.
+func TestWaitPullRequestCommitWithTwoVersionsIsAmbiguous(t *testing.T) {
+	github := mergedWithoutTag(autoReleaseRuns(autoReleaseRun("completed", "success")))
+	github[repoRoute("/tags")] = []sequence.Response{{Body: []map[string]any{
+		{"name": "v1.2.0", "commit": map[string]any{"sha": testSHA}},
+		{"name": "v1.1.5", "commit": map[string]any{"sha": "older"}},
+		{"name": "v1.1.4", "commit": map[string]any{"sha": testSHA}},
+	}}}
+	fx := fixture{entry: generatedEntry(t), github: github, pr: 7, mergeCommit: testSHA, timeout: time.Hour}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitAmbiguousRelease, "carries the release tags of 2 versions (v1.2.0, v1.1.4): release wait does not choose one; name the version, devctl release wait giantswarm/kserve v1.2.0")
+	if result.Tag != "" || result.SHA != testSHA || !slices.Equal(result.ConflictingTags, []string{"v1.2.0", "v1.1.4"}) {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// A promoted stable shares its candidate's commit by design: no conflict,
+// the stable is the release.
+func TestWaitPullRequestCandidateAndItsStableOnOneCommit(t *testing.T) {
+	github := rcMerged()
+	github[repoRoute("/tags")] = []sequence.Response{{Body: []map[string]any{
+		{"name": testTag, "commit": map[string]any{"sha": testSHA}},
+		{"name": "v1.2.3-rc.1", "commit": map[string]any{"sha": testSHA}},
+	}}}
+	fx := fixture{entry: generatedEntry(t), github: github, pr: 7, mergeCommit: testSHA, timeout: 45 * time.Second, circleci: noPipelineYet()}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "")
+	if result.Tag != testTag || result.ConflictingTags != nil {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// With the version given the wait follows that version, whatever else
+// tags its commit.
+func TestWaitVersionOnACommitWithTwoVersions(t *testing.T) {
+	github := baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"})
+	github[repoRoute("/tags")] = []sequence.Response{{Body: []map[string]any{
+		{"name": testTag, "commit": map[string]any{"sha": testSHA}},
+		{"name": "v1.1.4", "commit": map[string]any{"sha": testSHA}},
+	}}}
+	fx := fixture{entry: generatedEntry(t), github: github, version: testTag, timeout: 45 * time.Second, circleci: noPipelineYet()}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "")
+	if result.Tag != testTag || result.SHA != testSHA || result.ConflictingTags != nil {
+		t.Errorf("result: %+v", result)
+	}
+}
+
 func TestWaitPullRequestWithTheMergeCommitReadsNoPullRequest(t *testing.T) {
 	fx := fixture{
 		entry: generatedEntry(t), pr: 7, mergeCommit: testSHA,
@@ -1114,6 +1991,89 @@ func TestWaitPullRequestAutoReleaseFailedAfterTaggingGoesOn(t *testing.T) {
 	}
 }
 
+// releaseBranch is the maintenance branch a pull request is merged into.
+const releaseBranch = "release-v1.1.x"
+
+// mergedIntoReleaseBranch is a merge into releaseBranch whose auto-release
+// run finished; the newest 300 tags, the default branch's, do not include
+// its line, so every tag is read from the matching refs.
+func mergedIntoReleaseBranch(refs ...map[string]any) sequence.Routes {
+	auto := autoReleaseRun("completed", "success")
+	auto["head_branch"] = releaseBranch
+	github := mergedWithoutTag(autoReleaseRuns(auto))
+	var pages []sequence.Response
+	for page := 1; page <= 3; page++ {
+		pages = append(pages, sequence.Response{
+			Headers: map[string]string{"Link": fmt.Sprintf(`<https://api.github.com/repositories/1/tags?per_page=100&page=%d>; rel="next"`, page+1)},
+			Body:    []map[string]any{{"name": fmt.Sprintf("v3.%d.0", 3-page), "commit": map[string]any{"sha": "newer"}}},
+		})
+	}
+	github[repoRoute("/tags")] = pages
+	github[repoRoute("/git/matching-refs/tags/")] = []sequence.Response{{Body: refs}}
+	return github
+}
+
+func tagRef(tag, sha string) map[string]any {
+	return map[string]any{"ref": "refs/tags/" + tag, "object": map[string]any{"type": "commit", "sha": sha}}
+}
+
+// A merge into a release branch tagged on an older line than the newest
+// tags is found among all tags.
+func TestWaitPullRequestIntoAReleaseBranchFindsAnOlderLinesTag(t *testing.T) {
+	github := mergedIntoReleaseBranch(tagRef("v1.1.3", "older"), tagRef("v1.1.4", testSHA), tagRef("v3.2.0", "newer"))
+	fx := fixture{entry: generatedEntry(t), github: github, pr: 7, mergeCommit: testSHA, timeout: 45 * time.Second, circleci: noPipelineYet()}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "")
+	if result.Tag != "v1.1.4" || result.SHA != testSHA {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// A merge into a release branch whose run tagged nothing is carried by the
+// first tag on that branch after the merge commit.
+func TestWaitPullRequestIntoAReleaseBranchFollowsTheFirstLaterTag(t *testing.T) {
+	const later, latest = "1111111111111111111111111111111111111111", "2222222222222222222222222222222222222222"
+	github := mergedIntoReleaseBranch(tagRef("v1.1.4", later), tagRef("v1.1.5", latest))
+	github[repoRoute("/compare/"+testSHA+"..."+releaseBranch)] = []sequence.Response{{Body: map[string]any{
+		"status": "ahead", "commits": []map[string]any{{"sha": "0000000000000000000000000000000000000000"}, {"sha": later}, {"sha": latest}},
+	}}}
+	fx := fixture{entry: generatedEntry(t), github: github, pr: 7, mergeCommit: testSHA, timeout: 45 * time.Second, circleci: noPipelineYet()}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "")
+	if result.Tag != "v1.1.4" || result.SHA != later {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// The first tagged commit after the merge carrying two versions' release
+// tags is the same conflict.
+func TestWaitPullRequestIntoAReleaseBranchFirstLaterTagWithTwoVersions(t *testing.T) {
+	const later = "1111111111111111111111111111111111111111"
+	github := mergedIntoReleaseBranch(tagRef("v1.1.4", later), tagRef("v1.2.0", later))
+	github[repoRoute("/compare/"+testSHA+"..."+releaseBranch)] = []sequence.Response{{Body: map[string]any{
+		"status": "ahead", "commits": []map[string]any{{"sha": later}},
+	}}}
+	fx := fixture{entry: generatedEntry(t), github: github, pr: 7, mergeCommit: testSHA, timeout: time.Hour}
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitAmbiguousRelease, "commit 11111111 of giantswarm/kserve carries the release tags of 2 versions (v1.2.0, v1.1.4)")
+	if !slices.Equal(result.ConflictingTags, []string{"v1.2.0", "v1.1.4"}) {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// A merge into a release branch that no tag carries yet is no release, and
+// the reason names the branch.
+func TestWaitPullRequestIntoAnUntaggedReleaseBranchIsNoRelease(t *testing.T) {
+	github := mergedIntoReleaseBranch(tagRef("v1.1.3", "older"))
+	github[repoRoute("/compare/"+testSHA+"..."+releaseBranch)] = []sequence.Response{{Body: map[string]any{
+		"status": "ahead", "commits": []map[string]any{{"sha": "1111111111111111111111111111111111111111"}},
+	}}}
+	fx := fixture{entry: generatedEntry(t), github: github, pr: 7, mergeCommit: testSHA, timeout: time.Hour}
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitNotApplicable, "into "+releaseBranch+" finished without a tag, and no later tag on "+releaseBranch+" carries it")
+	assertNoRelease(t, err)
+}
+
 func TestWaitPullRequestTimeoutNamesTheAutoReleaseRun(t *testing.T) {
 	fx := fixture{
 		entry: generatedEntry(t), pr: 7, mergeCommit: testSHA, timeout: 45 * time.Second,
@@ -1135,9 +2095,497 @@ func TestWaitPullRequestWithoutAnyReleaseWorkflowIsNoRelease(t *testing.T) {
 // An entry that declares auto-release ahead of the repository: no workflow
 // at the merge commit tags it, so no release follows the merge.
 func TestWaitPullRequestEntryAheadOfTheWorkflowsIsNoRelease(t *testing.T) {
-	github := baseGitHub([]string{"main.go"}, []string{"ci.yaml"}, nil)
-	entry := fieldsFromYAML(t, "- name: kserve\n  gen:\n    flavours: [cli]\n    language: go\n    ci:\n      releaseWorkflow: auto-release\n")
+	github := preAutoReleaseMerge(nil)
+	entry := autoReleaseEntry(t)
 	_, err := run(t, fixture{github: github, pr: 7, mergeCommit: testSHA, entry: &entry})
 	assertExit(t, err, agentcli.ExitNotApplicable, "declares auto-release, but .github/workflows at 01234567 holds no auto-release workflow")
 	assertNoRelease(t, err)
+}
+
+// A merge commit that predates the auto-release workflow but carries one
+// release tag resolves to it: the tags are read before the workflows.
+func TestWaitPullRequestPredatingTheWorkflowWithOneTagResolvesIt(t *testing.T) {
+	github := preAutoReleaseMerge([]map[string]any{
+		{"name": testTag, "commit": map[string]any{"sha": testSHA}},
+		{"name": "v1.1.5", "commit": map[string]any{"sha": "older"}},
+	})
+	entry := autoReleaseEntry(t)
+	result, err := run(t, fixture{github: github, pr: 7, mergeCommit: testSHA, entry: &entry, timeout: 45 * time.Second})
+	if IsNoRelease(err) {
+		t.Fatalf("a tagged merge commit is no release: %v", err)
+	}
+	if result.Tag != testTag || result.SHA != testSHA {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// A merge commit that predates the auto-release workflow and carries the
+// release tags of two versions is a conflict, not no release.
+func TestWaitPullRequestPredatingTheWorkflowWithTwoVersionsIsAmbiguous(t *testing.T) {
+	github := preAutoReleaseMerge([]map[string]any{
+		{"name": "v1.2.0", "commit": map[string]any{"sha": testSHA}},
+		{"name": "v1.1.4", "commit": map[string]any{"sha": testSHA}},
+	})
+	entry := autoReleaseEntry(t)
+	result, err := run(t, fixture{github: github, pr: 7, mergeCommit: testSHA, entry: &entry})
+	assertExit(t, err, agentcli.ExitAmbiguousRelease, "carries the release tags of 2 versions (v1.2.0, v1.1.4)")
+	if result.Tag != "" || result.SHA != testSHA || !slices.Equal(result.ConflictingTags, []string{"v1.2.0", "v1.1.4"}) {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// preAutoReleaseMerge is a repository whose workflows at the merge commit
+// hold no auto-release workflow, with tags as its tag listing.
+func preAutoReleaseMerge(tags []map[string]any) sequence.Routes {
+	github := baseGitHub([]string{"main.go"}, []string{"ci.yaml"}, nil)
+	if tags == nil {
+		tags = []map[string]any{}
+	}
+	github[repoRoute("/tags")] = []sequence.Response{{Body: tags}}
+	return github
+}
+
+// autoReleaseEntry is a team-file entry that declares auto-release.
+func autoReleaseEntry(t *testing.T) reposetup.Fields {
+	return fieldsFromYAML(t, "- name: kserve\n  gen:\n    flavours: [cli]\n    language: go\n    ci:\n      releaseWorkflow: auto-release\n")
+}
+
+// unansweredCircleCI is a CircleCI whose pipeline listing goes unanswered
+// the first failures times, the way the retrying transport reports a read
+// that timed out on every try; a negative count never answers.
+type unansweredCircleCI struct {
+	CircleCI
+	failures int
+	calls    int
+}
+
+func (c *unansweredCircleCI) FindPipelineByTag(ctx context.Context, org, repo, tag string) (*circleciclient.Pipeline, error) {
+	c.calls++
+	if c.failures != 0 {
+		c.failures--
+		return nil, microerror.Mask(&url.Error{Op: "Get", URL: "https://circleci.com/api/v2/project/gh/" + org + "/" + repo + "/pipeline", Err: &agentcli.RetriesExhaustedError{Attempts: agentcli.RetryAttempts, Last: "context deadline exceeded"}})
+	}
+	return c.CircleCI.FindPipelineByTag(ctx, org, repo, tag)
+}
+
+func greenGenerated(t *testing.T) fixture {
+	return fixture{
+		entry:  generatedEntry(t),
+		github: baseGitHub([]string{"Dockerfile", "helm"}, []string{"zz_generated.auto_release.yaml"}, []string{"config.yml", "workflows.yml"}),
+		circleci: pipelineRoutes(
+			[][]map[string]any{{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}},
+			map[string][]map[string]any{"w1": {job("push-to-registries-release", "success"), job("push-chart-release", "success")}},
+		),
+		registry: sequence.Routes{
+			"HEAD /v2/giantswarm/kserve-controller/manifests/1.2.3": {{Status: 200}},
+			"HEAD /v2/charts/giantswarm/kserve/manifests/1.2.3":     {{Status: 200}},
+		},
+	}
+}
+
+// A CircleCI outage shorter than the timeout is not an outcome: the wait
+// reads again at the next poll and confirms the release.
+func TestWaitCircleCIUnansweredOnceThenAnswers(t *testing.T) {
+	fx := greenGenerated(t)
+	circleci := &unansweredCircleCI{failures: 1}
+	fx.wrapCircleCI = func(c CircleCI) CircleCI { circleci.CircleCI = c; return circleci }
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if circleci.calls != 2 {
+		t.Errorf("pipeline listings: want 2, got %d", circleci.calls)
+	}
+	if !allAvailable(result.Artifacts) || result.Pipeline == nil {
+		t.Errorf("result: %+v", result)
+	}
+}
+
+// A CircleCI that never answers is a timeout whose reason names the
+// unanswered read: the release is unknown, not failed.
+func TestWaitCircleCINeverAnswersIsTimeoutNamingIt(t *testing.T) {
+	fx := greenGenerated(t)
+	circleci := &unansweredCircleCI{failures: -1}
+	fx.wrapCircleCI = func(c CircleCI) CircleCI { circleci.CircleCI = c; return circleci }
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "the release is unknown, not failed: the last read of the tag's CI went unanswered: listing the pipelines of giantswarm/kserve: Get \"https://circleci.com/api/v2/project/gh/giantswarm/kserve/pipeline\": failed 15 times in a row: context deadline exceeded")
+	// The registry answers while CircleCI does not: what it serves is
+	// available, never reported missing for want of a CI answer.
+	assertExit(t, err, agentcli.ExitTimeout, "every artifact of v1.2.3 is available")
+	if strings.Contains(err.Error(), "not available") {
+		t.Errorf("a published artifact is reported missing: %v", err)
+	}
+	if !allAvailable(result.Artifacts) {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+	if strings.Contains(err.Error(), "webhook") {
+		t.Errorf("an unanswered CircleCI is not a missing webhook: %v", err)
+	}
+	if circleci.calls < 2 {
+		t.Errorf("pipeline listings: want the wait to read again, got %d", circleci.calls)
+	}
+}
+
+// statusesRoute scripts the commit statuses of the tag's commit, newest
+// first, each context, state and target URL.
+func statusesRoute(github sequence.Routes, statuses ...[3]string) sequence.Routes {
+	items := []map[string]any{}
+	for _, s := range statuses {
+		items = append(items, map[string]any{"context": s[0], "state": s[1], "target_url": s[2]})
+	}
+	github[repoRoute("/commits/"+testSHA+"/statuses")] = []sequence.Response{{Body: items}}
+	return github
+}
+
+// branchPipelineOnly is a pipeline listing whose newest pipelines are a
+// branch's: the tag pipeline is further down than the listing reads.
+func branchPipelineOnly() sequence.Routes {
+	return sequence.Routes{"GET /api/v2/project/gh/giantswarm/kserve/pipeline": {{Body: map[string]any{"items": []map[string]any{{"id": "p9", "number": 99, "vcs": map[string]any{"branch": "renovate/x", "revision": "fedcba98"}}}}}}}
+}
+
+// A tag whose pipeline the listing by tag does not name while the commit's
+// CircleCI statuses link its jobs: the wait reads the pipeline behind the
+// statuses and ends available once it is green.
+func TestWaitTagPipelineFromTheCommitStatuses(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"},
+		[3]string{"ci/circleci: push-chart-release", "success", "https://circleci.com/gh/giantswarm/kserve/102"},
+	)
+	circleci := branchPipelineOnly()
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/job/101"] = []sequence.Response{{Body: map[string]any{"number": 101, "pipeline": map[string]any{"id": "p1"}, "latest_workflow": map[string]any{"id": "w1"}}}}
+	circleci["GET /api/v2/pipeline/p1"] = []sequence.Response{{Body: map[string]any{"id": "p1", "number": 12, "project_slug": "gh/giantswarm/kserve", "vcs": map[string]any{"tag": testTag, "revision": testSHA}}}}
+	circleci["GET /api/v2/pipeline/p1/workflow"] = []sequence.Response{{Body: map[string]any{"items": []map[string]any{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}}}
+	fx.circleci = circleci
+	var warnings []string
+	fx.warn = func(m string) { warnings = append(warnings, m) }
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Pipeline == nil || result.Pipeline.ID != "p1" || result.Pipeline.Number != 12 {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings: %v", warnings)
+	}
+}
+
+// A tag whose statuses link no pipeline CircleCI answers for: the statuses
+// are the verdict, and the document says so.
+func TestWaitTagStatusesAreTheVerdictWhenNoPipelineAnswers(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"},
+		[3]string{"ci/circleci: push-chart-release", "success", "https://circleci.com/gh/giantswarm/kserve/102"},
+	)
+	fx.circleci = noPipelineYet()
+	var warnings []string
+	fx.warn = func(m string) { warnings = append(warnings, m) }
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if !allAvailable(result.Artifacts) {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "the tag's CI verdict is those 2 CircleCI statuses") {
+		t.Errorf("warnings: %v", warnings)
+	}
+}
+
+// A failed status fails the tag's CI read from the statuses.
+func TestWaitTagStatusFailedIsCIFailed(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-to-registries-release", "failure", "https://circleci.com/gh/giantswarm/kserve/101"},
+	)
+	fx.circleci = noPipelineYet()
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitRed, "the tag pipeline of v1.2.3 failed: push-to-registries-release")
+}
+
+// Neither a pipeline nor a CircleCI status of the tag: exit 2, the webhook
+// may not have reached CircleCI. A status that leads to a branch's pipeline
+// on the same commit is not the tag's.
+func TestWaitNoTagPipelineNorStatusIsTimeout(t *testing.T) {
+	cases := map[string]func(sequence.Routes) sequence.Routes{
+		"no status": func(github sequence.Routes) sequence.Routes { return statusesRoute(github) },
+		"another CI's status only": func(github sequence.Routes) sequence.Routes {
+			return statusesRoute(github, [3]string{"security/snyk", "success", "https://snyk.io/x"})
+		},
+		"the branch pipeline's status only": func(github sequence.Routes) sequence.Routes {
+			return statusesRoute(github, [3]string{"ci/circleci: go-build", "success", "https://circleci.com/gh/giantswarm/kserve/201"})
+		},
+	}
+	for name, statuses := range cases {
+		t.Run(name, func(t *testing.T) {
+			fx := greenGenerated(t)
+			fx.github = statuses(fx.github)
+			circleci := branchPipelineOnly()
+			circleci["GET /api/v2/project/gh/giantswarm/kserve/job/201"] = []sequence.Response{{Body: map[string]any{"number": 201, "pipeline": map[string]any{"id": "p9"}}}}
+			circleci["GET /api/v2/pipeline/p9"] = []sequence.Response{{Body: map[string]any{"id": "p9", "number": 99, "vcs": map[string]any{"branch": "main", "revision": testSHA}}}}
+			fx.circleci = circleci
+			_, err := run(t, fx)
+			assertExit(t, err, agentcli.ExitTimeout, "no CircleCI pipeline for v1.2.3 within 2m0s: the tag's webhook may not have reached CircleCI")
+		})
+	}
+}
+
+// A release candidate whose promotion tagged the same commit: the newest
+// statuses are the promotion's pipeline, the candidate's are older ones of
+// the same contexts. The wait follows the older ones to the candidate's
+// pipeline.
+func TestWaitTagPipelineFromOlderStatusesWhenAPromotionSharesTheCommit(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-chart-release", "success", "https://circleci.com/gh/giantswarm/kserve/202"},
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/201"},
+		[3]string{"ci/circleci: push-chart-release", "success", "https://circleci.com/gh/giantswarm/kserve/102"},
+		[3]string{"ci/circleci: push-chart-release", "pending", "https://circleci.com/gh/giantswarm/kserve/102"},
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"},
+	)
+	circleci := branchPipelineOnly()
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/job/202"] = []sequence.Response{{Body: map[string]any{"number": 202, "pipeline": map[string]any{"id": "p2"}}}}
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/job/201"] = []sequence.Response{{Body: map[string]any{"number": 201, "pipeline": map[string]any{"id": "p2"}}}}
+	circleci["GET /api/v2/pipeline/p2"] = []sequence.Response{{Body: map[string]any{"id": "p2", "number": 13, "vcs": map[string]any{"tag": "v1.3.0", "revision": testSHA}}}}
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/job/102"] = []sequence.Response{{Body: map[string]any{"number": 102, "pipeline": map[string]any{"id": "p1"}}}}
+	circleci["GET /api/v2/pipeline/p1"] = []sequence.Response{{Body: map[string]any{"id": "p1", "number": 12, "vcs": map[string]any{"tag": testTag, "revision": testSHA}}}}
+	circleci["GET /api/v2/pipeline/p1/workflow"] = []sequence.Response{{Body: map[string]any{"items": []map[string]any{wf("w1", "build", "success", "2026-09-21T10:00:00Z")}}}}
+	fx.circleci = circleci
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if result.Pipeline == nil || result.Pipeline.ID != "p1" || result.Pipeline.Number != 12 {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+// commitStatuses scripts the tag commit's statuses as the polls read them:
+// one listing per poll, newest status first, the last listing repeating.
+func commitStatuses(github sequence.Routes, polls ...[][3]string) sequence.Routes {
+	var seq []sequence.Response
+	for _, statuses := range polls {
+		items := []map[string]any{}
+		for _, s := range statuses {
+			items = append(items, map[string]any{"context": s[0], "state": s[1], "target_url": s[2]})
+		}
+		seq = append(seq, sequence.Response{Body: items})
+	}
+	github[repoRoute("/commits/"+testSHA+"/statuses")] = seq
+	return github
+}
+
+const lateJobURL = "https://circleci.com/gh/giantswarm/kserve/301"
+
+// A late job of the commit still pending while every artifact is pullable
+// and the tag pipeline green: the wait goes on until it is green, the gate
+// devctl release promote applies.
+func TestWaitPendingCommitStatusWaitsUntilGreen(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = commitStatuses(fx.github,
+		[][3]string{{"ci/circleci: integration-test", "pending", lateJobURL}, {"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"}},
+		[][3]string{{"ci/circleci: integration-test", "pending", lateJobURL}, {"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"}},
+		[][3]string{{"ci/circleci: integration-test", "success", lateJobURL}, {"ci/circleci: integration-test", "pending", lateJobURL}, {"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"}},
+	)
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	// Only the third listing reads green: the wait read it.
+	want := []Status{
+		{Context: "ci/circleci: integration-test", State: "success", URL: lateJobURL},
+		{Context: "ci/circleci: push-to-registries-release", State: "success", URL: "https://circleci.com/gh/giantswarm/kserve/101"},
+	}
+	if !slices.Equal(result.Statuses, want) {
+		t.Errorf("statuses: %+v", result.Statuses)
+	}
+}
+
+// A status that stays pending is a timeout naming it, not a release.
+func TestWaitCommitStatusPendingUntilTheDeadlineIsTimeout(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = commitStatuses(fx.github, [][3]string{{"ci/circleci: integration-test", "pending", lateJobURL}})
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "v1.2.3 is available and its tag pipeline green, and the commit statuses of 01234567 did not finish within 2m0s: ci/circleci: integration-test pending")
+	if !allAvailable(result.Artifacts) {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+}
+
+// A failed status of the commit (the branch pipeline's flaky test, another
+// CI) is exit 12 naming it, though the artifacts are out and the tag
+// pipeline is green: devctl release promote refuses the commit.
+func TestWaitFailedCommitStatusIsStatusFailed(t *testing.T) {
+	for name, state := range map[string]string{"failure": "failure", "error": "error"} {
+		t.Run(name, func(t *testing.T) {
+			fx := greenGenerated(t)
+			fx.github = commitStatuses(fx.github, [][3]string{
+				{"ci/circleci: go-test", state, "https://circleci.com/gh/giantswarm/kserve/401"},
+				{"ci/circleci: integration-test", "pending", lateJobURL},
+				{"security/snyk", "success", "https://snyk.io/x"},
+			})
+			result, err := run(t, fx)
+			assertExit(t, err, agentcli.ExitStatusFailed, "the commit 01234567 of v1.2.3 carries a failed commit status, so devctl release promote refuses it: ci/circleci: go-test ("+state+", https://circleci.com/gh/giantswarm/kserve/401)")
+			if _, verdict := agentcli.Outcome(err); verdict != agentcli.VerdictStatusFailed {
+				t.Errorf("verdict: %s", verdict)
+			}
+			if len(result.Statuses) != 3 {
+				t.Errorf("statuses: %+v", result.Statuses)
+			}
+		})
+	}
+}
+
+// Another CI's status counts as the combined status counts it.
+func TestWaitPendingStatusOfAnotherCIWaits(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = commitStatuses(fx.github,
+		[][3]string{{"security/snyk", "pending", "https://snyk.io/x"}},
+		[][3]string{{"security/snyk", "success", "https://snyk.io/x"}},
+	)
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+}
+
+// hangingCircleCI is a CircleCI whose pipeline listing hangs the first
+// hangs times: the read gets no answer until its context ends, the way a
+// CircleCI that accepts the connection and never answers holds a read
+// through every retry.
+type hangingCircleCI struct {
+	CircleCI
+	clock agentcli.Clock
+	hangs int
+	calls int
+}
+
+func (c *hangingCircleCI) FindPipelineByTag(ctx context.Context, org, repo, tag string) (*circleciclient.Pipeline, error) {
+	c.calls++
+	if c.hangs != 0 {
+		c.hangs--
+		for {
+			if err := c.clock.Sleep(ctx, time.Minute); err != nil {
+				return nil, microerror.Mask(&url.Error{Op: "Get", URL: "https://circleci.com/api/v2/project/gh/" + org + "/" + repo + "/pipeline", Err: err})
+			}
+		}
+	}
+	return c.CircleCI.FindPipelineByTag(ctx, org, repo, tag)
+}
+
+// A CircleCI read that hangs is cut at the read bound and read again on the
+// next poll: one stuck read does not hold the wait on a stale verdict until
+// its deadline, and the registry is probed meanwhile.
+func TestWaitHangingCircleCIReadIsReadAgain(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.timeout = 30 * time.Minute
+	clock := agentcli.NewVirtualClock(time.Now())
+	fx.clock = &clock
+	circleci := &hangingCircleCI{clock: clock, hangs: 1}
+	fx.wrapCircleCI = func(c CircleCI) CircleCI { circleci.CircleCI = c; return circleci }
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if circleci.calls != 2 {
+		t.Errorf("pipeline listings: want 2, got %d", circleci.calls)
+	}
+	if !allAvailable(result.Artifacts) {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+}
+
+// chinaSync is the generated tag pipeline's build workflow with the
+// artifacts pushed and the in-China mirror job in the given state.
+func chinaSync(workflow, sync string, others ...map[string]any) sequence.Routes {
+	jobs := append([]map[string]any{job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("sync-china-registry", sync)}, others...)
+	return pipelineRoutes([][]map[string]any{{wf("w1", "build", workflow, "2026-09-21T10:00:00Z")}}, map[string][]map[string]any{"w1": jobs})
+}
+
+// A tag whose only failure is the in-China mirror job is released: the
+// mirror is the China registry's, not the release's, and the failure is
+// named as a warning.
+func TestWaitFailedChinaSyncAloneIsAvailableWithAWarning(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.circleci = chinaSync("failed", "failed")
+	var warnings []string
+	fx.warn = func(m string) { warnings = append(warnings, m) }
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if !allAvailable(result.Artifacts) {
+		t.Errorf("artifacts: %+v", result.Artifacts)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "build/sync-china-registry failed") {
+		t.Errorf("warnings: %v", warnings)
+	}
+}
+
+// Any other failed job still fails the wait, the mirror job beside it.
+func TestWaitFailedChinaSyncBesideAnotherFailureIsCIFailure(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.circleci = chinaSync("failed", "failed", job("guest-image", "failed"))
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitRed, "build/guest-image")
+	if result.Pipeline == nil || strings.Join(result.Pipeline.FailedJobs, ",") != "build/guest-image,build/sync-china-registry" {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+// A workflow failing on the mirror job while another job still runs is not
+// finished: the wait goes on until that job ends.
+func TestWaitFailingChinaSyncWhileAJobRunsIsNotYet(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.timeout = 45 * time.Second
+	fx.circleci = chinaSync("failing", "failed", job("guest-image", "running"))
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "pipeline 12 unfinished: build (failing)")
+}
+
+// The mirror job's failed commit status is a warning too, in the tag's CI
+// read from the statuses and in the statuses of the tag's commit.
+func TestWaitFailedChinaSyncStatusIsAWarning(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"},
+		[3]string{"ci/circleci: sync-china-registry", "failure", "https://circleci.com/gh/giantswarm/kserve/103"},
+	)
+	fx.circleci = noPipelineYet()
+	var warnings []string
+	fx.warn = func(m string) { warnings = append(warnings, m) }
+	_, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitOK, "")
+	if !slices.ContainsFunc(warnings, func(w string) bool { return strings.Contains(w, "ci/circleci: sync-china-registry") }) {
+		t.Errorf("warnings: %v", warnings)
+	}
+}
+
+// A tag pipeline the listing named while its build still ran, and that a
+// later listing no longer names while the commit carries only the statuses
+// of the jobs that finished: the wait keeps reading that pipeline, so it
+// does not end available while the build runs, and its timeout names the
+// unfinished workflow.
+func TestWaitTagPipelineDroppedFromTheListingStaysUnfinished(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.timeout = 45 * time.Second
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"},
+		[3]string{"ci/circleci: push-chart-release", "success", "https://circleci.com/gh/giantswarm/kserve/102"},
+	)
+	circleci := pipelineRoutes(
+		[][]map[string]any{{wf("w1", "build", "running", "2026-09-23T14:19:18Z")}},
+		map[string][]map[string]any{"w1": {job("push-to-registries-release", "success"), job("push-chart-release", "success"), job("guest-image", "running")}},
+	)
+	listing := circleci["GET /api/v2/project/gh/giantswarm/kserve/pipeline"][0]
+	circleci["GET /api/v2/project/gh/giantswarm/kserve/pipeline"] = []sequence.Response{listing, branchPipelineOnly()["GET /api/v2/project/gh/giantswarm/kserve/pipeline"][0]}
+	fx.circleci = circleci
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "the tag pipeline did not finish within 45s; pipeline 12 unfinished: build (running)")
+	if result.Pipeline == nil || result.Pipeline.Number != 12 || len(result.Pipeline.Unfinished) != 1 {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
+}
+
+// A pending status of the statuses that are the verdict is in the document's
+// unfinished list and the timeout's reason.
+func TestWaitTagStatusPendingIsUnfinished(t *testing.T) {
+	fx := greenGenerated(t)
+	fx.timeout = 45 * time.Second
+	fx.github = statusesRoute(fx.github,
+		[3]string{"ci/circleci: push-to-registries-release", "success", "https://circleci.com/gh/giantswarm/kserve/101"},
+		[3]string{"ci/circleci: push-chart-release", "pending", "https://circleci.com/gh/giantswarm/kserve/102"},
+	)
+	fx.circleci = noPipelineYet()
+	result, err := run(t, fx)
+	assertExit(t, err, agentcli.ExitTimeout, "the tag's CI unfinished: push-chart-release (pending)")
+	if result.Pipeline == nil || len(result.Pipeline.Workflows) != 2 || len(result.Pipeline.Unfinished) != 1 {
+		t.Errorf("pipeline: %+v", result.Pipeline)
+	}
 }

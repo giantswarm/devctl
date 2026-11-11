@@ -4,14 +4,18 @@ Giant Swarm repositories are declared, not clicked together: one entry in the ow
 `repositories/<team>.yaml` of [giantswarm/github](https://github.com/giantswarm/github) is the
 desired state, and the reconciler creates and keeps the repository as declared. The `repo` commands
 are the laptop's client of that engine and of giantswarm-repo-manager -- the same validation, the same
-dry run, the same pull request the Repositories page and the Repo Manager agent produce. `create`,
-`validate` and `reconcile` run the engine locally with your own tokens; the other verbs call the
-manager through muster as you.
+dry run, the same pull request the Repositories page and the Repo Manager agent produce. `create --dry-run`,
+`validate` and the other manager verbs call it through muster as you; `create` without `--dry-run` runs
+the engine locally with the devctl App login and `reconcile` with your own token. `create --dry-run --local`
+and `validate --local` run devctl's own engine.
+
+A read-only manager call (get, list, validate or watch) that muster answers with a retryable `interrupted` during a rolling update is retried once
+after one second, within the command's context. A non-retryable error or a failed retry is reported as before.
+Writes and unknown tools are not retried: their outcome may be unknown, so check the effect before repeating them.
 
 ## `devctl repo create`
 
-Creates a repository as you and declares it: the repository, its scaffold, then the team-file pull
-request.
+Declares a new repository: the team-file pull request the reconciler creates the repository from.
 
 ```nohighlight
 devctl repo create --team bumblebee --name my-service \
@@ -19,7 +23,7 @@ devctl repo create --team bumblebee --name my-service \
   --description "What it does" --visibility public
 ```
 
-The command
+Without `--dry-run`, the command
 
 1. reads the team's file from `giantswarm/github` at `main` (an unknown team ends here),
 2. renders the entry and places it alphabetically among the team's entries -- the rest of the file is
@@ -28,67 +32,62 @@ The command
    `giantswarm/github` `main`, the embedded copy as the fallback), the creation rules and the name on
    GitHub (an existing repository or the redirect of a renamed one is taken),
 4. prints the dry run -- the rendered entry, the template it derives, the name check, the verdict and
-   the notices,
-5. reads your role in the organisation and refuses anyone who is not an owner (below), before
-   anything is written,
-6. creates the repository with your GitHub login -- description and visibility from the declaration (private when it declares none);
-   you are its admin, as the creator of an organisation repository is,
-7. pushes the rendered scaffold as the one commit on `main` (`feat: initial scaffold of <name> from
-   <template>`); the scaffold's auto-release workflow tags `v0.1.0` from it before CircleCI follows
-   the project, so CircleCI never sees that tag, and the reconciler's run of the merged entry follows
-   the project and triggers the tag's pipeline -- the one tag the reconciler builds, and only once, and
-8. opens the pull request on a `repo-create/<name>` branch with the conventional-commit title
-   `feat(<team>): declare <name>` and a body naming the repository, its scaffold commit and the
-   declaration -- validated in existing mode now, since the repository exists.
+   the notices, and
+5. opens the pull request on a `repo-create/<name>` branch with the conventional-commit title
+   `feat(<team>): declare <name>` and a body naming the declaration.
 
-The output names the repository, the scaffold commit and the pull request; `--output json` prints the
-dry run, the creation (`create`: the two steps, `url`, `created`, `scaffoldCommit`) and the pull
-request URL as one document. `--dry-run` prints the dry run and the plan of the creation (the two
-steps as `drift`, what each would do) and writes nothing.
+Once the pull request merges, the reconciler (`Reconcile repositories` in `giantswarm/github`) creates
+the repository as the `giantswarm-align-files` App -- description and visibility from the declaration
+(private when it declares none) --, pushes the rendered scaffold as the one commit on `main` (the
+scaffold's auto-release workflow tags `v0.1.0` from it), and sets it up from the entry: settings, team
+permissions, branch protection and the required checks, webhooks, CODEOWNERS, the catalog. Nobody needs
+the organisation's owner role; the token is the devctl App login (`devctl auth login`), which only opens
+the pull request.
 
-The create and scaffold steps are the engine's own (`reconcile.Runner.Create`, the same steps the
-reconciler runs), so the repository the command creates and the one the reconciler would have created
-are the same. Everything after the scaffold -- settings, team permissions, branch protection and the
-required checks, CircleCI, webhooks, CODEOWNERS, the catalog, the first release's build -- the
-reconciler applies from the merged entry; it repairs, and never creates.
+CircleCI is the one step the reconciler cannot take: CircleCI has no service accounts, so its GitHub App
+pipeline is created by a person. The output names the `devctl repo watch` to run next: once the
+repository is set up, it creates the pipeline with your CircleCI login (as `devctl repo follow-circleci`
+does) and runs the first release on it, which was tagged before the pipeline existed. The watch then
+ends on that run, read with your CircleCI login: ready when it is green, failed at `released` with the
+red pipeline otherwise. Nobody is load-bearing for the pipeline afterwards.
 
-### Only an organisation owner creates
+A repository created through the Dev Portal or the Repo Manager agent has no `devctl repo watch` on a
+laptop. Its record carries `circleci-pipeline-missing` until a member of the owning team runs devctl:
+any devctl command completes it (see [the automatic pass](#the-automatic-pass)).
 
-The organisation does not let members create repositories: GitHub answers a member's creation with
-403. The command reads your role (`GET /user/memberships/orgs/giantswarm`) before the first write and
-refuses anyone but an owner with
+The output names the pull request; `--output json` prints the dry run and the pull request URL as one
+document. `--dry-run` asks giantswarm-repo-manager's `validate_repository` through muster for its
+creation preview and opens nothing. It sends the new declaration and owning team, using the same
+arguments as the manager's `create_repository`: the manager's engine, schema, name check and review
+notices decide the verdict. `--output json` keeps the complete manager answer under `dryRun`, including
+its author, findings and creation plan. A refusal of the planned pull request also exits non-zero.
+Sign in with `devctl auth login --muster-only`; a missing login or failed manager call is returned
+without falling back to local validation.
 
-```nohighlight
-only an organization owner may create a repository in giantswarm — ask an owner, or create it from
-the Dev Portal (which also creates it as you and needs the same role)
-```
+`--dry-run --local` uses the existing local validation described above, with the devctl GitHub App
+login or the token in `--github-token-envvar`. It needs no muster login. An organisation other than
+`giantswarm` (`--owner`) takes this explicit local mode for a dry run.
 
-The engine gives the same answer to a 403 on the creation itself. The Dev Portal creates the
-repository as the signed-in person too, so the role is needed there as well.
+Opening a declaration pull request requires `--owner giantswarm` (the default): its destination is
+`giantswarm/github`, whose reconciler creates Giant Swarm repositories. Another `--owner` can be checked
+with `--dry-run --local`; it cannot redirect the declaration to another organisation.
 
-### A refusal, an interrupted run
+### A refusal, a rerun
 
 A refusal of the declaration (a taken name, a wrong flavour, a schema violation) ends the command with
-a non-zero exit before anything exists; the problems name the fields.
-
-A run interrupted after the creation resumes on the next call: a repository of the declared name that
-you administer -- the name itself, not a redirect -- is yours to continue. The dry run then validates
-the entry in existing mode, the create step finds the repository (`exists`), the scaffold step pushes
-the scaffold when `main` has none (`present` otherwise), and the pull request is opened when none is
-open for the `repo-create/<name>` branch (the open one is reported otherwise). A repository of that
-name that someone else administers stays a refusal. A step that fails (the scaffold's template cannot
-be downloaded, the CircleCI generator refuses the declaration) ends the command with the step's
-message; the rerun resumes where it stopped.
+a non-zero exit before the pull request; the problems name the fields. A rerun reports the pull
+request already open for the `repo-create/<name>` branch.
 
 ### What review the pull request gets
 
-The validation check on `giantswarm/github` classifies every team-file pull request. A
-*creation-only* change -- entries added, every one valid -- is approved by the machine and merges on
-its own when the author is a member of the owning team or of `team-planeteers`, and when at most
-three entries are added. The notices in the dry run say beforehand when this does not hold
-(`team-review`: the team's review is required; `batch-review`: a person reviews). Membership is read
-from GitHub as you, which needs a token that can read the organisation's teams (`read:org`); without
-it the notice is not given and the command says so.
+The validation check on `giantswarm/github` classifies every team-file pull request. A declaration of
+a repository that does not exist yet keeps the owning team's review (`CODEOWNERS`); `devctl pr merge`
+merges it through the ruleset's bypass for the owning team and the admins. The notices in the dry run
+say more about the review (`team-review`: the author is outside the owning team; `batch-review`: more
+than three entries). Membership is read from GitHub as you, the way the validation check reads it as the
+giantswarm-align-files App: the owning team and `team-planeteers`, one by one, the team first and then your membership
+in it. A team your token cannot read leaves your membership there unknown: the notice is then `team-review-unknown`,
+and the validation check's comment on the pull request is the answer.
 
 ### The declaration's fields
 
@@ -107,7 +106,8 @@ it the notice is not given and the command says so.
 `gen.ci.generate` is written as the CircleCI generator decides: `true` when it has a job for the
 declaration (a Go or Node build, a chart from the `app` flavour), `false` when the pipeline would be empty. Either way
 the scaffold carries `renovate.json5` (`devctl gen renovate`, with `--circleci-generated` on generated CI), so the
-repository starts with its Renovate configuration; a fork line gets nothing generated. The help text takes the enums from the schema devctl ships
+repository starts with its Renovate configuration, decided as align-files decides it (`devctl repo renovate-plan`); a
+fork line gets nothing generated. The help text takes the enums from the schema devctl ships
 (`pkg/reposetup/schema/repositories.schema.json`) and the flavours and languages from devctl's own
 lists, so it never lags a copy in this document; the live schema is
 [`.github/repositories.schema.json`](https://github.com/giantswarm/github/blob/main/.github/repositories.schema.json)
@@ -115,9 +115,21 @@ in giantswarm/github.
 
 `gen.ci.templateContent: true` says the `.circleci/config.yml` a template repository carries is content for the
 repositories created from it, not its own pipeline: the reconciler's circleci and release steps skip the repository
-(`no CircleCI pipeline: .circleci/config.yml is template content`), no follow, no deploy key, no tag build to verify,
+(`no CircleCI pipeline: .circleci/config.yml is template content`), no pipeline to check, no tag build to verify,
 and the branch is not read for it. It sits beside `generate: false` (the `ci` block requires `generate`); `generate:
 true` beside it is refused. A template that builds itself, like template-app, leaves the field out.
+
+`renovate: false` switches Renovate off for the repository: align-files runs no `devctl gen renovate` for the entry,
+and the reconciler's renovate step is ok with no Renovate configuration (`renovate: false; no Renovate
+configuration`) or one that disables Renovate. A configuration that keeps Renovate on, such as the `renovate.json5`
+generated before the field was set, is the finding `renovate-declared-off`: the step deletes no file, the team deletes
+it or sets `enabled: false` in it. Without the field, or with `true`, the repository gets its generated configuration
+and the step checks that Renovate scans it.
+
+For a GitHub fork, the Renovate step first checks that `renovate.json` itself enables fork processing. Otherwise it
+reports `renovate-not-scanned`, names Renovate's fork check and directs the team to `devctl gen renovate --flavour fork`.
+A configuration with `enabled: false` stays disabled. The step selects the first configuration in Renovate's order:
+`renovate.json`, `renovate.jsonc`, `renovate.json5`, then the `.github/` equivalents and `.renovaterc` variants.
 
 The template is derived, not chosen: `language: go` gives `giantswarm/template`; the `plans` flavour
 with `language: generic` gives `giantswarm/template-plans` and refuses any other language, the same
@@ -128,6 +140,12 @@ produce a chart (`app`, `cluster-app`) and whose template has no chart of its ow
 with the `app` flavour -- gets the chart of `giantswarm/template-app` at `helm/<name>` beside the
 template, with `.abs/main.yaml` pointing at it, the name substituted and the team annotation set, so
 the first release's chart job builds; the dry run names it on the `chart:` line.
+
+During scaffold creation, empty maps in the template's chart values receive
+`# @schema additionalProperties: true`, so labels, annotations and other map values accept
+keys when their schema is generated. Maps with an existing `@schema` annotation keep it.
+Structured objects still reject undeclared fields. This applies to the initial scaffold;
+maps added to an existing chart need their own schema annotation.
 
 The scaffold is the template's tree with its placeholders replaced, in one pass that handles both
 token forms the templates carry. `giantswarm/template`, the Go service template, carries the
@@ -156,11 +174,33 @@ extends the test with the chart's checks, and the align run never touches either
 
 ### Token
 
-`$GITHUB_TOKEN` (`--github-token-envvar` names another variable) or, when unset, the login of your
-`gh` CLI (`gh auth token`). The repository, its scaffold commit and the pull request are yours: all
-three are written with that identity. The token creates the repository and pushes its scaffold
-(`repo`, and `workflow` for the scaffold's GitHub Actions workflows), reads the organisation's teams
-and your role in it (`read:org`) and writes `giantswarm/github` for the pull request.
+The devctl GitHub App login (`devctl auth login`); a token in `--github-token-envvar` (by default
+`$DEVCTL_GITHUB_TOKEN`, `$GITHUB_TOKEN` or `$OPSCTL_GITHUB_TOKEN`) overrides it. The token reads the
+organisation's teams and writes the pull request's branch to `giantswarm/github`; the pull request is
+yours. The repository is created by the reconciler's App, never with this token.
+
+## `devctl repo owner`
+
+The supported way to find a repository's declared owning team before a merge or review request is
+the team-file lookup:
+
+```nohighlight
+devctl repo owner devctl
+devctl repo owner giantswarm/devctl --output json
+```
+
+Text output is the GitHub team slug, such as `team-bumblebee`. JSON includes `repository`, `team`
+and `source`, the URL of the declaring `repositories/<team>.yaml` in `giantswarm/github` at `main`.
+The command reads those files directly with the devctl GitHub App login (Contents read), using
+the same lookup as `pr merge`'s team-file policy. It needs no muster session. The normal explicit
+GitHub token environment overrides apply; see [authentication](auth.md).
+
+This is declared ownership, not a list of all teams with access or proof that GitHub's grants have
+converged. Only `giantswarm` repositories are described by this inventory; another owner is refused
+before authentication or any request. An undeclared repository, an unreadable inventory or a malformed
+team file fails without printing an owner. There is no fallback to a person's token or to
+`GET /repos/{owner}/{repo}/teams`: that endpoint requires Administration read, which the agent App
+does not carry. The reconciler checks live grants using its separate administration installation token.
 
 ## The manager's verbs: one subcommand per tool of giantswarm-repo-manager
 
@@ -184,19 +224,23 @@ and nothing runs locally in its place.
 | `repo refresh <repo>` | `refresh_repository` | the record rebuilt now (the engine's checks in read mode) and printed like `get`; the cache only, nothing on GitHub |
 | `repo status <repo>` | `get_repository` | the set-up state alone, as before: the steps and their verdicts, the opt-in to alignment and the declared branch and flavours from the entry, the last run and the run awaited |
 | `repo sweep` | `sweep_inventory` | the full sweep started now, for a member of the manager's owning teams |
-| `repo watch <repo> --pull-request N` | `watch_repository` | a new repository followed to readiness: created, scaffolded, declared, merged, set up, released; the phases printed as they complete, `--timeout` (15 m) for the whole |
+| `repo watch <repo> --pull-request N` | `watch_repository` | a new repository followed to readiness: created, scaffolded, declared, merged, set up, released; the phases printed as they complete, `--timeout` (15 m) for the whole; a repository declared without CI (`gen.ci.generate: false`) is ready once set up; once set up, the CircleCI GitHub App pipeline is created with your CircleCI login and, when that runs the first release, the watch ends on that run (`--circleci=false` skips it) |
 | `repo adopt <repo> --team T [entry flags]` | `adopt_repository` | an existing, undeclared repository declared in the team's file; `--component-type`, `--description`, `--visibility`, `--language`, `--flavour`, `--ci-generate`, `--align`, `--lifecycle deprecated\|archived` |
 | `repo update <repo> --set path=value \| --unset path \| --entry-file f` | `update_repository` | the entry changed: `--set` edits the inventory's entry field by field (`gen.ci.generate=false`, `align=true`, `gen.flavours=[app, k8sapi]`; the value is YAML), `--entry-file` passes the whole entry |
 | `repo transfer <repo> --to-team T` | `transfer_repository` | the entry moved to another team's file; the receiving team approves, the giving team is told |
-| `repo set-lifecycle <repo> deprecated\|archived\|deleted` | `set_lifecycle` | the lifecycle set; `deleted` needs `--confirm <repo>` |
+| `repo set-lifecycle <repo> deprecated\|archived\|deleted` | `set_lifecycle` | the lifecycle set; `deleted` needs `--confirm <repo>`; the way back from `archived` is `repo update <repo> --unset lifecycle`, whose reconciler run unarchives the repository and sets it up again |
 | `repo approve <pull-request>` | `approve_change` | the approving review as you after the team check, and the merge (or the auto-merge); what the Slack ask's button does |
 | `repo align <repo> [--team T]` | `align_repository` | Align now in the mode the entry decides: `align` (the reconciler dispatched), `opt-in` (the pull request that sets `align: true`), `check` (an undeclared repository checked from the team); `--dry-run` shows the plan first |
+
+`repo watch` ignores SIGHUP and reads no stdin, so it outlives a closed terminal, SSH session or
+harness. It finishes with the same outcome as in the foreground; `--output json` prints the final
+repository document.
 
 `--reason` on the writes goes into the pull request body and the ask. The dry run of a write prints the
 entry before and after, the pull request (title, branch, files, who opens it) and the ask and notice with
 the channel they reach or why they cannot; a commit prints the pull request's URL, whether the ask was
-delivered, and the run the record now expects. `create`, `validate` and `reconcile` stay what they are:
-the engine run locally with your own tokens.
+delivered, and the run the record now expects. `create` and `reconcile` stay what they are: the engine
+run locally with your own tokens; `validate` asks the manager unless `--local`.
 
 ```nohighlight
 devctl repo list --scope unassigned --inactive-days 365
@@ -205,6 +249,7 @@ devctl repo watch new-service --pull-request 4711
 devctl repo adopt old-tool --team team-bumblebee --component-type tool --language go --dry-run
 devctl repo update my-service --set gen.ci.generate=false --reason "no pipeline"
 devctl repo set-lifecycle old-tool archived --reason "replaced by new-tool"
+devctl repo update old-tool --unset lifecycle --reason "back in production"
 devctl repo approve 6179
 devctl repo align my-service --dry-run
 ```
@@ -229,6 +274,18 @@ The verdicts are the ones the Repositories page shows:
 | `skipped` | the step does not apply (repository missing or empty, archived or deleted, no client for the system) |
 | `failed` | the step could not run to its end |
 
+The `circleci` line is the reconciler's run, which writes nothing on CircleCI: whether a CircleCI GitHub
+App pipeline builds the repository, read from who posted the CircleCI statuses (`circleci-app[bot]`) of the
+newest of the default branch's last 5 commits that carries any, else of the latest release's tag and the heads
+of the last 3 pull requests merged into it, newest first (a pipeline that ignores the default branch builds only
+those),
+or from the project's pipeline definitions when the run had a person's CircleCI login. When nothing is found and GitHub
+refused one of those reads, the line is `reported` with the finding `unchecked`, naming what could not be read,
+instead of `circleci-pipeline-missing`. A repository nothing builds carries the finding `circleci-pipeline-missing`, fixed by
+`devctl repo follow-circleci`. One built by an OAuth follow, alone or beside a GitHub App pipeline, carries
+the advisory `circleci-oauth-follow`, fixed by `devctl repo follow-circleci --migrate`: it builds today and
+stops when the follower leaves, and the run still converges.
+
 Under the steps: the verdict line, the last reconciler run with what it was for (created, added,
 transferred, archived, deprecated, changed, dispatched, nightly), the run the record expects after a
 pull request or an Align now, a run that never reported, and the inventory's own findings. Above them,
@@ -239,15 +296,141 @@ repository the inventory has not checked yet names `devctl repo refresh`. `-o js
 the manager answered. Nothing is changed by `repo status`; the local check with your own tokens is
 `devctl repo reconcile --dry-run`.
 
+## `devctl repo renovate-plan`
+
+What align-files does about a repository's Renovate configuration, as JSON on stdout:
+
+```
+devctl repo renovate-plan --team-file repositories/team-rocket.yaml --name my-app --dir my-app
+{"generate":true,"patchReviewers":false}
+```
+
+`generate` runs `devctl gen renovate`, `patchReviewers` runs `devctl gen renovate reviewers` on the configuration
+the repository keeps. An entry that declares `renovate: false` gets neither. An entry with `gen.flavours` that is no
+fork line gets `renovate.json5` generated on generated CI, for the `customer` flavour, and when the checkout at
+`--dir` has no Renovate configuration; every other repository keeps its own, with the chore reviewers patched in.
+The scaffold of `devctl repo create` takes the same decision (`reposetup.PlanRenovate`), so a created repository's
+first align run changes nothing.
+
+## `devctl repo follow-circleci`
+
+Sets a repository up on a CircleCI GitHub App pipeline with your CircleCI login. It fixes the
+reconciler's finding `circleci-pipeline-missing`, and it is the step `devctl repo watch` takes for the
+creator of a new repository.
+
+```nohighlight
+devctl repo follow-circleci my-service
+devctl repo follow-circleci giantswarm/my-service --migrate
+```
+
+CircleCI has no service accounts, and the reconciler holds no CircleCI identity, so a person creates
+the pipeline. Afterwards nobody is load-bearing: the GitHub App checks out, receives the pushes and posts
+the statuses (as `circleci-app[bot]`, under the same `ci/circleci:` contexts), so the pipeline keeps
+building when whoever created it leaves. An OAuth follow builds through the follower's GitHub grant and
+stops when they leave.
+
+The command is idempotent:
+
+1. It finds the project's GitHub App pipeline, or creates `<repository>-app` (config and checkout
+   through the GitHub App, `.circleci/config.yml`).
+2. It gives the pipeline an `all-pushes` trigger (branches and tags) unless it has an enabled one, and
+   switches the project's setup workflows on when they are off: the generated dynamic configuration needs
+   them. CircleCI refusing the setting to you is a warning, not an error.
+3. With `--migrate` it deletes the OAuth pipeline's triggers, so a push builds once. Without it, a
+   remaining OAuth trigger is reported: every push builds twice.
+4. It runs every release that carries no CircleCI status of its own build (the latest `vX.Y.Z` release,
+   or the newest release of every line on a multi-image repository): a tag cut before the trigger
+   existed reached no pipeline. A tag an OAuth follow built is never run again. Then it runs the default
+   branch, when anything changed or the branch carries no status of the GitHub App pipeline.
+5. It waits for those runs (`--wait=false` returns at once, `--timeout` bounds the wait). The exit is 0
+   when every run is green.
+
+The login is `devctl auth login --circleci-only`, granted **Write** on the consent page; a Read-only
+login is refused on the first write with exit 8. A repository without `.circleci/config.yml` on its
+default branch is refused before any write.
+
+### `--pending`
+
+```nohighlight
+devctl repo follow-circleci --pending
+devctl repo follow-circleci --pending --output json
+```
+
+Instead of one repository, `--pending` sets up every repository of your teams that the inventory
+reports `circleci-pipeline-missing` for: giantswarm-repo-manager's `list_repositories` with scope
+`mine` (the teams you are a member of on GitHub, not every repository you administer), keeping the
+declared repositories in production (no `lifecycle` declared, or `production`), unarchived and still
+on GitHub. It runs the steps above on each without `--migrate` and does not wait for the runs (it
+refuses `--wait` and `--timeout`). CircleCI refusing a write (403) marks that repository `refused`
+and the others go on. When nothing could be written, the login most likely granted Read only: exit 8
+asks for `devctl auth login --circleci-only` granting Write. When other repositories were written,
+CircleCI refuses you that repository (you are no admin of it): exit 5 names the
+`devctl repo follow-circleci <repository>` a repository admin runs. Any other failure of one
+repository is reported, the others go on, and the exit is 13, as for a manager that cannot be
+reached. It needs the muster login too (`devctl auth login --muster-only`). It reads the first 100
+repositories the manager lists, by name, and warns when more match; devctl drops the repositories
+not in production after that cut. A repository whose pipeline is created and whose first run
+CircleCI then refuses is reported `refused`, and counts as nothing written.
+
+`--output json` prints the command's envelope (`command`, `exitCode`, `verdict`, `reason`,
+`warnings`) with `pending`, the number of pending repositories, and `repositories[]`: each with
+`repository`, `outcome` (`created`, `already-set-up`, `refused`, `failed`, `skipped`), `reason` and the
+`runs[]` it started (`ref`, `pipeline`). `created` is any write of the set-up: on a pipeline that
+existed, `reason` says which (its trigger, the project's setup workflows). Warnings, such as a CircleCI
+login about to expire, are in `warnings`.
+
+### The automatic pass
+
+After any devctl command, at most once every six hours, devctl runs the same pass by itself, so a
+repository created through the Dev Portal or the Repo Manager agent gets its pipeline without anyone
+typing a command. It uses the logins the keychain already holds and never opens a browser. A locked
+keychain is skipped on Linux instead of prompting to unlock it; saving a refreshed token still may
+prompt, since the old one is spent, and is lost if nobody answers before the pass ends. On macOS the
+keychain may still ask, most often for each devctl item after a devctl upgrade (a new binary), or
+when the login keychain is locked; so may KeePassXC's per-item confirmation on Linux. The pass is
+abandoned after about 20 seconds, or on Ctrl-C, and does not wait for the runs. It never changes the
+exit code or the stdout of the command you ran, and it runs after agent-facing commands and
+`--output json` too: their document stays alone on stdout. A caller that merges stderr into stdout
+(`2>&1`) sees the pass's lines among it, and once every six hours a command can take up to about 22
+seconds longer. It writes on stderr:
+
+- a line per pipeline it created, setting it changed or run it started;
+- at most once a day, when repositories wait, one line naming them and what to do: the CircleCI or
+  GitHub login that is missing or expired (`devctl auth login`, for CircleCI granting Write), or the
+  repository admin who runs `devctl repo follow-circleci <repository>` for one CircleCI refuses you.
+
+Without a muster login, and on any other failure, it says nothing (`--log-level debug` shows why) and
+tries again in six hours. Of two commands finishing together, one runs it. It does not follow `serve`,
+`completion`, `version`, `help`, `auth logout`, `auth exec`, `repo follow-circleci` or a `--help`; it
+does follow `devctl auth login`, within the same six-hour window as any other command. Its state is
+`circleci-pending.json` in devctl's configuration directory. It never runs in CI (`CI` set to any
+non-empty value), where devctl reads no keychain, and any non-empty value of
+`DEVCTL_NO_CIRCLECI_PENDING` (`0` included) turns it off.
+
 ## `devctl repo validate`
 
-Validates entries of a local team file and prints the dry run as JSON -- what the validation check on
-`giantswarm/github` runs. `--mode create|existing` says what the entries are validated for:
+Validates entries of a local team file and prints the dry run as JSON, one document whose `engine` says
+who answered:
+
+```nohighlight
+devctl repo validate --team-file repositories/team-bumblebee.yaml --entry my-service
+devctl repo validate --team-file repositories/team-bumblebee.yaml --local
+```
+
+| Engine | When | What validates |
+|---|---|---|
+| `manager` | the default: the entries named with `--entry` are the declarations being added | giantswarm-repo-manager's `validate_repository`, through your muster endpoint with the muster token of the keychain (`devctl auth login --muster-only`): the manager's own engine and the schema on `giantswarm/github` `main`, the names checked by its App, the guard notices from your memberships as it reads them, `align: true` and the visibility default written as it writes them -- the same answer the Repositories page and the Repo Manager agent get, printed as it came (`author`, `authorTeams`, `teamsSource`, `machineApproved`, `findings`, `creation` beside the engine's result). The `engine` carries the endpoint and the login. Without a usable muster token the command exits naming the login and `--local`; nothing runs locally in its place |
+| `local` | `--local`, or CI, where the keychain is never read (the validation check of `giantswarm/github` runs there) | devctl's own engine: `--schema`, else the schema on `giantswarm/github` `main` with a GitHub token (the devctl App login, or a token in the environment that overrides it, `--github-token-envvar`) and the names checked on GitHub, else the embedded copy and the names reported unchecked. The `engine` carries the devctl version and the reason |
+
+What only the local engine does takes `--local`: existing mode, `--schema`, `--author` and `--author-team`
+(the manager reads the author from your sign-in), another `--owner`.
+
+`--mode create|existing` says what the entries are validated for:
 
 | Mode | Applies | Default when |
 |---|---|---|
 | `create` | the schema, the creation rules (`gen.flavours` and `gen.language` set, a template for them, a job for generated CI, the chart-name convention) and a free name on GitHub; the guard notices say what review the change gets | `--entry` names the entries being added |
-| `existing` | the schema alone -- an entry the schema accepts is valid however it predates the creation rules, and it is rendered as declared: no default is written, `gen.ci` left out keeps the repository's own CircleCI configuration; the name check's verdict is reported and never refuses, a missing repository being the reconciler's finding | no `--entry`: the whole file is on main already |
+| `existing` | the schema alone -- an entry the schema accepts is valid however it predates the creation rules, and it is rendered as declared: no default is written, `gen.ci` left out keeps the repository's own CircleCI configuration; the name check's verdict is reported and never refuses, a missing repository being the reconciler's finding; the local engine's (`--local`) | no `--entry`: the whole file is on main already |
 
 `repo status` and `repo reconcile` validate a declared repository's entry in existing mode (`repo
 reconcile --added` in create mode: the repository is created). See `devctl repo validate --help`.
@@ -269,9 +452,12 @@ default branch (the baseline's `main` when the entry declares none); `write` as 
 `GITHUB_TOKEN` permission. Only the fields that differ are sent. A fork line (flavour `fork`) keeps rebase
 merges on and its merge commits as they are: its carried patches land one upstream-ready commit each and a
 re-pin merges upstream's history; the rest of the baseline applies to it as everywhere. A customer
-repository (flavour `customer`) keeps its own default branch. The six merge settings and the squash title
-reach `GET /repos/{owner}/{repo}` for an admin identity only; a read identity reads them through GraphQL
-and, when that fails too, reports them as the finding `unchecked` rather than as drift.
+repository (flavour `customer`) and an app catalog (`componentType: appcatalog`, whose index GitHub Pages
+serves from the default branch, `master` on the older catalogs) keep their own default branch: it is never
+renamed, the protection step protects it when enabled, and `devctl repo status` names it. The six merge
+settings and the squash title reach `GET /repos/{owner}/{repo}` for an admin identity only; a read
+identity reads them through GraphQL and, when that fails too, reports them as the finding `unchecked`
+rather than as drift.
 
 ### The protection step
 
@@ -279,7 +465,36 @@ The default branch carries the company baseline's protection: one required revie
 checks on the reported-only rule (a context is required once it has reported on the default branch or a
 recently merged pull request, a required context nothing reports is removed, the entry's `requiredChecks`
 are required whatever reported and never removed), a branch need not be up to date to merge; no deletion
-and no force push. A customer repository (flavour `customer`) keeps its own protection.
+and no force push. What reported is read from the head of the newest pull request merged through the gate;
+one merged by a push of its head onto the branch (a fork line's upstream re-pin) is passed over, its head
+carrying the branch's push runs rather than a pull request's checks. A required CircleCI context whose
+job the generated pipeline (`.circleci/workflows.yml`, `custom.yml`) no longer has is removed; while the
+default branch has no generated pipeline, the one the open align-files pull request (`teams-alignment-branch`)
+brings decides (the App's own pull request, never one a person opens from the branch), so a repository moving from a hand-kept pipeline stops requiring the old jobs and can merge
+that pull request, and the generated jobs are required once they have reported after the merge. Without
+either, the hand-kept `.circleci/config.yml` names the repository's own jobs: candidates on the same
+reported-only rule, but a hand-kept pipeline removes no CircleCI context. A scheduled or conditional workflow
+and an approval job are never candidates. A customer repository (flavour `customer`) keeps its own
+protection unless its entry declares `protection: baseline`. With that declaration the protection step
+applies the same baseline and rulesets as for other flavours, on the customer's own default branch;
+CircleCI, CODEOWNERS and release steps stay skipped. `align: true` is still needed for automatic repair;
+without it the reconciler only checks. For example:
+
+```yaml
+- name: customer-gitops
+  componentType: customer
+  align: true
+  protection: baseline
+  gen:
+    flavours: [customer]
+    language: generic
+    ci:
+      generate: false
+```
+
+The live schema in giantswarm/github must admit `protection` before a team file can use it; the schema
+shipped here defines the field. A repair run with the devctl App id writes the ruleset and removes
+classic protection; a subsequent check reports `protection ok` once the repository converges.
 
 The protection is one repository ruleset, `devctl: default branch`, active on
 `~DEFAULT_BRANCH` so a rename or a fork line's declared branch needs no change: the same rules, a GitHub
@@ -301,8 +516,8 @@ classic protection is removed; the dry run plans both.
 
 A ruleset the engine did not create is left alone -- the engine writes `devctl: default branch` and no
 other -- and reported as `foreign-ruleset` unless the entry names it in `rulesets`, the team's record of
-the decision to keep it: the fork lines declare `protect-giantswarm`, `protect-main`,
-`protect-mirror-main` and `protect-consumed-branch` there. A ruleset whose enforcement is `disabled`
+the decision to keep it: the fork lines declare `protect-main` and `protect-mirror-main`, which guard
+the upstream mirror, there. A ruleset whose enforcement is `disabled`
 enforces nothing, conflicts with nothing and is passed over in silence, declared or not; one on
 `evaluate` is reported like an active one. A declared name the repository carries no ruleset for is the
 finding `declared-ruleset-missing`, so a deleted ruleset does not leave its declaration standing. Both
@@ -317,6 +532,33 @@ above. Only a run with `--devctl-app-id` deletes; one without reports each such 
 `ruleset-pending`. Without the field, nothing changes: an undeclared ruleset is the advisory
 `foreign-ruleset`, and deleting it is up to the team.
 
+An entry with `lineGate` gates a fork line whose upstream re-pin rewrites it, so that no pull-request merge
+can land it: the sync pushes the candidate to a branch of its own, whose push runs the line's checks, and
+lands exactly that commit by a direct push. `lineGate.app`, the numeric id of the App the sync pushes as,
+joins `devctl: default branch` as a bypass actor in every mode, so its push passes the pull-request and
+non-fast-forward rules. The engine keeps its second ruleset, `devctl: line gate`, on the default branch and
+the branches `lineGate.branches` names (the maintenance lines): deletion forbidden, `lineGate.requiredChecks`
+pinned to GitHub Actions and required for every push, and no bypass actor. A push whose head the checks have
+not passed on is refused for the App, the repository admins and the devctl App alike; a pull request merges
+as before, its head having passed them. Without the field the engine deletes `devctl: line gate`. Only a run
+with `--devctl-app-id` writes it; one without reports the difference as `ruleset-pending`.
+
+`--align-files-app-id`, the align-files GitHub App's numeric id, lets its generated-file pull requests merge
+by their armed auto-merge without a review. A bypass actor passes a whole ruleset, so the engine moves the
+review rule into a ruleset of its own, `devctl: review`, on the default branch: the baseline's required
+reviews, the bypass actors of `devctl: default branch` and the align-files App for pull requests. The
+required checks, no deletion and no force push stay in `devctl: default branch`, which the App does not
+bypass: its pull request still waits for green checks. The review ruleset is written before
+`devctl: default branch` drops the rule, and deleted after it takes the rule back on a run without the id,
+so the review never lapses. The Renovate GitHub App (id 2740) bypasses `devctl: review` for pull requests too,
+so the automerge a repository configures in its own Renovate configuration lands a green dependency pull
+request. `--release-app-id`, the giantswarm-release GitHub App's numeric id, adds that App beside them: the
+generated release workflows authenticate as it, and the version bump pull request they open after a release arms
+auto-merge, so it lands once the required checks are green. Without it a repository on the generated release
+workflows needs a review for that pull request. An entry with `agentMerge: false` keeps the review in `devctl: default branch`
+without bypass. Only a run with `--devctl-app-id` writes it; one without reports the difference as
+`ruleset-pending`, and takes a review ruleset it finds for the writing run's layout, not a drift.
+
 `--devctl-app-id`, the devctl GitHub App's numeric id (the App's settings page; not the client id), is what
 the bypass list takes to be compared and written; the reconciler's wiring passes it. A run without the id
 -- a laptop, giantswarm-repo-manager's read-mode engine behind `repo status` -- reads the repository's
@@ -328,6 +570,13 @@ standing beside the ruleset, is the finding `ruleset-pending` for the run that h
 written. A repository without the ruleset yet keeps its classic branch protection, written and verified as
 it always was (administrators bound too, `enforce_admins`), with the advisory finding `rulesets-not-enabled`
 naming the run that writes the ruleset; it does not keep the repository from converging.
+
+In check mode (`repo reconcile --dry-run`), a 403 reading classic branch protection is the advisory
+finding `unchecked`: `cannot read classic protection with this token`. The classic protection check is
+skipped, while an existing ruleset is still compared and any drift reported. Without an existing ruleset,
+the step plans no protection changes from the unknown classic protection. A token with
+`administration: read` can complete that check. Repair mode still fails on the forbidden read, so it
+cannot migrate or remove classic protection it could not inspect.
 
 The `catalog` step dispatches the catalog and mapping workflows of the catalog repository, which needs an
 Actions permission there. `--dispatch-token-envvar` names a second token for those two calls (listing the
@@ -352,3 +601,39 @@ the remote team-file source (`reposetup.Remote.Overrides`) lists the override di
 and reads only the overrides it names. A differing file gets one pull request from `reposetup/codeowners` with the
 desired file; while it is open the step reports it and changes nothing. A fork line and a customer repository have no
 codeowners step.
+
+## `reposetup` library: `Person` memberships
+
+In v8.140.0, `Remote.Person(ctx, owner, teams...)` changed from listing every team the caller belongs to
+in `owner` to checking only the supplied team slugs. An old `remote.Person(ctx, owner)` call still compiles,
+but now reads only the login and returns empty `Teams` and `Unread`; passing a nil or empty slice does the
+same. This is a behavior change for library consumers, introduced by commit
+[`24690c0409331e7c8ea392b985ca333d4a255a69`](https://github.com/giantswarm/devctl/commit/24690c0409331e7c8ea392b985ca333d4a255a69).
+
+For a creation guard, pass the owning team and `reposetup.FallbackTeam` explicitly, check the returned
+error, and supply both `person.Teams` and `person.Unread` to the validator as `AuthorTeams` and
+`AuthorTeamsUnread`. `Teams` contains active memberships only. A pending membership or a membership 404
+is not active; an unreadable team (403/404), or a membership 403, belongs to `Unread`, so the guard can
+report unknown membership. Unexpected API errors are returned to the caller.
+
+For a complete membership list (for example, a scope named `mine`), use the GitHub client's
+`Teams.ListUserTeams`, follow every page, and filter by organisation. `Remote.Teams` lists team files,
+not the caller's memberships.
+
+### Caller audit, 2026-11-04
+
+Paginated GitHub code searches for `"github.com/giantswarm/devctl/v8/pkg/reposetup" org:giantswarm` and
+`reposetup org:giantswarm language:Go` found the following importers on indexed default branches visible
+to the audit. Their source was inspected at the linked commits; no live team or account operation was run.
+
+| Checked repository | Result |
+|---|---|
+| [giantswarm/devctl](https://github.com/giantswarm/devctl/blob/f4b312bbb50d8ce8b54c66dcd36616f2ecb673b9/cmd/repo/create/runner.go) | The only production `Remote.Person` call, in `repo create`, explicitly supplies the owning and fallback teams and forwards `Teams` and `Unread` to the validator. No migration needed. |
+| [giantswarm/giantswarm-repo-manager](https://github.com/giantswarm/giantswarm-repo-manager/blob/cf48cdd3a82ca519884d29aa4b7e91b0870fe092/internal/tools/person.go) | All Go sources were checked: no `Remote.Person` call remains. `userTeams` lists every page of the caller's teams and filters by organisation for scope `mine` and the guards. Already fixed by https://github.com/giantswarm/giantswarm-repo-manager/pull/236, commit `cc5caf09872391be48f6fdfd19c4e0e701342142`. |
+
+The broader search also found `giantswarm/marge` and `giantswarm/beekeeper`; their matches were branch-name
+strings in code and fixtures, not imports. The
+[giantswarm/github validation workflow](https://github.com/giantswarm/github/blob/8b032a0cb52d0ecdc361921dbe83f9120dd06f7e/.github/workflows/validate-repo-yaml.yaml)
+uses the devctl CLI, reads memberships itself, and passes `--author-team`; it does not call `Remote.Person`.
+No additional affected caller was found, so no new downstream fix was filed. The search does not cover
+unindexed branches or repositories inaccessible to the audit.

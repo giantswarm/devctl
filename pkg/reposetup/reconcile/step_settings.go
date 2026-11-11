@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"sort"
 	"strings"
 
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
+
+	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
 // stepSettings applies the settings baseline: features, merge settings (a
@@ -65,15 +68,7 @@ func (r *Runner) stepSettings(ctx context.Context, s *run, sr *StepResult) error
 	}
 
 	if got, want := repo.GetDefaultBranch(), s.defaultBranch(); !s.empty && !s.keepsDefaultBranch() && got != "" && got != want {
-		err := s.plan(sr, fmt.Sprintf("default branch %q → %q", got, want), func() error {
-			_, _, err := r.GitHub.Repositories.RenameBranch(ctx, s.owner, s.name, got, want)
-			if err != nil {
-				return err
-			}
-			s.repo.DefaultBranch = new(want)
-			return nil
-		})
-		if err != nil {
+		if err := r.applyDefaultBranch(ctx, s, sr, got, want); err != nil {
 			return err
 		}
 	}
@@ -100,6 +95,38 @@ func (r *Runner) stepSettings(ctx context.Context, s *run, sr *StepResult) error
 		}
 	}
 	return nil
+}
+
+// applyDefaultBranch puts the repository on the declared default branch. A
+// declared branch the repository already carries — a fork line's consumed
+// branch beside the upstream mirror's main — becomes the default as it is,
+// and the old default stays; GitHub refuses to rename a branch onto an
+// existing one. A declared branch the repository lacks is the old default
+// renamed, which carries its protection, pull requests and redirects along.
+func (r *Runner) applyDefaultBranch(ctx context.Context, s *run, sr *StepResult, got, want string) error {
+	_, resp, err := r.GitHub.Repositories.GetBranch(ctx, s.owner, s.name, want, 0)
+	exists := err == nil
+	if err != nil && !isNotFound(resp, err) {
+		return fmt.Errorf("reading branch %q: %w", want, err)
+	}
+	if exists {
+		return s.plan(sr, fmt.Sprintf("default branch %q → %q (switch to the existing branch)", got, want), func() error {
+			updated, _, err := r.GitHub.Repositories.Edit(ctx, s.owner, s.name, &github.Repository{DefaultBranch: new(want)})
+			if err != nil {
+				return err
+			}
+			s.repo = updated
+			return nil
+		})
+	}
+	return s.plan(sr, fmt.Sprintf("default branch %q → %q", got, want), func() error {
+		_, _, err := r.GitHub.Repositories.RenameBranch(ctx, s.owner, s.name, got, want)
+		if err != nil {
+			return err
+		}
+		s.repo.DefaultBranch = new(want)
+		return nil
+	})
 }
 
 // mergeSettingFields are the seven merge settings of GET /repos/{owner}/{repo}
@@ -183,7 +210,7 @@ func (r *Runner) mergeSettingsGraphQL(ctx context.Context, s *run) (mergeSetting
 		return mergeSettings{}, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return mergeSettings{}, fmt.Errorf("GraphQL answered %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		return mergeSettings{}, errors.New(githubclient.GraphQLRefusal(resp.Header, fmt.Sprintf("GraphQL answered %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))))
 	}
 	var answer struct {
 		Data struct {
@@ -224,7 +251,7 @@ func (r *Runner) mergeSettingsGraphQL(ctx context.Context, s *run) (mergeSetting
 	if len(messages) == 0 {
 		messages = append(messages, "no repository in the answer")
 	}
-	return mergeSettings{}, fmt.Errorf("GraphQL: %s", strings.Join(messages, "; "))
+	return mergeSettings{}, errors.New(githubclient.GraphQLRefusal(resp.Header, "GraphQL: "+strings.Join(messages, "; ")))
 }
 
 // stepPermissions grants the baseline's teams their permission; teams the
@@ -249,7 +276,7 @@ func (r *Runner) stepPermissions(ctx context.Context, s *run, sr *StepResult) er
 			continue
 		}
 		err := s.plan(sr, fmt.Sprintf("team %s: %s", slug, want), func() error {
-			_, err := r.GitHub.Teams.AddTeamRepoBySlug(ctx, s.owner, slug, s.owner, s.name, &github.TeamAddTeamRepoOptions{Permission: want})
+			_, err := r.GitHub.Teams.AddTeamRepoBySlug(ctx, s.owner, slug, s.owner, s.name, github.AddTeamRepoRequest{Permission: new(want)})
 			return err
 		})
 		if err != nil {
@@ -262,8 +289,8 @@ func (r *Runner) stepPermissions(ctx context.Context, s *run, sr *StepResult) er
 	return nil
 }
 
-// readHooks lists the repository's webhooks once per run: the circleci step
-// verifies CircleCI's among them, the webhooks step ensures the baseline's.
+// readHooks lists the repository's webhooks once per run: the webhooks step
+// ensures the baseline's among them.
 func (r *Runner) readHooks(ctx context.Context, s *run) ([]*github.Hook, *github.Response, error) {
 	if !s.hooksRead {
 		s.hooks, s.hooksResp, s.hooksErr = r.GitHub.Repositories.ListHooks(ctx, s.owner, s.name, &github.ListOptions{PerPage: 100})

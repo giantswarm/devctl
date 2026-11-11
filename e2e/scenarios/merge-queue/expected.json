@@ -10,12 +10,13 @@
     "startedAt": "*",
     "finishedAt": "*",
     "repository": "giantswarm/devctl",
+    "identity": "app",
     "number": 42,
     "headSha": "abc123",
     "baseRef": "main",
     "checks": [
       {"name": "ci/circleci: build", "source": "status", "status": "completed", "conclusion": "success", "url": "*", "required": false},
-      {"name": "go-test", "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
+      {"name": "go-test", "id": 101, "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
     ],
     "circleci": {
       "pipelineId": "p1",
@@ -27,10 +28,14 @@
     "actions": [
       {"name": "CI", "runId": 7001, "status": "completed", "conclusion": "success", "url": "*"}
     ],
+    "merged": true,
     "mergeCommitSha": "9e8d7c6b",
+    "mergedBy": "e2e-engineer",
     "method": "squash",
     "branchDeleted": true,
     "enqueued": true,
+    "dispatch": null,
+    "unansweredReviews": [],
     "release": {
       "verdict": "no_release",
       "reason": "giantswarm/devctl releases through the legacy workflow, which does not tag the merge commit of #42: a release of it is waited for by its version",
@@ -41,7 +46,8 @@
       "ciModel": "none",
       "artifacts": [],
       "pipeline": null,
-      "actions": []
+      "actions": [],
+      "statuses": []
     }
   }
 }

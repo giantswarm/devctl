@@ -180,13 +180,19 @@ func (a *Auth) githubLogin(ctx context.Context, token string) (string, error) {
 // refreshed one when it expired and the refresh token has not, and
 // [ErrAuthRequired] otherwise.
 func (a *Auth) RequireGitHub(ctx context.Context) (Token, error) {
-	return a.requireGitHub(ctx, hintLogin)
+	return a.requireGitHub(ctx, hintLogin, 0)
+}
+
+// RequireGitHubFor is [Auth.RequireGitHub] for a token that stays valid for
+// at least valid: a stored token that expires sooner is refreshed first.
+func (a *Auth) RequireGitHubFor(ctx context.Context, valid time.Duration) (Token, error) {
+	return a.requireGitHub(ctx, hintLoginGitHub, valid)
 }
 
 // requireGitHub is [Auth.RequireGitHub] with the login a missing record
-// hints at: the agent-facing commands need CircleCI too, the others only
-// GitHub.
-func (a *Auth) requireGitHub(ctx context.Context, hintMissing string) (Token, error) {
+// hints at (the agent-facing commands need CircleCI too, the others only
+// GitHub) and how long the token must stay valid beyond the skew.
+func (a *Auth) requireGitHub(ctx context.Context, hintMissing string, valid time.Duration) (Token, error) {
 	record, err := a.store.Get(UserGitHub)
 	if errors.Is(err, ErrNotFound) {
 		return Token{}, &AuthRequiredError{Identity: identityGitHub, Cause: causeNoToken, Hint: hintMissing}
@@ -194,7 +200,7 @@ func (a *Auth) requireGitHub(ctx context.Context, hintMissing string) (Token, er
 	if err != nil {
 		return Token{}, err
 	}
-	if expired(record.ExpiresAt, a.clock.Now()) {
+	if expired(record.ExpiresAt, a.clock.Now().Add(valid)) {
 		record, err = a.renewGitHub(ctx, record.Token)
 		if err != nil {
 			return Token{}, err

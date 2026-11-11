@@ -13,10 +13,13 @@ import (
 	"github.com/giantswarm/devctl/v8/cmd/repo/approve"
 	"github.com/giantswarm/devctl/v8/cmd/repo/checks"
 	"github.com/giantswarm/devctl/v8/cmd/repo/create"
+	"github.com/giantswarm/devctl/v8/cmd/repo/followcircleci"
 	"github.com/giantswarm/devctl/v8/cmd/repo/get"
 	"github.com/giantswarm/devctl/v8/cmd/repo/info"
 	"github.com/giantswarm/devctl/v8/cmd/repo/list"
+	"github.com/giantswarm/devctl/v8/cmd/repo/owner"
 	"github.com/giantswarm/devctl/v8/cmd/repo/reconcile"
+	"github.com/giantswarm/devctl/v8/cmd/repo/renovateplan"
 	"github.com/giantswarm/devctl/v8/cmd/repo/setlifecycle"
 	"github.com/giantswarm/devctl/v8/cmd/repo/setup"
 	"github.com/giantswarm/devctl/v8/cmd/repo/status"
@@ -50,6 +53,21 @@ func New(config Config) (*cobra.Command, error) {
 	}
 
 	var err error
+
+	ownerCmd, err := owner.New(owner.Config{Logger: config.Logger, Stderr: config.Stderr, Stdout: config.Stdout})
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	followCircleCICmd, err := followcircleci.New(followcircleci.Config{Stderr: config.Stderr, Stdout: config.Stdout})
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
+	renovatePlanCmd, err := renovateplan.New(renovateplan.Config{Stdout: config.Stdout})
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
 
 	var checksCmd *cobra.Command
 	{
@@ -203,8 +221,11 @@ func New(config Config) (*cobra.Command, error) {
 
 	c.AddCommand(checksCmd)
 	c.AddCommand(managed...)
+	c.AddCommand(ownerCmd)
 	c.AddCommand(createCmd)
+	c.AddCommand(followCircleCICmd)
 	c.AddCommand(reconcileCmd)
+	c.AddCommand(renovatePlanCmd)
 	c.AddCommand(setupCmd)
 	c.AddCommand(statusCmd)
 	c.AddCommand(validateCmd)

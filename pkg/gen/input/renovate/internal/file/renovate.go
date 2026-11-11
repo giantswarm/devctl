@@ -1,16 +1,26 @@
 package file
 
 import (
+	"bytes"
+	"context"
 	_ "embed"
 	"path/filepath"
 	"strings"
+	"text/template"
+
+	"github.com/giantswarm/microerror"
 
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/renovate/internal/params"
 )
 
+// presetsPrefix scopes every extra extends entry to giantswarm/renovate-presets.
+const presetsPrefix = "github>giantswarm/renovate-presets:"
+
 //go:embed renovate.json5.template
 var createRenovateTemplate string
+
+var createRenovate = template.Must(template.New("renovate").Parse(createRenovateTemplate))
 
 // squoteEscaper escapes the characters that would otherwise break a
 // single-quoted JSON5 string literal. GitHub reviewer/team slugs can't contain
@@ -46,19 +56,43 @@ func NewCreateRenovateInput(p params.Params) input.Input {
 		quotedReviewers[i] = squote(r)
 	}
 
-	i := input.Input{
-		Path:         filepath.Join(p.Dir, "renovate.json5"),
-		TemplateBody: createRenovateTemplate,
-		TemplateData: map[string]interface{}{
-			"Interval":          interval,
-			"Language":          params.Language(p),
-			"Reviewers":         quotedReviewers,
-			"CircleCIGenerated": params.CircleCIGenerated(p),
-			"RepoName":          params.RepoName(p),
-			"HasCustomConfig":   params.HasCustomConfig(p),
-			"Deprecated":        params.Deprecated(p),
-		},
+	extends := params.Extends(p)
+	quotedExtends := make([]string, len(extends))
+	for i, e := range extends {
+		quotedExtends[i] = squote(presetsPrefix + e)
 	}
 
-	return i
+	data := map[string]interface{}{
+		"Interval":          interval,
+		"Language":          params.Language(p),
+		"Reviewers":         quotedReviewers,
+		"CircleCIGenerated": params.CircleCIGenerated(p),
+		"RepoName":          params.RepoName(p),
+		"HasCustomConfig":   params.HasCustomConfig(p),
+		"Deprecated":        params.Deprecated(p),
+		"Extends":           quotedExtends,
+		"Fork":              params.Fork(p),
+	}
+
+	if params.Fork(p) {
+		// Renovate's fork check reads renovate.json alone and parses it as
+		// JSONC: the one template is rendered as JSON5 and converted, so a
+		// fork line's config never drifts from everyone else's.
+		return input.Input{
+			Path: filepath.Join(p.Dir, "renovate.json"),
+			Generate: func(context.Context) ([]byte, error) {
+				var json5 bytes.Buffer
+				if err := createRenovate.Execute(&json5, data); err != nil {
+					return nil, microerror.Mask(err)
+				}
+				return toJSONC(json5.Bytes())
+			},
+		}
+	}
+
+	return input.Input{
+		Path:         filepath.Join(p.Dir, "renovate.json5"),
+		TemplateBody: createRenovateTemplate,
+		TemplateData: data,
+	}
 }

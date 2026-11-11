@@ -8,6 +8,7 @@ import (
 
 	"github.com/giantswarm/devctl/v8/internal/versiongate"
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
+	"github.com/giantswarm/devctl/v8/pkg/authexec"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 )
 
@@ -24,22 +25,43 @@ CircleCI: a job behind requires: has posted nothing to GitHub until it starts),
 no GitHub Actions run of the head queued, in progress, waiting or awaiting a
 maintainer's approval, and every status context the base requires reported.
 
-The wait ends before it starts for a pull request no CI can turn green: a draft,
+Drafts wait for their checks like other open pull requests; the document's
+draft field is true for one. A green draft still cannot be merged
+by pr merge.
+
+Before judging a head, the wait reads the pull request again after a short delay
+until two consecutive reads name the same head. It rechecks the head after reading
+its checks before returning a verdict. Red and green progress lines name the SHA.
+
+The wait ends before it starts for a pull request no CI can turn green:
 a closed or merged one, one conflicting with its base, one behind a base that
-requires branches to be up to date. A failure anywhere ends the wait at once.
+requires branches to be up to date. A failure anywhere ends the wait at once, and
+so do Actions runs awaiting a member's approval when nothing else is pending.
 
 CircleCI is consulted when the head carries .circleci/config.yml and CircleCI
 builds the repository: it has a project there with at least one pipeline. A
-repository without either (an upstream fork; a template repository whose
-configuration is for the repositories created from it) is judged from GitHub
-alone. Tokens come from the keychain (` + "`devctl auth login`" + `); the CircleCI token is
-required only when CircleCI is consulted.
+repository without either (an upstream fork) is judged from GitHub alone, and
+so is a template repository whose team-file entry in giantswarm/github declares
+gen.ci.templateContent: its configuration is for the repositories created from
+it. A template without that declaration carries its own pipeline and is judged
+like any repository. Tokens come from the keychain (` + "`devctl auth login`" + `); the CircleCI token is
+required only when CircleCI is consulted. With --circleci-from-statuses, the jobs
+the head's configuration runs on its branch are read from GitHub instead: each
+must post a status and finish successfully, without a CircleCI token, as in
+devctl serve. --failed-log takes precedence and uses the CircleCI API for its
+job logs. The GitHub identity follows the owner: the devctl App login for giantswarm,
+where the App is installed, your own gh login (gh auth token) for every other
+owner; the document's identity says which ("app" or "gh").
 
 Polling is conditional (ETags, a 304 costs no budget) at an interval derived
-from the rate-limit headers of the answers, 15 s to 60 s.
+from the rate-limit headers of the answers, 15 s to 60 s. Without --progress a
+heartbeat on stderr says what the wait still waits for, every two minutes and
+when it changes. A read GitHub or CircleCI leaves unanswered through every
+retry is a warning and the wait polls again; the wait ignores SIGHUP and reads
+no stdin, so it outlives its terminal.
 
 The document (schemaVersion 1): command, exitCode, verdict, reason, warnings,
-startedAt, finishedAt, repository, number, headSha, baseRef,
+startedAt, finishedAt, repository, number, headSha, baseRef, draft,
 checks[{name, source (check_run|status), status, conclusion, url, required}],
 circleci{pipelineId, pipelineNumber, workflows[{name, status, url}]} when
 consulted, actions[{name, runId, status, conclusion, url}], at a timeout
@@ -49,16 +71,23 @@ logError}]. See docs/pr-wait.md.
 
 --failed-log: on a red verdict, read the log of each failed GitHub Actions
 and CircleCI job once and print its last --failed-log-lines lines (default
-50) to stderr; a green or pending wait reads no log.
+50) to stderr; --failed-log-lines 0 keeps the full Actions log, including
+cleanup, or all failed-step output on CircleCI, with terminal controls
+removed. A green or pending wait reads no log.
 
 Exit codes:
   0  green
   1  red: a check, status, run or workflow failed; reason names it
-  2  timeout before an outcome; unfinished names what was still open
-  3  not applicable: draft, closed, merged, conflicting, behind a strict base
-  4  a required status context never reported within the timeout
+  2  timeout or SIGINT/SIGTERM; reason identifies an interrupted wait;
+     unfinished names what was still open, reason also names an outage
+     that left the last poll unanswered
+  3  not applicable: closed, merged, conflicting, behind a strict base
+  4  a required status context never reported, or Actions runs await a
+     member's approval and nothing else is pending
   7  usage or a tooling failure
-  8  authentication required; reason names the devctl auth login to run`
+  8  authentication required; reason names the devctl auth login (or gh auth
+     login, for an owner outside giantswarm) to run
+ 13  remote_error: a CircleCI request failed; the command line was valid`
 	example = `  devctl pr wait giantswarm/devctl 2277
   devctl pr wait giantswarm/devctl 2277 --timeout 45m --progress`
 )
@@ -84,10 +113,12 @@ func New(config Config) (*cobra.Command, error) {
 		stderr:          config.Stderr,
 		stdout:          config.Stdout,
 		requireGitHub:   authstore.RequireGitHub,
+		personGitHub:    authexec.PersonGitHub,
 		requireCircleCI: authstore.RequireCircleCI,
 		renewGitHub:     authstore.RenewGitHubToken,
 		endpoints:       agentcli.EndpointsFromEnv,
 		clock:           agentcli.SystemClock,
+		github:          newGitHub,
 	}
 
 	c := &cobra.Command{

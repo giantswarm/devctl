@@ -1,9 +1,10 @@
-# GitHub answers 500 on every read of the pull request. Eight tries in a
-# row, about three minutes of backoff at scale 1, and the wait ends as a
-# tooling failure (exit 7) whose reason names the request, the count and the
-# last answer; each retried try is a warning with its time. A 500 that
-# persists is an outcome, a single one is not.
-description: a 500 on every read of the pull request ends the wait with exit 7 after eight tries, naming the request and the count
+# GitHub answers 500 on every read of the pull request. Fifteen tries in a
+# row, about ten minutes of backoff at scale 1, leave the poll unanswered:
+# a warning names the request, the count and the last answer, and the wait
+# polls again instead of ending as a tooling failure. The outage outlasts the
+# timeout, so the wait ends in exit 2 whose reason says the head is unknown,
+# not failed. Each retried try is a warning with its time.
+description: a 500 on every read of the pull request leaves the poll unanswered and ends the wait at its timeout with exit 2, never exit 7
 args: [pr, wait, giantswarm/devctl, "42", --timeout, 30m]
 keyring:
   github:

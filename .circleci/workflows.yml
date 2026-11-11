@@ -5,11 +5,21 @@
 # workflow in .circleci/config.yml merges into this file at pipeline runtime.
 version: 2.1
 orbs:
-  architect: giantswarm/architect@10.11.1
+  architect: giantswarm/architect@10.17.4
 
 workflows:
   build:
     jobs:
+    # Resolve the version once, at the start of the workflow, and persist it to
+    # the workspace (.pipeline_version). Every image and chart job requires
+    # this job and builds with that version instead of resolving its own, so a
+    # stable tag landing while the workflow runs (a promote) cannot give the
+    # image and the chart that references it different versions.
+    - architect/pin-version:
+        name: pin-version
+        filters:
+          tags:
+            only: /^v.*/
     - architect/go-build:
         name: go-build
         binary: devctl
@@ -69,11 +79,13 @@ workflows:
         # must not attempt the darwin/windows manifests under QEMU.
         platforms: "linux/amd64,linux/arm64"
         requires:
+        - pin-version
         - go-build
         filters:
           branches:
             ignore:
             - main
+            - /^release-v?[0-9]+(\.[0-9]+)?\.x$/
 
     # Tag builds: push multi-arch image to gsoci + gsociprivate. Aliyun is
     # handled by the sync-china-registry job below (orb's split-china-push
@@ -88,6 +100,7 @@ workflows:
         # build the darwin/windows manifests under QEMU and hangs.
         platforms: "linux/amd64,linux/arm64"
         requires:
+        - pin-version
         - go-build
         filters:
           tags:
@@ -102,6 +115,65 @@ workflows:
         context: architect
         name: sync-china-registry
         requires:
+        - push-to-registries-release
+        filters:
+          tags:
+            only: /^v.*/
+          branches:
+            ignore: /.*/
+
+    # build-chart: package + lint via app-build-suite and persist the archive
+    # (no push). Shared by the branch and tag paths -- branches get build + test
+    # only by default.
+    - architect/push-to-app-catalog:
+        executor: app-build-suite
+        context: architect
+        name: build-chart
+        app_catalog: giantswarm-catalog
+        app_catalog_test: giantswarm-test-catalog
+        chart: devctl
+        push_to_appcatalog: false
+        push_to_oci_registry: false
+        persist_chart_archive: true
+        # The version pin-version persisted (every chart job attaches the
+        # workspace for it).
+        attach_workspace: true
+        # app-build-suite fails a chart whose gsoci image references the registry
+        # does not carry. build-chart runs before this pipeline pushes its own
+        # image (a branch without branchPublish never pushes it), so that image
+        # at the version the chart is stamped with is exempt here; every other
+        # reference, the mirrored third-party images included, is resolved.
+        # push-chart and push-chart-release require the image job and resolve
+        # all of them.
+        pre-steps:
+        - run:
+            name: Exempt this pipeline's own image from the image reference check
+            command: echo 'export ABS_HELM_IMAGE_REFERENCE_VALIDATOR_OWN_IMAGE=gsoci.azurecr.io/giantswarm/devctl' >> "$BASH_ENV"
+        requires:
+        - pin-version
+        - go-build
+        filters:
+          tags:
+            only: /^v.*/
+          branches:
+            ignore:
+            - main
+            - /^release-v?[0-9]+(\.[0-9]+)?\.x$/
+
+    # Tag: push chart after tests + the gsoci image. Intentionally does NOT
+    # depend on sync-china-registry so the chart catalog can publish even if
+    # the in-China Aliyun mirror is slow or fails.
+    - architect/push-to-app-catalog:
+        executor: app-build-suite
+        context: architect
+        name: push-chart-release
+        app_catalog: giantswarm-catalog
+        app_catalog_test: giantswarm-test-catalog
+        chart: devctl
+        attach_workspace: true
+        requires:
+        - pin-version
+        - build-chart
         - push-to-registries-release
         filters:
           tags:

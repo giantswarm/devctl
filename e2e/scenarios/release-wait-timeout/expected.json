@@ -26,6 +26,7 @@
       "failedJobs": [],
       "unfinished": ["build (running)"]
     },
-    "actions": []
+    "actions": [],
+    "statuses": []
   }
 }

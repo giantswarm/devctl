@@ -3,6 +3,7 @@ package circleci
 import (
 	"bytes"
 	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -197,25 +198,110 @@ func Test_SetupConfigCarriesMergeExpression(t *testing.T) {
 }
 
 // findYq locates a mikefarah yq v4 binary -- the variant cimg/base ships and
-// the setup config's merge expression is written for. Some distros package it
-// as go-yq, and a plain `yq` may be the incompatible Python jq-wrapper, so
-// the version banner is checked.
+// the setup config's merge expression is written for -- and fails the test
+// when there is none: a skip would report the package green without running
+// the merge and setup-render cases. `make test` puts a pinned one first on PATH.
 func findYq(t *testing.T) string {
 	t.Helper()
 
-	for _, name := range []string{"yq", "go-yq"} {
-		path, err := exec.LookPath(name)
-		if err != nil {
-			continue
-		}
-		out, err := exec.Command(path, "--version").CombinedOutput() // #nosec G204 -- fixed args, test-only
-		if err == nil && strings.Contains(string(out), "mikefarah") {
-			return path
+	yq, err := resolveYq(os.Getenv("YQ"), os.Getenv("PATH"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return yq
+}
+
+// resolveYq returns the first mikefarah yq v4 among $YQ and every yq and go-yq
+// (some distros' name for it) in the PATH directories, checked by the version
+// banner: the first yq on PATH may be the incompatible Python jq-wrapper. The
+// error names every candidate it rejected and how to provide the right one.
+func resolveYq(explicit, path string) (string, error) {
+	var candidates []string
+	if explicit != "" {
+		candidates = append(candidates, explicit)
+	}
+	for _, dir := range filepath.SplitList(path) {
+		for _, name := range []string{"yq", "go-yq"} {
+			candidates = append(candidates, filepath.Join(dir, name))
 		}
 	}
 
-	t.Skip("mikefarah yq v4 not installed; skipping merge test")
-	return ""
+	var rejected []string
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate) // #nosec G703 -- test-only, a $YQ or PATH yq candidate
+		if seen[candidate] || err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+			continue
+		}
+		seen[candidate] = true
+		out, err := exec.Command(candidate, "--version").CombinedOutput() // #nosec G204 G702 -- test-only, a $YQ or PATH yq candidate's version
+		banner := strings.Join(strings.Fields(string(out)), " ")
+		if err == nil && strings.Contains(banner, "mikefarah") && strings.Contains(banner, "version v4.") {
+			return candidate, nil
+		}
+		rejected = append(rejected, fmt.Sprintf("%s (%s)", candidate, banner))
+	}
+
+	found := "none on PATH"
+	if len(rejected) > 0 {
+		found = "found only " + strings.Join(rejected, ", ")
+	}
+	return "", fmt.Errorf("mikefarah yq v4 is required by the merge and setup-render tests, %s: "+
+		"run them through `make test`, which installs a pinned one, or install it and set YQ to its path", found)
+}
+
+// Test_ResolveYqPicksMikefarahV4 pins how the yq-backed tests find their yq:
+// past a Python yq first on PATH to a mikefarah v4 further down, and an error
+// naming the rejected candidates -- never a silent skip -- when there is none.
+func Test_ResolveYqPicksMikefarahV4(t *testing.T) {
+	fake := func(name, banner string) string {
+		dir := t.TempDir()
+		script := "#!/bin/sh\nprintf '%s\\n' '" + banner + "'\n"
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil { // #nosec G306 -- test-only executable
+			t.Fatal(err)
+		}
+		return dir
+	}
+	python := fake("yq", "yq 3.4.3")
+	mikefarahV3 := fake("yq", "yq version 3.4.1")
+	mikefarah := fake("yq", "yq (https://github.com/mikefarah/yq/) version v4.54.1")
+	goYq := fake("go-yq", "yq (https://github.com/mikefarah/yq/) version v4.54.1")
+	list := func(dirs ...string) string { return strings.Join(dirs, string(filepath.ListSeparator)) }
+
+	testCases := []struct {
+		name     string
+		explicit string
+		path     string
+		want     string
+		wantErr  []string
+	}{
+		{name: "mikefarah behind a Python yq", path: list(python, mikefarahV3, mikefarah), want: filepath.Join(mikefarah, "yq")},
+		{name: "go-yq", path: list(python, goYq), want: filepath.Join(goYq, "go-yq")},
+		{name: "YQ first", explicit: filepath.Join(goYq, "go-yq"), path: list(mikefarah), want: filepath.Join(goYq, "go-yq")},
+		{name: "only a Python yq", path: list(python, mikefarahV3), wantErr: []string{
+			filepath.Join(python, "yq") + " (yq 3.4.3)", filepath.Join(mikefarahV3, "yq") + " (yq version 3.4.1)", "make test", "YQ",
+		}},
+		{name: "no yq", path: list(t.TempDir()), wantErr: []string{"none on PATH", "make test"}},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveYq(tc.explicit, tc.path)
+			if tc.wantErr == nil {
+				if err != nil || got != tc.want {
+					t.Fatalf("resolveYq = %q, %v; want %q", got, err, tc.want)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("resolveYq = %q, want an error", got)
+			}
+			for _, want := range tc.wantErr {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not name %q", err, want)
+				}
+			}
+		})
+	}
 }
 
 // yqMerge runs the setup config's merge expression over workflows.yml +
@@ -1750,13 +1836,13 @@ func Test_SkipATSOmitsChartTests(t *testing.T) {
 		}
 	}
 	// The ATS test jobs are gone.
-	for _, unwanted := range []string{jobRunTests, "execute-chart-tests", "execute-chart-tests-release"} {
+	for _, unwanted := range []string{jobRunTests, "execute-chart-tests", "execute-chart-tests-release", "pull-chart-test-images"} {
 		if contains(got, unwanted) {
 			t.Errorf("SkipATS config should not contain %q:\n%s", unwanted, got)
 		}
 	}
 	// The chart push jobs gate on build-chart now that the test jobs are gone.
-	if !contains(got, "requires:\n        - build-chart") {
+	if !contains(got, "requires:\n        - pin-version\n        - build-chart") {
 		t.Errorf("SkipATS chart push should require build-chart directly:\n%s", got)
 	}
 
@@ -1794,7 +1880,7 @@ func Test_DefaultChartTestsRunOnBranchesOnly(t *testing.T) {
 	}
 	// push-chart-release gates on build-chart and the release image, and is
 	// the only job with that requires block.
-	if n := strings.Count(got, "requires:\n        - build-chart\n        - push-to-registries-release"); n != 1 {
+	if n := strings.Count(got, "requires:\n        - pin-version\n        - build-chart\n        - push-to-registries-release"); n != 1 {
 		t.Errorf("default chart push should require build-chart + push-to-registries-release exactly once, found %d:\n%s", n, got)
 	}
 
@@ -1832,7 +1918,7 @@ func Test_ATSOnReleaseAddsTagRun(t *testing.T) {
 	if !contains(tagJob, "requires:\n        - build-chart\n        - push-to-registries-release") {
 		t.Errorf("ATSOnRelease tag test should require build-chart + push-to-registries-release:\n%s", got)
 	}
-	if !contains(got, "requires:\n        - execute-chart-tests-release\n        - push-to-registries-release") {
+	if !contains(got, "requires:\n        - pin-version\n        - execute-chart-tests-release\n        - push-to-registries-release") {
 		t.Errorf("ATSOnRelease chart push should require execute-chart-tests-release:\n%s", got)
 	}
 	if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 4 {
@@ -1936,6 +2022,73 @@ func Test_NodeResourceClass(t *testing.T) {
 	}
 	if contains(override, "resource_class: "+DefaultNodeResourceClass) {
 		t.Errorf("default resource_class leaked through despite override:\n%s", override)
+	}
+}
+
+// Test_NodeWorkerCounts verifies the Node job exports worker counts sized from
+// its resource class's memory, so lint and jest stay inside the class instead
+// of sizing themselves from the host's or the cgroup's CPU count; a class of
+// unknown memory exports nothing and leaves the tools to their detection.
+func Test_NodeWorkerCounts(t *testing.T) {
+	cases := []struct {
+		class      string
+		jest, lint string
+	}{
+		{class: "", jest: "2", lint: "1"}, // the default, large
+		{class: "medium", jest: "1", lint: "1"},
+		{class: "xlarge", jest: "4", lint: "2"},
+		{class: "2xlarge", jest: "8", lint: "4"},
+		{class: "arm.large", jest: "4", lint: "2"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.class, func(t *testing.T) {
+			got := render(t, Config{
+				RepoName:       repoK8sTypes,
+				Language:       gen.LanguageNode,
+				PackageManager: PackageManagerYarn,
+				ResourceClass:  tc.class,
+			})
+			want := "    environment:\n" +
+				"      BACKSTAGE_CLI_CONCURRENCY: \"" + tc.lint + "\"\n" +
+				"      JEST_MAX_WORKERS: \"" + tc.jest + "\"\n"
+			if !contains(got, want) {
+				t.Errorf("Node job should export\n%s\ngot:\n%s", want, got)
+			}
+		})
+	}
+
+	unknown := render(t, Config{
+		RepoName:       repoK8sTypes,
+		Language:       gen.LanguageNode,
+		PackageManager: PackageManagerYarn,
+		ResourceClass:  "giantswarm/self-hosted",
+	})
+	if contains(unknown, "JEST_MAX_WORKERS") || contains(unknown, "BACKSTAGE_CLI_CONCURRENCY") {
+		t.Errorf("a class of unknown memory should export no worker counts:\n%s", unknown)
+	}
+}
+
+// Test_CustomMergeNodeWorkerCounts verifies a repo lowers the generated worker
+// counts under the job's environment in custom.yml (beside a service
+// container, for one): its values win the deep merge, and the generated
+// variable it does not set stays.
+func Test_CustomMergeNodeWorkerCounts(t *testing.T) {
+	workflows, err := os.ReadFile(goldenNodeYarnBerryPath) // #nosec G304 -- fixed in-package testdata path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+
+	merged := yqMerge(t, string(workflows), `jobs:
+  node-build:
+    environment:
+      JEST_MAX_WORKERS: "1"
+`)
+
+	if got := yqQuery(t, merged, ".jobs.node-build.environment.JEST_MAX_WORKERS"); got != "1" {
+		t.Errorf("custom JEST_MAX_WORKERS should win the merge, got %q", got)
+	}
+	if got := yqQuery(t, merged, ".jobs.node-build.environment.BACKSTAGE_CLI_CONCURRENCY"); got != "1" {
+		t.Errorf("generated BACKSTAGE_CLI_CONCURRENCY should survive the merge, got %q", got)
 	}
 }
 
@@ -2192,8 +2345,8 @@ func Test_ImageNativeBuilds(t *testing.T) {
 		"name: build-image-release-arm64\n        platform: linux/arm64\n        resource_class: arm.medium",
 		"name: push-to-registries\n        merge-digests: true\n        platforms: \"linux/amd64,linux/arm64\"",
 		"name: push-to-registries-release\n        merge-digests: true\n        platforms: \"linux/amd64,linux/arm64\"",
-		"requires:\n        - build-image-amd64\n        - build-image-arm64",
-		"requires:\n        - build-image-release-amd64\n        - build-image-release-arm64",
+		"requires:\n        - pin-version\n        - build-image-amd64\n        - build-image-arm64",
+		"requires:\n        - pin-version\n        - build-image-release-amd64\n        - build-image-release-arm64",
 	} {
 		if !contains(got, want) {
 			t.Errorf("native builds output missing %q:\n%s", want, got)
@@ -2367,8 +2520,13 @@ func Test_ATSVersionLegacy(t *testing.T) {
 		if n := strings.Count(got, `app-test-suite_container_tag: "`+tag+`"`); n != 1 {
 			t.Errorf("%s: expected the ATS tag on the chart-test job, found %d:\n%s", tag, n, got)
 		}
-		if contains(got, "create_kind_cluster") {
-			t.Errorf("%s: a 0.x tag must not turn on create_kind_cluster:\n%s", tag, got)
+		if contains(got, "create_kind_cluster") || contains(got, "kind_node_image") {
+			t.Errorf("%s: a 0.x tag must not turn on create_kind_cluster or pin a kind node:\n%s", tag, got)
+		}
+		// dats.sh still starts the app-test-suite image: it is pulled ahead, the
+		// kind node is not (app-test-suite 0.x brings its own).
+		if want := `images: "gsoci.azurecr.io/giantswarm/app-test-suite:` + tag + `"`; !contains(got, want) {
+			t.Errorf("%s: expected the pre-steps to pull only app-test-suite (%s):\n%s", tag, want, got)
 		}
 		if inputs := newCircleCI(t, c).ATSInputs(); len(inputs) != 1 || inputs[0].Path != "tests/ats/Pipfile" {
 			t.Errorf("%s: expected the Pipfile as the only ATS input, got %+v", tag, inputs)
@@ -2782,5 +2940,46 @@ func Test_TemplateChartRejects(t *testing.T) {
 	service.Team = ""
 	if got, want := render(t, service), render(t, Config{RepoName: repoTemplateApp, Language: gen.LanguageGeneric, Flavours: gen.FlavourSlice{gen.FlavourApp}}); got != want {
 		t.Errorf("componentType service must render the plain chart pipeline")
+	}
+}
+
+// Test_ChartTestsPullImagesWithRetry verifies the chart-test jobs survive a
+// transient registry `toomanyrequests`: both run-tests-with-ats jobs pre-pull
+// the images they start -- app-test-suite and the kind node they create the
+// cluster from -- through the pull-chart-test-images command, which logs in to
+// the registry with the architect context's credentials and retries each pull
+// with bounded backoff. The kind node the job uses is the one pulled.
+func Test_ChartTestsPullImagesWithRetry(t *testing.T) {
+	got := render(t, Config{
+		RepoName:      repoMCPKubernetes,
+		Language:      gen.LanguageGo,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: true,
+		ATSOnRelease:  true,
+	})
+
+	kindNode := ATSImageRegistry + "/giantswarm/kind-node:" + ATSKindNodeImageVersion
+	images := `images: "` + ATSImageRegistry + "/giantswarm/app-test-suite:" + DefaultATSVersion + " " + kindNode + `"`
+	for want, n := range map[string]int{
+		"  pull-chart-test-images:\n":               1,
+		"        - pull-chart-test-images:\n":       2,
+		"            registry: " + ATSImageRegistry: 2,
+		"            " + images:                     2,
+		`kind_node_image: "` + kindNode + `"`:       2,
+	} {
+		if c := strings.Count(got, want); c != n {
+			t.Errorf("expected %q %d times, found %d:\n%s", want, n, c, got)
+		}
+	}
+	for _, want := range []string{
+		`docker login "$PULL_REGISTRY" --username "$username_val" --password-stdin`,
+		`retry docker pull "$image"`,
+		`delays="15 30 60 60 60"`,
+		// CircleCI interpolates "<<" in config: the heredoc is escaped.
+		"done \\<<EOF",
+	} {
+		if !contains(got, want) {
+			t.Errorf("pull-chart-test-images missing %q:\n%s", want, got)
+		}
 	}
 }

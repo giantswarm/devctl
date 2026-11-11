@@ -1,0 +1,51 @@
+# A pull request to a repository whose CI runs on pull_request, minutes after
+# its last push. GitHub never delivered the pull_request event: the head has
+# no check run, no status and no Actions run, and the base requires nothing.
+# The wait used to call that head green on the empty set. The repository's
+# workflows say runs are due, and the grace for their registration has long
+# passed: the first poll ends the wait with exit 4 no_checks, naming the
+# workflow and the close-and-reopen retrigger.
+description: a head with no checks while the pull_request workflows never started is exit 4 no_checks
+args: [pr, wait, giantswarm/devctl, "42", --timeout, 5m]
+keyring:
+  github:
+    login: e2e-engineer
+    token: ghu_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+    refreshToken: ghr_e2e_live
+    refreshExpiresAt: "2099-01-01T00:00:00Z"
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/pulls/42":
+      - body:
+          number: 42
+          state: open
+          draft: false
+          merged: false
+          mergeable: true
+          mergeable_state: clean
+          updated_at: "2026-10-15T10:00:00Z"
+          head: {sha: abc123, ref: fix-typo, repo: {full_name: giantswarm/devctl}}
+          base: {ref: main, repo: {full_name: giantswarm/devctl}}
+    "GET /repos/giantswarm/devctl/commits/abc123/check-runs":
+      - body: {total_count: 0, check_runs: []}
+    "GET /repos/giantswarm/devctl/commits/abc123/status":
+      - body: {state: pending, total_count: 0, statuses: []}
+    "GET /repos/giantswarm/devctl/actions/runs?head_sha=abc123":
+      - body: {total_count: 0, workflow_runs: []}
+    "GET /repos/giantswarm/devctl/git/commits/abc123":
+      - body: {sha: abc123, message: "fix: a typo"}
+    "GET /repos/giantswarm/devctl/contents/.github/workflows":
+      - body:
+          - {type: file, name: ci.yaml, path: .github/workflows/ci.yaml}
+    "GET /repos/giantswarm/devctl/contents/.github/workflows/ci.yaml":
+      - body: {type: file, path: .github/workflows/ci.yaml, encoding: base64, content: "bmFtZTogQ0kKb246CiAgcHVsbF9yZXF1ZXN0OgogIHB1c2g6CiAgICBicmFuY2hlczogW21haW5dCmpvYnM6CiAgdGVzdDoKICAgIHJ1bnMtb246IHVidW50dS1sYXRlc3QKICAgIHN0ZXBzOgogICAgICAtIHJ1bjogbWFrZSB0ZXN0Cg=="}
+    "GET /repos/giantswarm/devctl/actions/workflows":
+      - body:
+          total_count: 1
+          workflows:
+            - {id: 1, path: .github/workflows/ci.yaml, state: active}

@@ -24,6 +24,11 @@ const (
 // ErrNotFound is returned when the identity has no record.
 var ErrNotFound = errors.New("no record in the keychain")
 
+// ErrKeychainUnreachable is in the error of a keychain the environment has
+// none of: a shell without a session bus, a container or a CI step. A caller
+// whose token is optional reads anonymously; one that needs it reports it.
+var ErrKeychainUnreachable = errors.New("connecting to the session bus for the keychain")
+
 // Record is what the keychain holds for one identity. A zero time means the
 // value does not expire.
 type Record struct {
@@ -61,8 +66,10 @@ type Store interface {
 	Lock(user string) (unlock func(), err error)
 }
 
-// OpenStore is the store the environment selects: the file of
-// [agentcli.EnvKeyringFile] when set, the OS keychain otherwise.
+// OpenStore is the store the environment selects: the JSON file of
+// [agentcli.EnvKeyringFile], read from the environment when the endpoints are
+// built and created with mode 0600 on first write, when it is non-empty; the
+// OS keychain otherwise.
 func OpenStore(endpoints agentcli.Endpoints) Store {
 	if endpoints.KeyringFile != "" {
 		return &FileStore{Path: endpoints.KeyringFile}
@@ -154,6 +161,11 @@ func lockFile(path string) (func(), error) {
 
 // Get implements [Store].
 func (s *FileStore) Get(user string) (Record, error) {
+	unlock, err := lockFile(s.Path + ".lock")
+	if err != nil {
+		return Record{}, err
+	}
+	defer unlock()
 	records, err := s.read()
 	if err != nil {
 		return Record{}, err
@@ -167,6 +179,13 @@ func (s *FileStore) Get(user string) (Record, error) {
 
 // Set implements [Store].
 func (s *FileStore) Set(user string, record Record) error {
+	// All identities share one document. This transaction lock is separate
+	// from the identity lock a refresh holds across its network exchange.
+	unlock, err := lockFile(s.Path + ".lock")
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	records, err := s.read()
 	if err != nil {
 		return err
@@ -177,6 +196,11 @@ func (s *FileStore) Set(user string, record Record) error {
 
 // Delete implements [Store].
 func (s *FileStore) Delete(user string) error {
+	unlock, err := lockFile(s.Path + ".lock")
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	records, err := s.read()
 	if err != nil {
 		return err
@@ -202,6 +226,9 @@ func (s *FileStore) read() (map[string]Record, error) {
 	}
 	if err := json.Unmarshal(b, &records); err != nil {
 		return nil, fmt.Errorf("the keyring file %s is not devctl's: %w", s.Path, err)
+	}
+	if records == nil {
+		return nil, fmt.Errorf("the keyring file %s is not devctl's: expected a records object, got null", s.Path)
 	}
 	return records, nil
 }

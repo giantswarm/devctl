@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -9,16 +10,29 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd"
+	"github.com/giantswarm/devctl/v8/cmd/repo/followcircleci"
+	"github.com/giantswarm/devctl/v8/internal/termout"
+	"github.com/giantswarm/devctl/v8/pkg/authexec"
 )
 
 func main() {
+	// Started as a proxy (a `gh` link to devctl), devctl runs that program
+	// with the App login's token: `devctl auth exec`.
+	if name := authexec.Proxy(os.Args[0]); name != "" {
+		os.Exit(authexec.Run(context.Background(), authexec.Default(), name, os.Args[1:]))
+	}
+
 	rootCommand, err := newRootCommand()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", microerror.Pretty(err, true))
+		fmt.Fprintf(os.Stderr, "%s: %s\n", termout.Error(os.Stderr), microerror.Pretty(err, true))
 		os.Exit(2)
 	}
 
-	os.Exit(cmd.Execute(rootCommand, os.Stderr))
+	// After the command, the automatic pass over the person's pending CircleCI
+	// pipelines; it never changes the exit code.
+	os.Exit(cmd.ExecuteThen(rootCommand, os.Stderr, func(executed *cobra.Command) {
+		followcircleci.Auto(executed, os.Stderr)
+	}))
 }
 
 func newRootCommand() (*cobra.Command, error) {

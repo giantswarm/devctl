@@ -3,11 +3,13 @@ package reconcile
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
-	"github.com/google/go-github/v92/github"
+	"github.com/google/go-github/v93/github"
+	"github.com/titanous/json5"
+
+	"github.com/giantswarm/devctl/v8/pkg/renovate"
 )
 
 const (
@@ -26,14 +28,6 @@ const (
 	renovateGrace = 24 * time.Hour
 )
 
-// renovateConfigPaths are the configuration files Renovate reads, in its
-// order of precedence.
-var renovateConfigPaths = []string{"renovate.json5", "renovate.json", ".github/renovate.json5", ".github/renovate.json", ".renovaterc", ".renovaterc.json"}
-
-// renovateDisabled matches a top-level `enabled: false` of the configuration,
-// JSON or JSON5; one nested in packageRules is indented further.
-var renovateDisabled = regexp.MustCompile(`(?m)^\s{0,2}["']?enabled["']?\s*:\s*false`)
-
 // installationRepositories is a page of GET /user/installations/{id}/repositories.
 type installationRepositories struct {
 	TotalCount          int    `json:"total_count"`
@@ -47,18 +41,42 @@ type installationRepositories struct {
 // repository's own evidence: a configuration file, and a trace of a run —
 // the Dependency Dashboard issue, else a pull request or a commit of
 // Renovate's. Both present is ok, as is a configuration that disables
-// Renovate. The Renovate installation covers every repository of the
+// Renovate. An entry that declares renovate: false is ok without a
+// configuration or with one that disables Renovate; one that keeps Renovate
+// on is reported. The Renovate installation covers every repository of the
 // organization, so what is missing is reported for a person and never
 // repaired: a configuration to add, or a run that has not happened yet or a
-// configuration Renovate refuses. A repository younger than renovateGrace
+// configuration Renovate refuses. The fork check skips a GitHub fork unless
+// renovate.json itself enables fork processing, regardless of its age or
+// historical traces. Otherwise a repository younger than renovateGrace
 // without a trace is ok: Renovate's first run is not due yet. The
 // installation's repository list, which
 // only an organization owner's token reads, is detail in the summary and
 // never decides the verdict.
 func (r *Runner) stepRenovate(ctx context.Context, s *run, sr *StepResult) error {
-	config, disabled, err := r.renovateConfig(ctx, s)
+	config, content, err := r.renovateConfig(ctx, s)
 	if err != nil {
 		return err
+	}
+	disabled := renovate.Disables(content)
+	if !s.fields.RenovateOn() {
+		switch {
+		case config == "":
+			sr.Summary = "renovate: false; no Renovate configuration"
+		case disabled:
+			sr.Summary = "renovate: false; " + config + " disables Renovate"
+		default:
+			s.report(sr, FindingRenovateDeclaredOff,
+				fmt.Sprintf("%s declares renovate: false, but %s keeps Renovate on: Renovate still opens dependency updates", s.slug(), config),
+				fmt.Sprintf("delete %s from %s (align-files no longer generates it for this entry) or set `enabled: false` in it", config, s.branch()))
+		}
+		return nil
+	}
+	if !disabled && s.repo.GetFork() && (config != "renovate.json" || !renovateEnablesFork(content)) {
+		s.report(sr, FindingRenovateNotScanned,
+			fmt.Sprintf("%s is a GitHub fork: Renovate's fork check skips it because renovate.json does not enable fork processing; other configuration files and presets cannot admit the fork", s.slug()),
+			fmt.Sprintf("run `devctl gen renovate --flavour fork` and commit renovate.json with `forkProcessing: \"enabled\"` on %s; keep repository-specific rules in renovate-custom.json5", s.branch()))
+		return nil
 	}
 	var trace string
 	var issuesRefused bool
@@ -73,7 +91,7 @@ func (r *Runner) stepRenovate(ctx context.Context, s *run, sr *StepResult) error
 	case config == "":
 		s.report(sr, FindingRenovateNotScanned,
 			fmt.Sprintf("%s has no Renovate configuration: Renovate opens no dependency updates", s.slug()),
-			"add renovate.json5 (`devctl gen renovate` writes it; align-files renders it for repositories on devctl-generated CI) or merge Renovate's onboarding pull request; the installation covers all repositories, there is nothing to add there")
+			"add renovate.json5 (`devctl gen renovate` writes it; align-files renders it on its next run for an entry with gen.flavours that is no fork line) or merge Renovate's onboarding pull request; the installation covers all repositories, there is nothing to add there")
 	case disabled:
 		sr.Summary = config + " disables Renovate"
 	case trace != "":
@@ -102,18 +120,32 @@ func (r *Runner) stepRenovate(ctx context.Context, s *run, sr *StepResult) error
 }
 
 // renovateConfig finds the Renovate configuration on the default branch: its
-// path ("" when there is none) and whether it disables Renovate.
-func (r *Runner) renovateConfig(ctx context.Context, s *run) (string, bool, error) {
-	for _, path := range renovateConfigPaths {
+// path ("" when there is none) and its contents. Stop at the first file;
+// lower-priority configurations do not affect Renovate's decision.
+func (r *Runner) renovateConfig(ctx context.Context, s *run) (string, []byte, error) {
+	// The first configuration found is the one reported.
+	for _, path := range renovate.ConfigPaths {
 		content, found, err := r.fileContent(ctx, s.owner, s.name, path, s.branch())
 		if err != nil {
-			return "", false, err
+			return "", nil, err
 		}
 		if found {
-			return path, renovateDisabled.Match(content), nil
+			return path, content, nil
 		}
 	}
-	return "", false, nil
+	return "", nil, nil
+}
+
+// renovateEnablesFork mirrors Renovate's validateIncludeForks: only keys in
+// the default config file admit a fork, including the legacy includeForks.
+// JSON5 also accepts the JSONC emitted by the fork generator. An unreadable
+// configuration does not admit a fork, as in Renovate's check.
+func renovateEnablesFork(content []byte) bool {
+	var config map[string]any
+	if err := json5.Unmarshal(content, &config); err != nil {
+		return false
+	}
+	return config["forkProcessing"] == "enabled" || config["includeForks"] == true
 }
 
 // renovateTrace is the trace of a Renovate run on the repository, or "": the

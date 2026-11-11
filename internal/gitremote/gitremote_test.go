@@ -25,7 +25,7 @@ func Test_Parse(t *testing.T) {
 		{name: "ssh url with port", remote: "ssh://git@github.com:22/giantswarm/valkey-app.git", want: Repo{Host: "github.com", Owner: "giantswarm", Name: "valkey-app"}},
 		{name: "ssh host alias", remote: "github-work:giantswarm/valkey-app.git", want: Repo{Host: "github-work", Owner: "giantswarm", Name: "valkey-app"}},
 		{name: "dot-prefixed name", remote: "https://github.com/giantswarm/.github", want: Repo{Host: "github.com", Owner: "giantswarm", Name: ".github"}},
-		{name: "non-giantswarm owner", remote: "git@github.com:teemow/valkey-app.git", want: Repo{Host: "github.com", Owner: "teemow", Name: "valkey-app"}},
+		{name: "non-giantswarm owner", remote: "git@github.com:fixture-person/valkey-app.git", want: Repo{Host: "github.com", Owner: "fixture-person", Name: "valkey-app"}},
 	}
 
 	for _, tc := range testCases {
@@ -74,7 +74,7 @@ func Test_RepoName(t *testing.T) {
 		{name: "https", remote: "https://github.com/giantswarm/valkey-app.git", want: "valkey-app"},
 		{name: "ssh", remote: "git@github.com:giantswarm/valkey-app.git", want: "valkey-app"},
 		{name: "owner in another case", remote: "https://github.com/GiantSwarm/valkey-app", want: "valkey-app"},
-		{name: "non-giantswarm owner", remote: "git@github.com:teemow/valkey-app.git", wantErr: "github.com/teemow/valkey-app is not a giantswarm repository"},
+		{name: "non-giantswarm owner", remote: "git@github.com:fixture-person/valkey-app.git", wantErr: "github.com/fixture-person/valkey-app is not a giantswarm repository"},
 		{name: "no origin remote", wantErr: "git remote get-url origin"},
 	}
 

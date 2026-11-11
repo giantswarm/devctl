@@ -72,3 +72,25 @@ func TestFindPipelineByTagPages(t *testing.T) {
 		t.Errorf("url: %s", got)
 	}
 }
+
+func TestParseStatusTarget(t *testing.T) {
+	cases := map[string]struct {
+		want StatusTarget
+		ok   bool
+	}{
+		"https://circleci.com/gh/giantswarm/backstage/60975":                                       {StatusTarget{Org: "giantswarm", Repo: "backstage", Job: 60975}, true},
+		"https://app.circleci.com/pipelines/github/giantswarm/backstage/4211":                      {StatusTarget{Org: "giantswarm", Repo: "backstage", Pipeline: 4211}, true},
+		"https://app.circleci.com/pipelines/gh/giantswarm/backstage/4211/workflows/w-1/jobs/60975": {StatusTarget{Org: "giantswarm", Repo: "backstage", Pipeline: 4211, Job: 60975}, true},
+		"https://app.circleci.com/pipelines/github/giantswarm/backstage/4211/workflows/w-1":        {StatusTarget{Org: "giantswarm", Repo: "backstage", Pipeline: 4211}, true},
+		"https://circleci.com/gh/giantswarm/backstage":                                             {},
+		"https://circleci.com/gh/giantswarm/backstage/latest":                                      {},
+		"https://github.com/giantswarm/backstage/actions/runs/1":                                   {},
+		"": {},
+	}
+	for in, c := range cases {
+		got, ok := ParseStatusTarget(in)
+		if ok != c.ok || got != c.want {
+			t.Errorf("%q: want %+v %v, got %+v %v", in, c.want, c.ok, got, ok)
+		}
+	}
+}

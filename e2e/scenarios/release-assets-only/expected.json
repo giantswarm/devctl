@@ -14,6 +14,7 @@
     "sha": "cc33dd44ee55ff66aa11bb22cc33dd44ee55ff66",
     "releaseModel": "auto-release",
     "ciModel": "none",
+    "releaseAssetCount": 2,
     "artifacts": [
       {"kind": "release-asset", "reference": "https://github.com/giantswarm/e2e-cli/releases/download/v1.2.3/e2e-cli-v1.2.3-linux-amd64.tar.gz", "digest": "sha256:a55e0000000000000000000000000000000000000000000000000000000000a5", "state": "available"},
       {"kind": "release-asset", "reference": "https://github.com/giantswarm/e2e-cli/releases/download/v1.2.3/e2e-cli-v1.2.3-darwin-arm64.tar.gz", "digest": "sha256:a55e0000000000000000000000000000000000000000000000000000000000a6", "state": "available"}
@@ -21,6 +22,7 @@
     "pipeline": null,
     "actions": [
       {"name": "Upload release assets", "runId": 9002, "status": "completed", "conclusion": "success", "url": "https://github.com/giantswarm/e2e-cli/actions/runs/9002"}
-    ]
+    ],
+    "statuses": []
   }
 }

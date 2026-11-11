@@ -116,7 +116,7 @@ func (s secretService) with(fn func(c *secretServiceClient, collection dbus.Obje
 func dialSecretService() (*dbus.Conn, string, error) {
 	conn, err := connectSessionBus()
 	if err != nil {
-		return nil, "", fmt.Errorf("connecting to the session bus for the keychain: %w", err)
+		return nil, "", fmt.Errorf("%w: %w", ErrKeychainUnreachable, err)
 	}
 	return conn, secretsBusName, nil
 }
@@ -188,6 +188,9 @@ func (c *secretServiceClient) defaultCollection() (dbus.ObjectPath, error) {
 	if !locked {
 		return collection, nil
 	}
+	if noPrompt.Load() {
+		return "", c.fail("Unlock", collection, ErrKeychainLocked)
+	}
 	// Unlock takes the resolved collection: GNOME Keyring tolerates the alias
 	// path here, oo7-daemon and KeePassXC do not.
 	var unlocked []dbus.ObjectPath
@@ -195,7 +198,7 @@ func (c *secretServiceClient) defaultCollection() (dbus.ObjectPath, error) {
 	if err := c.service().Call(ifaceService+".Unlock", 0, []dbus.ObjectPath{collection}).Store(&unlocked, &prompt); err != nil {
 		return "", c.fail("Unlock", collection, err)
 	}
-	if err := c.completePrompt("Unlock", collection, prompt); err != nil {
+	if err := c.completePrompt("Unlock", collection, prompt, true); err != nil {
 		return "", err
 	}
 	return collection, nil
@@ -229,7 +232,9 @@ func (c *secretServiceClient) createItem(collection dbus.ObjectPath, user, value
 	if err := c.conn.Object(c.dest, collection).Call(ifaceCollection+".CreateItem", 0, properties, s, true).Store(&item, &prompt); err != nil {
 		return c.fail("CreateItem", collection, err)
 	}
-	return c.completePrompt("CreateItem", collection, prompt)
+	// Never refused under NoPrompt: the record may be a token pair whose old
+	// refresh token the issuer has spent already.
+	return c.completePrompt("CreateItem", collection, prompt, false)
 }
 
 func (c *secretServiceClient) deleteItem(item dbus.ObjectPath) error {
@@ -237,14 +242,18 @@ func (c *secretServiceClient) deleteItem(item dbus.ObjectPath) error {
 	if err := c.conn.Object(c.dest, item).Call(ifaceItem+".Delete", 0).Store(&prompt); err != nil {
 		return c.fail("Delete", item, err)
 	}
-	return c.completePrompt("Delete", item, prompt)
+	return c.completePrompt("Delete", item, prompt, true)
 }
 
 // completePrompt runs the prompt a call returned and waits for the person to
-// finish it; a dismissed prompt fails the call. nullPath is no prompt.
-func (c *secretServiceClient) completePrompt(call string, on, prompt dbus.ObjectPath) error {
+// finish it; a dismissed prompt fails the call. nullPath is no prompt. A
+// refusable prompt fails with ErrKeychainLocked after NoPrompt.
+func (c *secretServiceClient) completePrompt(call string, on, prompt dbus.ObjectPath, refusable bool) error {
 	if prompt == nullPath {
 		return nil
+	}
+	if refusable && noPrompt.Load() {
+		return c.fail(call, on, ErrKeychainLocked)
 	}
 	completed := ifacePrompt + ".Completed"
 	match := []dbus.MatchOption{dbus.WithMatchObjectPath(prompt), dbus.WithMatchInterface(ifacePrompt), dbus.WithMatchMember("Completed")}

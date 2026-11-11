@@ -36,7 +36,7 @@ type source struct {
 }
 
 // helmReleases returns the HelmReleases on the cluster that deploy one of
-// the charts, judged against the version.
+// the charts or that --helmrelease names, judged against the version.
 func (w *Waiter) helmReleases(ctx context.Context) ([]Deployment, error) {
 	sources := map[string]*unstructured.Unstructured{}
 	for _, r := range []struct {
@@ -58,11 +58,18 @@ func (w *Waiter) helmReleases(ctx context.Context) ([]Deployment, error) {
 	if err != nil {
 		return nil, err
 	}
+	w.seenHelmReleases = len(items)
 	var list []Deployment
 	for i := range items {
 		hr := &items[i]
 		src, ok := sourceOf(hr, sources)
-		if !ok || !w.charts[src.chart] {
+		named := w.named(hr.GetNamespace(), hr.GetName())
+		if !named && (!ok || !w.charts[src.chart]) {
+			continue
+		}
+		if !ok {
+			d := Deployment{Kind: KindHelmRelease, Namespace: hr.GetNamespace(), Name: hr.GetName(), Workloads: []Workload{}}
+			list = append(list, d.set(StateProgressing, "its chart source does not exist yet"))
 			continue
 		}
 		d, err := w.judgeHelmRelease(ctx, hr, src)
@@ -166,27 +173,34 @@ func (w *Waiter) judgeHelmRelease(ctx context.Context, hr *unstructured.Unstruct
 	if src.exists {
 		d.source = &src.object
 	}
+	// The newest deployed release is what runs: mid-upgrade the newest
+	// entry is the pending upgrade, after a failed one the failure.
 	release, releaseNamespace := "", ""
-	if history, _, _ := unstructured.NestedSlice(hr.Object, "status", "history"); len(history) > 0 {
-		if h, ok := history[0].(map[string]any); ok && h["status"] == "deployed" {
+	history, _, _ := unstructured.NestedSlice(hr.Object, "status", "history")
+	for _, entry := range history {
+		if h, ok := entry.(map[string]any); ok && h["status"] == statusDeployed {
 			v, _ := h["chartVersion"].(string)
 			d.RunningVersion = bare(v)
 			release, _ = h["name"].(string)
 			releaseNamespace, _ = h["namespace"].(string)
+			break
 		}
 	}
-	ready, stalled := condition(hr, "Ready"), condition(hr, "Stalled")
+	ready, stalled, reconciling := condition(hr, "Ready"), condition(hr, "Stalled"), condition(hr, "Reconciling")
 	current := num(hr, "status", "observedGeneration") >= hr.GetGeneration()
 
 	if suspended, _, _ := unstructured.NestedBool(hr.Object, "spec", "suspend"); suspended {
 		return d.set(StateSuspended, "the HelmRelease is suspended: flux resume helmrelease -n %s %s", d.Namespace, d.Name), nil
+	}
+	if !w.charts[src.chart] {
+		return w.judgeNamedHelmRelease(ctx, d, hr, releaseNamespace, release)
 	}
 	if atLeast(d.RunningVersion, w.version) {
 		if !current || ready.status != conditionTrue {
 			return d.set(StateProgressing, "%s deployed, the HelmRelease not ready: %s", d.RunningVersion, orUnknown(ready)), nil
 		}
 		if _, remote, _ := unstructured.NestedMap(hr.Object, "spec", "kubeConfig"); remote {
-			w.warnOnce(fmt.Sprintf("%s deploys to a remote cluster: its workloads are not checked, helm-controller's wait vouches for them", d.id()))
+			w.warnPoll(fmt.Sprintf("%s deploys to a remote cluster: its workloads are not checked, helm-controller's wait vouches for them", d.id()))
 			return d.set(StateRolledOut, ""), nil
 		}
 		return w.judgeWorkloads(ctx, d, releaseNamespace, release)
@@ -199,13 +213,46 @@ func (w *Waiter) judgeHelmRelease(ctx context.Context, hr *unstructured.Unstruct
 	if !admitted {
 		return d.set(StateNotFollowing, "%s follows %s, which excludes %s; runs %s", d.Source, src.follows, w.version, orNone(d.RunningVersion)), nil
 	}
-	if bare(str(hr, "status", "lastAttemptedRevision")) == w.version && (stalled.status == conditionTrue || (ready.status == "False" && helmReleaseFailures[ready.reason])) {
+	if bare(str(hr, "status", "lastAttemptedRevision")) == w.version && (stalled.status == conditionTrue || (ready.status == conditionFalse && helmReleaseFailures[ready.reason])) {
+		// A failure settles once helm-controller is done with it: at the
+		// current generation, no retry in flight. Until then the upgrade
+		// may still succeed.
+		if !current {
+			return d.set(StateProgressing, "runs %s; %s %s, helm-controller has not observed generation %d yet", orNone(d.RunningVersion), ready.reason, w.version, hr.GetGeneration()), nil
+		}
+		if reconciling.status == conditionTrue {
+			return d.set(StateProgressing, "runs %s; %s %s, helm-controller retrying: %s", orNone(d.RunningVersion), ready.reason, w.version, strings.TrimSpace(reconciling.reason+" "+reconciling.message)), nil
+		}
 		return d.set(StateFailed, "%s %s: %s", ready.reason, w.version, ready.message), nil
 	}
 	if src.ready.found && src.ready.status != conditionTrue {
 		return d.set(StateProgressing, "runs %s; %s not ready: %s", orNone(d.RunningVersion), d.Source, src.ready.message), nil
 	}
 	return d.set(StateProgressing, "runs %s; waiting for Flux to deploy %s (the HelmRelease: %s)", orNone(d.RunningVersion), w.version, orUnknown(ready)), nil
+}
+
+// judgeNamedHelmRelease judges a HelmRelease --helmrelease names that
+// deploys none of the release's charts (a component a meta chart renders):
+// its chart has a version line of its own, so the release's version says
+// nothing about it. It has rolled out once it is Ready at its current
+// generation with no reconcile in flight and its workloads are rolled out;
+// it failed when its attempt at that generation stalled or failed.
+func (w *Waiter) judgeNamedHelmRelease(ctx context.Context, d Deployment, hr *unstructured.Unstructured, namespace, release string) (Deployment, error) {
+	ready, stalled, reconciling := condition(hr, "Ready"), condition(hr, "Stalled"), condition(hr, "Reconciling")
+	if num(hr, "status", "observedGeneration") < hr.GetGeneration() {
+		return d.set(StateProgressing, "runs %s; helm-controller has not observed generation %d yet (the HelmRelease: %s)", orNone(d.RunningVersion), hr.GetGeneration(), orUnknown(ready)), nil
+	}
+	if stalled.status == conditionTrue || (ready.status == conditionFalse && helmReleaseFailures[ready.reason]) {
+		return d.set(StateFailed, "%s at generation %d: %s", ready.reason, hr.GetGeneration(), ready.message), nil
+	}
+	if ready.status != conditionTrue || reconciling.status == conditionTrue || d.RunningVersion == "" {
+		return d.set(StateProgressing, "runs %s, the HelmRelease not ready: %s", orNone(d.RunningVersion), orUnknown(ready)), nil
+	}
+	if _, remote, _ := unstructured.NestedMap(hr.Object, "spec", "kubeConfig"); remote {
+		w.warnPoll(fmt.Sprintf("%s deploys to a remote cluster: its workloads are not checked, helm-controller's wait vouches for them", d.id()))
+		return d.set(StateRolledOut, ""), nil
+	}
+	return w.judgeWorkloads(ctx, d, namespace, release)
 }
 
 // judgeWorkloads finishes a deployment whose version is deployed: rolled
@@ -222,8 +269,8 @@ func (w *Waiter) judgeWorkloads(ctx context.Context, d Deployment, namespace, re
 	if p := pending(list); p != "" {
 		return d.set(StateProgressing, "%s deployed, rolling out: %s", d.RunningVersion, p), nil
 	}
-	if d.RunningVersion != w.version {
-		w.warnOnce(fmt.Sprintf("%s runs %s, newer than %s", d.id(), d.RunningVersion, w.version))
+	if w.revision == "" && w.charts[d.Chart] && d.RunningVersion != w.version {
+		w.warnPoll(fmt.Sprintf("%s runs %s, newer than %s", d.id(), d.RunningVersion, w.version))
 	}
 	return d.set(StateRolledOut, ""), nil
 }

@@ -5,17 +5,18 @@
     "schemaVersion": 1,
     "exitCode": 1,
     "verdict": "red",
-    "reason": "circleci workflow build failed",
+    "reason": "head abc123: circleci workflow build failed",
     "warnings": [],
     "startedAt": "*",
     "finishedAt": "*",
     "repository": "giantswarm/devctl",
+    "identity": "app",
     "number": 42,
     "headSha": "abc123",
     "baseRef": "main",
     "checks": [
       {"name": "ci/circleci: build", "source": "status", "status": "completed", "conclusion": "success", "url": "*", "required": false},
-      {"name": "go-test", "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
+      {"name": "go-test", "id": 101, "source": "check_run", "status": "completed", "conclusion": "success", "url": "*", "required": false}
     ],
     "circleci": {
       "pipelineId": "p1",
@@ -27,10 +28,14 @@
     "actions": [
       {"name": "CI", "runId": 7001, "status": "completed", "conclusion": "success", "url": "*"}
     ],
+    "merged": false,
     "mergeCommitSha": "",
+    "mergedBy": "",
     "method": "squash",
     "branchDeleted": false,
     "enqueued": false,
+    "dispatch": null,
+    "unansweredReviews": [],
     "release": null
   }
 }
