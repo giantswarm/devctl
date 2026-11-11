@@ -268,6 +268,9 @@ fi
 if [ "$1" = plugin ] && [ "$2" = install ] && [ "$3" = --help ]; then
 	exit 0
 fi
+if [ "$1" = dependency ] && [ "$2" = list ]; then
+	exit 0
+fi
 echo "$1 $2" >> "$HELM_CALLS"
 if [ "$1" = unittest ]; then
 	[ -f "$HELM_CALLS.ready" ] || exit 1
