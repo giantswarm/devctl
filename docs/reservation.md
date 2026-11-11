@@ -20,10 +20,10 @@ devctl reservation reserve --cluster graveler --app hello-world --branch fix/cra
 ```
 
 - `--branch` is required, it selects the dev builds to follow.
-- `--pull-request` is optional. Without it you get a warning: devctl doesn't check that the branch has builds, and `extend`/`release --pull-request` won't find this reservation.
+- `--pull-request` is optional. If the resulting reservation has no PR link you get a warning: devctl doesn't check that the branch has builds, and `extend`/`release --pull-request` won't find this reservation.
 - `--app` can be skipped when you run it in the app repo, the chart name comes from `helm/*/Chart.yaml`.
 - `--duration` is `30m`, `4h`, `4h30m` or `2d`: a whole number of minutes in Go duration form, or a whole number of days. Default is 10h, max is 7d or less, if the cluster sets its own `reservations.giantswarm.io/max-duration`.
-- `--exclusive` locks the whole cluster, not just the app. If you already hold the app there, it's promoted in place.
+- `--exclusive` locks the whole cluster, not just the app. If you already hold the app there, it's promoted in place, retaining its branch, PR link and time window even when `--pull-request` is omitted. Successful JSON reports that retained link.
 
 Running the same `reserve` again (same app, user, branch, PR and scope) just refreshes it: a new window starting now. Anything else that collides is refused with who holds it, on which branch and until when.
 

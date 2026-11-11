@@ -3,6 +3,8 @@ package circleciclient
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -170,5 +172,89 @@ func TestLastOutputAtKeepsTheLatestTime(t *testing.T) {
 	r.status, r.answer = http.StatusForbidden, `expired`
 	if _, err := c.LastOutputAt(context.Background(), srv.URL+"/output"); err == nil || !strings.Contains(err.Error(), "HTTP 403") {
 		t.Errorf("403: %v", err)
+	}
+}
+
+func TestLastOutputAtRejectsIncompleteAnswers(t *testing.T) {
+	for _, answer := range []string{
+		``, `{}`, `null`, `"text"`, `42`, `[`,
+		`[{"time":"2026-10-09T17:23:05Z"}`,
+		`[{"time":"2026-10-09T17:23:05Z"},`,
+		`[{"time":"2026-10-09T17:23:05Z"},{"time":`,
+		`[{"time":"2026-10-09T17:23:05Z"}}`,
+		`[{"time":"2026-10-09T17:23:05Z"}] garbage`,
+		`[{"time":"2026-10-09T17:23:05Z"}] []`,
+	} {
+		t.Run(answer, func(t *testing.T) {
+			r := &recorder{answer: answer}
+			c, srv := r.serve(t)
+			last, err := c.LastOutputAt(context.Background(), srv.URL+"/output")
+			if err == nil || !last.IsZero() {
+				t.Fatalf("last = %v, err = %v; want zero and error", last, err)
+			}
+		})
+	}
+}
+
+type outputTransport func(*http.Request) (*http.Response, error)
+
+func (f outputTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type outputReadFailure struct{}
+
+func (outputReadFailure) Read([]byte) (int, error) {
+	return 0, errors.New("synthetic output read failure")
+}
+
+type trackedOutputBody struct {
+	io.Reader
+	closed bool
+}
+
+func (b *trackedOutputBody) Close() error {
+	b.closed = true
+	return nil
+}
+
+func TestLastOutputAtStreamValidation(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		answer      string
+		readFailure bool
+		wantError   bool
+	}{
+		{"valid whitespace", `[{"time":"2026-10-09T17:23:05Z"}] `, false, false},
+		{"missing closing bracket", `[{"time":"2026-10-09T17:23:05Z"}`, true, true},
+		{"failure after array", `[{"time":"2026-10-09T17:23:05Z"}] `, true, true},
+		{"malformed", `{}`, false, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var reader io.Reader = strings.NewReader(tt.answer)
+			if tt.readFailure {
+				reader = io.MultiReader(reader, outputReadFailure{})
+			}
+			body := &trackedOutputBody{Reader: reader}
+			c, err := New(Config{Token: "cci_test", Transport: outputTransport(func(req *http.Request) (*http.Response, error) {
+				if req.Header.Get("Circle-Token") != "" || req.Header.Get("Authorization") != "" {
+					t.Error("signed output request carries credentials")
+				}
+				return &http.Response{StatusCode: http.StatusOK, Body: body, Header: make(http.Header)}, nil
+			})})
+			if err != nil {
+				t.Fatal(err)
+			}
+			last, err := c.LastOutputAt(context.Background(), "https://output.example/log")
+			if (err != nil) != tt.wantError || (tt.wantError && !last.IsZero()) {
+				t.Fatalf("last = %v, err = %v; wantError = %v", last, err, tt.wantError)
+			}
+			if tt.readFailure && (err == nil || !strings.Contains(err.Error(), "synthetic output read failure")) {
+				t.Errorf("read error lost: %v", err)
+			}
+			if !body.closed {
+				t.Error("output body was not closed")
+			}
+		})
 	}
 }

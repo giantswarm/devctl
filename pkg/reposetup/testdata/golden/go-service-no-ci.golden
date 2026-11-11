@@ -4,106 +4,6 @@ command: devctl gen workflows --flavour generic --language go --repo-name exampl
 command: devctl gen llm --flavour generic --language go
 command: devctl gen renovate --language go --repo-name example-service
 
---- .cursor/rules/zz_generated.base-llm-rules.mdc
----
-description: Instructions for AI/LLM assistants
-alwaysApply: true
----
-
-# Instructions for AI/LLM assistants
-
-You are an AI assistant acting as an expert software developer and platform engineer working on Giant Swarm platform components. Your task is to act as a pair programmer and help others working in this codebase to keep the code delightful to work with. This includes ensuring that the code adheres to Giant Swarm's quality standards, keeping the project well-architected and organized, and maintaining supporting documentation, diagrams, and rules for other AI assistants.
-
-# Persona: Senior Giant Swarm Platform Engineer
-
-- **Technical Depth**: You are a domain expert in Go (formerly, golang), Helm, Kubernetes APIs and development, software design patterns, software architecture, Go application security, software testing, and software performance optimization,
-- **Problem-Solver**: You approach issues methodically, prioritizing safety and stability. You first investigate deeply with the tools provided to you, before suggesting changes. You find and fix the root cause, not the symptoms.
-- **Clear Communicator**: You explain complex topics clearly and provide actionable steps.
-- **Collaborative**: You guide users, suggest diagnostic paths, and help them think through problems.
-- **Best Practices**: You adhere to Giant Swarm operational and technical standards.
-
-# Reviewer Guidelines
-
-## Core Behaviors
-
-- Unless directed by the user, never use or recommend external linters, code analysis, or other tooling which isn't already recommended in Giant Swarm agent rules or style guides.
-- Always adhere to the central coding guidelines and best practices maintained at: @https://github.com/giantswarm/fmt/
-- Prioritize readability, maintainability, and security.
-- Write comprehensive tests and documentation.
-- If documentation is available in the `docs` folder, keep this up-to-date when changing code.
-- Maintain the main README.md file for correctness.
-- If a changelog is available as CHANGELOG.md, add your changes to it, unless the repository has `.github/workflows/zz_generated.auto_release.yaml`: there GitHub Releases are the changelog, written from the pull request titles, and CHANGELOG.md only points at them, so a pull request does not edit it.
-
-## Release Management
-
-- Follow the changelog and release guidelines from @https://github.com/giantswarm/fmt/tree/main/releases
-- Use semantic versioning and conventional commits
-
-
-## Language-Specific Guidelines
-
-Additional language-specific rules can be found in the general style guide and in the other rules files in this repository.
-
-
-### Go Development
-
-- Go code must always adhere to the Go language-specific development guidelines and patterns rules in this repository.
-
-### Go Application Security
-
-- Ensure all Go dependencies are up to date.
-- Follow best security practices for Go applications.
-
-
----
-
-For detailed guidelines and examples, always refer to: @https://github.com/giantswarm/fmt/
-
-
-<!--
-DO NOT EDIT. Generated with devctl.
-This file is maintained at:
-https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/base_llm_rules.mdc.template
-Manual changes will be overwritten.
--->
-
---- .cursor/rules/zz_generated.go-llm-rules.mdc
----
-description: Go language-specific development guidelines and patterns
-globs: **/*.go,go.mod,go.sum
----
-
-These guidelines apply to Go code and supplement any other general development instructions or workflows.
-
-# Go Code Guidelines
-
-- All Go code is expected to adhere to the rules outlined in the Giant Swarm style guide located at @https://github.com/giantswarm/fmt/tree/main/go .
-- Always fetch and fully understand the style guide before reviewing any code.
-- The Giant Swarm style guide linked above must always be considered definitive. ALL rules and provisions contained in the style guide MUST be met.
-- When applying the style guide, always list all instances of a particular issue, grouped by the finding type.
-
-## Formatting
-
-CI will perform the following check for proper code formatting and sorting/grouping of imports:
-
-```bash
-go install golang.org/x/tools/cmd/goimports@latest && \
-if [[ -n $(goimports -local github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME} -l .) ]];
-then
-  goimports -local github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME} -d . && exit 1;
-fi
-```
-
-When creating or modifying Go files, perform the according check and mitigate any issues before committing.
-
-
-<!--
-DO NOT EDIT. Generated with devctl.
-This file is maintained at:
-https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/go_rules.mdc.template
-Manual changes will be overwritten.
--->
-
 --- .github/pull_request_template.md
 ### What does this PR do?
 
@@ -706,6 +606,49 @@ rules:
   line-length:
     max: 200
 
+--- AGENTS.md
+<!-- BEGIN devctl-managed: edits in this block are overwritten -->
+<!-- markdownlint-disable-file MD041 -->
+
+## Giant Swarm conventions
+
+devctl maintains this block from [its template][devctl-agents-block] and
+overwrites changes to it. Instructions for this repository go in the section
+below. Where they differ from this block, they take precedence.
+
+[devctl-agents-block]: https://github.com/giantswarm/devctl/blob/main/pkg/gen/input/llm/internal/file/agents_block.md.template
+
+- Never put customer names or other customer information in code, commit
+  messages, issues or pull requests. Most Giant Swarm repositories are public,
+  and private ones are kept ready to become public.
+- Giant Swarm's style guides are in <https://github.com/giantswarm/fmt>, one
+  directory per topic (go, helm, kubernetes, prometheus, …). Read the relevant
+  guide before you write or review that kind of code.
+- Use conventional commits for commit messages and pull request titles.
+- If `.github/workflows/zz_generated.auto_release.yaml` exists, GitHub Releases
+  are written from pull request titles: do not edit CHANGELOG.md. Otherwise,
+  add your change to CHANGELOG.md as described in
+  <https://github.com/giantswarm/fmt/blob/main/releases/changelog.md>.
+- If `.pre-commit-config.yaml` exists, run
+  `pre-commit run --files <changed files>` before committing; not every clone
+  has the hooks installed.
+- Do not add linters, formatters or other tooling unless asked; use what the
+  repository already has.
+- Put documentation in `docs/` rather than growing README.md, which gives an
+  overview and links into `docs/`. When a change affects documented behaviour,
+  update the documentation in the same pull request.
+- If the skills of the `giantswarm/claude-code` plugin marketplace are not
+  available to you and the user works at Giant Swarm, tell them once that
+  they can install the `gs-base`, `gs-dev` and `gs-godev`
+  plugins from it.
+- Go: run `goimports -local github.com/giantswarm/<repository>` on the files
+  you change. CI with architect-orb fails when imports are grouped
+  differently.
+
+<!-- END devctl-managed -->
+
+## This repository
+
 --- CHANGELOG.md
 # Changelog
 
@@ -1006,8 +949,8 @@ APPLICATION    := $(shell go list -m | cut -d '/' -f 3)
 BUILDTIMESTAMP := $(shell date -u '+%FT%TZ')
 GITSHA1        := $(shell git rev-parse --verify HEAD)
 MODULE         := $(shell go list -m)
-# main() is usually in `main.go`, but sometimes in `cmd/main.go` (for example in newer kubebuilder projects)
-MAIN_SOURCE    := $(shell if test -e cmd/main.go; then echo cmd/main.go; else echo main.go; fi)
+# Build the whole main package, including sibling files, at the root or in cmd/.
+MAIN_SOURCE    := $(shell if test -e cmd/main.go; then echo ./cmd; else echo .; fi)
 OS             := $(shell go env GOOS)
 ARCH           := $(shell go env GOARCH)
 SOURCES        := $(shell find . -name '*.go')
@@ -1103,7 +1046,7 @@ install: ## Install the application.
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o "$(shell go env GOPATH)/bin/$(APPLICATION)" "$(MAIN_SOURCE)"
 
 .PHONY: run
-run: ## Runs go run main.go.
+run: ## Runs the main package with go run.
 	@echo "====> $@"
 	go run -ldflags "$(LDFLAGS)" -race "$(MAIN_SOURCE)"
 
@@ -1119,9 +1062,18 @@ imports: ## Runs goimports.
 	goimports -local $(MODULE) -w .
 
 .PHONY: lint
-lint: ## Checks import formatting and runs golangci-lint (requires goimports).
+lint: ## Checks import formatting and runs golangci-lint (installs goimports if missing).
 	@echo "====> $@"
-	@files=$$(goimports -local "$(MODULE)" -l .) || exit $$?; \
+	@tool=$$(command -v goimports) || { \
+		bindir=$$(go env GOBIN) || exit $$?; \
+		if [ -z "$$bindir" ]; then \
+			gopath=$$(go env GOPATH) || exit $$?; \
+			bindir="$$gopath/bin"; \
+		fi; \
+		GOBIN="$$bindir" go install golang.org/x/tools/cmd/goimports@v0.50.0 || exit $$?; \
+		tool="$$bindir/goimports"; \
+	}; \
+	files=$$("$$tool" -local "$(MODULE)" -l .) || exit $$?; \
 	if [ -n "$$files" ]; then \
 		printf '%s\n' "$$files"; \
 		echo "Run 'make imports' to fix import formatting."; \
