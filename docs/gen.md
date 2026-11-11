@@ -18,6 +18,13 @@ Example:
 devctl gen workflows --flavour cli
 ```
 
+### Batch CI
+
+Repositories can stage exact-commit merge-group validation and then opt into full CI
+once per protected merge batch. See [the batch CI policy and transition](ci-batch.md)
+for the repository-owned configuration, required queue proof and rollback sequence.
+Ordinary PR CI remains unchanged until explicitly transitioned.
+
 ### Release workflow
 
 `--release-workflow` selects which release flow to generate. Two values:
@@ -244,7 +251,7 @@ linters:
 
 Repositories can set `ignore-tests: false` to check test literals too, or tune `min-occurrences` and `min-len` under the same `goconst` mapping. To opt out, remove `goconst` from `linters.enable` if present and add it to `linters.disable`. Generation preserves these choices. A repository with production goconst debt still needs to address it or choose one of these overrides.
 
-Before pushing a Go change, run `make lint`. It requires `goimports` on PATH and first runs `goimports -local "$(MODULE)" -l .`, with `MODULE` read from `go list -m`, to check the import formatting required by CI. Listed files or a goimports error fail the target without changing source files. Run `make imports` to apply the formatting, then retry `make lint`.
+Before pushing a Go change, run `make lint`. It uses `goimports` from PATH, or installs `golang.org/x/tools/cmd/goimports@v0.50.0` into `go env GOBIN` (defaulting to `$(go env GOPATH)/bin`) when missing. The installed binary does not need to be on PATH. Installation failures fail the target. It first runs `goimports -local "$(MODULE)" -l .`, with `MODULE` read from `go list -m`, to check the import formatting required by CI. Listed files or a goimports error fail the target without changing source files. Run `make imports` to apply the formatting, then retry `make lint`.
 
 No hook reads protobuf-generated code: the config's top-level `exclude` skips `*_pb.*` (protoc-gen-es, grpc-tools), `*_pb2.py`, `*_pb2.pyi`, `*_pb2_grpc.py` and `*.pb.go` with its `_grpc`, `.gw`, `.validate` and `_vtproto` variants. Their generator is the source of truth, so a hook that rewrote them (`end-of-file-fixer` on buf's TypeScript output, `go-imports -local`, `ruff --fix`) would be undone by the next generation. Hand-written files next to them, a `gen/` directory's `README.md` or `buf.gen.yaml` included, are still checked. The fixer hooks also skip `testdata/`, `.yarn/` and the vendored subcharts under `helm/<chart>/charts/`.
 
@@ -337,6 +344,76 @@ devctl gen plans --flavour plans
 ```
 
 `.claude/settings.json` enables the `gs-plans` plugin, the plan-workflow skills, from the `giantswarm` marketplace (giantswarm/claude-code), with `autoUpdate` on so Claude Code refreshes the marketplace and its plugins after startup. devctl owns two entries, `extraKnownMarketplaces.giantswarm` and `enabledPlugins["gs-plans@giantswarm"]`, and keeps every other key of an existing file, so a team adds its own settings in the same file. The JSON is rewritten with sorted keys and two-space indentation; strings and numbers stay as written. The skills live in the plugin, not in the repository; the repository's own rules, such as which plan stages are required, stay in its `AGENTS.md`.
+
+## Generating agent instructions
+
+Writes Giant Swarm's shared instructions for coding agents into the repository's root `AGENTS.md`, which Claude Code, Codex, Cursor and other agents read.
+
+```nohighlight
+devctl gen llm --flavour app --language go
+```
+
+The instructions sit in a block at the top of `AGENTS.md`:
+
+```markdown
+<!-- BEGIN devctl-managed: edits in this block are overwritten -->
+<!-- markdownlint-disable-file MD041 -->
+
+## Giant Swarm conventions
+…
+
+<!-- END devctl-managed -->
+
+## This repository
+```
+
+devctl owns the block and replaces it on every run. Everything outside it belongs to the repository and is kept byte for byte: put the repository's own instructions below the block, where they take precedence over it. A new `AGENTS.md` gets an empty `## This repository` section for them. The block passes markdownlint and prettier with their default settings, which many repositories run in pre-commit; prettier's `proseWrap: always` rewraps it. The one exception is markdownlint's rule that a file starts with a top-level heading: the begin marker comes first, so the block turns that rule off for the whole file, including text outside the block. The block holds only short rules for every change; Go repositories get one more, for `goimports`. It also asks the agent to point Giant Swarm staff once to the plugins of the [giantswarm/claude-code](https://github.com/giantswarm/claude-code) marketplace when their skills are missing: `gs-base` and `gs-dev`, plus `gs-godev` for Go and `gs-appdev` for the `app` flavour. Longer guidance comes from the style guides in [giantswarm/fmt](https://github.com/giantswarm/fmt) and the plugins in [giantswarm/claude-code](https://github.com/giantswarm/claude-code), not from generated skills.
+
+On every run, `gen llm` also:
+
+- adds an import of `AGENTS.md` to a `CLAUDE.md` or `.claude/CLAUDE.md` that has content of its own and no import yet (`@AGENTS.md`, or `@../AGENTS.md` from `.claude/`), so that Claude Code reads both;
+- links `.claude/skills` to `../.agents/skills` when the repository has skills in `.agents/skills`, so that Claude Code finds the same skills as other agents;
+- deletes `.cursor/rules/zz_generated.base-llm-rules.mdc` and `.cursor/rules/zz_generated.go-llm-rules.mdc`, which earlier versions generated, and the `.cursor` directories they leave empty.
+
+Nothing is generated for the [`fork` flavour](flavours.md).
+
+`AGENTS.md` and `.agents/skills` cover instructions and skills only. Hooks, permissions and MCP servers stay in each agent's own configuration, such as `.claude/settings.json` or `.mcp.json`; `gen llm` neither generates nor moves them. Tooling shared across repositories ships as a plugin in [giantswarm/claude-code](https://github.com/giantswarm/claude-code).
+
+### Repositories with existing instructions
+
+A repository whose `AGENTS.md`, `CLAUDE.md` or `.claude/CLAUDE.md` has instructions outside a devctl-managed block, or whose skills are in a `.claude/skills` directory, needs a migration first. Until then, `gen llm` leaves the repository unchanged and prints a warning that says so; the command still succeeds, so the rest of an alignment run is not affected. Migrate it with:
+
+```nohighlight
+devctl gen llm --flavour app --language go --migrate-instructions
+```
+
+The migration:
+
+- moves the content of `CLAUDE.md`, or else `.claude/CLAUDE.md`, below the block in a new `AGENTS.md`, unless `AGENTS.md` already has instructions. A moved `CLAUDE.md` is left as `@AGENTS.md`; a moved `.claude/CLAUDE.md` is deleted, and its relative imports and links are rewritten to work from the root.
+- keeps a Claude file that has instructions next to an existing `AGENTS.md`, and adds the import to it.
+- moves the skill directories in `.claude/skills` to `.agents/skills`, drops links in it that point to those skills, and replaces `.claude/skills` with a link to `../.agents/skills`.
+
+Moved content is copied as it is. Review the result before committing it: text that names Claude, starts with `# CLAUDE.md`, or repeats a rule from the block reads better adjusted.
+
+### Warnings and how to fix them
+
+Both modes check the repository before they change anything. Each problem is printed with its path and its fix, and the repository stays as it is:
+
+- malformed devctl-managed markers, for example an end marker without a begin marker;
+- an `AGENTS.md` that is a link, which would put the block into another file;
+- a Claude file that links anywhere other than `AGENTS.md`;
+- `.claude`, `.agents` or `.agents/skills` as links or files, and `.claude/skills` as a file or a link to anywhere other than `../.agents/skills`;
+- names that differ only in case, such as `agents.md`;
+- outputs that Git would ignore, such as an `AGENTS.md` or `.claude/` entry in `.gitignore`: a commit with `git add -A` would leave them out;
+- entries in `.claude/skills` that cannot move: loose files, links elsewhere, and skills with the same name in `.agents/skills`.
+
+In default mode the command still succeeds, so that an alignment run goes on with the other generators. With `--migrate-instructions` it fails after printing the findings, because the migration that was asked for did not happen.
+
+Add `--dry-run` to see the changes, or the findings, without changing anything. A repository that is up to date gets `gen llm would make no changes`.
+
+### Your own Claude instructions
+
+By default, Claude Code reads `AGENTS.md` only when there is no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` in the working directory or above it (see [Claude Code: AGENTS.md](https://code.claude.com/docs/en/memory#agents-md)). A `CLAUDE.md` in a directory that contains your checkouts, or your own ignored `CLAUDE.local.md`, therefore hides `AGENTS.md` from your Claude Code. `~/.claude/CLAUDE.md` does not count. Either move such instructions to `~/.claude/CLAUDE.md`, or set **Project instructions** to `claude-md-and-agents-md` in `/config`, so that Claude Code reads both.
 
 ## Generating CircleCI configuration
 

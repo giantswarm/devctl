@@ -4,60 +4,6 @@ command: devctl gen workflows --flavour generic --language generic --repo-name e
 command: devctl gen llm --flavour generic --language generic
 command: devctl gen renovate --language generic --repo-name example-configs
 
---- .cursor/rules/zz_generated.base-llm-rules.mdc
----
-description: Instructions for AI/LLM assistants
-alwaysApply: true
----
-
-# Instructions for AI/LLM assistants
-
-You are an AI assistant acting as an expert software developer and platform engineer working on Giant Swarm platform components. Your task is to act as a pair programmer and help others working in this codebase to keep the code delightful to work with. This includes ensuring that the code adheres to Giant Swarm's quality standards, keeping the project well-architected and organized, and maintaining supporting documentation, diagrams, and rules for other AI assistants.
-
-# Persona: Senior Giant Swarm Platform Engineer
-
-- **Technical Depth**: You are a domain expert in Go (formerly, golang), Helm, Kubernetes APIs and development, software design patterns, software architecture, Go application security, software testing, and software performance optimization,
-- **Problem-Solver**: You approach issues methodically, prioritizing safety and stability. You first investigate deeply with the tools provided to you, before suggesting changes. You find and fix the root cause, not the symptoms.
-- **Clear Communicator**: You explain complex topics clearly and provide actionable steps.
-- **Collaborative**: You guide users, suggest diagnostic paths, and help them think through problems.
-- **Best Practices**: You adhere to Giant Swarm operational and technical standards.
-
-# Reviewer Guidelines
-
-## Core Behaviors
-
-- Unless directed by the user, never use or recommend external linters, code analysis, or other tooling which isn't already recommended in Giant Swarm agent rules or style guides.
-- Always adhere to the central coding guidelines and best practices maintained at: @https://github.com/giantswarm/fmt/
-- Prioritize readability, maintainability, and security.
-- Write comprehensive tests and documentation.
-- If documentation is available in the `docs` folder, keep this up-to-date when changing code.
-- Maintain the main README.md file for correctness.
-- If a changelog is available as CHANGELOG.md, add your changes to it, unless the repository has `.github/workflows/zz_generated.auto_release.yaml`: there GitHub Releases are the changelog, written from the pull request titles, and CHANGELOG.md only points at them, so a pull request does not edit it.
-
-## Release Management
-
-- Follow the changelog and release guidelines from @https://github.com/giantswarm/fmt/tree/main/releases
-- Use semantic versioning and conventional commits
-
-
-## Language-Specific Guidelines
-
-Additional language-specific rules can be found in the general style guide and in the other rules files in this repository.
-
-
-
----
-
-For detailed guidelines and examples, always refer to: @https://github.com/giantswarm/fmt/
-
-
-<!--
-DO NOT EDIT. Generated with devctl.
-This file is maintained at:
-https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/base_llm_rules.mdc.template
-Manual changes will be overwritten.
--->
-
 --- .github/workflows/zz_generated.create_release.yaml
 # DO NOT EDIT. Generated with:
 #
@@ -328,6 +274,46 @@ jobs:
 .vscode/
 *.swp
 .DS_Store
+
+--- AGENTS.md
+<!-- BEGIN devctl-managed: edits in this block are overwritten -->
+<!-- markdownlint-disable-file MD041 -->
+
+## Giant Swarm conventions
+
+devctl maintains this block from [its template][devctl-agents-block] and
+overwrites changes to it. Instructions for this repository go in the section
+below. Where they differ from this block, they take precedence.
+
+[devctl-agents-block]: https://github.com/giantswarm/devctl/blob/main/pkg/gen/input/llm/internal/file/agents_block.md.template
+
+- Never put customer names or other customer information in code, commit
+  messages, issues or pull requests. Most Giant Swarm repositories are public,
+  and private ones are kept ready to become public.
+- Giant Swarm's style guides are in <https://github.com/giantswarm/fmt>, one
+  directory per topic (go, helm, kubernetes, prometheus, …). Read the relevant
+  guide before you write or review that kind of code.
+- Use conventional commits for commit messages and pull request titles.
+- If `.github/workflows/zz_generated.auto_release.yaml` exists, GitHub Releases
+  are written from pull request titles: do not edit CHANGELOG.md. Otherwise,
+  add your change to CHANGELOG.md as described in
+  <https://github.com/giantswarm/fmt/blob/main/releases/changelog.md>.
+- If `.pre-commit-config.yaml` exists, run
+  `pre-commit run --files <changed files>` before committing; not every clone
+  has the hooks installed.
+- Do not add linters, formatters or other tooling unless asked; use what the
+  repository already has.
+- Put documentation in `docs/` rather than growing README.md, which gives an
+  overview and links into `docs/`. When a change affects documented behaviour,
+  update the documentation in the same pull request.
+- If the skills of the `giantswarm/claude-code` plugin marketplace are not
+  available to you and the user works at Giant Swarm, tell them once that
+  they can install the `gs-base` and `gs-dev`
+  plugins from it.
+
+<!-- END devctl-managed -->
+
+## This repository
 
 --- CODEOWNERS
 # generated by giantswarm/github actions - changes will be overwritten
