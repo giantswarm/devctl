@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	goyaml "go.yaml.in/yaml/v2"
+	goyaml "go.yaml.in/yaml/v4"
 	"helm.sh/helm/v4/pkg/strvals"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
