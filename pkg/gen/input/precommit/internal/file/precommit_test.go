@@ -16,6 +16,8 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/gen/input/precommit/internal/params"
 )
 
+const helmchartFlavor = "helmchart"
+
 // Test_RefFixPython runs the $ref fix step of the generated helm-schema pipeline hook --
 // the actual bug fix -- against a schema shaped like `helm schema` output. Objects with a
 // `$ref` must trade `additionalProperties: false` for `unevaluatedProperties: false`
@@ -129,7 +131,7 @@ func Test_NewCreatePreCommitConfigInput(t *testing.T) {
 			p: params.Params{
 				Dir:        "",
 				Language:   "go",
-				Flavors:    []string{"helmchart"},
+				Flavors:    []string{helmchartFlavor},
 				RepoName:   "my-repo",
 				HelmCharts: []string{"my-app"},
 			},
@@ -200,7 +202,7 @@ func Test_NewCreatePreCommitConfigInput(t *testing.T) {
 // gen/ -- and the zz_generated values file that triggers the helm-schema hook are still
 // checked. The pattern uses only syntax Go's regexp and Python's re read alike.
 func Test_PreCommitConfigExcludesGeneratedCode(t *testing.T) {
-	in := NewCreatePreCommitConfigInput(params.Params{Language: "go", RepoName: "my-repo", Flavors: []string{"helmchart"}, HelmCharts: []string{"my-app"}})
+	in := NewCreatePreCommitConfigInput(params.Params{Language: "go", RepoName: "my-repo", Flavors: []string{helmchartFlavor}, HelmCharts: []string{"my-app"}})
 	tpl, err := template.New(in.Path).Parse(in.TemplateBody)
 	if err != nil {
 		t.Fatalf("parse template: %v", err)
@@ -264,7 +266,7 @@ func Test_PreCommitConfigHelmDocsSkipsVendoredSubcharts(t *testing.T) {
 		"two charts": {charts: []string{"my-app", "my-crds"}, want: []string{"--chart-search-root=helm", "--chart-to-generate=helm/my-app,helm/my-crds", "--sort-values-order=file"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			in := NewCreatePreCommitConfigInput(params.Params{Language: "go", RepoName: "my-repo", Flavors: []string{"helmchart"}, HelmCharts: tc.charts})
+			in := NewCreatePreCommitConfigInput(params.Params{Language: "go", RepoName: "my-repo", Flavors: []string{helmchartFlavor}, HelmCharts: tc.charts})
 			tpl, err := template.New(in.Path).Parse(in.TemplateBody)
 			if err != nil {
 				t.Fatalf("parse template: %v", err)

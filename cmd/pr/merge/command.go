@@ -33,9 +33,9 @@ Jobs that have not posted yet keep the wait pending. --failed-log takes
 precedence and uses the CircleCI API for its job logs.
 
 Refused before any wait: a draft, a closed or merged pull request, one
-conflicting with its base, or behind its base, strict or not, since its
-checks ran against an older base than the one the merge lands it on (exit 3,
-naming --update-branch); a pull request opened by another human
+conflicting with its base, or behind a strict base that requires branches
+to be up to date (exit 3, naming the repository owner branch-protection
+setting and --update-branch); a pull request opened by another human
 (exit 5: bots, GitHub Apps, Giant Swarm's automation accounts -- taylorbot,
 which opens generated release pull requests not yet moved to the
 giantswarm-release App, and architectbot -- and the
@@ -85,11 +85,11 @@ check is judged (GitHub's Update branch, which merges the base in; with a
 rebase merge, Update with rebase, which rebases the head onto the base, so no
 merge commit lands on the line), and the new head is what the wait
 judges and the merge lands: behind a strict base by the mergeable state,
-behind any other base by the comparison of base and head. The head is compared
-with the base again after the wait: a base that moved during it is exit 3
-without --update-branch, and with it the head is updated and waited for again,
-at most three waits in all. A base with a merge queue is not compared without
---update-branch: the queue tests the pull request against it. A merge GitHub declines as the pull request stands (a rule blocks
+behind any other base by the comparison of base and head. With the flag, the head is compared
+with the base again after the wait and updated and waited for again if the
+base moved, at most three waits in all. Without the flag a green head behind
+a non-strict base merges unchanged; a strict base still refuses it.
+A merge GitHub declines as the pull request stands (a rule blocks
 it, the base or the head moved) is exit 3 with GitHub's sentence.
 
 The release: in a repository whose release model is auto-release, the tag
@@ -171,7 +171,7 @@ Exit codes:
   1  red: a check, status, run or workflow failed, or the queue dropped it
   2  timeout or SIGINT/SIGTERM before the merge; unfinished names what
      was still open, reason identifies an interrupted wait
-  3  not applicable: draft, closed, merged, conflicting, behind its base
+  3  not applicable: draft, closed, merged, conflicting, behind a strict base
      (without --update-branch), a rebase carries autosquash commits,
      GitHub declined the merge as it stands, or
      --accept-red names a required check, a security scan or no check of

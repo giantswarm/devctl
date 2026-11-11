@@ -38,7 +38,7 @@ func Test_Run_RejectsShadowingJSONC(t *testing.T) {
 			require.NoError(t, err)
 			cmd.SilenceUsage = true
 			cmd.SilenceErrors = true
-			cmd.SetArgs([]string{"--language=go", "--deprecated"})
+			cmd.SetArgs([]string{"--language=go", "--repo-name=fixture", "--deprecated"})
 			err = cmd.Execute()
 			require.ErrorContains(t, err, "renovate.jsonc")
 			require.True(t, IsInvalidFlag(err))

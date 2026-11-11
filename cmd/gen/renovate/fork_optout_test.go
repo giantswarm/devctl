@@ -31,7 +31,7 @@ func Test_Run_ForkPreservesConfigOptOutPaths(t *testing.T) {
 			require.NoError(t, err)
 			cmd.SilenceUsage = true
 			cmd.SilenceErrors = true
-			cmd.SetArgs([]string{"--language=go", "--flavour=fork"})
+			cmd.SetArgs([]string{"--language=go", "--repo-name=fixture", "--flavour=fork"})
 			err = cmd.Execute()
 			require.ErrorContains(t, err, path+" turns Renovate off for this fork line")
 			require.True(t, IsInvalidFlag(err))

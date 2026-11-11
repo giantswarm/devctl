@@ -24,7 +24,7 @@ type renewTransport struct {
 
 func (f *renewTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	f.requests++
-	if req.URL.Path != "/search/issues" || req.Method != http.MethodGet {
+	if req.URL.Path != testSearchIssuesPath || req.Method != http.MethodGet {
 		return nil, fmt.Errorf("unexpected offline request")
 	}
 	if f.requests == 1 {
@@ -63,7 +63,7 @@ func TestRunRenewsOnlyStoredGitHubLogin(t *testing.T) {
 			http.DefaultTransport = fake
 			t.Cleanup(func() { http.DefaultTransport = original })
 			r := &runner{flag: &flag{Grouping: GroupingDependency}, logger: logrus.New(), stdout: io.Discard, stderr: io.Discard}
-			err := r.run(context.Background(), &cobra.Command{}, []string{"dependency"})
+			err := r.run(context.Background(), &cobra.Command{}, []string{GroupingDependency})
 			wantRequests := 2
 			if override {
 				wantRequests = 1

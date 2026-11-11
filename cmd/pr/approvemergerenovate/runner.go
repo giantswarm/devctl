@@ -18,36 +18,33 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/giantswarm/devctl/v8/cmd/pr/internal/checks"
-	"github.com/giantswarm/devctl/v8/cmd/pr/internal/prcontext"
 	"github.com/giantswarm/devctl/v8/internal/pr"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
 	"github.com/giantswarm/devctl/v8/pkg/githubclient"
 )
 
 type runner struct {
-	flag   *flag
-	logger *logrus.Logger
-	stdout io.Writer
-	stderr io.Writer
+	flag          *flag
+	logger        *logrus.Logger
+	stdout        io.Writer
+	stderr        io.Writer
+	pollInterval  time.Duration // zero uses the normal/watch default
+	notifyContext func(context.Context, ...os.Signal) (context.Context, context.CancelFunc)
 }
 
 func (r *runner) Run(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 	if err := r.flag.Validate(); err != nil {
 		return microerror.Mask(err)
 	}
-	return r.run(ctx, cmd, args)
+	ctx := cmd.Context()
+	err := r.run(ctx, cmd, args)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
 }
 
-func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) error {
+func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (runErr error) {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -89,6 +86,27 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		query = args[0]
 	}
 
+	// The selector handles terminal interrupts itself. From discovery onward,
+	// signals cancel both the event loop and every worker's API requests.
+	parentCtx := ctx
+	notifyContext := r.notifyContext
+	if notifyContext == nil {
+		notifyContext = signal.NotifyContext
+	}
+	signalCtx, stop := notifyContext(parentCtx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithCancel(signalCtx)
+	defer cancel()
+	defer func() {
+		// A terminal interrupt is a graceful exit. Caller cancellation remains
+		// an error, including when both contexts have been cancelled.
+		if parentCtx.Err() != nil {
+			runErr = parentCtx.Err()
+		} else if signalCtx.Err() != nil {
+			runErr = nil
+		}
+	}()
+
 	if r.flag.DryRun {
 		fmt.Fprintln(r.stdout, "🔍 DRY RUN MODE")
 		fmt.Fprintln(r.stdout, "")
@@ -112,8 +130,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		fmt.Fprintln(r.stdout, "")
 	}
 
-	// Initialize PR statuses with mutex protection for concurrent updates
-	var prStatusesMu sync.Mutex
+	// Only the event loop admits PRs and accesses the status slice. Workers
+	// update individual statuses through PRStatus's own lock.
 	prStatuses := make([]*pr.PRStatus, 0, len(searchResults.Issues))
 	type prKey struct {
 		owner, repo string
@@ -122,9 +140,6 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	seenPRs := make(map[prKey]bool)
 
 	addPRs := func(issues []*github.Issue) []*pr.PRStatus {
-		prStatusesMu.Lock()
-		defer prStatusesMu.Unlock()
-
 		newPRs := make([]*pr.PRStatus, 0)
 		for _, issue := range issues {
 			prNumber := issue.GetNumber()
@@ -177,133 +192,75 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 		fmt.Fprintln(r.stdout, "")
 	}
 
-	// Start processing initial PRs in parallel
+	// Completion and discovery have one owner. In particular, a discovery
+	// request cannot launch workers after the command has returned.
 	var wg sync.WaitGroup
-	work := newActivity(len(initialPRs), r.flag.Watch)
-	for _, ps := range initialPRs {
+	workerDone := make(chan struct{})
+	activeWorkers := 0
+	startPR := func(ps *pr.PRStatus) {
+		activeWorkers++
 		wg.Add(1)
-		go func(ps *pr.PRStatus) {
+		go func() {
 			defer wg.Done()
-			defer work.finishPR()
 			r.processPR(ctx, githubClient, ps)
-		}(ps)
-	}
-
-	// Start background goroutine to poll for new PRs
-	// Interval: 10 seconds in normal mode, 1 minute in watch mode
-	pollInterval := 10 * time.Second
-	if r.flag.Watch {
-		pollInterval = 1 * time.Minute
-	}
-
-	stopPolling := make(chan bool)
-	pollingDone := make(chan struct{})
-	go func() {
-		defer close(pollingDone)
-		ticker := time.NewTicker(pollInterval)
-		defer ticker.Stop()
-
-		for {
 			select {
-			case <-stopPolling:
-				return
-			case <-ticker.C:
-				if !work.beginPoll() {
-					return
-				}
-				// Re-run the search query
-				newResults, err := searchPRs(ctx, githubClient, searchQuery)
-				if err != nil {
-					work.endPoll(0)
-					continue
-				}
-
-				// Add any new PRs found
-				newPRs := addPRs(newResults.Issues)
-				work.endPoll(len(newPRs))
-				if len(newPRs) > 0 {
-					// Add empty rows for new PRs
-					prStatusesMu.Lock()
-					for range newPRs {
-						fmt.Fprintln(r.stdout, "")
-					}
-					prStatusesMu.Unlock()
-
-					// Start processing new PRs
-					for _, ps := range newPRs {
-						wg.Add(1)
-						go func(ps *pr.PRStatus) {
-							defer wg.Done()
-							defer work.finishPR()
-							r.processPR(ctx, githubClient, ps)
-						}(ps)
-					}
-				}
+			case workerDone <- struct{}{}:
+			case <-ctx.Done():
 			}
-		}
+		}()
+	}
+	defer func() {
+		cancel()
+		wg.Wait()
+		pr.UpdateTable(r.stdout, prStatuses)
+		fmt.Fprintln(r.stdout, "")
+		r.printSummary(prStatuses)
 	}()
+	for _, ps := range initialPRs {
+		startPR(ps)
+	}
 
-	// Update display periodically until all PRs are done (or forever in watch mode)
-	done := work.done
-
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
+	pollInterval := r.pollInterval
+	if pollInterval == 0 {
+		pollInterval = 10 * time.Second
+		if r.flag.Watch {
+			pollInterval = time.Minute
+		}
+	}
+	pollTicker := time.NewTicker(pollInterval)
+	defer pollTicker.Stop()
+	displayTicker := time.NewTicker(500 * time.Millisecond)
+	defer displayTicker.Stop()
 
 	if r.flag.Watch {
 		fmt.Fprintln(r.stdout, "👁️  Watch mode enabled - monitoring for new PRs every minute (press Ctrl+C to exit)")
 		fmt.Fprintln(r.stdout, "")
 	}
 
-	for {
+	for activeWorkers > 0 || r.flag.Watch {
 		select {
 		case <-ctx.Done():
-			// End API calls and workers before the caller reuses its writers.
-			fmt.Fprintln(r.stdout, "\n\n⏹️  Interrupted by user")
-
-			// Stop polling
-			close(stopPolling)
-			<-pollingDone
-			wg.Wait()
-
-			// Final update
-			prStatusesMu.Lock()
-			pr.UpdateTable(r.stdout, prStatuses)
-			prStatusesMu.Unlock()
-
-			fmt.Fprintln(r.stdout, "")
-
-			prStatusesMu.Lock()
-			r.printSummary(prStatuses)
-			prStatusesMu.Unlock()
-
+			fmt.Fprintln(r.stdout, "\n\n⏹️  Interrupted")
 			return ctx.Err()
-
-		case <-done:
-			// All current PRs processed (only happens in non-watch mode)
-			// Stop polling for new PRs
-			close(stopPolling)
-			<-pollingDone
-			wg.Wait()
-
-			// Final update
-			prStatusesMu.Lock()
+		case <-workerDone:
+			activeWorkers--
+		case <-pollTicker.C:
+			newResults, err := searchPRs(ctx, githubClient, searchQuery)
+			if err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				continue
+			}
+			for _, ps := range addPRs(newResults.Issues) {
+				fmt.Fprintln(r.stdout, "")
+				startPR(ps)
+			}
+		case <-displayTicker.C:
 			pr.UpdateTable(r.stdout, prStatuses)
-			prStatusesMu.Unlock()
-
-			fmt.Fprintln(r.stdout, "")
-
-			prStatusesMu.Lock()
-			r.printSummary(prStatuses)
-			prStatusesMu.Unlock()
-
-			return ctx.Err()
-
-		case <-ticker.C:
-			prStatusesMu.Lock()
-			pr.UpdateTable(r.stdout, prStatuses)
-			prStatusesMu.Unlock()
 		}
 	}
+	return nil
 }
 
 func (r *runner) selectGroupInteractively(ctx context.Context, githubClient *github.Client) (string, error) {
@@ -386,19 +343,25 @@ func (r *runner) selectGroupInteractively(ctx context.Context, githubClient *git
 }
 
 func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps *pr.PRStatus) {
+	defer func() {
+		if ctx.Err() != nil {
+			// Cancellation cannot undo an action already acknowledged by GitHub.
+			status := ps.GetStatus()
+			if status != "Already merged" && !strings.HasPrefix(status, "Merged (") &&
+				!strings.HasPrefix(status, "Approved") && status != "Queued to merge" && status != "Auto-merge enabled" {
+				ps.UpdateStatus("Interrupted")
+			}
+		}
+	}()
 	maxRetries := 60 // Poll for up to 5 minutes (60 * 5 seconds)
 	retryDelay := 5 * time.Second
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if ctx.Err() != nil {
-			ps.UpdateStatus("Cancelled")
 			return
 		}
-		if attempt > 0 {
-			if err := prcontext.Sleep(ctx, retryDelay); err != nil {
-				ps.UpdateStatus("Cancelled")
-				return
-			}
+		if attempt > 0 && waitForContext(ctx, retryDelay) != nil {
+			return
 		}
 
 		// Get PR details
@@ -498,8 +461,7 @@ func (r *runner) processPR(ctx context.Context, githubClient *github.Client, ps 
 				if hasAutoMerge {
 					// Approve and let auto-merge/merge queue handle it
 					ps.UpdateStatus("Approved, checking merge status...")
-					if err := prcontext.Sleep(ctx, 5*time.Second); err != nil {
-						ps.UpdateStatus("Cancelled")
+					if waitForContext(ctx, 5*time.Second) != nil {
 						return
 					}
 
@@ -612,7 +574,7 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 			skipped++
 		} else if strings.Contains(strings.ToLower(status), "failed") || status == "No merge methods" || strings.Contains(status, "conflicts") || strings.Contains(status, "not allowed") {
 			failed++
-		} else if strings.Contains(status, "Waiting") || strings.Contains(status, "Timeout") {
+		} else if strings.Contains(status, "Waiting") || strings.Contains(status, "Timeout") || strings.Contains(status, "Interrupted") {
 			waiting++
 		}
 	}
@@ -632,5 +594,18 @@ func (r *runner) printSummary(prStatuses []*pr.PRStatus) {
 	fmt.Fprintf(r.stdout, "  PRs failed: %d\n", failed)
 	if waiting > 0 {
 		fmt.Fprintf(r.stdout, "  PRs still waiting: %d\n", waiting)
+	}
+}
+
+// waitForContext keeps retry and auto-merge confirmation waits inside the
+// command lifetime, including when no HTTP request is currently in flight.
+func waitForContext(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }

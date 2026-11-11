@@ -25,8 +25,8 @@ var (
 	// flowFold matches the line break the YAML emitter inserts into a long flow
 	// mapping. In flow context a break folds to a single space.
 	flowFold = regexp.MustCompile(`\n\s*`)
-	// dataKey matches a key inside the ConfigMap data block.
-	dataKey = regexp.MustCompile(`^\s+([A-Za-z0-9][A-Za-z0-9.\-_]*)\s*:`)
+	// dataKey matches bare and quoted keys inside the ConfigMap data block.
+	dataKey = regexp.MustCompile(`^\s+([A-Za-z0-9][A-Za-z0-9.\-_]*|'(?:[^']|'')*'|"(?:[^"\\]|\\.)*")\s*:`)
 	// sourceAnnotation matches one reservation annotation line inside a source
 	// object's metadata.annotations block, capturing the indentation and the
 	// key that follows AnnotationPrefix.
@@ -351,6 +351,38 @@ func dataBlock(lines []string) (start, last int, ok bool) {
 	return start, last, true
 }
 
+// reservationKey compares YAML keys by their decoded identity, so quoted and
+// escaped spellings refer to the same reservation as a bare app name.
+func reservationKey(line string) (string, bool) {
+	m := dataKey.FindStringSubmatch(line)
+	if m == nil {
+		return "", false
+	}
+	var key string
+	if err := yaml.Unmarshal([]byte(m[1]), &key); err != nil {
+		return "", false
+	}
+	return key, true
+}
+
+// writeReservationLines validates the edited ConfigMap before touching the
+// file. In particular, YAML spellings of the same key must never be persisted
+// as duplicate reservations that List and the lifecycle commands cannot read.
+func writeReservationLines(path string, lines []string) error {
+	var configMap struct {
+		Data map[string]string `yaml:"data"`
+	}
+	if err := yaml.Unmarshal([]byte(strings.Join(lines, "\n")), &configMap); err != nil {
+		return microerror.Maskf(invalidConfigError, "parsing edited %s: %v", path, err)
+	}
+	for app, entry := range configMap.Data {
+		if _, err := parseReservationEntry(app, entry); err != nil {
+			return microerror.Maskf(invalidConfigError, "parsing edited reservation %q in %s: %v", app, path, err)
+		}
+	}
+	return microerror.Mask(writeLines(path, lines))
+}
+
 // findEntry returns the reservation entry app already holds, if any.
 func findEntry(lines []string, app string) (string, bool) {
 	start, last, ok := dataBlock(lines)
@@ -358,7 +390,7 @@ func findEntry(lines []string, app string) (string, bool) {
 		return "", false
 	}
 	for i := start + 1; i <= last; i++ {
-		if m := dataKey.FindStringSubmatch(lines[i]); m != nil && m[1] == app {
+		if key, ok := reservationKey(lines[i]); ok && key == app {
 			return strings.TrimSpace(lines[i]), true
 		}
 	}
@@ -386,16 +418,16 @@ func writeReservationEntry(path, app, entry string) error {
 	}
 
 	for i := start + 1; i <= last; i++ {
-		if m := dataKey.FindStringSubmatch(lines[i]); m != nil && m[1] == app {
+		if key, ok := reservationKey(lines[i]); ok && key == app {
 			lines[i] = "  " + entry
-			return microerror.Mask(writeLines(path, lines))
+			return microerror.Mask(writeReservationLines(path, lines))
 		}
 	}
 
 	lines[start] = "data:"
 	lines = append(lines[:last+1], append([]string{"  " + entry}, lines[last+1:]...)...)
 
-	return microerror.Mask(writeLines(path, lines))
+	return microerror.Mask(writeReservationLines(path, lines))
 }
 
 // removeReservationEntry removes app's entry from the ConfigMap data block,
@@ -415,7 +447,7 @@ func removeReservationEntry(path, app string) error {
 
 	entryIdx := -1
 	for i := start + 1; i <= last; i++ {
-		if m := dataKey.FindStringSubmatch(lines[i]); m != nil && m[1] == app {
+		if key, ok := reservationKey(lines[i]); ok && key == app {
 			entryIdx = i
 			break
 		}
@@ -436,7 +468,7 @@ func removeReservationEntry(path, app string) error {
 		lines[start] = "data: {}"
 	}
 
-	return microerror.Mask(writeLines(path, lines))
+	return microerror.Mask(writeReservationLines(path, lines))
 }
 
 func readLines(path string) ([]string, error) {

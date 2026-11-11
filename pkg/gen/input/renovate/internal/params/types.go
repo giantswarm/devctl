@@ -21,9 +21,10 @@ type Params struct {
 	// extends entry when HasCustomConfig is true.
 	RepoName string
 	// HasCustomConfig indicates the repo carries an optional repo-owned
-	// renovate-custom.json5 next to the generated renovate.json5. When true,
+	// renovate-custom.json5 next to the generated renovate.json5, or the command
+	// will initialize one before writing the root config. When true,
 	// it is appended as the last `extends` entry so repo-specific rules win
-	// over the shared presets. devctl never generates or touches that file.
+	// over the shared presets. devctl preserves an existing file.
 	HasCustomConfig bool
 	// Deprecated indicates the repo is marked lifecycle: deprecated. When true,
 	// the generated config extends the renovate-presets deprecated.json5 preset,
