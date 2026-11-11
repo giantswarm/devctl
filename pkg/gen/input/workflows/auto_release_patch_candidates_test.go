@@ -66,10 +66,10 @@ func Test_AutoReleasePatchCandidatesDecide(t *testing.T) {
 			expectTag: "v1.16.5-rc.1",
 		},
 		{
-			name:      "a chore(deps) alone cuts a patch candidate too",
+			name:      "a chore(deps) alone releases nothing with patch candidates enabled",
 			history:   []string{"v1.17.1", "chore(deps): bump y"},
-			next:      "v1.17.2",
-			expectTag: "v1.17.2-rc.1",
+			next:      "v1.17.1",
+			expectTag: "",
 		},
 		{
 			name:      "the next fix cuts the patch's next candidate",

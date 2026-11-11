@@ -133,15 +133,29 @@ func TestRun(t *testing.T) {
 		wantExec bool
 		wantErr  string
 		args     []string
+		env      []string
+		remotes  string
 		// wantPerson: gh runs without the token, on the person's login.
 		wantPerson bool
 	}{
 		{name: "runs the real gh with the token", program: "gh", execCode: 3, wantCode: 3, wantExec: true},
 		{name: "no login", program: "gh", tokenErr: authErr, wantCode: agentcli.ExitAuthRequired, wantErr: "devctl auth login"},
 		{name: "not found", program: "nope", wantCode: agentcli.ExitUsage, wantErr: "not found"},
-		{name: "another owner's repository keeps the person's login", program: "gh", args: []string{"pr", "list", "--repo", "teemow/klaus-lab"}, wantExec: true, wantPerson: true},
+		{name: "another owner's repository keeps the person's login", program: "gh", args: []string{"pr", "list", "--repo", "fixture-person/fixture-repo"}, wantExec: true, wantPerson: true},
 		{name: "an upload keeps the person's login", program: "gh", args: []string{"issue", "comment", "12", "--repo", "giantswarm/devctl", "--attach", "proof.png"}, wantExec: true, wantPerson: true},
 		{name: "a comment without an upload acts as the App", program: "gh", args: []string{"pr", "comment", "5", "--repo", "giantswarm/devctl", "--body", "done"}, wantExec: true},
+		{name: "pr view with reviewRequests acts as the App", program: "gh", args: []string{"pr", "view", "5", "--repo", "giantswarm/devctl", "--json", "reviewRequests"}, wantExec: true},
+		{name: "pr edit with body-file and team reviewer acts as the App", program: "gh", args: []string{"pr", "edit", "5", "--repo", "giantswarm/devctl", "--body-file", "body.md", "--add-reviewer", "giantswarm/team-honeybadger"}, wantExec: true},
+		{name: "pr create with team reviewer acts as the App", program: "gh", args: []string{"pr", "create", "--repo", "giantswarm/devctl", "--title", "fix: example", "--body-file", "body.md", "--reviewer", "giantswarm/team-honeybadger"}, wantExec: true},
+		{name: "explicit API target beats environment", program: "gh", args: []string{"api", "repos/fixture-person/fixture-repo/pulls"}, env: []string{"GH_REPO=giantswarm/devctl"}, wantExec: true, wantPerson: true},
+		{name: "explicit App API target beats environment", program: "gh", args: []string{"api", "repos/giantswarm/devctl/pulls"}, env: []string{"GH_REPO=fixture-person/fixture-repo"}, wantExec: true},
+		{name: "API user remains on the App", program: "gh", args: []string{"api", "user"}, env: []string{"GH_REPO=fixture-person/fixture-repo"}, wantExec: true},
+		{name: "explicit PR URL beats repo flag", program: "gh", args: []string{"pr", "view", "https://github.com/fixture-person/fixture-repo/pull/5", "--repo", "giantswarm/devctl"}, wantExec: true, wantPerson: true},
+		{name: "body text does not switch the login", program: "gh", args: []string{"pr", "comment", "5", "--body", "--repo=fixture-person/x", "--repo", "giantswarm/devctl"}, wantExec: true},
+		{name: "body text does not enable attachments", program: "gh", args: []string{"pr", "comment", "5", "--repo", "giantswarm/devctl", "--body", "--attach"}, wantExec: true},
+		{name: "search in a personal checkout stays on the App", program: "gh", args: []string{"search", "prs", "query"}, remotes: "remote.origin.url https://github.com/fixture-person/devctl.git\n", wantExec: true},
+		{name: "gh default can name a different owner from the remote", program: "gh", args: []string{"pr", "list"}, remotes: "remote.origin.url https://github.com/giantswarm/fork.git\nremote.origin.gh-resolved fixture-person/parent\n", wantExec: true, wantPerson: true},
+		{name: "gh default can name the App owner from a fork", program: "gh", args: []string{"pr", "list"}, remotes: "remote.origin.url https://github.com/fixture-person/fork.git\nremote.origin.gh-resolved giantswarm/parent\n", wantExec: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -156,8 +170,9 @@ func TestRun(t *testing.T) {
 				},
 				Self:    self,
 				Path:    path,
-				Environ: []string{"PATH=" + path, "GH_TOKEN=person-token", "GITHUB_TOKEN=other-token"},
+				Environ: append([]string{"PATH=" + path, "GH_TOKEN=person-token", "GITHUB_TOKEN=other-token"}, tc.env...),
 				Stderr:  &stderr,
+				Remotes: func() string { return tc.remotes },
 				Exec: func(p string, argv, env []string) (int, error) {
 					execPath, execArgv, execEnv = p, argv, env
 					return tc.execCode, nil
@@ -180,6 +195,10 @@ func TestRun(t *testing.T) {
 				}
 				return
 			}
+			wantArgv := append([]string{"gh"}, args...)
+			if execPath != filepath.Join(realBin, "gh") || !slices.Equal(execArgv, wantArgv) {
+				t.Fatalf("exec %s %v", execPath, execArgv)
+			}
 			if tc.wantPerson {
 				if gotValid != 0 || slices.ContainsFunc(execEnv, func(kv string) bool {
 					return strings.HasPrefix(kv, "GH_TOKEN=") || strings.HasPrefix(kv, "GITHUB_TOKEN=")
@@ -188,12 +207,8 @@ func TestRun(t *testing.T) {
 				}
 				return
 			}
-			wantArgv := append([]string{"gh"}, args...)
 			if gotValid != MinValidity {
 				t.Fatalf("token valid for %s, want %s", gotValid, MinValidity)
-			}
-			if execPath != filepath.Join(realBin, "gh") || !slices.Equal(execArgv, wantArgv) {
-				t.Fatalf("exec %s %v", execPath, execArgv)
 			}
 			if !slices.Contains(execEnv, "GH_TOKEN=app-token") || slices.Contains(execEnv, "GH_TOKEN=person-token") {
 				t.Fatalf("env = %v", execEnv)

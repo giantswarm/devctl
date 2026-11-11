@@ -40,10 +40,13 @@ const CircleCIExpiryWarning = 7 * 24 * time.Hour
 // ErrAuthRequired is what every [*AuthRequiredError] matches with errors.Is.
 var ErrAuthRequired = errors.New("authentication required")
 
+// IdentityCircleCI is [AuthRequiredError.Identity] for the CircleCI login.
+const IdentityCircleCI = "CircleCI"
+
 // The identities as the errors name them, the causes and the hints.
 const (
 	identityGitHub   = "GitHub"
-	identityCircleCI = "CircleCI"
+	identityCircleCI = IdentityCircleCI
 	identityMuster   = "muster"
 
 	causeNoToken = "no token in the keychain"
@@ -240,6 +243,10 @@ type Identity struct {
 	// ExpiresAt is absent for a token that does not expire.
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 	Expired   bool       `json:"expired"`
+	// Invalid is true when CircleCI rejects the token, or its record has no
+	// token. HTTPStatus is the HTTP status of a failed validation response.
+	Invalid    bool `json:"invalid,omitempty"`
+	HTTPStatus int  `json:"httpStatus,omitempty"`
 	// Refreshable: the record has a refresh token that has not expired, so a
 	// command refreshes the access token itself (GitHub and muster).
 	Refreshable      bool       `json:"refreshable"`
@@ -251,7 +258,7 @@ type Identity struct {
 
 // Usable: a command can act with this identity without a human.
 func (i Identity) Usable() bool {
-	return i.Present && (!i.Expired || i.Refreshable)
+	return i.Present && !i.Invalid && (!i.Expired || i.Refreshable)
 }
 
 // Status is the three identities. GitHub and CircleCI are what the pr and
@@ -309,6 +316,12 @@ func authRequired(name string, id Identity, hint string) *AuthRequiredError {
 		cause = "the token expired"
 		if id.RefreshExpiresAt != nil {
 			cause = "the token expired and the refresh token with it"
+		}
+	}
+	if id.Invalid {
+		cause = "the token is invalid"
+		if id.HTTPStatus != 0 {
+			cause += fmt.Sprintf(" (HTTP %d)", id.HTTPStatus)
 		}
 	}
 	return &AuthRequiredError{Identity: name, Cause: cause, Hint: hint}

@@ -20,7 +20,7 @@ func TestSelectTeamPRs(t *testing.T) {
 	issues := []*github.Issue{
 		issue("flexshopper", alignTitle, "github-actions[bot]", "Bot"),
 		issue("debug", alignTitle+" #2", "teams-bot", "Bot"),
-		issue("flexshopper", alignTitle, "teemow", "User"),
+		issue("flexshopper", alignTitle, "fixture-person", "User"),
 		issue("other-team-repo", alignTitle, "github-actions[bot]", "Bot"),
 		issue("debug", "chore: something else", "github-actions[bot]", "Bot"),
 	}

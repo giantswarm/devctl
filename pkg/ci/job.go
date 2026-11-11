@@ -10,9 +10,15 @@ import (
 	"github.com/giantswarm/devctl/v8/pkg/prwait"
 )
 
-// DefaultJobLogLines is how many lines of a job's failed steps' output
-// `ci job` keeps.
+// DefaultJobLogLines is how many lines `ci job` keeps in its failed output
+// tail and in each requested step output excerpt.
 const DefaultJobLogLines = 200
+
+// JobOptions controls the output excerpts included by ReadJob.
+type JobOptions struct {
+	Lines      int
+	StepOutput bool
+}
 
 // JobResult is the document part of `ci job`.
 type JobResult struct {
@@ -48,6 +54,11 @@ type JobStep struct {
 	Status    string     `json:"status"`
 	StartedAt *time.Time `json:"startedAt,omitempty"`
 	EndedAt   *time.Time `json:"endedAt,omitempty"`
+	// OutputHead and OutputTail are the first and last lines of this action's
+	// output, including successful actions, when StepOutput was requested.
+	OutputHead  string `json:"outputHead,omitempty"`
+	OutputTail  string `json:"outputTail,omitempty"`
+	OutputError string `json:"outputError,omitempty"`
 }
 
 // NewJobResult is an empty result for repository.
@@ -56,10 +67,12 @@ func NewJobResult(repository string) *JobResult {
 }
 
 // ReadJob reads job number ref of org/repo into result: its status, its steps
-// and the tail of its failed steps' output, lines of it. Exit 3 when
+// and the tail of its failed steps' output. With StepOutput, each step also
+// carries the first and last Lines of its output, or an OutputError. Exit 3 when
 // CircleCI has no such job of the repository. Steps CircleCI does not answer
-// are a warning; output it does not answer is the job's LogError.
-func ReadJob(ctx context.Context, client *circleciclient.Client, org, repo, ref string, lines int, result *JobResult, warn func(string)) error {
+// are a warning; output it does not answer is the job's LogError. Caller
+// cancellation ends the read with its context error and retains the job data.
+func ReadJob(ctx context.Context, client *circleciclient.Client, org, repo, ref string, options JobOptions, result *JobResult, warn func(string)) error {
 	number, err := strconv.ParseInt(ref, 10, 64)
 	if err != nil || number <= 0 {
 		return fmt.Errorf("the job number is a positive integer, got %q", ref)
@@ -85,15 +98,34 @@ func ReadJob(ctx context.Context, client *circleciclient.Client, org, repo, ref 
 	result.Job = detail
 
 	steps, err := client.JobSteps(ctx, org, repo, number)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err != nil {
 		warn(fmt.Sprintf("the steps of job %s (%d) could not be read: %v", job.Name, number, err))
 	}
 	for _, s := range steps {
-		detail.Steps = append(detail.Steps, JobStep{Name: s.Name, Index: s.Index, Status: s.Status, StartedAt: timePtr(s.StartedAt), EndedAt: timePtr(s.EndedAt)})
+		step := JobStep{Name: s.Name, Index: s.Index, Status: s.Status, StartedAt: timePtr(s.StartedAt), EndedAt: timePtr(s.EndedAt)}
+		if options.StepOutput && s.OutputURL != "" {
+			output, err := client.StepOutput(ctx, s.OutputURL)
+			if err := ctx.Err(); err != nil {
+				detail.Steps = append(detail.Steps, step)
+				return err
+			}
+			if err != nil {
+				step.OutputError = err.Error()
+			} else {
+				step.OutputHead, step.OutputTail = prwait.LogHeadTail(output, options.Lines)
+			}
+		}
+		detail.Steps = append(detail.Steps, step)
 	}
 
-	logs := prwait.LogReader{Lines: lines}.CircleCIJob(ctx, org, repo, client, number, job.Name, job.WebURL)
+	logs := prwait.LogReader{Lines: options.Lines}.CircleCIJob(ctx, org, repo, client, number, job.Name, job.WebURL)
 	detail.LogTail, detail.LogError = logs.LogTail, logs.LogError
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if detail.LogTail == "" && detail.LogError == "" && circleciclient.JobFailed(job.Status) {
 		warn(fmt.Sprintf("job %s (%d) reads %s, but no step of it failed with output", job.Name, number, job.Status))
 	}

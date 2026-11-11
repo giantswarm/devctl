@@ -33,8 +33,8 @@ import (
 // version, which is how the harness keeps the binary off the network.
 const version = "0.0.0-e2e"
 
-// TimeScale multiplies every sleep and timeout of the binary: a thirty-minute
-// wait takes 1.8 seconds.
+// TimeScale selects sleep-driven virtual time in the devctl_e2e binary.
+// A scenario can select the wall clock with a scale of 1.
 const TimeScale = "0.001"
 
 // The placeholders a scenario's keyring writes for the muster mock's URLs.
@@ -60,7 +60,7 @@ func run(m *testing.M) int {
 
 	binary = filepath.Join(dir, "devctl")
 	ldflags := fmt.Sprintf("-X github.com/giantswarm/devctl/v8/pkg/project.version=%s -X github.com/giantswarm/devctl/v8/pkg/project.gitSHA=e2e", version)
-	build := exec.Command("go", "build", "-o", binary, "-ldflags", ldflags, ".") //nolint:gosec // the arguments are constants of this file
+	build := exec.Command("go", "build", "-tags=devctl_e2e", "-o", binary, "-ldflags", ldflags, ".") //nolint:gosec // the arguments are constants of this file
 	build.Dir = ".."
 	build.Stdout = os.Stderr
 	build.Stderr = os.Stderr
@@ -190,6 +190,9 @@ func environment(t *testing.T, sc *scenario.Scenario, m *mocks) []string {
 		"DEVCTL_REGISTRY_INSECURE=1",
 		"DEVCTL_MUSTER_URL=" + m.muster.MCPURL(),
 		"DEVCTL_KEYRING_FILE=" + keyring,
+		// The CircleCI pass after a command reads the person's inventory; a
+		// scenario about it sets this empty.
+		"DEVCTL_NO_CIRCLECI_PENDING=1",
 	}
 	for key, value := range sc.Env {
 		env = append(env, key+"="+value)

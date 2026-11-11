@@ -9,13 +9,23 @@ scenario before the fix.
 
 ## How a run works
 
-`go test ./e2e/...` is part of `make test`. `TestMain` builds `devctl` once (`go build`, version `0.0.0-e2e`);
+`go test ./e2e/...` is part of `make test`. `TestMain` builds `devctl` once (`go build -tags=devctl_e2e`, version `0.0.0-e2e`);
 every directory under `scenarios/` that holds a `scenario.yaml` is one subtest, and the subtests run in
 parallel. A scenario gets its own mock servers on loopback ports, a home directory of its own and an
 environment built from scratch (below); the binary runs with the scenario directory as its working directory, so
 a fixture file beside `scenario.yaml` is referenced by its bare name. The run is bounded by the scenario's
-`timeout` (60 s by default); `DEVCTL_TIME_SCALE=0.001` makes a thirty-minute wait take 1.8 seconds, and the
-mocks answer in microseconds, so the whole suite finishes in seconds. Nothing reaches the network: the binary's
+real-time `timeout` (60 s by default). In this build, `DEVCTL_TIME_SCALE` below 1 (normally `0.001`) selects
+the shared virtual clock: only the command's sleeps advance time, immediately by their unscaled duration.
+Request latency and scheduling delays consume none of the command's `--timeout`; its retry and poll sleeps do.
+Rate-limit resets are compared with that same virtual deadline. A scale of 1 or greater keeps the wall clock,
+including the `required-never-reported` scenario that asserts an immediate verdict without accelerating time.
+Commands that do not use `agentcli.Clock`, such as `repo watch`, retain their own real-time bounds.
+
+Without the build tag, `DEVCTL_TIME_SCALE=0.001` scales a thirty-minute timeout to 1.8 seconds, raised to
+the clock's five-second real-time floor. Request latency still spends that budget, so a busy machine could
+end a scenario before the expected retries. The e2e build removes that dependency; its real-time watchdog and
+the HTTP retry transport's real per-attempt bound still stop stalled work. Released binaries keep their usual
+wall-clock behavior. Nothing reaches the network: the binary's
 update check is skipped through `DEVCTL_UNSAFE_FORCE_VERSION`, and every endpoint the commands know is pointed at
 a mock.
 
@@ -27,6 +37,9 @@ Run one scenario:
 ```bash
 go test ./e2e/ -run 'TestScenarios/stage-gap' -v
 ```
+
+For load acceptance, run `go test -p 2 ./e2e/...` alongside `go test -p 2 ./cmd/...` in CI or independent
+verification after generating the build prerequisites, and record both exit statuses.
 
 The runner declares every file of the module as an input of the test, so the test cache reruns the scenarios
 after a change anywhere in devctl's sources, not only under `e2e/`; `-count=1` forces a rerun regardless.
@@ -116,7 +129,9 @@ reports keeps answering the same. Counting is per route, not per request, and st
 
 A response has `status` (default 200), `headers` (a mock adds its own defaults for the headers a fixture leaves
 out and never overrides one the fixture sets) and `body`: a mapping or list is sent as JSON, a string verbatim,
-nothing as an empty body. `reset: true` answers nothing and closes the connection with a TCP reset, which the
+nothing as an empty body. `delay: 400ms` adds real latency before a scripted answer (independent of virtual time),
+and stops waiting when the request is canceled. `reset: true` answers nothing and closes the connection with a
+TCP reset, which the
 client reads as `connection reset by peer`; net/http replays a GET whose reused connection was reset, so a
 reset meant to reach devctl is scripted on a mock's first request. A request no route matches gets the mock's not-found answer (below).
 
@@ -166,7 +181,7 @@ The binary's environment is built from scratch; nothing of the developer's shell
 | `DEVCTL_REGISTRY_INSECURE` | `1`: the mocks speak plain HTTP |
 | `DEVCTL_MUSTER_URL` | the muster mock plus `/mcp` |
 | `DEVCTL_KEYRING_FILE` | `keyring.json` in the scenario's home, the scenario's `keyring` when given |
-| `DEVCTL_TIME_SCALE` | `0.001` |
+| `DEVCTL_TIME_SCALE` | `0.001`: selects sleep-driven virtual time in the e2e build |
 | `DEVCTL_UNSAFE_FORCE_VERSION` | the built binary's version, which skips the update check |
 | `HOME`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `TMPDIR` | directories of the scenario's own |
 | `PATH` | an empty directory: no `gh`, `docker` or `git` to fall back on |
@@ -231,11 +246,11 @@ The incidents the commands encode, one scenario each, by these slugs:
 
 - `pr wait`: `stage-gap`, `fork-awaiting-approval`, `conflicting-pr`, `retitled-stale-run`,
   `red-circleci-workflow`, `pr-wait-timeout`, `required-never-reported`, `github-5xx-retried`,
-  `github-5xx-persistent`, `circleci-connection-reset`, `github-rate-limit-reset`,
+  `github-5xx-persistent`, `github-5xx-request-latency`, `circleci-connection-reset`, `github-rate-limit-reset`,
   `github-rate-limit-spent-answer`, `github-rate-limit-after-deadline`, `circleci-rate-limit-retry-after`, `no-checks-event-never-fired`,
   `github-check-endpoints-5xx-graphql`, `github-check-endpoints-and-graphql-5xx`
 - `pr merge`: `own-green-merged`, `other-human-refused`, `opt-out-refused`, `behind-strict-base`,
-  `behind-base-refused`, `behind-update-branch`, `merge-queue`, `red-not-merged`, `merge-released`, `merge-no-release`,
+  `behind-base-merged`, `behind-update-branch`, `merge-queue`, `red-not-merged`, `merge-released`, `merge-no-release`,
   `merge-release-failed`, `merge-github-5xx-retried`
 - `release wait`: `renamed-image`, `renamed-chart`, `hand-written-ci`, `release-assets-only`, `failed-tag-pipeline`,
   `rerun-replaces-failed`, `stale-registry-login`, `release-wait-timeout`, `jobs-not-visible-yet`,

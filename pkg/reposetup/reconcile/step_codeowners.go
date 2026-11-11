@@ -84,7 +84,7 @@ func (r *Runner) stepCodeowners(ctx context.Context, s *run, sr *StepResult) err
 	if err != nil {
 		return err
 	}
-	if have.content == want.content {
+	if have.present && have.content == want.content {
 		sr.Summary = want.summary
 		return nil
 	}

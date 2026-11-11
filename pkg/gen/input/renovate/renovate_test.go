@@ -474,7 +474,7 @@ func Test_Golden(t *testing.T) {
 			name: "fork",
 			config: Config{
 				Language:        "go",
-				Reviewers:       []string{"teemow"},
+				Reviewers:       []string{"fixture-person"},
 				RepoName:        "kagent-upstream",
 				HasCustomConfig: true,
 				Fork:            true,
@@ -545,9 +545,13 @@ func Test_Golden(t *testing.T) {
 // are inert there.
 func Test_GitIgnoredAuthorsAlwaysPresent(t *testing.T) {
 	for _, c := range []Config{
+		{},
 		{Language: "go"},
+		{Language: "python"},
 		{Language: "node", CircleCIGenerated: true},
 		{Language: "go", Deprecated: true, HasCustomConfig: true, RepoName: "some-repo"},
+		{Language: "go", Fork: true},
+		{Language: "node", CircleCIGenerated: true, Fork: true},
 	} {
 		got := render(t, c)
 
@@ -557,7 +561,11 @@ func Test_GitIgnoredAuthorsAlwaysPresent(t *testing.T) {
 		if err := json5.Unmarshal([]byte(got), &parsed); err != nil {
 			t.Fatalf("generated config is not valid JSON5: %v\n%s", err, got)
 		}
-		want := []string{"342014845+giantswarm-release[bot]@users.noreply.github.com", "dev@giantswarm.io", "329428426+giantswarm-marge[bot]@users.noreply.github.com"}
+		want := []string{
+			"342014845+giantswarm-release[bot]@users.noreply.github.com",
+			"dev@giantswarm.io",
+			"329428426+giantswarm-marge[bot]@users.noreply.github.com",
+		}
 		if !slices.Equal(parsed.GitIgnoredAuthors, want) {
 			t.Errorf("gitIgnoredAuthors = %v for %+v, want %v", parsed.GitIgnoredAuthors, c, want)
 		}
