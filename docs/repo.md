@@ -598,8 +598,10 @@ against one source and its summary names it (`names @giantswarm/team-x`, or `mat
 repositories/override/<repository>/CODEOWNERS of giantswarm/github`). `devctl repo reconcile --team-file
 <dir>/<team>.yaml` reads `<dir>/override/<repository>/CODEOWNERS` from the checkout, so the check costs no request;
 the remote team-file source (`reposetup.Remote.Overrides`) lists the override directory once at the team files' ref
-and reads only the overrides it names. A differing file gets one pull request from `reposetup/codeowners` with the
-desired file; while it is open the step reports it and changes nothing. A fork line and a customer repository have no
+and reads only the overrides it names. A differing file gets one pull request from `reposetup/codeowners`, a branch the
+step owns, with the desired file; while it is open with the desired file and title the step reports it and changes
+nothing, and when its file or title is stale (as after a transfer or an override change) the step updates it. A branch
+left behind by a closed pull request is reset before a new one is opened. A fork line and a customer repository have no
 codeowners step.
 
 ## `reposetup` library: `Person` memberships

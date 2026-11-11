@@ -205,7 +205,6 @@ func Test_Merge_refusalsBeforeTheWait(t *testing.T) {
 		{name: "draft", pr: pull(map[string]any{"draft": true}), wantCode: 3, wantReason: "draft", wantVerdict: agentcli.VerdictNotApplicable},
 		{name: "conflicting", pr: pull(map[string]any{"mergeable_state": "dirty"}), wantCode: 3, wantReason: "conflicts with main", wantVerdict: agentcli.VerdictNotApplicable},
 		{name: "behind without --update-branch", pr: pull(map[string]any{"mergeable_state": "behind"}), wantCode: 3, wantReason: "behind main, which requires branches to be up to date; --update-branch updates it from main", wantVerdict: agentcli.VerdictNotApplicable},
-		{name: "behind a base that is not strict, without --update-branch", pr: pull(map[string]any{"mergeable_state": "blocked"}), wantCode: 3, wantReason: "the pull request is 2 commit(s) behind main: its checks ran against an older main than the one the merge lands it on; --update-branch updates it from main and waits for its checks again", wantVerdict: agentcli.VerdictNotApplicable},
 		{name: "another human", pr: pull(map[string]any{"user": map[string]any{"login": "alice", "type": "User"}}), wantCode: 5, wantReason: "the pull request was opened by alice, not by someone: devctl pr merge merges the caller's own pull requests and those of bots and GitHub Apps (the Bot user type or a [bot] login) and of the automation accounts architectbot, taylorbot", wantVerdict: agentcli.VerdictRefused},
 		{name: "opted out", pr: pull(nil), configure: func(c *Config) {
 			c.Policy = func(context.Context, string, string) (Verdict, error) {
@@ -505,21 +504,20 @@ func Test_Merge_paths(t *testing.T) {
 				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 2, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
 		},
 		{
-			name:   "up to date without --update-branch: the base is compared before and after the wait, the head merged",
+			name:   "non-strict base without --update-branch: merge the unchanged green head without comparing",
 			routes: routes(pull(map[string]any{"mergeable_state": "blocked"})),
 			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
-				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 2, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
+				requested: map[string]int{"GET /repos/o/r/compare/main...abc123": 0, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
 		},
 		{
-			name: "the base moves during the wait, without --update-branch: exit 3, nothing merged",
+			name: "behind a non-strict base without --update-branch: merge the unchanged head",
 			routes: routes(pull(nil), sequence.Routes{
 				"GET /repos/o/r/compare/main...abc123": {
-					{Body: map[string]any{"status": "ahead", "ahead_by": 1, "behind_by": 0}},
 					{Body: map[string]any{"status": "diverged", "ahead_by": 1, "behind_by": 3}},
 				},
 			}),
-			want: want{code: 3, reason: "3 commit(s) behind main: its checks ran against an older main than the one the merge lands it on (main moved during the wait); --update-branch", method: "squash", headSHA: "abc123",
-				requested: map[string]int{"GET /repos/o/r/commits/abc123/check-runs": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "PUT /repos/o/r/pulls/42/merge": 0}},
+			want: want{method: "squash", mergedBy: "someone", mergeSHA: "m1", deleted: true, headSHA: "abc123",
+				requested: map[string]int{"GET /repos/o/r/commits/abc123/check-runs": 1, "PUT /repos/o/r/pulls/42/update-branch": 0, "GET /repos/o/r/compare/main...abc123": 0, "PUT /repos/o/r/pulls/42/merge": 1}},
 		},
 		{
 			name: "the base moves during the wait, with --update-branch: update, wait for the new head, merge it",
@@ -1166,7 +1164,7 @@ func Test_refuseBehind(t *testing.T) {
 		round        int
 		wantReason   string // empty: update it
 	}{
-		{name: "strict, no flag", behind: behindStrict, round: 1, wantReason: "the pull request is behind main, which requires branches to be up to date; --update-branch updates it from main and waits for its checks again"},
+		{name: "strict, no flag", behind: behindStrict, round: 1, wantReason: "requiring up-to-date branches is a repository owner branch-protection setting"},
 		{name: "not strict, no flag", behind: 4, round: 1, wantReason: "the pull request is 4 commit(s) behind main: its checks ran against an older main than the one the merge lands it on; --update-branch"},
 		{name: "moved during the wait, no flag", behind: 1, round: 2, wantReason: "(main moved during the wait); --update-branch"},
 		{name: "flag, first round", updateBranch: true, behind: 4, round: 1},

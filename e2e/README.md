@@ -250,7 +250,7 @@ The incidents the commands encode, one scenario each, by these slugs:
   `github-rate-limit-spent-answer`, `github-rate-limit-after-deadline`, `circleci-rate-limit-retry-after`, `no-checks-event-never-fired`,
   `github-check-endpoints-5xx-graphql`, `github-check-endpoints-and-graphql-5xx`
 - `pr merge`: `own-green-merged`, `other-human-refused`, `opt-out-refused`, `behind-strict-base`,
-  `behind-base-refused`, `behind-update-branch`, `merge-queue`, `red-not-merged`, `merge-released`, `merge-no-release`,
+  `behind-base-merged`, `behind-update-branch`, `merge-queue`, `red-not-merged`, `merge-released`, `merge-no-release`,
   `merge-release-failed`, `merge-github-5xx-retried`
 - `release wait`: `renamed-image`, `renamed-chart`, `hand-written-ci`, `release-assets-only`, `failed-tag-pipeline`,
   `rerun-replaces-failed`, `stale-registry-login`, `release-wait-timeout`, `jobs-not-visible-yet`,

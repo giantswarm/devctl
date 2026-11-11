@@ -21,6 +21,7 @@ func TestPrefixesConsoleModes(t *testing.T) {
 		warning string
 	}{
 		{"plain console", plain, "", "Error", "Warning"},
+		{"VT without processed output", windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING | windows.ENABLE_WRAP_AT_EOL_OUTPUT, "", "Error", "Warning"},
 		{"ANSI console", ansi, "", "\x1b[31mError\x1b[0m", "\x1b[33mWarning\x1b[0m"},
 		{"NO_COLOR", ansi, "1", "Error", "Warning"},
 	} {
@@ -52,7 +53,15 @@ func TestPrefixesConsoleModes(t *testing.T) {
 // attached console from which Windows can create a screen buffer.
 func privateConsole(t *testing.T) *os.File {
 	t.Helper()
-	create := windows.NewLazySystemDLL("kernel32.dll").NewProc("CreateConsoleScreenBuffer")
+	kernel := windows.NewLazySystemDLL("kernel32.dll")
+	// CI requires a real console even when the runner starts without one.
+	if os.Getenv("DEVCTL_REQUIRE_WINDOWS_CONSOLE") == "1" {
+		allocated, _, _ := kernel.NewProc("AllocConsole").Call()
+		if allocated != 0 {
+			t.Cleanup(func() { _, _, _ = kernel.NewProc("FreeConsole").Call() })
+		}
+	}
+	create := kernel.NewProc("CreateConsoleScreenBuffer")
 	const consoleTextmodeBuffer = 1
 	handle, _, err := create.Call(
 		uintptr(windows.GENERIC_READ|windows.GENERIC_WRITE),
@@ -60,6 +69,9 @@ func privateConsole(t *testing.T) *os.File {
 		0, consoleTextmodeBuffer, 0,
 	)
 	if handle == uintptr(windows.InvalidHandle) {
+		if os.Getenv("DEVCTL_REQUIRE_WINDOWS_CONSOLE") == "1" {
+			t.Fatalf("required private console screen buffer unavailable: %v", err)
+		}
 		t.Skipf("private console screen buffer unavailable: %v", err)
 	}
 	console := os.NewFile(handle, "termout-test-console")

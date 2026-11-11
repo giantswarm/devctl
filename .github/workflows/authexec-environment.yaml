@@ -1,0 +1,41 @@
+name: authexec environment
+
+on:
+  pull_request:
+    paths:
+      - pkg/authexec/**
+      - go.mod
+      - go.sum
+      - .github/workflows/authexec-environment.yaml
+  push:
+    branches: [main]
+    paths:
+      - pkg/authexec/**
+      - go.mod
+      - go.sum
+      - .github/workflows/authexec-environment.yaml
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  environment:
+    name: environment (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Test host environment rules and login fallback
+        run: go test ./pkg/authexec -run '^(TestEnvironmentVariableCase|TestPersonLoginEnvironmentCase)$' -count=1 -v

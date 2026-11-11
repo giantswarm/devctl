@@ -1,0 +1,23 @@
+description: a rate-limited release lookup warns and ci job still prints the CircleCI job
+args: [ci, job, giantswarm/devctl, "7"]
+env:
+  DEVCTL_UNSAFE_FORCE_VERSION: ""
+  DEVCTL_UNSAFE_SKIP_VERSION_CHECK: ""
+keyring:
+  circleci:
+    login: e2e-engineer
+    token: CCIPAT_e2e_live
+    expiresAt: "2099-01-01T00:00:00Z"
+github:
+  routes:
+    "GET /repos/giantswarm/devctl/releases?per_page=100":
+      - status: 403
+        headers:
+          X-RateLimit-Remaining: "0"
+        body: {message: API rate limit exceeded}
+circleci:
+  routes:
+    "GET /api/v2/project/gh/giantswarm/devctl/job/7":
+      - body: {number: 7, name: go-test, status: success, web_url: "https://circleci.com/gh/giantswarm/devctl/7"}
+    "GET /api/v1.1/project/github/giantswarm/devctl/7":
+      - body: {build_num: 7, steps: []}

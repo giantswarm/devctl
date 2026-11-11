@@ -925,3 +925,39 @@ func Test_Wait_headSettlingRespectsDeadline(t *testing.T) {
 		}
 	}
 }
+
+func Test_Wait_newestFailedSuiteWithoutRequiredJob(t *testing.T) {
+	gh := gitHubGreen()
+	var checks []map[string]any
+	var workflows []map[string]any
+	for id := 1; id <= 3; id++ {
+		conclusion := "success"
+		if id == 3 {
+			conclusion = "failure"
+		} else {
+			check := run("ci-ok", "completed", "success")
+			check["id"] = id
+			check["check_suite"] = map[string]any{"id": id * 100}
+			checks = append(checks, check)
+		}
+		workflows = append(workflows, map[string]any{
+			"id": id, "workflow_id": 1, "check_suite_id": id * 100,
+			"name": "CI Build", "status": "completed", "conclusion": conclusion,
+		})
+	}
+	gh[runsPath] = []sequence.Response{checkRuns(checks...)}
+	gh[actsPath] = []sequence.Response{body(map[string]any{"total_count": 3, "workflow_runs": workflows})}
+	gh["GET /repos/o/r/rules/branches/main"] = []sequence.Response{body([]any{
+		map[string]any{"type": "required_status_checks", "parameters": map[string]any{
+			"required_status_checks": []any{map[string]any{"context": "ci-ok"}},
+		}},
+	})}
+	h := start(t, gh, sequence.Routes{}, false, 2*time.Minute)
+	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
+	if exitCode(err) != agentcli.ExitRequiredMissing {
+		t.Fatalf("want missing required job, got %d %v", exitCode(err), err)
+	}
+	if len(result.Checks) != 0 || !strings.Contains(err.Error(), "ci-ok") {
+		t.Errorf("stale checks must not satisfy ci-ok: checks=%+v err=%v", result.Checks, err)
+	}
+}
