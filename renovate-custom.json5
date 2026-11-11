@@ -193,6 +193,11 @@
   ],
   packageRules: [
     {
+      // mctl bumps must ship: chore is skipped by the release, so commit them as fix.
+      matchPackageNames: ['gsoci.azurecr.io/giantswarm/mctl'],
+      semanticCommitType: 'fix',
+    },
+    {
       // kind and the kindest/node image it boots are released and tested as a pair, so a
       // chainsaw run on a mismatched pair is untested ground. One PR for both, so the review
       // sees the combination rather than two halves of it.
