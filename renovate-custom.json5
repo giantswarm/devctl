@@ -244,5 +244,18 @@
       matchUpdateTypes: ['major'],
       dependencyDashboardApproval: true,
     },
+    {
+      // go.mod's `replace k8s.io/kube-openapi => ...` holds kube-openapi on the last
+      // snapshot that still builds against sigs.k8s.io/structured-merge-diff/v6, the major
+      // k8s.io/apimachinery v0.37.x uses. Every newer snapshot moves pkg/schemaconv to
+      // structured-merge-diff/v7, and a digest bump of the replace breaks the build
+      // (apimachinery's managedfields/internal no longer type-checks). Leave the replace
+      // alone; the require line keeps its normal updates. Drop this rule together with
+      // the replace once k8s.io/apimachinery moves to structured-merge-diff/v7 (v0.38).
+      matchManagers: ['gomod'],
+      matchDepTypes: ['replace'],
+      matchPackageNames: ['k8s.io/kube-openapi'],
+      enabled: false,
+    },
   ],
 }

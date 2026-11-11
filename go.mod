@@ -234,6 +234,7 @@ replace (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc => go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.47.0 // CVE-2026-81870
 	// kustomize v0.21.3 bumps k8s.io/kube-openapi to a snapshot whose pkg/schemaconv uses
 	// sigs.k8s.io/structured-merge-diff/v7, while k8s.io/apimachinery v0.37.2 uses v6.
-	// Drop once k8s.io/apimachinery moves to structured-merge-diff/v7.
+	// Drop once k8s.io/apimachinery moves to structured-merge-diff/v7, together with the
+	// renovate-custom.json5 rule that keeps Renovate from bumping this pin.
 	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad
 )
