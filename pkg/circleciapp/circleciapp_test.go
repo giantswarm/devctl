@@ -169,6 +169,30 @@ func TestWaitTakesASetupOnlyRun(t *testing.T) {
 	require.Equal(t, setupOnlyReads, ci.read)
 }
 
+// TestWaitReturnsASetupApprovalHold: setup approvals settle the wait even
+// before continuation, without another read or the setup-only grace period.
+func TestWaitReturnsASetupApprovalHold(t *testing.T) {
+	for _, state := range []string{"setup", "created"} {
+		t.Run(state, func(t *testing.T) {
+			ci := newFake()
+			ci.reads = []pipelineRead{{state: state, workflows: []circleciclient.Workflow{
+				{Name: "prepare", Status: "on_hold", Tag: circleciclient.WorkflowTagSetup},
+			}}}
+			sleeps := 0
+			outcome, err := (Waiter{CircleCI: ci, Sleep: func(context.Context, time.Duration) error {
+				sleeps++
+				return context.DeadlineExceeded
+			}}).Wait(context.Background(), "pl1")
+			require.NoError(t, err)
+			require.True(t, outcome.Green)
+			require.Empty(t, outcome.Failed)
+			require.Equal(t, []string{"prepare"}, outcome.OnHold)
+			require.Equal(t, 1, ci.read)
+			require.Zero(t, sleeps)
+		})
+	}
+}
+
 // TestSetupRefusesARepositoryWithoutConfig: no .circleci/config.yml on the
 // default branch is IsNoConfig, before any write.
 func TestSetupRefusesARepositoryWithoutConfig(t *testing.T) {

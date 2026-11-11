@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"text/template"
@@ -71,19 +72,24 @@ var _ = library.New
 var _ = client.New
 `
 	testCases := []struct {
-		name          string
-		source        string
-		missingTool   bool
-		linterFailure bool
-		wantErr       bool
-		wantLinter    bool
-		wantOutput    string
+		name           string
+		source         string
+		missingTool    bool
+		installFailure bool
+		defaultBin     bool
+		linterFailure  bool
+		wantErr        bool
+		wantLinter     bool
+		wantOutput     string
 	}{
 		{name: "case 0: grouped imports", source: grouped, wantLinter: true},
 		{name: "case 1: local imports mixed with dependencies", source: ungrouped, wantErr: true, wantOutput: "nested/file with spaces.go"},
 		{name: "case 2: invalid Go source", source: "package fixture\nfunc {\n", wantErr: true, wantOutput: "expected"},
-		{name: "case 3: goimports missing", source: grouped, missingTool: true, wantErr: true, wantOutput: "goimports"},
-		{name: "case 4: linter failure", source: grouped, linterFailure: true, wantErr: true, wantLinter: true, wantOutput: "linter failed"},
+		{name: "case 3: install missing goimports", source: grouped, missingTool: true, wantLinter: true},
+		{name: "case 4: install into default GOPATH bin", source: grouped, missingTool: true, defaultBin: true, wantLinter: true},
+		{name: "case 5: installed tool rejects ungrouped imports", source: ungrouped, missingTool: true, wantErr: true, wantOutput: "nested/file with spaces.go"},
+		{name: "case 6: installation failure", source: grouped, missingTool: true, installFailure: true, wantErr: true, wantOutput: "installation failed"},
+		{name: "case 7: linter failure", source: grouped, linterFailure: true, wantErr: true, wantLinter: true, wantOutput: "linter failed"},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -115,7 +121,21 @@ var _ = client.New
 				write("bin/"+name, "#!/bin/sh\n", 0o700)
 			}
 			// goimports reads go env even when every import is already present.
-			if err := os.Symlink(goBin, filepath.Join(dir, "bin", "go")); err != nil {
+			if tc.missingTool {
+				write("installed bin/.keep", "", 0o600)
+				write("bin/go", `#!/bin/sh
+case "$*" in
+  "env GOBIN")
+    if [ "$TEST_DEFAULT_BIN" != "true" ]; then printf '%s\n' "$TEST_INSTALL_BIN"; fi ;;
+  "env GOPATH") printf '%s\n' "$TEST_GOPATH" ;;
+  "install golang.org/x/tools/cmd/goimports@v0.50.0")
+    echo install > install-ran
+    if [ "$TEST_INSTALL_FAILURE" = "true" ]; then echo 'installation failed' >&2; exit 29; fi
+    exec /bin/cp "$TEST_GOIMPORTS" "$GOBIN/goimports" ;;
+  *) exec "$TEST_REAL_GO" "$@" ;;
+esac
+`, 0o700)
+			} else if err := os.Symlink(goBin, filepath.Join(dir, "bin", "go")); err != nil {
 				t.Fatal(err)
 			}
 			linter := "#!/bin/sh\nprintf '%s\\n' \"$*\" > lint-ran\n"
@@ -134,8 +154,17 @@ var _ = client.New
 				"APPLICATION=fixture", "MODULE="+module, "OS=linux", "SOURCES=",
 				"VERSION=unused", "GITSHA1=unused", "BUILDTIMESTAMP=unused", "RACE=")
 			cmd.Dir = dir
-			cmd.Env = append(os.Environ(), "PATH="+filepath.Join(dir, "bin"), "GOPROXY=off", "GOSUMDB=off")
+			cmd.Env = append(os.Environ(), "PATH="+filepath.Join(dir, "bin"), "GOPROXY=off", "GOSUMDB=off",
+				"TEST_INSTALL_BIN="+filepath.Join(dir, "installed bin"),
+				"TEST_GOPATH="+dir, "GOBIN=", "GOPATH="+dir,
+				"TEST_GOIMPORTS="+goimportsBin, "TEST_REAL_GO="+goBin,
+				"TEST_DEFAULT_BIN="+strconv.FormatBool(tc.defaultBin),
+				"TEST_INSTALL_FAILURE="+strconv.FormatBool(tc.installFailure))
 			out, err := cmd.CombinedOutput()
+			_, installErr := os.Stat(filepath.Join(dir, "install-ran"))
+			if (installErr == nil) != tc.missingTool {
+				t.Errorf("installation called = %v, want %v", installErr == nil, tc.missingTool)
+			}
 			if (err != nil) != tc.wantErr {
 				t.Errorf("make lint: error = %v, want error %v\n%s", err, tc.wantErr, out)
 			}

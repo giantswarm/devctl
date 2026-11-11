@@ -18,6 +18,13 @@ Example:
 devctl gen workflows --flavour cli
 ```
 
+### Batch CI
+
+Repositories can stage exact-commit merge-group validation and then opt into full CI
+once per protected merge batch. See [the batch CI policy and transition](ci-batch.md)
+for the repository-owned configuration, required queue proof and rollback sequence.
+Ordinary PR CI remains unchanged until explicitly transitioned.
+
 ### Release workflow
 
 `--release-workflow` selects which release flow to generate. Two values:
@@ -25,7 +32,7 @@ devctl gen workflows --flavour cli
 | Value | What's emitted | When to use |
 |-------|----------------|-------------|
 | `legacy` (default) | `.github/workflows/zz_generated.create_release.yaml`, `zz_generated.create_release_pr.yaml`, `zz_generated.validate_changelog.yaml`. Releases driven by manually-pushed `main#release#patch`-style branches that open a release PR for human approval. | The historical flow; in use by most giantswarm repos today. |
-| `auto-release` | `.github/workflows/zz_generated.auto_release.yaml` and `cliff.toml` (at repo root). Releases driven by conventional commits on `main` -- the workflow runs `git-cliff --unreleased --bump` on every push, computes the next semver, and creates the next release candidate tag + GitHub pre-release atomically. A stable release is a manual promotion of the latest candidate. `feat` bumps the minor version, a breaking change the major, every other type the patch; `docs`, `style` and `test` commits are skipped, except that `test:` can advance an existing candidate. | Repos that want push-button releases from conventional commits. Requires `semantic_pull_request` enforcement on PR titles. |
+| `auto-release` | `.github/workflows/zz_generated.auto_release.yaml` and `cliff.toml` (at repo root). Releases driven by conventional commits on `main` -- the workflow runs `git-cliff --unreleased --bump` on every push, computes the next semver, and creates the next release candidate tag + GitHub pre-release atomically. A stable release is a manual promotion of the latest candidate. `feat` bumps the minor version, a breaking change the major, every other type the patch; `ci`, `chore`, `docs`, `style` and `test` commits are skipped and release nothing, except that `test:` can advance an existing candidate. | Repos that want push-button releases from conventional commits. Requires `semantic_pull_request` enforcement on PR titles. |
 
 Switching between values is bidirectional and self-cleaning: the chosen branch generates its own files and emits deletion inputs for the files of the other branch, so a flipped `--release-workflow` value over two consecutive gen runs leaves the repo with exactly one set of release files.
 
@@ -39,15 +46,16 @@ devctl gen workflows --flavour app --language go --release-workflow=auto-release
 
 #### Release candidates and stable releases
 
-Every releasable push releases the version git-cliff computes from the conventional commits since the last stable release. A minor or major version is cut as the next release candidate, `vX.Y.0-rc.N`; a patch of the last stable release (only fixes and chores since it) is the fast path and is tagged `vX.Y.Z` stable on its push, so there is never a patch candidate:
+Every releasable push releases the version git-cliff computes from the conventional commits since the last stable release. A minor or major version is cut as the next release candidate, `vX.Y.0-rc.N`; a patch of the last stable release (for example, only fixes since it) is the fast path and is tagged `vX.Y.Z` stable on its push, so there is never a patch candidate:
 
 | Merge (after `v1.2.9`) | Tag | Why |
 |-------|-----|-----|
 | `fix: x` | `v1.2.10` | a patch of the last stable release, tagged stable on its push |
 | `feat: add x` | `v1.3.0-rc.1` | a `feat` puts the cycle on the next minor |
 | `fix: y` | `v1.3.0-rc.2` | a fix during a cycle rides its next candidate |
-| `chore(deps): bump y` | `v1.3.0-rc.3` | releasable, so the next candidate |
-| `test: fix a failing test` | `v1.3.0-rc.4` | a test fix can replace an existing candidate |
+| `chore(deps): bump y` | none | `chore` is skipped |
+| `ci(tools): bump y` | none | `ci` is skipped |
+| `test: fix a failing test` | `v1.3.0-rc.3` | a test fix can replace an existing candidate |
 | `docs: fix a typo` | none | `docs` is skipped, so there is nothing new to put in a candidate |
 | `refactor!: drop y` | `v2.0.0-rc.1` | a breaking change moves the target, and the series restarts at `rc.1` |
 
@@ -55,7 +63,9 @@ The first release of a repository with no stable tag is a candidate. On a mainte
 
 `--patch-candidates` (team file `gen.ci.patchCandidates: true`) drops the fast path: a patch is cut as a candidate too, `v1.2.10-rc.1` for `fix: x` above and `v1.2.10-rc.2` for the next fix, on the default branch and on a maintenance branch alike, so no push tags a stable release. It is for a repository whose consumers follow a semver range that takes its next patch on their own (`>=1.17.0 <1.18.0`): every stable release is then a promotion of a candidate proven first. A maintenance branch's candidate is promoted on that branch, `devctl release promote <owner/repo> --branch release-X.Y --version vX.Y.Z-rc.N`.
 
-A push whose commits git-cliff all skips (`docs`, `style`, `test`) or drops as non-conventional tags nothing, except that a conventional `test:` commit after an existing candidate for the computed version cuts the next candidate. This lets a test fix replace a red candidate without depending on its pipeline status; it also applies when that candidate is green. Tests remain excluded from the version bump and release notes, and a test-only push with no pending candidate cuts nothing. Docs and style still cannot spend an rc number and a publish pipeline. A candidate is flagged as a GitHub pre-release, so it does not surface as the repo's "Latest release", and the `/^v.*/` CircleCI tag filter publishes it like any other tag.
+A push whose commits git-cliff all skips (`ci`, `chore`, `docs`, `style`, `test`) or drops as non-conventional tags nothing, except that a conventional `test:` commit after an existing candidate for the computed version cuts the next candidate. This lets a test fix replace a red candidate without depending on its pipeline status; it also applies when that candidate is green. Tests remain excluded from the version bump and release notes, and a test-only push with no pending candidate cuts nothing. Docs, style, ci and chore still cannot spend an rc number and a publish pipeline. A candidate is flagged as a GitHub pre-release, so it does not surface as the repo's "Latest release", and the `/^v.*/` CircleCI tag filter publishes it like any other tag.
+
+Use `fix` or `feat` for a dependency or build change that needs its own release. A `ci`, `chore` or `docs` change waits for the next releasable commit, including on fork lines.
 
 The single-version Auto-release workflow creates its tags and GitHub releases with a short-lived installation token of the `giantswarm-release` GitHub App, so a repository's GitHub Actions workflows listening on `push.tags` (for example `v*`) or `release` can run for candidates and stable releases. The App must be installed on the consuming repository with **Contents: write**, and `RELEASE_BOT_CLIENT_ID` and `RELEASE_BOT_PRIVATE_KEY` must be available as Actions secrets. The token is scoped to that repository and minted only when a tag was selected, after the release guards pass. Missing or unusable App credentials fail the job before a tag or release is created; there is no fallback to `GITHUB_TOKEN`, whose tag pushes and release events [do not start workflows](https://docs.github.com/en/actions/concepts/security/github_token#when-github_token-triggers-workflow-runs). Checkout, release-note lookups and CircleCI verification keep using the workflow's own read-only token. Existing repositories need the regenerated workflow; a tag already created with `GITHUB_TOKEN` gains no run retroactively. The separate `multi-image` workflow still uses `GITHUB_TOKEN` and relies on CircleCI for tag builds.
 
@@ -212,6 +222,20 @@ defaults, which removes the language and Helm hooks and skips schema generation.
 example, a Go repository with a chart can regenerate with
 `devctl gen precommit --language go --flavors helmchart`; keep any other original options.
 
+Each chart also gets a `helm-docs-description-<chart>` check for its `values.yaml`. The pinned schema generator
+silently drops description continuation lines containing `--`. This check reports the file and line to reword
+(for example, replace the dash pair with an em dash), while allowing `--` in the first description line and the
+`@default`, `@notationType` and `@section` annotations. Ordinary comments and text inside YAML strings or block
+scalars are allowed. The hook installs pinned PyYAML in its isolated Python environment; the check itself runs
+offline and changes no files. Run pre-commit after `devctl gen precommit`: generation alone still uses the
+upstream parser. For example, reword the second line here before regenerating the schema:
+
+```yaml
+# -- Storage class of the volume.
+# Empty means the cluster default -- never a literal "--".
+storageClass: ""
+```
+
 A Go repository's config also refuses a `require` line in any `go.mod` (single or in a block) whose trailing comment has more than one word (`go-mod-require-comment`): Renovate's gomod manager reads only a one-word comment such as `// indirect` and skips the whole line otherwise, so that dependency is never updated and nothing says so. The explanation goes on a comment line above the require.
 
 A Go repository's `golangci-lint` hook, like `make lint` of `devctl gen makefile --language go`, passes no linter flags: the linters live in the repository's golangci-lint configuration, so a bare `golangci-lint run` lints with the same set. Both commands write `.golangci.yaml` (gosec and goconst on top of the standard set) when the repository has no configuration. A repository's own `.golangci.yml` or `.golangci.yaml` is kept as it is, except that gosec and goconst are added to `linters.enable` when it neither enables nor disables them (and govet too when `linters.default` replaces the standard set); a TOML or JSON configuration, or one whose `linters.enable` is a flow sequence, fails generation naming the linters to enable.
@@ -227,7 +251,7 @@ linters:
 
 Repositories can set `ignore-tests: false` to check test literals too, or tune `min-occurrences` and `min-len` under the same `goconst` mapping. To opt out, remove `goconst` from `linters.enable` if present and add it to `linters.disable`. Generation preserves these choices. A repository with production goconst debt still needs to address it or choose one of these overrides.
 
-Before pushing a Go change, run `make lint`. It requires `goimports` on PATH and first runs `goimports -local "$(MODULE)" -l .`, with `MODULE` read from `go list -m`, to check the import formatting required by CI. Listed files or a goimports error fail the target without changing source files. Run `make imports` to apply the formatting, then retry `make lint`.
+Before pushing a Go change, run `make lint`. It uses `goimports` from PATH, or installs `golang.org/x/tools/cmd/goimports@v0.50.0` into `go env GOBIN` (defaulting to `$(go env GOPATH)/bin`) when missing. The installed binary does not need to be on PATH. Installation failures fail the target. It first runs `goimports -local "$(MODULE)" -l .`, with `MODULE` read from `go list -m`, to check the import formatting required by CI. Listed files or a goimports error fail the target without changing source files. Run `make imports` to apply the formatting, then retry `make lint`.
 
 No hook reads protobuf-generated code: the config's top-level `exclude` skips `*_pb.*` (protoc-gen-es, grpc-tools), `*_pb2.py`, `*_pb2.pyi`, `*_pb2_grpc.py` and `*.pb.go` with its `_grpc`, `.gw`, `.validate` and `_vtproto` variants. Their generator is the source of truth, so a hook that rewrote them (`end-of-file-fixer` on buf's TypeScript output, `go-imports -local`, `ruff --fix`) would be undone by the next generation. Hand-written files next to them, a `gen/` directory's `README.md` or `buf.gen.yaml` included, are still checked. The fixer hooks also skip `testdata/`, `.yarn/` and the vendored subcharts under `helm/<chart>/charts/`.
 
@@ -252,6 +276,12 @@ devctl gen renovate --language LANGUAGE
 ```
 
 Note: The `LANGUAGE` value is not validated currently. `go`, `python` and `node` add the matching language preset; every other value (e.g. `generic`) renders the base preset alone.
+
+The command also initializes an empty, repo-owned `renovate-custom.json5` when it is absent and extends it last. Commit both files in the same pull request. Existing custom files are preserved on every run; add repository-specific rules there, and they apply from that merge without another align-files run. Rules shared by a class of repositories belong in giantswarm/renovate-presets.
+
+The preset reference needs the repository's name even before it has custom rules. The command reads the `giantswarm/<name>` path of the origin remote, or accepts `--repo-name <name>` for a checkout without that remote. The checkout directory's name is never used.
+
+For a repository with an older generated config, run this command with the repository's existing generation options and commit both files before adding custom rules. If the pull request introduces `renovate-custom.json5`, regenerate the root config in that same pull request: adding the custom file alone to an older config still leaves its rules inactive until alignment. Once initialized, keep the custom file (use `{}` for no overrides), because Renovate cannot resolve a preset that has been deleted.
 
 The giantswarm/github align-files workflow runs this generator for repositories on devctl-generated CI (with `--circleci-generated`, which disables Renovate's architect-orb updates and extends the ATS preset because `gen circleci` bakes those in) and for the [`customer` flavour](flavours.md#customer) (without it: customer repositories have no CircleCI). Every other repository keeps its hand-maintained `renovate.json5`.
 
@@ -314,6 +344,76 @@ devctl gen plans --flavour plans
 ```
 
 `.claude/settings.json` enables the `gs-plans` plugin, the plan-workflow skills, from the `giantswarm` marketplace (giantswarm/claude-code), with `autoUpdate` on so Claude Code refreshes the marketplace and its plugins after startup. devctl owns two entries, `extraKnownMarketplaces.giantswarm` and `enabledPlugins["gs-plans@giantswarm"]`, and keeps every other key of an existing file, so a team adds its own settings in the same file. The JSON is rewritten with sorted keys and two-space indentation; strings and numbers stay as written. The skills live in the plugin, not in the repository; the repository's own rules, such as which plan stages are required, stay in its `AGENTS.md`.
+
+## Generating agent instructions
+
+Writes Giant Swarm's shared instructions for coding agents into the repository's root `AGENTS.md`, which Claude Code, Codex, Cursor and other agents read.
+
+```nohighlight
+devctl gen llm --flavour app --language go
+```
+
+The instructions sit in a block at the top of `AGENTS.md`:
+
+```markdown
+<!-- BEGIN devctl-managed: edits in this block are overwritten -->
+<!-- markdownlint-disable-file MD041 -->
+
+## Giant Swarm conventions
+…
+
+<!-- END devctl-managed -->
+
+## This repository
+```
+
+devctl owns the block and replaces it on every run. Everything outside it belongs to the repository and is kept byte for byte: put the repository's own instructions below the block, where they take precedence over it. A new `AGENTS.md` gets an empty `## This repository` section for them. The block passes markdownlint and prettier with their default settings, which many repositories run in pre-commit; prettier's `proseWrap: always` rewraps it. The one exception is markdownlint's rule that a file starts with a top-level heading: the begin marker comes first, so the block turns that rule off for the whole file, including text outside the block. The block holds only short rules for every change; Go repositories get one more, for `goimports`. It also asks the agent to point Giant Swarm staff once to the plugins of the [giantswarm/claude-code](https://github.com/giantswarm/claude-code) marketplace when their skills are missing: `gs-base` and `gs-dev`, plus `gs-godev` for Go and `gs-appdev` for the `app` flavour. Longer guidance comes from the style guides in [giantswarm/fmt](https://github.com/giantswarm/fmt) and the plugins in [giantswarm/claude-code](https://github.com/giantswarm/claude-code), not from generated skills.
+
+On every run, `gen llm` also:
+
+- adds an import of `AGENTS.md` to a `CLAUDE.md` or `.claude/CLAUDE.md` that has content of its own and no import yet (`@AGENTS.md`, or `@../AGENTS.md` from `.claude/`), so that Claude Code reads both;
+- links `.claude/skills` to `../.agents/skills` when the repository has skills in `.agents/skills`, so that Claude Code finds the same skills as other agents;
+- deletes `.cursor/rules/zz_generated.base-llm-rules.mdc` and `.cursor/rules/zz_generated.go-llm-rules.mdc`, which earlier versions generated, and the `.cursor` directories they leave empty.
+
+Nothing is generated for the [`fork` flavour](flavours.md).
+
+`AGENTS.md` and `.agents/skills` cover instructions and skills only. Hooks, permissions and MCP servers stay in each agent's own configuration, such as `.claude/settings.json` or `.mcp.json`; `gen llm` neither generates nor moves them. Tooling shared across repositories ships as a plugin in [giantswarm/claude-code](https://github.com/giantswarm/claude-code).
+
+### Repositories with existing instructions
+
+A repository whose `AGENTS.md`, `CLAUDE.md` or `.claude/CLAUDE.md` has instructions outside a devctl-managed block, or whose skills are in a `.claude/skills` directory, needs a migration first. Until then, `gen llm` leaves the repository unchanged and prints a warning that says so; the command still succeeds, so the rest of an alignment run is not affected. Migrate it with:
+
+```nohighlight
+devctl gen llm --flavour app --language go --migrate-instructions
+```
+
+The migration:
+
+- moves the content of `CLAUDE.md`, or else `.claude/CLAUDE.md`, below the block in a new `AGENTS.md`, unless `AGENTS.md` already has instructions. A moved `CLAUDE.md` is left as `@AGENTS.md`; a moved `.claude/CLAUDE.md` is deleted, and its relative imports and links are rewritten to work from the root.
+- keeps a Claude file that has instructions next to an existing `AGENTS.md`, and adds the import to it.
+- moves the skill directories in `.claude/skills` to `.agents/skills`, drops links in it that point to those skills, and replaces `.claude/skills` with a link to `../.agents/skills`.
+
+Moved content is copied as it is. Review the result before committing it: text that names Claude, starts with `# CLAUDE.md`, or repeats a rule from the block reads better adjusted.
+
+### Warnings and how to fix them
+
+Both modes check the repository before they change anything. Each problem is printed with its path and its fix, and the repository stays as it is:
+
+- malformed devctl-managed markers, for example an end marker without a begin marker;
+- an `AGENTS.md` that is a link, which would put the block into another file;
+- a Claude file that links anywhere other than `AGENTS.md`;
+- `.claude`, `.agents` or `.agents/skills` as links or files, and `.claude/skills` as a file or a link to anywhere other than `../.agents/skills`;
+- names that differ only in case, such as `agents.md`;
+- outputs that Git would ignore, such as an `AGENTS.md` or `.claude/` entry in `.gitignore`: a commit with `git add -A` would leave them out;
+- entries in `.claude/skills` that cannot move: loose files, links elsewhere, and skills with the same name in `.agents/skills`.
+
+In default mode the command still succeeds, so that an alignment run goes on with the other generators. With `--migrate-instructions` it fails after printing the findings, because the migration that was asked for did not happen.
+
+Add `--dry-run` to see the changes, or the findings, without changing anything. A repository that is up to date gets `gen llm would make no changes`.
+
+### Your own Claude instructions
+
+By default, Claude Code reads `AGENTS.md` only when there is no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md` in the working directory or above it (see [Claude Code: AGENTS.md](https://code.claude.com/docs/en/memory#agents-md)). A `CLAUDE.md` in a directory that contains your checkouts, or your own ignored `CLAUDE.local.md`, therefore hides `AGENTS.md` from your Claude Code. `~/.claude/CLAUDE.md` does not count. Either move such instructions to `~/.claude/CLAUDE.md`, or set **Project instructions** to `claude-md-and-agents-md` in `/config`, so that Claude Code reads both.
 
 ## Generating CircleCI configuration
 

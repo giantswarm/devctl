@@ -43,7 +43,7 @@ func TestRunHonorsCancelledCommandContext(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetContext(ctx)
 	r := &runner{flag: &flag{Grouping: GroupingDependency}, logger: logrus.New(), stdout: io.Discard, stderr: io.Discard}
-	err := r.Run(cmd, []string{"dependency"})
+	err := r.Run(cmd, []string{GroupingDependency})
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("error = %v, want context cancellation", err)
 	}
@@ -141,13 +141,18 @@ func lifecycleRunner(t *testing.T, transport http.RoundTripper, watch bool) *run
 	return &runner{flag: &flag{Grouping: GroupingDependency, Watch: watch}, logger: logrus.New(), stdout: io.Discard, stderr: io.Discard, pollInterval: time.Millisecond}
 }
 
+const (
+	testBatchWorkerPhase     = "batch worker"
+	testCallerAndSignalPhase = "caller and signal"
+)
+
 func TestRunWaitsForDiscoveredWorkers(t *testing.T) {
 	pollStarted, initialFinished, discoveredStarted := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	releaseSearch, releaseWorker := make(chan struct{}), make(chan struct{})
 	var searches atomic.Int32
 	transport := lifecycleTransport(func(req *http.Request) (*http.Response, error) {
 		switch {
-		case req.URL.Path == "/search/issues":
+		case req.URL.Path == testSearchIssuesPath:
 			if searches.Add(1) == 1 {
 				return lifecycleResponse(req, `{"total_count":1,"items":[{"number":42,"html_url":"https://github.com/one/api/pull/42"}]}`)
 			}
@@ -172,7 +177,7 @@ func TestRunWaitsForDiscoveredWorkers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- r.run(ctx, &cobra.Command{}, []string{"dependency"}) }()
+	go func() { done <- r.run(ctx, &cobra.Command{}, []string{GroupingDependency}) }()
 	<-initialFinished
 	select {
 	case err := <-done:
@@ -207,7 +212,7 @@ func TestRunCancellationDrainsOwnedRequests(t *testing.T) {
 			started, cancelled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
 			var searches atomic.Int32
 			transport := lifecycleTransport(func(req *http.Request) (*http.Response, error) {
-				if req.URL.Path == "/search/issues" && searches.Add(1) == 1 {
+				if req.URL.Path == testSearchIssuesPath && searches.Add(1) == 1 {
 					if polling {
 						return lifecycleResponse(req, `{"total_count":0,"items":[]}`)
 					}
@@ -225,7 +230,7 @@ func TestRunCancellationDrainsOwnedRequests(t *testing.T) {
 			cmd := &cobra.Command{}
 			cmd.SetContext(ctx)
 			done := make(chan error, 1)
-			go func() { done <- r.Run(cmd, []string{"dependency"}) }()
+			go func() { done <- r.Run(cmd, []string{GroupingDependency}) }()
 			<-started
 			cancel()
 			<-cancelled
@@ -256,13 +261,13 @@ func TestWatchRunCanCancelWithoutPRs(t *testing.T) {
 	}), true)
 	cmd := &cobra.Command{}
 	cmd.SetContext(ctx)
-	if err := r.Run(cmd, []string{"dependency"}); !errors.Is(err, context.Canceled) {
+	if err := r.Run(cmd, []string{GroupingDependency}); !errors.Is(err, context.Canceled) {
 		t.Errorf("error = %v, want cancellation", err)
 	}
 }
 
 func TestRunSignalCancellationIsGraceful(t *testing.T) {
-	for _, phase := range []string{"initial search", "watch", "poll search", "batch worker", "caller and signal"} {
+	for _, phase := range []string{"initial search", "watch", "poll search", testBatchWorkerPhase, testCallerAndSignalPhase} {
 		t.Run(phase, func(t *testing.T) {
 			parent, cancelParent := context.WithCancel(context.Background())
 			defer cancelParent()
@@ -271,9 +276,9 @@ func TestRunSignalCancellationIsGraceful(t *testing.T) {
 			var searches atomic.Int32
 			var stopped bool
 			r := lifecycleRunner(t, lifecycleTransport(func(req *http.Request) (*http.Response, error) {
-				if req.URL.Path == "/search/issues" {
+				if req.URL.Path == testSearchIssuesPath {
 					search := searches.Add(1)
-					if phase == "batch worker" {
+					if phase == testBatchWorkerPhase {
 						return lifecycleResponse(req, `{"total_count":1,"items":[{"number":42,"html_url":"https://github.com/one/api/pull/42"}]}`)
 					}
 					if phase == "poll search" && search == 1 {
@@ -281,21 +286,21 @@ func TestRunSignalCancellationIsGraceful(t *testing.T) {
 					}
 				}
 				interrupt()
-				if phase == "caller and signal" {
+				if phase == testCallerAndSignalPhase {
 					cancelParent()
 				}
 				if phase == "watch" {
 					return lifecycleResponse(req, `{"total_count":0,"items":[]}`)
 				}
 				return nil, req.Context().Err()
-			}), phase != "batch worker")
+			}), phase != testBatchWorkerPhase)
 			r.notifyContext = func(ctx context.Context, signals ...os.Signal) (context.Context, context.CancelFunc) {
 				return signalCtx, func() { stopped = true; interrupt() }
 			}
 			cmd := &cobra.Command{}
 			cmd.SetContext(parent)
-			err := r.Run(cmd, []string{"dependency"})
-			if phase == "caller and signal" {
+			err := r.Run(cmd, []string{GroupingDependency})
+			if phase == testCallerAndSignalPhase {
 				if !errors.Is(err, context.Canceled) {
 					t.Errorf("error = %v, want caller cancellation", err)
 				}
@@ -340,7 +345,7 @@ func TestProcessPRCancellationPreservesKnownMerge(t *testing.T) {
 	}
 	ps := &pr.PRStatus{Owner: "one", Repo: "api", Number: 42}
 	(&runner{flag: &flag{}}).processPR(ctx, client, ps)
-	if got := ps.GetStatus(); got != "Merged (squash)" {
+	if got := ps.GetStatus(); got != testMergedSquashStatus {
 		t.Errorf("acknowledged merge was lost on cancellation: %q", got)
 	}
 }

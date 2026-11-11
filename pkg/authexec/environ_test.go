@@ -76,17 +76,22 @@ func TestPersonLoginEnvironmentCase(t *testing.T) {
 	c := Config{
 		Self: filepath.Join(bin, "devctl"), Path: bin, Environ: env, Stderr: &stderr,
 		Token: func(context.Context, time.Duration) (authstore.Token, error) {
-			t.Fatal("outside repository requested the App login")
+			t.Fatal("person-login fallback requested the App login")
 			return authstore.Token{}, nil
 		},
 		Exec: func(_ string, _ []string, got []string) (int, error) {
 			if !slices.Equal(got[:len(got)-1], want) {
-				t.Fatalf("outside gh environment = %v, want %v plus the chain", got, want)
+				t.Fatalf("person-login gh environment = %v, want %v plus the chain", got, want)
 			}
 			return agentcli.ExitOK, nil
 		},
 	}
-	if code := Run(context.Background(), c, name, []string{"pr", "list", "--repo", "outside/repo"}); code != agentcli.ExitOK {
-		t.Fatalf("Run = %d, stderr %q", code, stderr.String())
+	for _, args := range [][]string{
+		{"pr", "list", "--repo", "outside/repo"},
+		{"issue", "comment", "1", "--repo", "giantswarm/devctl", "--attach", "fixture.png"},
+	} {
+		if code := Run(context.Background(), c, name, args); code != agentcli.ExitOK {
+			t.Fatalf("Run(%v) = %d, stderr %q", args, code, stderr.String())
+		}
 	}
 }

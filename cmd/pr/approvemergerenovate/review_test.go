@@ -86,7 +86,7 @@ func TestProcessPRNeedsCallersEffectiveApproval(t *testing.T) {
 			want := tt.want
 			wantMerges := 0
 			if want == "" {
-				want = "Merged (squash)"
+				want = testMergedSquashStatus
 				wantMerges = 1
 			}
 			if got := ps.GetStatus(); got != want {

@@ -220,7 +220,7 @@ workflows:
     - architect/run-tests-with-ats:
         name: execute-chart-tests
         context: architect
-        app-test-suite_container_tag: "1.0.3"
+        app-test-suite_container_tag: "1.1.1"
         # app-test-suite 1.x provisions no cluster: the job creates the kind
         # cluster and runs the pinned image against its kubeconfig.
         create_kind_cluster: true
@@ -228,7 +228,7 @@ workflows:
         pre-steps:
         - pull-chart-test-images:
             registry: gsoci.azurecr.io
-            images: "gsoci.azurecr.io/giantswarm/app-test-suite:1.0.3 gsoci.azurecr.io/giantswarm/kind-node:v1.37.0"
+            images: "gsoci.azurecr.io/giantswarm/app-test-suite:1.1.1 gsoci.azurecr.io/giantswarm/kind-node:v1.37.0"
         requires:
         - build-chart
         filters:
@@ -265,106 +265,6 @@ workflows:
             only: /^v.*/
           branches:
             ignore: /.*/
-
---- .cursor/rules/zz_generated.base-llm-rules.mdc
----
-description: Instructions for AI/LLM assistants
-alwaysApply: true
----
-
-# Instructions for AI/LLM assistants
-
-You are an AI assistant acting as an expert software developer and platform engineer working on Giant Swarm platform components. Your task is to act as a pair programmer and help others working in this codebase to keep the code delightful to work with. This includes ensuring that the code adheres to Giant Swarm's quality standards, keeping the project well-architected and organized, and maintaining supporting documentation, diagrams, and rules for other AI assistants.
-
-# Persona: Senior Giant Swarm Platform Engineer
-
-- **Technical Depth**: You are a domain expert in Go (formerly, golang), Helm, Kubernetes APIs and development, software design patterns, software architecture, Go application security, software testing, and software performance optimization,
-- **Problem-Solver**: You approach issues methodically, prioritizing safety and stability. You first investigate deeply with the tools provided to you, before suggesting changes. You find and fix the root cause, not the symptoms.
-- **Clear Communicator**: You explain complex topics clearly and provide actionable steps.
-- **Collaborative**: You guide users, suggest diagnostic paths, and help them think through problems.
-- **Best Practices**: You adhere to Giant Swarm operational and technical standards.
-
-# Reviewer Guidelines
-
-## Core Behaviors
-
-- Unless directed by the user, never use or recommend external linters, code analysis, or other tooling which isn't already recommended in Giant Swarm agent rules or style guides.
-- Always adhere to the central coding guidelines and best practices maintained at: @https://github.com/giantswarm/fmt/
-- Prioritize readability, maintainability, and security.
-- Write comprehensive tests and documentation.
-- If documentation is available in the `docs` folder, keep this up-to-date when changing code.
-- Maintain the main README.md file for correctness.
-- If a changelog is available as CHANGELOG.md, add your changes to it, unless the repository has `.github/workflows/zz_generated.auto_release.yaml`: there GitHub Releases are the changelog, written from the pull request titles, and CHANGELOG.md only points at them, so a pull request does not edit it.
-
-## Release Management
-
-- Follow the changelog and release guidelines from @https://github.com/giantswarm/fmt/tree/main/releases
-- Use semantic versioning and conventional commits
-
-
-## Language-Specific Guidelines
-
-Additional language-specific rules can be found in the general style guide and in the other rules files in this repository.
-
-
-### Go Development
-
-- Go code must always adhere to the Go language-specific development guidelines and patterns rules in this repository.
-
-### Go Application Security
-
-- Ensure all Go dependencies are up to date.
-- Follow best security practices for Go applications.
-
-
----
-
-For detailed guidelines and examples, always refer to: @https://github.com/giantswarm/fmt/
-
-
-<!--
-DO NOT EDIT. Generated with devctl.
-This file is maintained at:
-https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/base_llm_rules.mdc.template
-Manual changes will be overwritten.
--->
-
---- .cursor/rules/zz_generated.go-llm-rules.mdc
----
-description: Go language-specific development guidelines and patterns
-globs: **/*.go,go.mod,go.sum
----
-
-These guidelines apply to Go code and supplement any other general development instructions or workflows.
-
-# Go Code Guidelines
-
-- All Go code is expected to adhere to the rules outlined in the Giant Swarm style guide located at @https://github.com/giantswarm/fmt/tree/main/go .
-- Always fetch and fully understand the style guide before reviewing any code.
-- The Giant Swarm style guide linked above must always be considered definitive. ALL rules and provisions contained in the style guide MUST be met.
-- When applying the style guide, always list all instances of a particular issue, grouped by the finding type.
-
-## Formatting
-
-CI will perform the following check for proper code formatting and sorting/grouping of imports:
-
-```bash
-go install golang.org/x/tools/cmd/goimports@latest && \
-if [[ -n $(goimports -local github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME} -l .) ]];
-then
-  goimports -local github.com/${CIRCLE_PROJECT_USERNAME}/${CIRCLE_PROJECT_REPONAME} -d . && exit 1;
-fi
-```
-
-When creating or modifying Go files, perform the according check and mitigate any issues before committing.
-
-
-<!--
-DO NOT EDIT. Generated with devctl.
-This file is maintained at:
-https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/llm/internal/file/go_rules.mdc.template
-Manual changes will be overwritten.
--->
 
 --- .github/pull_request_template.md
 ### What does this PR do?
@@ -557,7 +457,7 @@ jobs:
         permission-organization-projects: write
     - name: Add issue to personal board
       if: ${{ env.BOARD != 'null' && env.BOARD != ''  && env.BOARD != null }}
-      uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0
+      uses: actions/add-to-project@f2c1f1fa649a891be84948ea89b5dfba1526ef05 # v2.0.1
       with:
         project-url: ${{ env.BOARD }}
         github-token: ${{ steps.app-token.outputs.token }}
@@ -592,7 +492,7 @@ jobs:
         permission-organization-projects: write
     - name: Add issue to team board
       if: ${{ env.BOARD != 'null' && env.BOARD != '' && env.BOARD != null }}
-      uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0
+      uses: actions/add-to-project@f2c1f1fa649a891be84948ea89b5dfba1526ef05 # v2.0.1
       with:
         project-url: ${{ env.BOARD }}
         github-token: ${{ steps.app-token.outputs.token }}
@@ -616,7 +516,7 @@ jobs:
         permission-issues: read
         permission-organization-projects: write
     - name: Add issue to roadmap board
-      uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0
+      uses: actions/add-to-project@f2c1f1fa649a891be84948ea89b5dfba1526ef05 # v2.0.1
       with:
         project-url: https://github.com/orgs/giantswarm/projects/273
         github-token: ${{ steps.app-token.outputs.token }}
@@ -1912,6 +1812,61 @@ repos:
   # lines from hello-world-app's) and CI then rejected it.
   - repo: local
     hooks:
+      # The schema generator drops a description continuation containing --.
+      # Keep real helm-docs annotations, but name prose that needs rewording.
+      - id: helm-docs-description-example-go-service
+        name: "check helm/example-go-service/values.yaml description continuations"
+        language: python
+        additional_dependencies: ['PyYAML==6.0.3']
+        files: ^helm/example-go-service/values\.yaml$
+        entry: python -c
+        args:
+          - |
+            import re
+            import sys
+            import yaml
+            # Match the description opener accepted by helm-values-schema-json v2.6.0,
+            # including an optional path and type. Only continuation lines lose text.
+            opener = re.compile(r'^#\s+(?:"[^"]*"|[^@\-\s]*)(?:\.(?:"[^"]*"|[^\s.]*))*\s*--')
+            annotations = {"@default", "@notationType", "@section"}
+            failed = False
+            for path in sys.argv[1:]:
+                with open(path, encoding="utf-8") as source:
+                    text = source.read()
+                # A line beginning with '#' inside a YAML scalar is data, not a comment.
+                # Scanning tokens also handles quoted multiline strings and block scalars.
+                try:
+                    scalars = iter(token for token in yaml.scan(text) if isinstance(token, yaml.ScalarToken))
+                    scalar = next(scalars, None)
+                    offset = 0
+                    active = False
+                    for number, line in enumerate(text.splitlines(keepends=True), 1):
+                        comment = line.lstrip(" \t")
+                        start = offset + len(line) - len(comment)
+                        offset += len(line)
+                        while scalar is not None and scalar.end_mark.index <= start:
+                            scalar = next(scalars, None)
+                        if not comment.startswith("#") or (
+                            scalar is not None and scalar.start_mark.index <= start < scalar.end_mark.index
+                        ):
+                            active = False
+                            continue
+                        if not active:
+                            active = opener.match(comment) is not None
+                            continue
+                        annotation, separator, _ = comment[1:].strip().partition("--")
+                        if separator and annotation.strip() not in annotations:
+                            print(
+                                f"{path}:{number}: '--' in a helm-docs description continuation is "
+                                "silently dropped by helm-values-schema-json; reword this line "
+                                "(for example, use an em dash).",
+                                file=sys.stderr,
+                            )
+                            failed = True
+                except yaml.YAMLError as error:
+                    print(f"{path}: {error}", file=sys.stderr)
+                    failed = True
+            sys.exit(1 if failed else 0)
       - id: helm-schema-example-go-service
         name: "verify helm/example-go-service/values.schema.json is up to date"
         language: golang
@@ -1965,6 +1920,49 @@ rules:
   document-start: disable
   line-length:
     max: 200
+
+--- AGENTS.md
+<!-- BEGIN devctl-managed: edits in this block are overwritten -->
+<!-- markdownlint-disable-file MD041 -->
+
+## Giant Swarm conventions
+
+devctl maintains this block from [its template][devctl-agents-block] and
+overwrites changes to it. Instructions for this repository go in the section
+below. Where they differ from this block, they take precedence.
+
+[devctl-agents-block]: https://github.com/giantswarm/devctl/blob/main/pkg/gen/input/llm/internal/file/agents_block.md.template
+
+- Never put customer names or other customer information in code, commit
+  messages, issues or pull requests. Most Giant Swarm repositories are public,
+  and private ones are kept ready to become public.
+- Giant Swarm's style guides are in <https://github.com/giantswarm/fmt>, one
+  directory per topic (go, helm, kubernetes, prometheus, …). Read the relevant
+  guide before you write or review that kind of code.
+- Use conventional commits for commit messages and pull request titles.
+- If `.github/workflows/zz_generated.auto_release.yaml` exists, GitHub Releases
+  are written from pull request titles: do not edit CHANGELOG.md. Otherwise,
+  add your change to CHANGELOG.md as described in
+  <https://github.com/giantswarm/fmt/blob/main/releases/changelog.md>.
+- If `.pre-commit-config.yaml` exists, run
+  `pre-commit run --files <changed files>` before committing; not every clone
+  has the hooks installed.
+- Do not add linters, formatters or other tooling unless asked; use what the
+  repository already has.
+- Put documentation in `docs/` rather than growing README.md, which gives an
+  overview and links into `docs/`. When a change affects documented behaviour,
+  update the documentation in the same pull request.
+- If the skills of the `giantswarm/claude-code` plugin marketplace are not
+  available to you and the user works at Giant Swarm, tell them once that
+  they can install the `gs-base`, `gs-dev`, `gs-godev` and `gs-appdev`
+  plugins from it.
+- Go: run `goimports -local github.com/giantswarm/<repository>` on the files
+  you change. CI with architect-orb fails when imports are grouped
+  differently.
+
+<!-- END devctl-managed -->
+
+## This repository
 
 --- CHANGELOG.md
 # Changelog
@@ -2367,19 +2365,20 @@ helm-test: install-helm-unittest ## Run the chart unit tests (helm-unittest).
 # network error (a connection reset) fails it; the install runs up to
 # HELM_UNITTEST_ATTEMPTS times, HELM_UNITTEST_RETRY_DELAY seconds apart. A failed attempt
 # can leave a half-installed plugin behind that the next install refuses, so it is
-# uninstalled before each retry.
+# uninstalled after every failure, including the last. A matching version must also
+# run its binary: plugin metadata alone survives an interrupted download.
 install-helm-unittest:
 	@have=$$(helm plugin list 2>/dev/null | awk '$$1 == "unittest" {print $$2}'); \
 	want=$$(echo "$(HELM_UNITTEST_VERSION)" | sed 's/^v//'); \
-	if [ "$$have" != "$$want" ]; then \
+	if [ "$$have" != "$$want" ] || ! helm unittest --version >/dev/null 2>&1; then \
 		[ -z "$$have" ] || helm plugin uninstall unittest >/dev/null 2>&1 || true; \
 		verify=""; \
 		helm plugin install --help 2>&1 | grep -q -e '--verify' && verify="--verify=false"; \
 		attempt=1; \
 		until helm plugin install $$verify https://github.com/helm-unittest/helm-unittest --version $(HELM_UNITTEST_VERSION); do \
+			helm plugin uninstall unittest >/dev/null 2>&1 || true; \
 			[ "$$attempt" -lt "$(HELM_UNITTEST_ATTEMPTS)" ] || exit 1; \
 			echo "helm-unittest install failed (attempt $$attempt of $(HELM_UNITTEST_ATTEMPTS)), retrying in $(HELM_UNITTEST_RETRY_DELAY)s" >&2; \
-			helm plugin uninstall unittest >/dev/null 2>&1 || true; \
 			sleep $(HELM_UNITTEST_RETRY_DELAY); \
 			attempt=$$((attempt + 1)); \
 		done; \
@@ -2397,7 +2396,7 @@ test: helm-test
 # pins aligned with gen circleci; repositories with explicit CI pins override them
 # in Makefile.custom.mk. This target supports ATS 1.x (the generated CI default).
 # renovate: datasource=docker depName=gsoci.azurecr.io/giantswarm/app-test-suite
-ATS_VERSION ?= 1.0.3
+ATS_VERSION ?= 1.1.1
 # renovate: datasource=docker depName=gsoci.azurecr.io/giantswarm/kind-node
 ATS_KIND_NODE_IMAGE_VERSION ?= v1.37.0
 ATS_KIND_NODE_IMAGE ?= gsoci.azurecr.io/giantswarm/kind-node:$(ATS_KIND_NODE_IMAGE_VERSION)
@@ -2462,8 +2461,8 @@ APPLICATION    := $(shell go list -m | cut -d '/' -f 3)
 BUILDTIMESTAMP := $(shell date -u '+%FT%TZ')
 GITSHA1        := $(shell git rev-parse --verify HEAD)
 MODULE         := $(shell go list -m)
-# main() is usually in `main.go`, but sometimes in `cmd/main.go` (for example in newer kubebuilder projects)
-MAIN_SOURCE    := $(shell if test -e cmd/main.go; then echo cmd/main.go; else echo main.go; fi)
+# Build the whole main package, including sibling files, at the root or in cmd/.
+MAIN_SOURCE    := $(shell if test -e cmd/main.go; then echo ./cmd; else echo .; fi)
 OS             := $(shell go env GOOS)
 ARCH           := $(shell go env GOARCH)
 SOURCES        := $(shell find . -name '*.go')
@@ -2559,7 +2558,7 @@ install: ## Install the application.
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o "$(shell go env GOPATH)/bin/$(APPLICATION)" "$(MAIN_SOURCE)"
 
 .PHONY: run
-run: ## Runs go run main.go.
+run: ## Runs the main package with go run.
 	@echo "====> $@"
 	go run -ldflags "$(LDFLAGS)" -race "$(MAIN_SOURCE)"
 
@@ -2575,9 +2574,18 @@ imports: ## Runs goimports.
 	goimports -local $(MODULE) -w .
 
 .PHONY: lint
-lint: ## Checks import formatting and runs golangci-lint (requires goimports).
+lint: ## Checks import formatting and runs golangci-lint (installs goimports if missing).
 	@echo "====> $@"
-	@files=$$(goimports -local "$(MODULE)" -l .) || exit $$?; \
+	@tool=$$(command -v goimports) || { \
+		bindir=$$(go env GOBIN) || exit $$?; \
+		if [ -z "$$bindir" ]; then \
+			gopath=$$(go env GOPATH) || exit $$?; \
+			bindir="$$gopath/bin"; \
+		fi; \
+		GOBIN="$$bindir" go install golang.org/x/tools/cmd/goimports@v0.50.0 || exit $$?; \
+		tool="$$bindir/goimports"; \
+	}; \
+	files=$$("$$tool" -local "$(MODULE)" -l .) || exit $$?; \
 	if [ -n "$$files" ]; then \
 		printf '%s\n' "$$files"; \
 		echo "Run 'make imports' to fix import formatting."; \
@@ -2733,25 +2741,26 @@ commit_preprocessors = [
 # feat -> Added, fix -> Fixed, all "internal change" types -> Changed,
 # security -> Security.
 #
-# `docs`, `style` and `test` are marked skip: none of them changes what
+# `ci`, `chore`, `docs`, `style` and `test` are marked skip: none of them changes what
 # ships. git-cliff decides the bump from the commits that are NOT skipped: a
 # breaking change bumps the major, `feat` the minor, every other type at least
 # the patch. A skipped commit is left out of the release notes and of the
-# bump, so a docs-, style- or test-only push outside a candidate cycle computes
-# the current version and the workflow tags nothing. During a cycle the workflow
-# lets a new test commit advance an existing candidate without changing its
-# version or notes. `chore` and `ci` keep releasing: a `chore(deps)` bump changes what
-# ships, a `ci` change how it is built.
+# bump, so a push containing only skipped types outside a candidate cycle
+# computes the current version and the workflow tags nothing; the changes ship
+# with the next releasable commit. During a cycle the workflow lets a new test
+# commit advance an existing candidate without changing its version or notes.
+# Use `fix` or `feat` when a dependency or build change needs a release of its
+# own.
 commit_parsers = [
   { message = "^feat",     group = "Added" },
   { message = "^fix",      group = "Fixed" },
   { message = "^refactor", group = "Changed" },
   { message = "^perf",     group = "Changed" },
   { message = "^docs",     skip = true },
-  { message = "^chore",    group = "Changed" },
+  { message = "^chore",    skip = true },
   { message = "^test",     skip = true },
   { message = "^build",    group = "Changed" },
-  { message = "^ci",       group = "Changed" },
+  { message = "^ci",       skip = true },
   { message = "^security", group = "Security" },
   { message = "^style",    skip = true },
 ]
@@ -3109,12 +3118,16 @@ package main
 
 func main() {}
 
+--- renovate-custom.json5
+// Repo-owned Renovate overrides. Edit this file; devctl preserves it.
+{}
+
 --- renovate.json5
 // DO NOT EDIT. This file is generated by `devctl gen renovate` and kept in sync
 // by the giantswarm/github align-files workflow. Repo-specific Renovate rules
-// belong in renovate-custom.json5 (repo root) -- it is added as the last
-// `extends` entry when present and never touched by devctl. Rules for a whole
-// class of repos belong in giantswarm/renovate-presets instead.
+// belong in renovate-custom.json5 (repo root) -- devctl initializes it once
+// and extends it last, preserving existing rules. Commit both files together.
+// Rules for a whole class of repos belong in giantswarm/renovate-presets instead.
 {
   extends: [
     // Base config - https://github.com/giantswarm/renovate-presets/blob/main/default.json5
@@ -3128,6 +3141,10 @@ func main() {}
     // (same condition as the architect orb disable below); a no-op for repos
     // without an ats/ Pipfile, so it is safe to extend for all generated-CI repos.
     'github>giantswarm/renovate-presets:tests-ats.json5',
+    // Repo-owned overrides -- last entry, so its rules win over the presets.
+    // Renovate resolves this from the default branch on every run: edits are
+    // live on merge, no regeneration needed.
+    'github>giantswarm/example-go-service:renovate-custom.json5',
   ],
   // Our automation commits onto Renovate branches. The giantswarm-release
   // GitHub App pushes what the generated workflows produce

@@ -3,10 +3,8 @@
 // pkg/releasewait for the release the merge triggered.
 //
 // A merge is refused before the first poll for a pull request no wait can
-// turn green (draft, closed, conflicting; exit 3), for a head behind its
-// base, whose checks ran against an older base than the one it would land
-// on (exit 3, and again after the wait for a base that moved during it;
-// --update-branch updates the head and waits again instead), for
+// turn green (draft, closed, conflicting; exit 3), for a head behind a strict
+// base (exit 3; --update-branch updates the head and waits again instead), for
 // a pull request another human opened (exit 5: bots, GitHub Apps, Giant
 // Swarm's automation accounts and the caller are fine) and in a repository
 // whose team-file entry opts out of agent merges (exit 5, naming the
@@ -276,7 +274,7 @@ func (m *Merger) Merge(ctx context.Context, owner, repo string, number int) (*Re
 	// stay ahead of the wait's own.
 	before := result.Warnings
 	for round := 1; ; round++ {
-		behind, err := m.behind(ctx, owner, repo, pr, queued)
+		behind, err := m.behind(ctx, owner, repo, pr)
 		if err != nil {
 			return result, err
 		}
@@ -510,17 +508,14 @@ const mergeableBehind = "behind"
 // mergeable state says behind without saying by how much.
 const behindStrict = -1
 
-// behind is the number of commits of the base the head lacks: a head whose
-// checks ran against an older base than the one it would land on. Behind a
-// strict base it is behindStrict by GitHub's mergeable state, behind any
-// other base the comparison of base and head, which the mergeable state
-// does not report. A base with a merge queue is 0 without --update-branch:
-// the queue tests every entry against the base it lands on.
-func (m *Merger) behind(ctx context.Context, owner, repo string, pr *github.PullRequest, queued bool) (int, error) {
+// behind reports a strict base's requirement regardless of --update-branch.
+// Other bases are compared only when updating was explicitly requested:
+// GitHub permits an unchanged green head behind a non-strict base.
+func (m *Merger) behind(ctx context.Context, owner, repo string, pr *github.PullRequest) (int, error) {
 	if pr.GetMergeableState() == mergeableBehind {
 		return behindStrict, nil
 	}
-	if queued && !m.updateBranch {
+	if !m.updateBranch {
 		return 0, nil
 	}
 	by, err := m.github.BehindBy(ctx, owner, repo, pr.GetBase().GetRef(), pr.GetHead().GetSHA())
@@ -538,8 +533,8 @@ func (m *Merger) behind(ctx context.Context, owner, repo string, pr *github.Pull
 const updateRounds = 3
 
 // refuseBehind is exit 3 for a head behind its base that is not to be
-// updated: without --update-branch, since its checks ran against an older
-// base than the one the merge lands it on, or after updateRounds waits
+// updated: without --update-branch when the base requires up-to-date
+// branches, or after updateRounds waits
 // during each of which the base moved. Nil means update it.
 func (m *Merger) refuseBehind(pr *github.PullRequest, behind, round int) error {
 	base := pr.GetBase().GetRef()
@@ -553,7 +548,7 @@ func (m *Merger) refuseBehind(pr *github.PullRequest, behind, round int) error {
 	switch {
 	case !m.updateBranch:
 		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable,
-			"%s; --update-branch updates it from %s and waits for its checks again (or update the branch and run the merge again)", state, base)
+			"%s; --update-branch updates it from %s and waits for its checks again (or update the branch and run the merge again); requiring up-to-date branches is a repository owner branch-protection setting", state, base)
 	case round > updateRounds:
 		return agentcli.NewExitError(agentcli.ExitNotApplicable, agentcli.VerdictNotApplicable,
 			"%s after %d waits; run the merge again once %s is quiet", state, round-1, base)

@@ -39,7 +39,8 @@ func noSessionBus(t *testing.T) {
 // CI running the tests sets some of them.
 func clearGitHubEnv(t *testing.T) {
 	t.Helper()
-	for _, name := range append([]string{authstore.EnvCI, envGH}, authstore.GitHubEnvVars...) {
+	t.Setenv("DEVCTL_UNSAFE_SKIP_VERSION_CHECK", "")
+	for _, name := range append([]string{authstore.EnvCI, envGH, "DEVCTL_UNSAFE_SKIP_VERSION_CHECK"}, authstore.GitHubEnvVars...) {
 		t.Setenv(name, "")
 	}
 }
@@ -130,6 +131,13 @@ func TestCheckWithAFreshCacheDoesNotOpenTheKeychain(t *testing.T) {
 	}
 	if err := check("0.9.0", false, &warnings); err == nil || !strings.Contains(err.Error(), "version 1.0.0 of devctl is released") {
 		t.Errorf("check of an older build: %v, want the cached release named", err)
+	}
+	for _, value := range []string{"true", "false", "", "invalid"} {
+		t.Setenv("DEVCTL_UNSAFE_SKIP_VERSION_CHECK", value)
+		err := check("0.9.0", false, &warnings)
+		if (err == nil) != (value == "true") {
+			t.Errorf("outdated build with skip=%q: %v", value, err)
+		}
 	}
 	if warnings.Len() != 0 {
 		t.Errorf("warned %q", warnings.String())
@@ -265,5 +273,73 @@ func TestCheckInAWorkflowStepWithGHTokenAuthenticates(t *testing.T) {
 	}
 	if warnings.Len() != 0 {
 		t.Errorf("warned %q", warnings.String())
+	}
+}
+
+// Failed release discovery must not prevent the command's real work. A known
+// newer version still refuses in TestCheckWithAFreshCacheDoesNotOpenTheKeychain.
+func TestCheckUnavailableReleaseWarnsAndContinues(t *testing.T) {
+	for _, status := range []int{http.StatusForbidden, http.StatusInternalServerError} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			clearGitHubEnv(t)
+			t.Setenv("DEVCTL_UNSAFE_FORCE_VERSION", "")
+			t.Setenv(authstore.EnvCI, "true")
+			brokenKeychain(t)
+			requests := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				if r.URL.Path != "/repos/giantswarm/devctl/releases" {
+					t.Errorf("unexpected release request: %s", r.URL.Path)
+				}
+				w.Header().Set("X-RateLimit-Remaining", "0")
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"message":"API rate limit exceeded"}`))
+			}))
+			t.Cleanup(srv.Close)
+			t.Setenv(agentcli.EnvGitHubAPIURL, srv.URL)
+			var warnings bytes.Buffer
+			if err := check("1.0.0", true, &warnings); err != nil {
+				t.Fatalf("lookup failure blocked the command: %v", err)
+			}
+			if requests == 0 || !strings.Contains(warnings.String(), "warning: could not check the latest devctl release:") {
+				t.Fatalf("requests=%d warnings=%q", requests, warnings.String())
+			}
+		})
+	}
+}
+
+// The component-owned opt-out works independently of the installed version,
+// cache and updater configuration. Only the documented literal enables it.
+func TestCheckUnsafeSkipVersionCheck(t *testing.T) {
+	clearGitHubEnv(t)
+	brokenKeychain(t)
+	t.Setenv("DEVCTL_UNSAFE_FORCE_VERSION", "")
+	t.Setenv(agentcli.EnvGitHubAPIURL, "://invalid")
+	config := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", config)
+
+	for _, value := range []string{"", "false", "1", "TRUE", " true ", "invalid", "true"} {
+		t.Run("value="+value, func(t *testing.T) {
+			t.Setenv("DEVCTL_UNSAFE_SKIP_VERSION_CHECK", value)
+			for _, version := range []string{"1.0.0", "2.0.0", "dev"} {
+				for _, noCache := range []bool{false, true} {
+					var warnings bytes.Buffer
+					err := check(version, noCache, &warnings)
+					if err != nil {
+						t.Errorf("check(%q, noCache=%v) = %v, skip=%q", version, noCache, err, value)
+					}
+					if (warnings.Len() == 0) != (value == "true") {
+						t.Errorf("warnings=%q, skip=%q", warnings.String(), value)
+					}
+				}
+			}
+		})
+	}
+	entries, err := os.ReadDir(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("check created configuration files: %v", entries)
 	}
 }

@@ -595,18 +595,9 @@ type checkRunGroup struct {
 	runs     []*github.CheckRun
 }
 
-// currentCheckRuns keeps the check runs that count, sorted by name and id.
-// GitHub's filter=latest already drops the earlier attempts of a rerun job.
-// Check runs are grouped by name and the workflow their job belongs to (the
-// Actions run of their check suite): of a workflow run several times for the
-// head, every run of the name in the newest workflow run counts, which is
-// how the merge box reads a retitled pull request whose title check ran
-// twice, while the jobs of a matrix, or of several workflows calling one
-// reusable workflow, each count. A check run outside a listed workflow run
-// keeps one run per name: the one started last, and of two started together
-// the one created later. A cancellation superseded by a later-started check
-// in another run of the same workflow is ignored even when that workflow
-// run has a lower id; jobs need not start in workflow creation order.
+// currentCheckRuns keeps only jobs from the newest suite of each workflow,
+// including when that suite finished without producing a required job. Matrix
+// siblings in that suite all count. Unmapped checks keep the latest job per name.
 func currentCheckRuns(runs []*github.CheckRun, workflowRuns []*github.WorkflowRun) []headCheckRun {
 	bySuite := map[int64]*github.WorkflowRun{}
 	for _, run := range workflowRuns {
@@ -614,11 +605,11 @@ func currentCheckRuns(runs []*github.CheckRun, workflowRuns []*github.WorkflowRu
 			bySuite[id] = run
 		}
 	}
-	openRuns := newestOpenWorkflowRuns(workflowRuns)
+	newest := newestWorkflowRuns(workflowRuns)
 	groups := map[string]*checkRunGroup{}
 	for _, run := range runs {
 		workflow := bySuite[run.GetCheckSuite().GetID()]
-		if supersededCheckRun(run, workflow, openRuns) || supersededCancelledCheckRun(run, workflow, runs, bySuite) {
+		if supersededCheckRun(run, workflow, newest) {
 			continue
 		}
 		key := run.GetName() + "\x00" + workflowKey(workflow)
@@ -652,65 +643,23 @@ func currentCheckRuns(runs []*github.CheckRun, workflowRuns []*github.WorkflowRu
 	return current
 }
 
-// supersededCancelledCheckRun compares job start order across runs of the
-// same workflow. A cancelled matrix job still counts even if another run
-// started later: a same-name check cannot identify which sibling it replaces.
-func supersededCancelledCheckRun(run *github.CheckRun, workflow *github.WorkflowRun, runs []*github.CheckRun, bySuite map[int64]*github.WorkflowRun) bool {
-	if run.GetConclusion() != "cancelled" || workflow == nil {
-		return false
-	}
-	superseded := false
-	for _, other := range runs {
-		if other.GetName() != run.GetName() {
-			continue
-		}
-		otherWorkflow := bySuite[other.GetCheckSuite().GetID()]
-		if otherWorkflow == nil || workflowKey(otherWorkflow) != workflowKey(workflow) {
-			continue
-		}
-		if otherWorkflow.GetID() == workflow.GetID() {
-			if other.GetID() != run.GetID() {
-				return false
-			}
-			continue
-		}
-		superseded = superseded || newerCheckRun(other, run)
-	}
-	return superseded
-}
-
-// newestOpenWorkflowRuns maps each workflow to its newest run for the head
-// while that run has not finished: the run a rerun or a reopen started, whose
-// jobs may not be listed yet.
-func newestOpenWorkflowRuns(runs []*github.WorkflowRun) map[string]*github.WorkflowRun {
-	open := map[string]*github.WorkflowRun{}
-	for key, run := range newestWorkflowRuns(runs) {
-		if workflowRunOpen(run.GetStatus()) {
-			open[key] = run
-		}
-	}
-	return open
-}
-
-// supersededCheckRun: the check run belongs to an earlier run of its workflow
-// than the newest one, which is still open, or to an earlier attempt of the
-// run that is open again (the check run started before the attempt did). The
-// newer run's jobs are what the head is judged on, and until they are listed
-// the open run itself keeps the wait going: a failure of the earlier run is
-// not the head's verdict.
-func supersededCheckRun(run *github.CheckRun, workflow *github.WorkflowRun, open map[string]*github.WorkflowRun) bool {
+// supersededCheckRun drops jobs of older suites. While the newest run is
+// open again, jobs from before its current attempt also do not count.
+func supersededCheckRun(run *github.CheckRun, workflow *github.WorkflowRun, latest map[string]*github.WorkflowRun) bool {
 	if workflow == nil {
 		return false
 	}
-	newest, ok := open[workflowKey(workflow)]
+	newest, ok := latest[workflowKey(workflow)]
 	switch {
 	case !ok:
 		return false
 	case newest.GetID() != workflow.GetID():
 		return true
-	default:
+	case workflowRunOpen(newest.GetStatus()):
 		attempt := workflow.GetRunStartedAt().Time
 		return !attempt.IsZero() && run.GetStartedAt().Before(attempt)
+	default:
+		return false
 	}
 }
 

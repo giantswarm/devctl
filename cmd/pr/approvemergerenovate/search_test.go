@@ -20,6 +20,11 @@ type searchTransport struct {
 	pages, prs int
 }
 
+const (
+	testAllPagesMode  = "all pages"
+	testPageErrorMode = "page error"
+)
+
 func (f *searchTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -28,7 +33,7 @@ func (f *searchTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Method != http.MethodGet {
 		return nil, fmt.Errorf("unexpected mutation: %s", req.Method)
 	}
-	if req.URL.Path == "/search/issues" {
+	if req.URL.Path == testSearchIssuesPath {
 		f.pages++
 		for _, filter := range []string{"is:pr", "is:open", "archived:false", "review-requested:@me", "author:app/renovate"} {
 			if !strings.Contains(req.URL.Query().Get("q"), filter) {
@@ -42,7 +47,7 @@ func (f *searchTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			body = `{"total_count":1001,"items":[]}`
 		default:
 			if req.URL.Query().Get("page") == "2" {
-				if f.mode == "page error" {
+				if f.mode == testPageErrorMode {
 					code, body = 500, `{"message":"unavailable"}`
 				} else {
 					body = `{"total_count":101,"items":[{"number":101,"html_url":"https://github.com/one/api/pull/101"}]}`
@@ -63,7 +68,7 @@ func (f *searchTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func TestRunConsumesCompleteSearchResults(t *testing.T) {
-	for _, mode := range []string{"all pages", "page error", "incomplete", "oversized"} {
+	for _, mode := range []string{testAllPagesMode, testPageErrorMode, "incomplete", "oversized"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("DEVCTL_GITHUB_TOKEN", "synthetic-token")
 			fake := &searchTransport{mode: mode}
@@ -72,12 +77,12 @@ func TestRunConsumesCompleteSearchResults(t *testing.T) {
 			t.Cleanup(func() { http.DefaultTransport = original })
 			var out bytes.Buffer
 			r := &runner{flag: &flag{Grouping: GroupingDependency}, logger: logrus.New(), stdout: &out, stderr: io.Discard}
-			err := r.run(context.Background(), &cobra.Command{}, []string{"dependency"})
+			err := r.run(context.Background(), &cobra.Command{}, []string{GroupingDependency})
 			wantPages, wantPRs := 1, 0
-			if mode == "all pages" || mode == "page error" {
+			if mode == testAllPagesMode || mode == testPageErrorMode {
 				wantPages = 2
 			}
-			if mode == "all pages" {
+			if mode == testAllPagesMode {
 				wantPRs = 101
 				if err != nil {
 					t.Fatal(err)

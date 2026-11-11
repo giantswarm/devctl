@@ -22,6 +22,32 @@ type cancelTransport func(*http.Request) (*http.Response, error)
 
 func (f cancelTransport) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
+const (
+	testAllowSquashMergeKey = "allow_squash_merge"
+	testApprovedState       = "APPROVED"
+	testCheckRunsKey        = "check_runs"
+	testCleanState          = "clean"
+	testContentTypeHeader   = "Content-Type"
+	testFixtureArg          = "fixture"
+	testFixtureTitle        = "Update fixture"
+	testHTMLURLKey          = "html_url"
+	testHeadKey             = "head"
+	testItemsKey            = "items"
+	testJSONContentType     = "application/json"
+	testLoginKey            = "login"
+	testMergeableStateKey   = "mergeable_state"
+	testMergedKey           = "merged"
+	testMergedSquashStatus  = "Merged (squash)"
+	testNumberKey           = "number"
+	testReviewerLogin       = "reviewer"
+	testSHAKey              = "sha"
+	testSearchIssuesPath    = "/search/issues"
+	testStateKey            = "state"
+	testSuccessState        = "success"
+	testTitleKey            = "title"
+	testTotalCountKey       = "total_count"
+)
+
 func TestCommandCancellation(t *testing.T) {
 	// Initialize runtime signal handling outside the virtual-time bubble.
 	_, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -64,33 +90,33 @@ func TestCommandCancellation(t *testing.T) {
 					var body any
 					switch req.Method + " " + req.URL.Path {
 					case "GET /search/issues":
-						body = map[string]any{"total_count": 1, "items": []any{map[string]any{"number": 7, "title": "Update fixture", "html_url": "https://github.com/o/r/pull/7"}}}
+						body = map[string]any{testTotalCountKey: 1, testItemsKey: []any{map[string]any{testNumberKey: 7, testTitleKey: testFixtureTitle, testHTMLURLKey: "https://github.com/o/r/pull/7"}}}
 					case "GET /repos/o/r/pulls/7":
-						body = map[string]any{"head": map[string]any{"sha": "abc"}, "mergeable_state": "clean"}
+						body = map[string]any{testHeadKey: map[string]any{testSHAKey: "abc"}, testMergeableStateKey: testCleanState}
 						if tc.afterApproval {
 							body.(map[string]any)["auto_merge"] = map[string]any{"enabled": true}
 						}
 					case "GET /repos/o/r/commits/abc/status":
-						body = map[string]any{"state": "success", "total_count": 0}
+						body = map[string]any{testStateKey: testSuccessState, testTotalCountKey: 0}
 						if tc.retry {
 							scheduleCancel()
-							body = map[string]any{"state": "pending", "total_count": 1}
+							body = map[string]any{testStateKey: "pending", testTotalCountKey: 1}
 						} else if !tc.afterApproval {
 							cancel()
 						}
 					case "GET /repos/o/r/commits/abc/check-runs":
-						body = map[string]any{"check_runs": []any{}}
+						body = map[string]any{testCheckRunsKey: []any{}}
 					case "GET /repos/o/r/pulls/7/reviews":
 						body = []any{}
 					case "POST /repos/o/r/pulls/7/reviews":
 						if tc.afterApproval {
 							scheduleCancel()
 						}
-						body = map[string]any{"state": "APPROVED"}
+						body = map[string]any{testStateKey: testApprovedState}
 					case "GET /repos/o/r":
-						body = map[string]any{"allow_squash_merge": true}
+						body = map[string]any{testAllowSquashMergeKey: true}
 					case "PUT /repos/o/r/pulls/7/merge":
-						body = map[string]any{"merged": true}
+						body = map[string]any{testMergedKey: true}
 					default:
 						t.Errorf("unexpected offline request: %s %s", req.Method, req.URL)
 						body = map[string]any{}
@@ -99,7 +125,7 @@ func TestCommandCancellation(t *testing.T) {
 					if err != nil {
 						return nil, err
 					}
-					return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(string(raw))), Request: req}, nil
+					return &http.Response{StatusCode: 200, Header: http.Header{testContentTypeHeader: {testJSONContentType}}, Body: io.NopCloser(strings.NewReader(string(raw))), Request: req}, nil
 				})
 				defer func() { http.DefaultTransport = previous }()
 				logger := logrus.New()
@@ -109,7 +135,7 @@ func TestCommandCancellation(t *testing.T) {
 					t.Fatal(err)
 				}
 				cmd.SilenceErrors, cmd.SilenceUsage = true, true
-				cmd.SetArgs([]string{"fixture"})
+				cmd.SetArgs([]string{testFixtureArg})
 				err = cmd.ExecuteContext(ctx)
 				if !errors.Is(err, context.Canceled) {
 					t.Errorf("canceled command returned %v", err)
