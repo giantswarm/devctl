@@ -75,6 +75,10 @@ esac
 			if err != nil {
 				t.Fatal(err)
 			}
+			mainPackage := "."
+			if strings.HasPrefix(tc.source, "cmd/") {
+				mainPackage = "./cmd"
+			}
 			extldflags := ""
 			if tc.os == "linux" {
 				extldflags = "-static"
@@ -82,7 +86,7 @@ esac
 			want := []string{
 				"0", "build", "-ldflags",
 				"-w -linkmode 'auto' -extldflags '" + extldflags + "' -X 'example.com/install-fixture/pkg/project.version=1.2.3' -X 'example.com/install-fixture/pkg/project.buildTimestamp=fixed' -X 'example.com/install-fixture/pkg/project.gitSHA=abc'",
-				"-o", filepath.Join(gopath, "bin", "fixture"), tc.source,
+				"-o", filepath.Join(gopath, "bin", "fixture"), mainPackage,
 			}
 			if diff := cmp.Diff(want, strings.Split(strings.TrimSuffix(string(got), "\n"), "\n")); diff != "" {
 				t.Errorf("build environment and arguments (-want +got):\n%s", diff)

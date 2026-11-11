@@ -20,7 +20,10 @@ type Call struct {
 	// repository; [Call.Check] puts the v in front.
 	Version string
 	// Branch is a branch of the one named repository.
-	Branch        string
+	Branch string
+	// Ref selects the default branch or an enabled release-X.Y branch.
+	// Unlike the older Branch option, it checks the workflow's triggers.
+	Ref           string
 	Follow        bool
 	FollowTimeout time.Duration
 }
@@ -54,6 +57,14 @@ func (c *Call) Check() error {
 	if c.Branch != "" && len(c.Repositories) != 1 {
 		return usageErr("--branch names a branch of one repository: pass exactly one owner/repo with it, got %d repository argument(s) and --team %q", len(c.Repositories), c.Team)
 	}
+	if c.Ref != "" {
+		if c.Branch != "" {
+			return usageErr("pass only one of --ref and --branch")
+		}
+		if len(c.Repositories) != 1 {
+			return usageErr("--ref names a branch of one repository: pass exactly one owner/repo with it, got %d repository argument(s) and --team %q", len(c.Repositories), c.Team)
+		}
+	}
 	return nil
 }
 
@@ -78,6 +89,7 @@ func (c Call) Run(ctx context.Context, sources *Sources, clock agentcli.Clock, p
 		DryRun:        c.DryRun,
 		Version:       c.Version,
 		Branch:        c.Branch,
+		Ref:           c.Ref,
 		NotFoundHint:  sources.NotFoundHint,
 		Follow:        c.Follow,
 		FollowTimeout: c.FollowTimeout,

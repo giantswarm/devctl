@@ -130,6 +130,9 @@ func TestReserveExclusivePromotesItsOwnSoleReservation(t *testing.T) {
 
 	promotion := testRequest(dir)
 	promotion.Scope = reservation.ScopeExclusive
+	promotion.PullRequest = ""
+	promotion.Now = first.Now.Add(time.Hour)
+	promotion.Duration = 2 * time.Hour
 
 	res, err := reservation.Reserve(promotion)
 	if err != nil {
@@ -139,12 +142,22 @@ func TestReserveExclusivePromotesItsOwnSoleReservation(t *testing.T) {
 		t.Errorf("promotion changed the expiry: got %s, want %s", got, want)
 	}
 
+	if res.PullRequest != first.PullRequest {
+		t.Errorf("result pull request = %q, want %q", res.PullRequest, first.PullRequest)
+	}
+	if !res.From.Equal(first.Now) {
+		t.Errorf("result start = %s, want %s", res.From, first.Now)
+	}
+
 	entries := reservationEntries(t, dir, fixtureCluster)
 	if len(entries) != 1 {
 		t.Fatalf("got %d reservation entries, want 1 (the entry must be rewritten in place, not duplicated): %+v", len(entries), entries)
 	}
 
 	after := entries[fixtureApp]
+	if after["pr"] != before["pr"] || after["pr"] != res.PullRequest {
+		t.Errorf("stored pull request = %q, result = %q, before = %q", after["pr"], res.PullRequest, before["pr"])
+	}
 	if got, want := after["scope"], reservation.ScopeExclusive; got != want {
 		t.Errorf("scope: got %q, want %q", got, want)
 	}

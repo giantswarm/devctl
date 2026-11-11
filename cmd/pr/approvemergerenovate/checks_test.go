@@ -43,18 +43,18 @@ func TestProcessPRChecks(t *testing.T) {
 				decisions := 0
 				transport := checksTransport(func(req *http.Request) (*http.Response, error) {
 					code := http.StatusOK
-					headers := http.Header{"Content-Type": {"application/json"}}
+					headers := http.Header{testContentTypeHeader: {testJSONContentType}}
 					var body any
 					switch req.URL.Path {
 					case "/repos/o/r/pulls/7":
-						body = map[string]any{"head": map[string]any{"sha": "abc"}, "mergeable_state": "clean"}
+						body = map[string]any{testHeadKey: map[string]any{testSHAKey: "abc"}, testMergeableStateKey: testCleanState}
 					case "/repos/o/r/commits/abc/status":
 						if tc.statusCode != 0 {
 							code = tc.statusCode
 						}
-						body = map[string]any{"state": tc.state, "total_count": 0, "statuses": []any{}}
-						if tc.state == "success" {
-							body = map[string]any{"state": "success", "total_count": 1, "statuses": []any{map[string]any{"context": "ci/circleci: build", "state": "success"}}}
+						body = map[string]any{testStateKey: tc.state, testTotalCountKey: 0, "statuses": []any{}}
+						if tc.state == testSuccessState {
+							body = map[string]any{testStateKey: testSuccessState, testTotalCountKey: 1, "statuses": []any{map[string]any{"context": "ci/circleci: build", testStateKey: testSuccessState}}}
 						}
 					case "/repos/o/r/commits/abc/check-runs":
 						if tc.runsCode != 0 {
@@ -68,14 +68,14 @@ func TestProcessPRChecks(t *testing.T) {
 								headers.Set("Link", `<https://fixture.invalid/repos/o/r/commits/abc/check-runs?page=2>; rel="next"`)
 							}
 						}
-						body = map[string]any{"total_count": 1, "check_runs": []any{map[string]any{"name": "test", "status": tc.runStatus, "conclusion": conclusion}}}
+						body = map[string]any{testTotalCountKey: 1, testCheckRunsKey: []any{map[string]any{"name": "test", "status": tc.runStatus, "conclusion": conclusion}}}
 					case "/repos/o/r/pulls/7/reviews":
 						decisions++
-						body = []any{map[string]any{"state": "APPROVED", "user": map[string]any{"login": "reviewer"}}}
+						body = []any{map[string]any{testStateKey: testApprovedState, "user": map[string]any{testLoginKey: testReviewerLogin}}}
 					case "/user":
-						body = map[string]any{"login": "reviewer"}
+						body = map[string]any{testLoginKey: testReviewerLogin}
 					case "/repos/o/r":
-						body = map[string]any{"allow_squash_merge": true}
+						body = map[string]any{testAllowSquashMergeKey: true}
 					default:
 						t.Fatalf("unexpected request: %s %s", req.Method, req.URL)
 					}

@@ -83,6 +83,9 @@ type Result struct {
 	// App is the chart Reserve resolved the request to. It is the reservation's
 	// key on the cluster.
 	App string `json:"app"`
+	// PullRequest is the effective link, retained from an existing reservation
+	// when an exclusive promotion omits the requested pull request.
+	PullRequest string `json:"pullRequest,omitempty"`
 	// Commit is the hash of the commit Reserve made.
 	Commit string `json:"commit"`
 	// SourceName is the name of the new OCIRepository.
@@ -301,6 +304,7 @@ func Reserve(req Request) (res Result, err error) {
 
 	return Result{
 		App:          chart,
+		PullRequest:  req.PullRequest,
 		Commit:       commit,
 		SourceName:   sourceName,
 		SemverFilter: semverFilter,
