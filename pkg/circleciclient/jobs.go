@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -214,8 +215,12 @@ func (c *Client) LastOutputAt(ctx context.Context, outputURL string) (time.Time,
 	// The output is one JSON array of messages; only their times are kept,
 	// so a long log costs no more memory than its longest message.
 	dec := json.NewDecoder(resp.Body)
-	if _, err := dec.Token(); err != nil {
+	opening, err := dec.Token()
+	if err != nil {
 		return time.Time{}, microerror.Maskf(apiError, "step output: invalid JSON answer: %v", err)
+	}
+	if opening != json.Delim('[') {
+		return time.Time{}, microerror.Maskf(apiError, "step output: invalid JSON answer: expected message array")
 	}
 	var last time.Time
 	for dec.More() {
@@ -228,6 +233,16 @@ func (c *Client) LastOutputAt(ctx context.Context, outputURL string) (time.Time,
 		if m.Time.After(last) {
 			last = m.Time
 		}
+	}
+	closing, err := dec.Token()
+	if err != nil {
+		return time.Time{}, microerror.Maskf(apiError, "step output: invalid JSON answer: %v", err)
+	}
+	if closing != json.Delim(']') {
+		return time.Time{}, microerror.Maskf(apiError, "step output: invalid JSON answer: expected array end")
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return time.Time{}, microerror.Maskf(apiError, "step output: invalid JSON answer: expected EOF, got %v", err)
 	}
 	return last, nil
 }

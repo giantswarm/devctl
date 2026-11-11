@@ -40,6 +40,9 @@ const Workflow = "zz_generated.auto_release.yaml"
 // workflowPath is where the workflow lives in the repository.
 const workflowPath = ".github/workflows/" + Workflow
 
+// nextUpgradeSection matches the line prefix used by check-upgrade-notes.
+var nextUpgradeSection = regexp.MustCompile(`(?m)^## Next`)
+
 // promotionMarker is the step of the auto-release workflow that promotes the
 // latest candidate on release-type stable. A workflow without it tags the
 // branch head on release-type stable and checks no commit status.
@@ -74,6 +77,7 @@ type GitHub interface {
 	ListReleases(ctx context.Context, owner, repo string) ([]githubclient.Release, error)
 	GetReleaseByTag(ctx context.Context, owner, repo, tag string) (githubclient.Release, error)
 	Reachable(ctx context.Context, owner, repo, ref, branch string) (bool, error)
+	CommitsAfter(ctx context.Context, owner, repo, sha, branch string) ([]string, error)
 	GetCombinedStatus(ctx context.Context, owner, repo, ref string) (githubclient.CombinedStatus, error)
 	DispatchWorkflowRun(ctx context.Context, owner, repo, file, ref string, inputs map[string]any) (githubclient.DispatchedRun, error)
 	GetWorkflowRun(ctx context.Context, owner, repo string, id int64) (githubclient.WorkflowRun, error)
@@ -96,6 +100,12 @@ type Config struct {
 	// own. Its workflow is read, its candidates taken and the workflow
 	// dispatched on it. Empty is the default branch.
 	Branch string
+	// Ref is the default branch or a release-X.Y branch whose workflow
+	// releases that branch. Mutually exclusive with Branch; one repository
+	// only. A maintenance branch's stable baseline is its X.Y series'.
+	Ref string
+	// series scopes an explicitly selected maintenance ref's stable baseline.
+	series string
 	// NotFoundHint is added to GitHub's 404 for a repository: what the
 	// token reaches. Empty adds nothing.
 	NotFoundHint string
@@ -122,6 +132,17 @@ type Config struct {
 func Promote(ctx context.Context, config Config, repositories []string, result *Result) error {
 	if config.GitHub == nil {
 		return usageErr("%T.GitHub must not be empty", config)
+	}
+	if config.Ref != "" {
+		if len(repositories) != 1 || config.Branch != "" {
+			return usageErr("--ref requires exactly one repository and cannot be combined with --branch")
+		}
+		var err error
+		config.series, err = checkRef(ctx, config, repositories[0])
+		if err != nil {
+			return err
+		}
+		config.Branch = config.Ref
 	}
 	first := len(result.Repositories)
 	for _, repository := range repositories {
@@ -188,6 +209,15 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 			return entry.set(StateFailed, "reading the release %s: %v", config.Version, err)
 		}
 	}
+	if config.series != "" {
+		scoped := make([]githubclient.Release, 0, len(releases))
+		for _, release := range releases {
+			if !stablePattern.MatchString(release.Tag) || strings.HasPrefix(release.Tag, "v"+config.series+".") {
+				scoped = append(scoped, release)
+			}
+		}
+		releases = scoped
+	}
 	reachable := func(tag string) (bool, error) {
 		return gh.Reachable(ctx, owner, repo, tag, branch)
 	}
@@ -203,6 +233,8 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 		return entry.set(StateFailed, "%s is a full GitHub release, not a pre-release: the workflow refuses to promote it", candidate)
 	case errors.Is(err, ErrNotPrerelease):
 		return entry.set(StateFailed, "the highest release candidate on %s, %s, is a full GitHub release, not a pre-release: the workflow refuses to promote it", branch, candidate)
+	case errors.Is(err, errCandidateNotNewer):
+		return staleCandidate(ctx, config, owner, repo, branch, entry, err)
 	case errors.Is(err, ErrNotCandidate):
 		return entry.set(StateFailed, "%s is not a release candidate to promote on %s: %v", config.Version, branch, err)
 	case err != nil:
@@ -210,6 +242,14 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 	}
 	if candidate == "" {
 		return entry.set(StateNothingToPromote, "no release candidate on %s since %s", branch, sinceOrInception(stable))
+	}
+
+	upgrade, found, err := gh.ReadFile(ctx, owner, repo, "UPGRADE.md", candidate)
+	if err != nil {
+		return entry.set(StateFailed, "reading UPGRADE.md at %s: %v", candidate, err)
+	}
+	if found && nextUpgradeSection.Match(upgrade) {
+		return entry.set(StateFailed, "UPGRADE.md at %s still has a ## Next section: land the rename from ## Next to ## %s, then promote a new release candidate containing that change", candidate, StableVersion(candidate))
 	}
 
 	status, err := gh.GetCombinedStatus(ctx, owner, repo, candidate)
@@ -253,6 +293,23 @@ func promoteOne(ctx context.Context, config Config, repository string) Repositor
 		entry.Warnings = append(entry.Warnings, fmt.Sprintf("GitHub named no run for the dispatch, so its stable gate is not followed; follow the release with devctl release wait %s %s", repository, StableVersion(candidate)))
 	}
 	return entry.set(StateDispatched, "dispatched %s on %s to promote %s%s", Workflow, branch, candidate, leftOut)
+}
+
+// staleCandidate explains which branch commits the stable release left out,
+// and how to release them without trying to promote the superseded version.
+func staleCandidate(ctx context.Context, config Config, owner, repo, branch string, entry Repository, reason error) Repository {
+	message := fmt.Sprintf("%s is not a release candidate to promote on %s: %v", config.Version, branch, reason)
+	commits, err := config.GitHub.CommitsAfter(ctx, owner, repo, entry.Stable, branch)
+	switch {
+	case err != nil:
+		message += fmt.Sprintf("; reading commits on %s after %s failed: %v", branch, entry.Stable, err)
+	case len(commits) == 0:
+		return entry.set(StateFailed, "%s; no commits on %s after %s need a new release", message, branch, entry.Stable)
+	default:
+		entry.Stranded = commits
+		message += fmt.Sprintf("; commits on %s not in %s: %s", branch, entry.Stable, strings.Join(commits, ", "))
+	}
+	return entry.set(StateFailed, "%s; run gh workflow run %s --repo %s --ref %s -f release-type=auto, then promote the new candidate if one is cut", message, Workflow, entry.Repository, branch)
 }
 
 // The reads of a release by its tag before it counts as missing, and the
@@ -407,6 +464,8 @@ type notCandidate string
 func (e notCandidate) Error() string        { return string(e) }
 func (e notCandidate) Is(target error) bool { return target == ErrNotCandidate }
 
+const errCandidateNotNewer = notCandidate("not newer than the last stable release")
+
 // ValidVersion says whether version has the form of a candidate tag,
 // vX.Y.Z-rc.N.
 func ValidVersion(version string) bool {
@@ -432,7 +491,7 @@ func SelectVersion(releases []githubclient.Release, reachable func(tag string) (
 	}
 	target := candidates[i]
 	if stableTag.version != nil && !target.version.GreaterThan(stableTag.version) {
-		return stable, "", notCandidate("not newer than the last stable release " + stable)
+		return stable, "", fmt.Errorf("%w %s", errCandidateNotNewer, stable)
 	}
 	ok, err := reachable(target.tag)
 	if err != nil {

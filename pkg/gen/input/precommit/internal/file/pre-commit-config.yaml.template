@@ -32,7 +32,7 @@ repos:
         exclude: "(.*testdata/.*|^\\.yarn/.*|^helm/[^/]+/charts/.*|.*.patch)"
 
   - repo: https://github.com/compilerla/conventional-pre-commit
-    rev: v4.4.0
+    rev: v4.5.0
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
@@ -87,6 +87,8 @@ repos:
       - id: go-mod-tidy
       - id: golangci-lint
         args:
+          # Let independent sessions and worktrees lint at the same time.
+          - --allow-parallel-runners
           # No --timeout: golangci-lint v2 has none by default and a flag would
           # override a repo's `run.timeout` in .golangci.yml, its place to set one.
           # List all issues found
@@ -121,7 +123,7 @@ repos:
 
   # Markdown hooks
   - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.49.1
+    rev: v0.50.0
     hooks:
       - id: markdownlint
 {{- end }}
@@ -179,6 +181,17 @@ repos:
   # lines from hello-world-app's) and CI then rejected it.
   - repo: local
     hooks:
+      # The schema generator drops a description continuation containing --.
+      # Keep real helm-docs annotations, but name prose that needs rewording.
+      - id: helm-docs-description-{{.}}
+        name: "check helm/{{.}}/values.yaml description continuations"
+        language: python
+        additional_dependencies: ['PyYAML==6.0.3']
+        files: ^helm/{{.}}/values\.yaml$
+        entry: python -c
+        args:
+          - |
+            {{ $.HelmDocsCheckPython }}
       - id: helm-schema-{{.}}
         name: "verify helm/{{.}}/values.schema.json is up to date"
         language: golang
@@ -196,7 +209,7 @@ repos:
             python3 -c '{{ $.RefFixPython }}' "$tmp"
             schemalint normalize "$tmp" -o "$tmp" --force
             if ! diff -u helm/{{.}}/values.schema.json "$tmp"; then
-              echo "helm/{{.}}/values.schema.json is out of date -- run 'devctl gen precommit' and commit the result" >&2
+              printf '%s\n' "helm/{{.}}/values.schema.json is out of date; run from the repository root and commit the result:" {{ $.RegenerateCommand }} >&2
               exit 1
             fi
 {{- /* `rev:` is stamped from the same go.mod pin as the hook above, not a literal: it is
@@ -219,6 +232,10 @@ A template comment, so the generated config stays byte-identical to the old lite
     rev: "v1.14.2"
     hooks:
       - id: helm-docs
+        # The upstream script hook uses helm-docs from PATH. Build this rev
+        # in pre-commit's isolated Go environment so local and CI runs agree.
+        language: golang
+        entry: helm-docs
         args:
           - --chart-search-root=helm
 {{- if .HelmCharts }}

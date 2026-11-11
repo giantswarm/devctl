@@ -13,11 +13,22 @@ import (
 )
 
 // fakeHelm stands in for helm: `helm plugin list` reports the pinned
-// helm-unittest, so install-helm-unittest installs nothing, and every other
-// call is appended to $HELM_CALLS.
+// helm-unittest, so install-helm-unittest installs nothing; `helm dependency
+// list` reports a missing dependency for the charts in $HELM_MISSING_DEPS; and
+// every other call is appended to $HELM_CALLS.
 const fakeHelm = `#!/bin/sh
 if [ "$1" = plugin ]; then
 	echo "unittest 1.2.1"
+	exit 0
+fi
+if [ "$1" = unittest ] && [ "$2" = --version ]; then
+	exit 0
+fi
+if [ "$1" = dependency ] && [ "$2" = list ]; then
+	echo "NAME	VERSION	REPOSITORY	STATUS"
+	for c in $HELM_MISSING_DEPS; do
+		[ "$c" = "$3" ] && echo "upstream	1.0.0	https://charts.example.com	missing"
+	done
 	exit 0
 fi
 echo "$*" >> "$HELM_CALLS"
@@ -85,6 +96,72 @@ func TestHelmTestSkipsPlaceholderChart(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "skipping helm/{APP-NAME}") {
 		t.Errorf("output does not name the skipped placeholder chart:\n%s", out)
+	}
+}
+
+// TestHelmTestFetchesMissingDependencies runs the generated helm-test target
+// over a chart whose dependency is missing, as in a fresh clone that gitignores
+// charts/*.tgz, and a chart whose dependencies are present: only the first is
+// fetched, before its suites run.
+func TestHelmTestFetchesMissingDependencies(t *testing.T) {
+	if _, err := exec.LookPath("make"); err != nil {
+		t.Skip("make is not installed")
+	}
+
+	m, err := New(Config{Flavours: gen.FlavourSlice{gen.FlavourApp}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := m.MakefileGenApp()
+	tpl, err := template.New("makefile").Parse(in.TemplateBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rendered bytes.Buffer
+	if err := tpl.Execute(&rendered, in.TemplateData); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	write := func(path, content string, mode os.FileMode) {
+		t.Helper()
+		p := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(in.Path, rendered.String(), 0o644)
+	write("bin/helm", fakeHelm, 0o755)
+	for _, chart := range []string{"helm/fetched", "helm/present"} {
+		write(chart+"/Chart.yaml", "name: chart\n", 0o644)
+		write(chart+"/tests/deployment_test.yaml", "suite: deployment\n", 0o644)
+	}
+
+	calls := filepath.Join(dir, "helm-calls")
+	cmd := exec.Command("make", "-f", "Makefile.gen.app.mk", "helm-test")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"PATH="+filepath.Join(dir, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"HELM_CALLS="+calls,
+		"HELM_MISSING_DEPS=helm/fetched",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("make helm-test: %v\n%s", err, out)
+	}
+
+	got, err := os.ReadFile(filepath.Clean(calls))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "dependency update helm/fetched\n" +
+		"unittest -f tests/*_test.yaml --with-subchart=false helm/fetched\n" +
+		"unittest -f tests/*_test.yaml --with-subchart=false helm/present\n"
+	if string(got) != want {
+		t.Errorf("helm calls = %q, want %q", got, want)
 	}
 }
 
@@ -181,18 +258,35 @@ func TestInstallHelmUnittestAcrossHelmMajors(t *testing.T) {
 // install and uninstall call is appended to $HELM_CALLS.
 const fakeHelmFlakyInstall = `#!/bin/sh
 if [ "$1" = plugin ] && [ "$2" = list ]; then
+	[ ! -f "$HELM_CALLS.partial" ] || echo "unittest 1.2.1"
 	exit 0
+fi
+if [ "$1" = unittest ] && [ "$2" = --version ]; then
+	[ -f "$HELM_CALLS.ready" ]
+	exit $?
 fi
 if [ "$1" = plugin ] && [ "$2" = install ] && [ "$3" = --help ]; then
 	exit 0
 fi
+if [ "$1" = dependency ] && [ "$2" = list ]; then
+	exit 0
+fi
 echo "$1 $2" >> "$HELM_CALLS"
+if [ "$1" = unittest ]; then
+	[ -f "$HELM_CALLS.ready" ] || exit 1
+fi
+if [ "$1" = plugin ] && [ "$2" = uninstall ]; then
+	rm -f "$HELM_CALLS.partial"
+fi
 if [ "$1" = plugin ] && [ "$2" = install ]; then
+	[ ! -f "$HELM_CALLS.partial" ] || exit 1
+	touch "$HELM_CALLS.partial"
 	failed=$(grep -c "plugin install" "$HELM_CALLS")
 	if [ "$failed" -le "$HELM_FAILURES" ]; then
 		echo "curl: (55) Recv failure: Connection reset by peer" >&2
 		exit 1
 	fi
+	touch "$HELM_CALLS.ready"
 fi
 `
 
@@ -226,19 +320,26 @@ func TestInstallHelmUnittestRetriesTransientErrors(t *testing.T) {
 	tests := []struct {
 		name     string
 		failures string
+		partial  bool
 		wantErr  bool
 		want     string
 	}{
 		{
-			name:     "transient",
+			name:     "case 0: transient",
 			failures: "2",
 			want:     install + uninstall + install + uninstall + install,
 		},
 		{
-			name:     "persistent",
+			name:     "case 1: persistent",
 			failures: "99",
 			wantErr:  true,
-			want:     install + uninstall + install + uninstall + install,
+			want:     install + uninstall + install + uninstall + install + uninstall,
+		},
+		{
+			name:     "case 2: existing partial install",
+			failures: "0",
+			partial:  true,
+			want:     uninstall + install,
 		},
 	}
 	for _, tc := range tests {
@@ -255,6 +356,11 @@ func TestInstallHelmUnittestRetriesTransientErrors(t *testing.T) {
 			}
 
 			calls := filepath.Join(dir, "helm-calls")
+			if tc.partial {
+				if err := os.WriteFile(calls+".partial", nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
 			cmd := exec.Command("make", "-f", "Makefile.gen.app.mk", "install-helm-unittest", "HELM_UNITTEST_RETRY_DELAY=0")
 			cmd.Dir = dir
 			cmd.Env = append(os.Environ(),
@@ -270,6 +376,35 @@ func TestInstallHelmUnittestRetriesTransientErrors(t *testing.T) {
 			got, err := os.ReadFile(filepath.Clean(calls))
 			if err != nil {
 				t.Fatal(err)
+			}
+			if tc.wantErr {
+				if _, err := os.Stat(calls + ".partial"); !os.IsNotExist(err) {
+					t.Fatalf("failed install left partial plugin: %v", err)
+				}
+				chart := filepath.Join(dir, "helm", "example")
+				if err := os.MkdirAll(filepath.Join(chart, "tests"), 0o750); err != nil {
+					t.Fatal(err)
+				}
+				for _, path := range []string{"Chart.yaml", "tests/deployment_test.yaml"} {
+					if err := os.WriteFile(filepath.Join(chart, path), nil, 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				cmd = exec.Command("make", "-f", "Makefile.gen.app.mk", "test", "HELM_UNITTEST_RETRY_DELAY=0")
+				cmd.Dir = dir
+				cmd.Env = append(os.Environ(),
+					"PATH="+filepath.Join(dir, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"),
+					"HELM_CALLS="+calls,
+					"HELM_FAILURES=0",
+				)
+				if out, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("next make test: %v\n%s", err, out)
+				}
+				got, err = os.ReadFile(filepath.Clean(calls))
+				if err != nil {
+					t.Fatal(err)
+				}
+				tc.want += install + "unittest -f\n"
 			}
 			if string(got) != tc.want {
 				t.Errorf("helm calls = %q, want %q", got, tc.want)

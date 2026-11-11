@@ -30,7 +30,7 @@ const (
 	// StateFailed: the version was attempted and failed.
 	StateFailed = "failed"
 	// StateNotFollowing: the object's source pins a version or a range that
-	// excludes the version; it will never get there on its own.
+	// currently excludes the version; GitOps may still change that selector.
 	StateNotFollowing = "not_following"
 	// StateSuspended: Flux does not reconcile the object.
 	StateSuspended = "suspended"

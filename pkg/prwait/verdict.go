@@ -21,8 +21,9 @@ const (
 
 // The check states the document shares between check runs and statuses.
 const (
-	statusCompleted = "completed"
-	statusPending   = "pending"
+	statusCompleted   = "completed"
+	statusPending     = "pending"
+	conclusionSuccess = "success"
 	// conclusionActionRequired is a completed check run or Actions run
 	// waiting for a human.
 	conclusionActionRequired = "action_required"
@@ -71,6 +72,9 @@ type CircleCI struct {
 	PipelineID     string     `json:"pipelineId"`
 	PipelineNumber int64      `json:"pipelineNumber"`
 	Workflows      []Workflow `json:"workflows"`
+	// SetupHalted: setup succeeded without a continuation for
+	// setupHaltGrace, and its jobs posted their own successful contexts.
+	SetupHalted bool `json:"setupHalted,omitempty"`
 }
 
 // Workflow is one CircleCI workflow of the pipeline.
@@ -127,11 +131,16 @@ type circleSnapshot struct {
 	// pipeline is nil while CircleCI has no pipeline for the head revision.
 	pipeline  *circleciclient.Pipeline
 	workflows []circleciclient.Workflow
+	// setupJobs are read only for a possible halted setup, after its grace.
+	setupJobs map[string][]circleciclient.Job
 }
 
 // evaluation is the verdict of one snapshot with the document fields it
 // fills.
 type evaluation struct {
+	// headSHA identifies the complete poll behind timeout diagnostics when
+	// a later poll has only partly read a changed head.
+	headSHA  string
 	checks   []Check
 	actions  []ActionRun
 	circleci *CircleCI
@@ -150,6 +159,9 @@ type evaluation struct {
 	// unfinished names everything the head still waits for, in the words the
 	// document uses at a timeout.
 	unfinished []string
+	// missingContinuation is the completed setup's evidence for the reason
+	// at the deadline; it does not end the wait early or make the head green.
+	missingContinuation string
 	// notRequired names the pending check runs of named apps other than
 	// GitHub Actions and the pending statuses of other CI than CircleCI the
 	// base does not require: the merge box does not wait for them, and
@@ -255,7 +267,8 @@ func (e *evaluation) approvalReason() string {
 // Actions runs awaiting approval is approvalOnly: no wait starts them, a
 // member's approval does.
 func evaluate(s snapshot) *evaluation {
-	e := &evaluation{checks: []Check{}, actions: []ActionRun{}, seen: map[string]bool{}}
+	e := &evaluation{headSHA: s.headSHA, checks: []Check{}, actions: []ActionRun{}, seen: map[string]bool{}}
+	e.missingContinuation = missingContinuation(s.circleci, circleStatuses(s.statuses))
 	required := map[string]bool{}
 	for _, name := range s.required {
 		required[name] = true
@@ -322,7 +335,7 @@ func evaluate(s snapshot) *evaluation {
 			check.Status = statusPending
 			e.requiredPending = e.requiredPending || check.Required
 			e.unfinished = append(e.unfinished, fmt.Sprintf("status %s (pending)", name))
-		case state == "success":
+		case state == conclusionSuccess:
 			check.Conclusion = state
 		case s.accepts(name):
 			check.Conclusion = state
@@ -357,7 +370,7 @@ func evaluate(s snapshot) *evaluation {
 	}
 
 	if s.circleci != nil {
-		e.evaluateCircleCI(s.headSHA, s.circleci, circleStatuses(s.statuses), s.accepts)
+		e.evaluateCircleCI(s.now, s.headSHA, s.circleci, s.statuses, s.accepts)
 	}
 	for _, job := range s.circleJobs {
 		if !reported[circleStatusPrefix+job] {
@@ -407,11 +420,10 @@ func circleStatuses(statuses []*github.RepoStatus) int {
 	return n
 }
 
-// evaluateCircleCI applies rule 2 to the head's pipeline. circleStatuses is
-// how many CircleCI jobs have posted to GitHub: an empty listing or a setup
-// workflow listed on its own is not the pipeline's last word, and GitHub
-// tells whether its continuation has run.
-func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot, circleStatuses int, accepts func(string) bool) {
+// evaluateCircleCI applies rule 2 to the head's pipeline. An empty listing
+// or a setup workflow listed on its own is not the pipeline's last word,
+// and GitHub tells whether its continuation has run.
+func (e *evaluation) evaluateCircleCI(now time.Time, headSHA string, c *circleSnapshot, statuses []*github.RepoStatus, accepts func(string) bool) {
 	if c.pipeline == nil {
 		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline for %s (absent)", headSHA))
 		return
@@ -427,11 +439,13 @@ func (e *evaluation) evaluateCircleCI(headSHA string, c *circleSnapshot, circleS
 	}
 	workflows := latestWorkflows(c.workflows)
 	switch {
+	case c.setupHalted(now, statuses):
+		e.circleci.SetupHalted = true
 	case circleciclient.PipelineContinuing(c.pipeline.State):
 		// A finished setup workflow is not the pipeline's last: the continued
 		// workflows post the build's contexts once they exist.
 		e.unfinished = append(e.unfinished, fmt.Sprintf("circleci pipeline %d (%s, continuation not created yet)", c.pipeline.Number, c.pipeline.State))
-	case circleStatuses > 1:
+	case circleStatuses(statuses) > 1:
 		// More than one CircleCI job has posted to the head: the build runs or
 		// ran, whatever the listing reads, and the jobs' contexts are its
 		// verdict (rule 1). The listing is read for what it has: a workflow
@@ -497,7 +511,7 @@ func (e *evaluation) unseen(accepted map[string]bool) []string {
 // a merge.
 func checkRunPassed(conclusion string) bool {
 	switch conclusion {
-	case "success", "neutral", "skipped":
+	case conclusionSuccess, "neutral", "skipped":
 		return true
 	}
 	return false
@@ -581,16 +595,9 @@ type checkRunGroup struct {
 	runs     []*github.CheckRun
 }
 
-// currentCheckRuns keeps the check runs that count, sorted by name and id.
-// GitHub's filter=latest already drops the earlier attempts of a rerun job.
-// Check runs are grouped by name and the workflow their job belongs to (the
-// Actions run of their check suite): of a workflow run several times for the
-// head, every run of the name in the newest workflow run counts, which is
-// how the merge box reads a retitled pull request whose title check ran
-// twice, while the jobs of a matrix, or of several workflows calling one
-// reusable workflow, each count. A check run outside a listed workflow run
-// keeps one run per name: the one started last, and of two started together
-// the one created later.
+// currentCheckRuns keeps only jobs from the newest suite of each workflow,
+// including when that suite finished without producing a required job. Matrix
+// siblings in that suite all count. Unmapped checks keep the latest job per name.
 func currentCheckRuns(runs []*github.CheckRun, workflowRuns []*github.WorkflowRun) []headCheckRun {
 	bySuite := map[int64]*github.WorkflowRun{}
 	for _, run := range workflowRuns {
@@ -598,11 +605,11 @@ func currentCheckRuns(runs []*github.CheckRun, workflowRuns []*github.WorkflowRu
 			bySuite[id] = run
 		}
 	}
-	openRuns := newestOpenWorkflowRuns(workflowRuns)
+	newest := newestWorkflowRuns(workflowRuns)
 	groups := map[string]*checkRunGroup{}
 	for _, run := range runs {
 		workflow := bySuite[run.GetCheckSuite().GetID()]
-		if supersededCheckRun(run, workflow, openRuns) {
+		if supersededCheckRun(run, workflow, newest) {
 			continue
 		}
 		key := run.GetName() + "\x00" + workflowKey(workflow)
@@ -636,38 +643,23 @@ func currentCheckRuns(runs []*github.CheckRun, workflowRuns []*github.WorkflowRu
 	return current
 }
 
-// newestOpenWorkflowRuns maps each workflow to its newest run for the head
-// while that run has not finished: the run a rerun or a reopen started, whose
-// jobs may not be listed yet.
-func newestOpenWorkflowRuns(runs []*github.WorkflowRun) map[string]*github.WorkflowRun {
-	open := map[string]*github.WorkflowRun{}
-	for key, run := range newestWorkflowRuns(runs) {
-		if workflowRunOpen(run.GetStatus()) {
-			open[key] = run
-		}
-	}
-	return open
-}
-
-// supersededCheckRun: the check run belongs to an earlier run of its workflow
-// than the newest one, which is still open, or to an earlier attempt of the
-// run that is open again (the check run started before the attempt did). The
-// newer run's jobs are what the head is judged on, and until they are listed
-// the open run itself keeps the wait going: a failure of the earlier run is
-// not the head's verdict.
-func supersededCheckRun(run *github.CheckRun, workflow *github.WorkflowRun, open map[string]*github.WorkflowRun) bool {
+// supersededCheckRun drops jobs of older suites. While the newest run is
+// open again, jobs from before its current attempt also do not count.
+func supersededCheckRun(run *github.CheckRun, workflow *github.WorkflowRun, latest map[string]*github.WorkflowRun) bool {
 	if workflow == nil {
 		return false
 	}
-	newest, ok := open[workflowKey(workflow)]
+	newest, ok := latest[workflowKey(workflow)]
 	switch {
 	case !ok:
 		return false
 	case newest.GetID() != workflow.GetID():
 		return true
-	default:
+	case workflowRunOpen(newest.GetStatus()):
 		attempt := workflow.GetRunStartedAt().Time
 		return !attempt.IsZero() && run.GetStartedAt().Before(attempt)
+	default:
+		return false
 	}
 }
 

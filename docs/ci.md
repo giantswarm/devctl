@@ -31,7 +31,8 @@ detail) and how long ago that was.
   behind its jobs; nothing is stuck, the wait is on CircleCI.
 
 A login that granted Read access suffices. Jobs CircleCI does not list yet, steps or output it does
-not answer are warnings, not an outcome: the rest of the view is read.
+not answer are warnings, not an outcome: the rest of the view is read. Caller cancellation ends the
+inspection with an error while preserving the view assembled so far.
 
 ```nohighlight
 devctl ci jobs giantswarm/devctl 3885
@@ -71,6 +72,8 @@ is the tail `devctl pr wait --failed-log` reads, for a job of any pipeline: a ta
 pull request waits on. The CircleCI login is used in devctl's process only, a step's output is read
 from its signed URL without it, so a session reads a failed job without a token of its own, a browser
 or the CircleCI UI. Output CircleCI does not answer is `job.logError`; the steps still stand.
+Caller cancellation during a step or output read ends the inspection with an error and retains the
+job data already assembled.
 
 Use `--step-output` to include output from **every** step, successful ones included. Each action
 gets `outputHead` and `outputTail`, the first and last `--lines` lines (200 each by default), with
@@ -129,6 +132,8 @@ rerun stands meanwhile.
 one. `--cancel` cancels it first (`POST /api/v2/workflow/{id}/cancel`), waits up to two minutes for
 CircleCI to read it canceled and reruns it: the recovery of a stuck workflow. A cancel that does not
 settle in time is exit 2; the rerun is then one call away once the workflow reads canceled.
+The shared cancel wait preserves caller cancellation and earlier caller deadlines as errors; they do not
+mean CircleCI ignored the cancel for two minutes and do not initiate fresh-pipeline recovery.
 
 ```nohighlight
 devctl ci rerun giantswarm/devctl f1290c29-… --from-failed && devctl release wait giantswarm/devctl v8.123.0
@@ -165,9 +170,47 @@ A run of the name newer than the one given is named in `warnings`; the rerun is 
 |---|---|---|
 | 0 | `green` | the rerun started; `rerunId` and `rerunUrl` are the new workflow |
 | 2 | `timeout` | `--cancel`: the workflow still reads running two minutes after the cancel |
+| 2 | `transient` | a read exhausted its bounded retry window; the reason names the attempts, elapsed time and last API or network failure |
 | 3 | `not_applicable` | no such workflow, or one of another repository |
 | 5 | `refused` | a rerun of the workflow's name within the hour, a workflow still running without `--cancel`, or a rerun CircleCI refused (the reason carries its message) |
 | 7 | `usage` | wrong usage or a tooling failure |
 | 8 | `auth_required` | no CircleCI login, or one without Write access (`devctl auth login --circleci-only`) |
+| 13 | `remote_error` | A CircleCI request failed. The command line was valid; the reason preserves the service error. Existing timeout and post-merge outcomes take precedence. |
 
-`ci jobs` exits 0 (`listed`), 3 (no such pipeline of the repository), 7 or 8.
+`ci jobs` exits 0 (`listed`), 2 (`transient`), 3 (no such pipeline of the repository), 7, 8 or 13 (`remote_error`).
+
+## Cancel workflows and obsolete queued pipelines
+
+```sh
+devctl ci cancel giantswarm/devctl <workflow-id>
+devctl ci cancel giantswarm/devctl <pipeline-id> --pipeline
+devctl ci cancel giantswarm/devctl --stale --dry-run
+devctl ci cancel giantswarm/devctl --stale
+```
+
+The explicit forms cancel active workflows after checking repository ownership.
+Pipeline mode visits every workflow page, including setup workflows. Finished
+workflows are skipped. Cancellation requires a CircleCI login with Write access.
+
+`--stale` visits every project pipeline page and reads current GitHub branch and
+pull request state using the existing GitHub login. A different head revision or
+a closed PR makes a branch pipeline obsolete. Fork pipelines named `pull/N` are
+checked against that PR. Tags and the default branch are protected. A missing
+branch without a known closed PR is retained; failed reads stop the command.
+Only workflows whose jobs are all queued, blocked or not yet run are canceled:
+started jobs, unknown job states, empty job listings and approval jobs are retained.
+The jobs are read again immediately before cancellation. The APIs do not offer
+an atomic check-and-cancel, so an executor can still start between that read and
+the cancellation request.
+
+The JSON envelope follows the other `ci` commands (schema version 1), with
+`repository`, `dryRun`, `workflows` and `uncancelablePipelines`. Each workflow
+includes `id`, `pipelineId`, `status` and `outcome`: `skipped`, `would_cancel`, or
+`cancel_requested`. The latter records API acceptance, not terminal cancellation;
+use `ci jobs` to inspect completion. Partial results remain in the document if a
+later request fails. Exit codes follow the agent envelope: 0 success, 3 repository
+mismatch, 5 refused write, 7 usage/tooling failure, 8 authentication required.
+
+CircleCI API v2 exposes cancellation for workflows, not pipeline objects. A
+pipeline with no workflows cannot be canceled through this API and its ID is
+reported in `uncancelablePipelines`; the command does not claim to have canceled it.

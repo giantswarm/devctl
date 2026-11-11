@@ -1,9 +1,16 @@
 # Waiting for a rollout: `devctl rollout wait`
 
+SIGINT or SIGTERM interrupts either CLI wait phase with its JSON document and exit 2, the timeout's
+code. The reason identifies the interruption; the document retains the release and the last
+observed deployments, including what still has to roll out.
+
 ```nohighlight
 devctl rollout wait <installation> <owner/repo> (<vX.Y.Z | X.Y.Z> | --pr <number>) [--context <kube-context>] [--kubeconfig <file>]
     [--timeout 30m] [--release-timeout 60m] [--image <owner/name>]... [--chart <path>]... [--helmrelease [<namespace>/]<name>]...
     [--reconcile] [--progress] [--failed-log [--failed-log-lines 50]]
+
+devctl rollout wait <installation> --chart <name> --version <vX.Y.Z | X.Y.Z>
+    [--chart <name>]... [--context <kube-context>] [--kubeconfig <file>] [--timeout 30m] [--reconcile] [--progress]
 ```
 
 Blocks until a release runs on an installation, then prints one JSON document and exits with a code
@@ -11,6 +18,9 @@ that says what happened. It is the last step after [`devctl pr merge`](pr-merge.
 [`devctl release wait`](release-wait.md): the release is pullable, and now Flux (or app-operator) on the
 installation's management cluster has to pick it up, deploy it and roll its workloads out. An agent
 runs this one command instead of polling `kubectl get helmrelease` in a loop.
+
+The wait ignores SIGHUP and reads no stdin, so it outlives its terminal and finishes with its JSON
+document and exit code. See the [shared CLI contract](auth.md#exit-codes-and-the-json-envelope).
 
 ```nohighlight
 devctl rollout wait myinstallation giantswarm/app-operator v7.5.4
@@ -21,10 +31,42 @@ devctl rollout wait myinstallation giantswarm/giantswarm-configs --pr 1234
 
 ## What the command reads, and why
 
+### A component rolled by a range
+
+A component can roll to a new chart version within its range while the meta chart stays unchanged.
+Wait for the component directly, using its chart name and target version:
+
+```nohighlight
+devctl rollout wait myinstallation --chart kagent --version v1.2.4 --progress
+```
+
+This form needs no repository, meta-chart version or PR. `--chart` names the component chart itself,
+without a registry, path or tag, and can be repeated for several charts at the same version. It uses
+the installation checks below: matching HelmReleases and Apps that follow the version must run it
+or a newer one and have their workloads rolled out; a HelmRelease must be Ready at its current
+generation. Excluded or suspended deployments keep the diagnostics described below. `charts` and
+`version` name the target; `deployments[].chart` and `runningVersion` name what actually rolled.
+
+It reads the installation directly, with no GitHub login, registry probe or tag-pipeline check.
+`release.verdict` is `not_applicable` and `release.reason` says the repository release checks were
+skipped. `--pr`, `--image` and `--failed-log` require a repository; `--release-timeout` has no effect
+on this form. Specify the component version explicitly: omitting a version with only `--helmrelease`
+still cannot identify which range-resolved release to wait for.
+
+With a repository, a single bare chart name also waits directly for the component:
+
+```nohighlight
+devctl rollout wait myinstallation giantswarm/agent-platform --chart agent-platform-connectivity v1.2.3
+```
+
+The version argument or `--version` names the component version. The repository is retained in
+JSON but is not queried. This form accepts one chart and no `--pr`, `--image` or `--failed-log`.
+An OCI path such as `--chart giantswarm/kagent/helm/kagent` keeps the repository release wait.
+
 ### The release first
 
 The command starts with the wait of `devctl release wait` for the same version or `--pr`, with the
-same rules, tokens and exit codes (`--release-timeout`, 60 minutes by default; `--image` and `--chart` name the image and the chart a hand-written tag job pushes outside the architect orb, as there: the kagent line's charts under `giantswarm/kagent/helm/`; `--failed-log` and `--failed-log-lines` read the tail of each failed job's log when the release's CI failed, as there and as in [`devctl pr wait`](pr-wait.md), into `release.failedJobs[]` and stderr). That wait names the
+same rules, tokens and exit codes (`--release-timeout`, 60 minutes by default; `--image` and `--chart` name the image and the chart a hand-written tag job pushes outside the architect orb, as there: the kagent line's charts under `giantswarm/kagent/helm/`; `--failed-log` and `--failed-log-lines` read the tail of each failed job's log when the release's CI failed, as there and as in [`devctl pr wait`](pr-wait.md), into `release.failedJobs[]` and stderr; `--failed-log-lines 0` keeps the full Actions log or all failed-step output on CircleCI). That wait names the
 release's charts from the sources that define them (the team-file entry, the tag pipeline's push
 jobs, `helm/<dir>/Chart.yaml` at the tag), so a repository that publishes several charts is waited for
 on all of them (a second chart a generated pipeline's `custom.yml` pushes off the same tag included:
@@ -41,7 +83,7 @@ follows stable releases (`semver: ">=0.0.0"`) never deploys the candidate, so `-
 the lowest published stable release above the candidate whose tag contains the merge commit (GitHub's
 comparison) is waited for, `release.tag` names it and `release.candidate` the candidate it was promoted
 from. Before the promote the candidate is waited for, with `release.promotePending` true; when nothing on
-the installation follows a pre-release the command ends with exit 3 and a reason that names the candidate
+the installation follows a pre-release the command ends with exit 3 after `--timeout`, naming the candidate
 and the pending promote. Run it again after the promote.
 
 ### A pull request that releases nothing: a configuration change
@@ -71,9 +113,17 @@ says when the change landed: a pull request that changes no HelmRelease, values 
 the source and the Kustomizations applied it. A Kustomization or Konfiguration whose attempt at the revision
 failed, or an App whose release failed with the new values, is exit 1; once everything else is applied, a
 changed app whose values nothing takes is exit 3, verdict `rollout_unknown`, never `rolled_out`; nothing on the installation fetching the repository keeps the `no_release` verdict, exit
-3, its reason saying so; a GitRepository nothing reads (one included into another) is exit 3. `--reconcile`
-asks the GitRepository, the Kustomizations and, once its values are rendered, each HelmRelease to
-reconcile, once each.
+3, its reason saying so; a GitRepository nothing reads (one included into another) is exit 3.
+
+A failed values attempt is exit 1 once helm-controller has observed the current generation and
+finished reconciling, even when a new history digest or a handled reconcile proves it attempted the
+change. Active retries keep waiting.
+
+A failed attempt of the requested revision is still a failure when that revision was already applied,
+including a failed health check.
+
+With `--reconcile`, the wait asks the GitRepository, the Kustomizations and, once its values are
+rendered, each HelmRelease to reconcile, once each.
 
 ### The installation
 
@@ -103,7 +153,8 @@ A chart is deployed by one of:
 | `App` (`application.giantswarm.io/v1alpha1`) | its `spec.name` is the chart | `status.version` with `status.release.status` `deployed` |
 
 Every match on the cluster is judged; none is exit 3. `--helmrelease <name>` or
-`--helmrelease <namespace>/<name>` (repeatable) adds a HelmRelease whatever chart it deploys; a name no
+`--helmrelease <namespace>/<name>` (repeatable) adds a HelmRelease whatever chart it deploys.
+Malformed selectors return exit 7 before opening clients or waiting for a release; a name no
 HelmRelease on the cluster answers to is exit 3, the reason naming how many HelmReleases it looked through, in
 all namespaces of the context. One of the release's charts is judged the same way against
 the version. One of none of them (a component a meta chart renders, on a version line of its own) is judged
@@ -123,8 +174,9 @@ out the way `kubectl rollout status` judges it: the new generation observed, eve
 no old replica left, the updated ones available (a StatefulSet: ready and at the update revision or
 above its partition; a DaemonSet: every scheduled pod updated and available; `OnDelete` counts as
 rolled out; a HelmRelease a meta chart renders: its generation observed, Ready with no reconcile in flight,
-its dependencies included, a suspended one counted, Stalled or a failed install, upgrade or test exit 1). The workloads of a HelmRelease with `spec.kubeConfig` or of an App into a workload cluster
-live elsewhere and are not read; a warning says so.
+its dependencies included, a suspended one counted; while `Reconciling=True` it keeps waiting, then
+Stalled or a failed install, upgrade or test exits 1 once the retry has settled). The workloads of a
+HelmRelease with `spec.kubeConfig` or of an App into a workload cluster live elsewhere and are not read; a warning says so.
 
 ### When a deployment will not get there
 
@@ -132,8 +184,13 @@ A deployment whose source does not admit the version is reported with the state 
 warning, and the wait goes on for the others: an OCIRepository pinned to another tag or to a digest,
 a semver range (the OCIRepository's `spec.ref.semver`, the HelmChart's or `spec.chart.spec.version`)
 that excludes it, an App whose `spec.version` is older (a workload cluster's App pinned to an older
-release). A suspended HelmRelease is `suspended`, likewise. When no deployment follows the version,
-the wait is exit 3.
+release). A suspended HelmRelease is `suspended`, likewise. When no deployment follows the version
+yet, the wait keeps polling until `--timeout`: Flux may still need to apply the merged GitOps change
+to the version selector, including through a Kustomization's dependency chain. Once a deployment
+follows, its rollout uses what remains of that same timeout. If no deployment follows by the
+deadline, the wait is exit 3 with the last poll's `not_following` messages. A version wait has no
+GitOps merge revision to compare, so even a selector that never changes gets this grace period. An
+installation whose matching HelmReleases are all suspended is still exit 3 at once.
 
 ### When a rollout failed
 
@@ -155,8 +212,9 @@ failure. Without either attempt digest, the existing generation-based failure ju
 ### Polling and `--reconcile`
 
 The cluster is listed after a pause of 5 seconds, doubling to 30, until `--timeout` (30 minutes by
-default) after the release was available. Flux polls an OCIRepository at its own interval, often ten
-minutes; `--reconcile` sets `reconcile.fluxcd.io/requestedAt` once on the source and the HelmRelease
+default) after the release was available. This budget also bounds cluster reads, retry backoff and
+reconcile requests; a timeout retains the last completed poll. Flux polls an OCIRepository at its own
+interval, often ten minutes; `--reconcile` sets `reconcile.fluxcd.io/requestedAt` once on the source and the HelmRelease
 of each deployment still behind, the annotation `flux reconcile` sets, so Flux looks now. It is the
 only write the command makes; without it the command only reads.
 It also requests a HelmRelease whose failure used obsolete values, including a named component or a
@@ -183,9 +241,10 @@ shown as progress) and:
 |---|---|---|
 | 0 | `rolled_out` | Every deployment of the charts that follows the version runs it or a newer one, ready and rolled out; for a configuration change, everything above applied the merge commit. |
 | 1 | `rollout_failed`, `ci_failed` | The rollout failed (the reason names the deployment and its condition), or the release's CI did. |
-| 2 | `timeout` | `--release-timeout` or `--timeout` passed; `deployments[].message` says what is missing. |
-| 3 | `not_applicable`, `no_release`, `rollout_unknown` | No release follows the pull request and nothing on the installation fetches its repository, nothing reads the GitRepository that does, the release ships no chart, nothing on the installation deploys its charts, no deployment follows the version, or no HelmRelease answers to a `--helmrelease` name; `rollout_unknown`: a configuration change is applied and no HelmRelease or App takes the values of an app it changed, so whether it runs cannot be told. |
+| 2 | `timeout` | `--release-timeout` passed, or `--timeout` passed while a deployment following the version or a configuration change was still progressing; `deployments[].message` says what is missing. |
+| 3 | `not_applicable`, `no_release`, `rollout_unknown` | No release follows the pull request and nothing on the installation fetches its repository, nothing reads the GitRepository that does, the release ships no chart, nothing on the installation deploys its charts, no deployment follows the version by `--timeout` (all suspended: at once), or no HelmRelease answers to a `--helmrelease` name; `rollout_unknown`: a configuration change is applied and no HelmRelease or App takes the values of an app it changed, so whether it runs cannot be told. |
 | 7 | `usage` | A bad argument, a kube context that does not exist and `tsh` could not log in to, a `--kubeconfig` that cannot be read, a request the cluster refused. |
 | 8 | `auth_required` | No GitHub token (`devctl auth login`), the kube context is not signed in (`tsh kube login <installation>`), or it is missing and `tsh` is not logged in (`tsh login`). |
 | 11 | `ambiguous_release` | With `--pr`, the release's commit carries the release tags of more than one version, as in [`release wait`](release-wait.md#exit-codes); `release.conflictingTags` names them, and the wait given the version follows it. |
 | 12 | `status_failed` | The release's artifacts are available and its tag pipeline is green, and a commit status of its commit failed, as in [`release wait`](release-wait.md#exit-codes); the reason names the failed contexts. |
+| 13 | `remote_error` | A CircleCI request failed. The command line was valid; the reason preserves the service error. Existing timeout and post-merge outcomes take precedence. |
