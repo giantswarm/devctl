@@ -214,7 +214,6 @@ require (
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.2 // indirect
-	sigs.k8s.io/structured-merge-diff/v7 v7.0.0 // indirect
 )
 
 // Graph-only pins: sigstore-go (via pkg/updater's cosign verification) pulls
@@ -233,4 +232,8 @@ replace (
 	go.etcd.io/etcd/v3 => go.etcd.io/etcd/v3 v3.7.1 // CVE-2026-33413 CVE-2026-59818 CVE-2026-73500 CVE-2026-33343 CVE-2026-44283
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace => go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.47.0 // CVE-2026-81870
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc => go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.47.0 // CVE-2026-81870
+	// kustomize v0.21.3 bumps k8s.io/kube-openapi to a snapshot whose pkg/schemaconv uses
+	// sigs.k8s.io/structured-merge-diff/v7, while k8s.io/apimachinery v0.37.2 uses v6.
+	// Drop once k8s.io/apimachinery moves to structured-merge-diff/v7.
+	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad
 )
