@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"strings"
 
@@ -36,19 +35,8 @@ func getAMIInfoString(ctx context.Context, config Config) (string, error) {
 	{
 		url := fmt.Sprintf("https://%s.release.%s/%s/", config.Channel, config.PrimaryDomain, config.Arch)
 		fmt.Println("getting list of releases from", url)
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return "", microerror.Mask(err)
-		}
-		response, err := http.DefaultClient.Do(request) //nolint:gosec
-		if err != nil {
-			return "", microerror.Mask(err)
-		}
-		if response.StatusCode != http.StatusOK {
-			return "", microerror.Maskf(executionFailedError, "fetching %s: HTTP status %d", url, response.StatusCode)
-		}
-
-		versions, err = scrapeVersions(response.Body)
+		var err error
+		versions, err = fetchReleaseVersions(ctx, url)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
@@ -68,23 +56,12 @@ func getAMIInfoString(ctx context.Context, config Config) (string, error) {
 
 		url := fmt.Sprintf("https://%s.release.%s/%s/%s/flatcar_production_ami_all.json", config.Channel, config.PrimaryDomain, config.Arch, version)
 		fmt.Println("scraping release", version)
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		versionAMI, found, err := fetchReleaseAMI(ctx, url)
 		if err != nil {
 			return "", microerror.Mask(err)
 		}
-		response, err := http.DefaultClient.Do(request) //nolint:gosec
-		if err != nil {
-			return "", microerror.Mask(err)
-		}
-		if response.StatusCode == 403 {
+		if !found {
 			continue // not found, keep going
-		}
-		if response.StatusCode != http.StatusOK {
-			return "", microerror.Maskf(executionFailedError, "fetching %s: HTTP status %d", url, response.StatusCode)
-		}
-		versionAMI, err := scrapeVersionAMI(response.Body)
-		if err != nil {
-			return "", microerror.Mask(err)
 		}
 
 		chinaVersionAMI, err := getChinaFlatcarRelease(ctx, config, version)

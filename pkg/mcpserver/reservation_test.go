@@ -322,3 +322,47 @@ func TestReservationToolsTakeNoUser(t *testing.T) {
 		t.Errorf("%d reservation tools served, want 4", seen)
 	}
 }
+
+// Promotion without a pullRequest argument must report the link already stored.
+func TestReservationPromotionReportsEffectivePullRequest(t *testing.T) {
+	for _, tc := range []struct{ name, pr string }{
+		{"unlinked", ""},
+		{"linked", "giantswarm/hello-world#7"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pr := tc.pr
+			g := newGitOps(t)
+			c := g.connectPerson(t, alice)
+			args := reserveArgs()
+			args["pullRequest"] = pr
+			_, before := call(t, c, mcpserver.ToolReservationReserve, args, nil)
+			assertVerdict(t, before, agentcli.VerdictGreen, agentcli.ExitOK)
+			delete(args, "pullRequest")
+			args["exclusive"] = true
+			args["duration"] = "2h"
+			_, promoted := call(t, c, mcpserver.ToolReservationReserve, args, nil)
+			assertVerdict(t, promoted, agentcli.VerdictGreen, agentcli.ExitOK)
+			if stringOf(promoted["pullRequest"]) != pr || promoted["scope"] != "exclusive" {
+				t.Errorf("promotion reports %v", promoted)
+			}
+			for _, key := range []string{"app", "user", "branch", "pullRequest", "from", "until"} {
+				if promoted[key] != before[key] {
+					t.Errorf("promotion changed %s: %v -> %v", key, before[key], promoted[key])
+				}
+			}
+			_, listed := call(t, c, mcpserver.ToolReservationList, map[string]any{"cluster": gitopsCluster}, nil)
+			assertVerdict(t, listed, agentcli.VerdictGreen, agentcli.ExitOK)
+			entries := anySlice(listed["reservations"])
+			if len(entries) != 1 {
+				t.Fatalf("list returned %v", listed)
+			}
+			stored := entries[0].(map[string]any)
+			for _, key := range []string{"app", "user", "branch", "pullRequest", "scope", "from", "until"} {
+				if promoted[key] != stored[key] {
+					t.Errorf("promotion reports %s = %v, stored %v", key, promoted[key], stored[key])
+				}
+			}
+			g.assertNoClone(t)
+		})
+	}
+}

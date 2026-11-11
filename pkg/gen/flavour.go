@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -49,6 +50,32 @@ func AllFlavours() []string {
 		FlavourPlans.String(),
 		FlavourMultiImage.String(),
 	}
+}
+
+// flavourDescriptions documents each flavour for the command help. Every entry
+// of AllFlavours() must have one -- Test_FlavourDescriptions enforces that, so a
+// new flavour cannot silently leave the help text behind.
+var flavourDescriptions = map[Flavour]string{
+	FlavourApp:                     "project containing a helm chart",
+	FlavourCLI:                     "project released with a downloadable binary",
+	FlavourCustomer:                "project whose issues are tracked on the general customer board",
+	FlavourFork:                    "project carrying an upstream release plus patches on an organisation branch",
+	FlavourGeneric:                 "everything else, i.e a project which simply needs to be released",
+	FlavourKubernetesAPI:           "project containing a Kubernetes API",
+	FlavourClusterApp:              "project containing helm chart, that is a cluster app (e.g. cluster-aws, cluster-azure, ...)",
+	FlavourManagementClustersFleet: "project containing clusters using GitOps",
+	FlavourPlans:                   "team plans repository holding PRDs, companion websites and plan-workflow skills",
+	FlavourMultiImage:              "project building and releasing multiple images, one per toolchains/<name>/ directory",
+}
+
+// FlavourDescriptionList renders the flavours as an indented bullet list for a
+// command's long description, in AllFlavours() order.
+func FlavourDescriptionList() string {
+	var b strings.Builder
+	for _, f := range AllFlavours() {
+		fmt.Fprintf(&b, "  - %s - %s\n", f, flavourDescriptions[Flavour(f)])
+	}
+	return b.String()
 }
 
 type Flavour string

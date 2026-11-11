@@ -22,7 +22,8 @@ type Config struct {
 	RepoName string
 	// HasCustomConfig, when true, appends the repo-owned renovate-custom.json5
 	// as the last `extends` entry so repo-specific rules win over the shared
-	// presets. The file itself is never generated or touched by devctl.
+	// presets. The command initializes an absent file before generation and
+	// preserves an existing file.
 	HasCustomConfig bool
 	// Deprecated, when true, extends the renovate-presets deprecated.json5
 	// preset, which disables all routine updates and keeps only

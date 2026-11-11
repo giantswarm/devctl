@@ -30,7 +30,7 @@ func Test_NewCreatePreCommitActionInput(t *testing.T) {
 		},
 		{
 			name:         "case 3: helmchart flavor",
-			p:            params.Params{Dir: "", Flavors: []string{"helmchart"}},
+			p:            params.Params{Dir: "", Flavors: []string{helmchartFlavor}},
 			expectedPath: ".github/workflows/zz_generated.pre-commit.yaml",
 		},
 	}

@@ -69,7 +69,7 @@
 // `devctl replace` does by hand, token by token -- CODEOWNERS for the team,
 // the chart's team annotation and default icon, and the files the
 // generators write for the declared flavours and language: Makefile,
-// workflows including auto-release, LLM rules, pre-commit, CircleCI when
+// workflows including auto-release, AGENTS.md, pre-commit, CircleCI when
 // gen.ci.generate is on, and the Renovate configuration as [PlanRenovate]
 // decides it for align-files too: renovate.json5 (with --circleci-generated
 // on generated CI) whatever the template carries, so no created

@@ -171,7 +171,7 @@ func reservationReserveTool() mcp.Tool {
 		mcp.WithString("cluster", mcp.Required(), mcp.Description("The management cluster, graveler.")),
 		mcp.WithString("app", mcp.Required(), mcp.Description("The collection app, by the chart its source serves.")),
 		mcp.WithString("branch", mcp.Required(), mcp.Description("The app repository's branch whose dev builds the cluster follows.")),
-		mcp.WithString("pullRequest", mcp.Description(reservationPullRequestDesc+" Without one, extend and release by pull request do not find the reservation.")),
+		mcp.WithString("pullRequest", mcp.Description(reservationPullRequestDesc+" An exclusive promotion retains the existing link when omitted. With no resulting link, extend and release by pull request do not find the reservation.")),
 		mcp.WithString("duration", mcp.Description("How long it lasts: "+reservation.AcceptedDurations+". Default 10h, at most the cluster's maximum.")),
 		mcp.WithBoolean("exclusive", mcp.Description("Lock the whole cluster, not only the app.")),
 		mcp.WithString("repository", mcp.Description(reservationRepositoryDescription)),
@@ -245,6 +245,7 @@ func (s *Server) runReserve(ctx context.Context, request mcp.CallToolRequest, do
 		})
 		if err == nil {
 			doc.Result = &result
+			doc.PullRequest = result.PullRequest
 		}
 		return err
 	})

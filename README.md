@@ -48,6 +48,22 @@ cosign verify-blob "${ASSET}" \
 
 `devctl version update` does this verification itself: it downloads the bundle published next to this platform's binary and installs the new binary only when the bundle verifies for a CircleCI build of `github.com/giantswarm/devctl` (CircleCI issuer, a CircleCI pipeline-definition identity, and the certificate's source repository pinned to giantswarm/devctl). A release without a bundle, or a binary that does not match its signature, is refused and the installed binary stays as it is.
 
+### Version checks
+
+Commands protected by the version gate require the latest release. Update with
+`devctl version update`, or allow one specific installed version with
+`DEVCTL_UNSAFE_FORCE_VERSION=<running-version>`.
+
+To disable the version gate independently of the installed version, set
+`DEVCTL_UNSAFE_SKIP_VERSION_CHECK=true` in the command environment. Only the exact
+value `true` disables it; unset, empty, false and other values keep checks enabled.
+This skips updater setup, release lookups, cache access and authentication for the
+version check, including with `--no-cache` and development builds. It does not
+change explicit `devctl version` commands or other command guards. Orchestrators
+such as beekeeper can set it while their guards are off and remove it when guards
+are enabled again. This intentionally permits outdated binaries to run; prefer
+the version-specific override for a one-time exception.
+
 ## Features
 
 ### Authentication for the agent-facing commands (`devctl auth`)
@@ -87,9 +103,9 @@ devctl pr rerun giantswarm/devctl 2277
 devctl release rerun giantswarm/devctl v8.123.0
 ```
 
-### CircleCI pipelines at the job level (`devctl ci jobs`, `devctl ci job`, `devctl ci rerun`)
+### CircleCI pipelines (`devctl ci jobs`, `devctl ci job`, `devctl ci rerun`, `devctl ci cancel`)
 
-`devctl ci jobs <owner/repo> <pipeline number|id>` reads a pipeline at the job level: every workflow run with its jobs, their start and stop times, and for a running job the step it is in and how long ago that step last wrote output, which tells a slow job from a stuck one while the workflow reads `running`. `devctl ci job <owner/repo> <job number>` reads one job: its steps with their status and the end of its failed steps' output, why it failed, without the CircleCI UI. Add `--step-output` for the first and last lines of every step, including successful ones, to read a soft-passed nancy outage. `devctl ci rerun <owner/repo> <workflow id> [--from-failed] [--cancel]` reruns one workflow, once an hour: a second rerun of the workflow's name in the same pipeline within an hour is refused (exit 5), as is a workflow still running unless `--cancel` cancels it first, the recovery of a stuck one. All take the `devctl auth login` CircleCI login (Write access for the rerun) and read nothing on GitHub. See [docs/ci.md](docs/ci.md).
+`devctl ci jobs <owner/repo> <pipeline number|id>` reads a pipeline at the job level: every workflow run with its jobs, their start and stop times, and for a running job the step it is in and how long ago that step last wrote output, which tells a slow job from a stuck one while the workflow reads `running`. `devctl ci job <owner/repo> <job number>` reads one job: its steps with their status and the end of its failed steps' output, why it failed, without the CircleCI UI. Add `--step-output` for the first and last lines of every step, including successful ones, to read a soft-passed nancy outage. `devctl ci rerun <owner/repo> <workflow id> [--from-failed] [--cancel]` reruns one workflow, once an hour: a second rerun of the workflow's name in the same pipeline within an hour is refused (exit 5), as is a workflow still running unless `--cancel` cancels it first, the recovery of a stuck one. All take the `devctl auth login` CircleCI login (Write access for the rerun) and read nothing on GitHub. `devctl ci cancel <owner/repo> <workflow id>` cancels a workflow, or all active workflows of a pipeline with `--pipeline`. `devctl ci cancel <owner/repo> --stale --dry-run` previews queued workflows made obsolete by changed branch heads or closed PRs; omit `--dry-run` to request cancellation. Stale cleanup also reads GitHub and protects tags, the default branch, started jobs and approval workflows. See [docs/ci.md](docs/ci.md).
 
 ```nohighlight
 devctl ci jobs giantswarm/devctl 3885
@@ -122,11 +138,28 @@ failures in one JSON document; see [docs/release-wait.md](docs/release-wait.md) 
 devctl release promote --team team-bumblebee --dry-run
 devctl release promote giantswarm/devctl giantswarm/klaus --progress
 devctl release promote giantswarm/devctl --version v1.2.3-rc.14
+devctl release promote giantswarm/substrate --ref release-1.9 --dry-run
 ```
+
+For one repository, `--ref <branch>` selects the default branch or a maintenance branch `release-X.Y`
+whose auto-release workflow enables pushes on that branch and manual dispatch. The workflow is read,
+candidate reachability checked, and stable promotion dispatched on that branch. Maintenance refs use
+the highest reachable stable of their X.Y series as the baseline; `--version` can name an older candidate
+on the same branch. An unsupported ref is exit 7 before candidate checks or dispatch. Calls without
+`--ref` retain their behavior, including the older `--branch` option; the two options cannot be combined.
 
 ### Waiting for a rollout (`devctl rollout wait`)
 
 `devctl rollout wait <installation> <owner/repo> (<vX.Y.Z> | --pr <n>)` runs the release wait, then blocks until every Flux HelmRelease and App CR on the installation's management cluster that deploys one of the release's charts runs the version, is ready and has its Deployments, StatefulSets and DaemonSets rolled out. It reads the cluster through the kube context `tsh kube login` writes, as you; `--reconcile` asks Flux to look now. A deployment pinned elsewhere is reported and warned about; a failed install or upgrade of the version is exit 1, a timeout exit 2 naming what is missing. See [docs/rollout-wait.md](docs/rollout-wait.md).
+
+For a component rolled by a version range while its meta chart stays unchanged, use
+`devctl rollout wait <installation> --chart <name> --version <vX.Y.Z>`. It waits directly for the
+component chart on the installation, without repository release checks or a GitHub login, and reports
+the chart and running version.
+
+A repository may also be retained in the document:
+`devctl rollout wait <installation> <owner/repo> --chart <name> <version>` skips release checks
+for that single bare chart name. OCI chart paths continue to check repository releases.
 
 ```nohighlight
 devctl rollout wait myinstallation giantswarm/app-operator v7.5.4 --progress
