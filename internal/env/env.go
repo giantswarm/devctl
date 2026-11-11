@@ -9,11 +9,12 @@ import (
 )
 
 var (
-	ConfigDir                = configDir{}
-	DevctlUnsafeForceVersion = devctlUnsafeForceVersion{}
-	FlatcarChannel           = flatcarChannel{}
-	FlatcarReleasesURL       = flatcarReleasesURL{}
-	GitHubToken              = gitHubToken{}
+	ConfigDir                    = configDir{}
+	DevctlUnsafeForceVersion     = devctlUnsafeForceVersion{}
+	DevctlUnsafeSkipVersionCheck = devctlUnsafeSkipVersionCheck{}
+	FlatcarChannel               = flatcarChannel{}
+	FlatcarReleasesURL           = flatcarReleasesURL{}
+	GitHubToken                  = gitHubToken{}
 )
 
 type configDir struct{}
@@ -36,6 +37,11 @@ type devctlUnsafeForceVersion struct{}
 
 func (devctlUnsafeForceVersion) Key() string { return "DEVCTL_UNSAFE_FORCE_VERSION" } // nolint:gosec
 func (devctlUnsafeForceVersion) Val() string { return os.Getenv(devctlUnsafeForceVersion{}.Key()) }
+
+type devctlUnsafeSkipVersionCheck struct{}
+
+func (devctlUnsafeSkipVersionCheck) Key() string { return "DEVCTL_UNSAFE_SKIP_VERSION_CHECK" }
+func (v devctlUnsafeSkipVersionCheck) Val() bool { return os.Getenv(v.Key()) == "true" }
 
 type flatcarChannel struct{}
 

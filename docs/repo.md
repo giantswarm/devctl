@@ -51,6 +51,10 @@ does) and runs the first release on it, which was tagged before the pipeline exi
 ends on that run, read with your CircleCI login: ready when it is green, failed at `released` with the
 red pipeline otherwise. Nobody is load-bearing for the pipeline afterwards.
 
+A repository created through the Dev Portal or the Repo Manager agent has no `devctl repo watch` on a
+laptop. Its record carries `circleci-pipeline-missing` until a member of the owning team runs devctl:
+any devctl command completes it (see [the automatic pass](#the-automatic-pass)).
+
 The output names the pull request; `--output json` prints the dry run and the pull request URL as one
 document. `--dry-run` asks giantswarm-repo-manager's `validate_repository` through muster for its
 creation preview and opens nothing. It sends the new declaration and owning team, using the same
@@ -345,6 +349,64 @@ The login is `devctl auth login --circleci-only`, granted **Write** on the conse
 login is refused on the first write with exit 8. A repository without `.circleci/config.yml` on its
 default branch is refused before any write.
 
+### `--pending`
+
+```nohighlight
+devctl repo follow-circleci --pending
+devctl repo follow-circleci --pending --output json
+```
+
+Instead of one repository, `--pending` sets up every repository of your teams that the inventory
+reports `circleci-pipeline-missing` for: giantswarm-repo-manager's `list_repositories` with scope
+`mine` (the teams you are a member of on GitHub, not every repository you administer), keeping the
+declared repositories in production (no `lifecycle` declared, or `production`), unarchived and still
+on GitHub. It runs the steps above on each without `--migrate` and does not wait for the runs (it
+refuses `--wait` and `--timeout`). CircleCI refusing a write (403) marks that repository `refused`
+and the others go on. When nothing could be written, the login most likely granted Read only: exit 8
+asks for `devctl auth login --circleci-only` granting Write. When other repositories were written,
+CircleCI refuses you that repository (you are no admin of it): exit 5 names the
+`devctl repo follow-circleci <repository>` a repository admin runs. Any other failure of one
+repository is reported, the others go on, and the exit is 13, as for a manager that cannot be
+reached. It needs the muster login too (`devctl auth login --muster-only`). It reads the first 100
+repositories the manager lists, by name, and warns when more match; devctl drops the repositories
+not in production after that cut. A repository whose pipeline is created and whose first run
+CircleCI then refuses is reported `refused`, and counts as nothing written.
+
+`--output json` prints the command's envelope (`command`, `exitCode`, `verdict`, `reason`,
+`warnings`) with `pending`, the number of pending repositories, and `repositories[]`: each with
+`repository`, `outcome` (`created`, `already-set-up`, `refused`, `failed`, `skipped`), `reason` and the
+`runs[]` it started (`ref`, `pipeline`). `created` is any write of the set-up: on a pipeline that
+existed, `reason` says which (its trigger, the project's setup workflows). Warnings, such as a CircleCI
+login about to expire, are in `warnings`.
+
+### The automatic pass
+
+After any devctl command, at most once every six hours, devctl runs the same pass by itself, so a
+repository created through the Dev Portal or the Repo Manager agent gets its pipeline without anyone
+typing a command. It uses the logins the keychain already holds and never opens a browser. A locked
+keychain is skipped on Linux instead of prompting to unlock it; saving a refreshed token still may
+prompt, since the old one is spent, and is lost if nobody answers before the pass ends. On macOS the
+keychain may still ask, most often for each devctl item after a devctl upgrade (a new binary), or
+when the login keychain is locked; so may KeePassXC's per-item confirmation on Linux. The pass is
+abandoned after about 20 seconds, or on Ctrl-C, and does not wait for the runs. It never changes the
+exit code or the stdout of the command you ran, and it runs after agent-facing commands and
+`--output json` too: their document stays alone on stdout. A caller that merges stderr into stdout
+(`2>&1`) sees the pass's lines among it, and once every six hours a command can take up to about 22
+seconds longer. It writes on stderr:
+
+- a line per pipeline it created, setting it changed or run it started;
+- at most once a day, when repositories wait, one line naming them and what to do: the CircleCI or
+  GitHub login that is missing or expired (`devctl auth login`, for CircleCI granting Write), or the
+  repository admin who runs `devctl repo follow-circleci <repository>` for one CircleCI refuses you.
+
+Without a muster login, and on any other failure, it says nothing (`--log-level debug` shows why) and
+tries again in six hours. Of two commands finishing together, one runs it. It does not follow `serve`,
+`completion`, `version`, `help`, `auth logout`, `auth exec`, `repo follow-circleci` or a `--help`; it
+does follow `devctl auth login`, within the same six-hour window as any other command. Its state is
+`circleci-pending.json` in devctl's configuration directory. It never runs in CI (`CI` set to any
+non-empty value), where devctl reads no keychain, and any non-empty value of
+`DEVCTL_NO_CIRCLECI_PENDING` (`0` included) turns it off.
+
 ## `devctl repo validate`
 
 Validates entries of a local team file and prints the dry run as JSON, one document whose `engine` says
@@ -536,8 +598,10 @@ against one source and its summary names it (`names @giantswarm/team-x`, or `mat
 repositories/override/<repository>/CODEOWNERS of giantswarm/github`). `devctl repo reconcile --team-file
 <dir>/<team>.yaml` reads `<dir>/override/<repository>/CODEOWNERS` from the checkout, so the check costs no request;
 the remote team-file source (`reposetup.Remote.Overrides`) lists the override directory once at the team files' ref
-and reads only the overrides it names. A differing file gets one pull request from `reposetup/codeowners` with the
-desired file; while it is open the step reports it and changes nothing. A fork line and a customer repository have no
+and reads only the overrides it names. A differing file gets one pull request from `reposetup/codeowners`, a branch the
+step owns, with the desired file; while it is open with the desired file and title the step reports it and changes
+nothing, and when its file or title is stale (as after a transfer or an override change) the step updates it. A branch
+left behind by a closed pull request is reset before a new one is opened. A fork line and a customer repository have no
 codeowners step.
 
 ## `reposetup` library: `Person` memberships

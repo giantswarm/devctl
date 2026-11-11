@@ -18,6 +18,9 @@ var createPreCommitConfigTemplateFiles embed.FS
 
 var createPreCommitConfigTemplateSha = input.TemplateSHA(createPreCommitConfigTemplateFiles, "pre-commit-config.yaml.template")
 
+//go:embed helm_docs_check.py
+var helmDocsCheckPython string
+
 // refFixPython is the middle step of the generated helm-schema pipeline hook: for every
 // object that has both `$ref` and `additionalProperties: false` it drops
 // `additionalProperties` and sets `unevaluatedProperties: false` instead. Only the latter
@@ -69,6 +72,7 @@ func NewCreatePreCommitConfigInput(p params.Params) input.Input {
 			"RepoName":                    p.RepoName,
 			"HelmCharts":                  p.HelmCharts,
 			"RefFixPython":                refFixPython,
+			"HelmDocsCheckPython":         strings.ReplaceAll(strings.TrimSpace(helmDocsCheckPython), "\n", "\n            "),
 			"GoModRequireCommentRegex":    goModRequireCommentRegex,
 			"NodeRunPrefix":               p.NodeRunPrefix,
 			"NodeDevLintHook":             p.NodeDevLintHook,

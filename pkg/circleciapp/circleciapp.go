@@ -283,6 +283,10 @@ func (w Waiter) Wait(ctx context.Context, id string) (*Outcome, error) {
 			}
 		case outcome == nil:
 			setupOnly = 0
+		case len(outcome.OnHold) > 0:
+			// An approval can precede continuation in the setup workflow.
+			// Nothing can continue until the approval is given.
+			return outcome, nil
 		case outcome.Green && circleciclient.SetupOnly(workflows):
 			if circleciclient.PipelineContinuing(p.State) {
 				setupOnly = 0

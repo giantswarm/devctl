@@ -10,6 +10,7 @@ import (
 
 	"github.com/giantswarm/microerror"
 
+	"github.com/giantswarm/devctl/v8/pkg/gen/batchci"
 	"github.com/giantswarm/devctl/v8/pkg/gen/input"
 	"github.com/giantswarm/devctl/v8/pkg/gen/internal"
 )
@@ -17,6 +18,24 @@ import (
 // Execute processes inputs in order. If an input fails or ctx is canceled,
 // earlier successful writes remain; later inputs are not started.
 func Execute(ctx context.Context, files ...input.Input) error {
+	// A workflow generation always refreshes the aggregate from the same
+	// repository-owned policy; alignment never needs to edit generated output.
+	for _, f := range files {
+		if !f.Delete && strings.Contains(filepath.ToSlash(f.Path), ".github/workflows/") {
+			policy, err := batchci.Read(batchci.Root(f.Path))
+			if err != nil {
+				return microerror.Mask(err)
+			}
+			if policy != nil {
+				files = append(files, input.Input{
+					Path:     filepath.Join(batchci.Root(f.Path), ".github/workflows/zz_generated.batch_ci.yaml"),
+					Generate: func(context.Context) ([]byte, error) { return batchci.Gate(policy) },
+				})
+			}
+			break
+		}
+	}
+
 	for _, f := range files {
 		err := execute(ctx, f)
 		if err != nil {
@@ -80,6 +99,20 @@ func execute(ctx context.Context, file input.Input) error {
 	var buf bytes.Buffer
 	if err := internal.Execute(ctx, &buf, file); err != nil {
 		return microerror.Mask(err)
+	}
+
+	// Apply the persistent repository policy only to generated CI files.
+	if strings.Contains(filepath.ToSlash(file.Path), ".github/workflows/") || strings.HasSuffix(filepath.ToSlash(file.Path), ".circleci/config.yml") {
+		policy, err := batchci.Read(batchci.Root(file.Path))
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		content, err := batchci.Apply(file.Path, buf.Bytes(), policy)
+		if err != nil {
+			return microerror.Mask(err)
+		}
+		buf.Reset()
+		_, _ = buf.Write(content)
 	}
 
 	// A generator may finish with content after its caller has canceled.

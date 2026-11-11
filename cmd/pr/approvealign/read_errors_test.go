@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/google/go-github/v93/github"
+	"github.com/jedib0t/go-pretty/v6/text"
 	"github.com/sirupsen/logrus"
 
 	"github.com/giantswarm/devctl/v8/internal/pr"
@@ -187,8 +188,15 @@ func Test_ReadErrors_Report(t *testing.T) {
 				t.Errorf("per-PR table/group choice is incorrect:\n%s", output)
 			}
 			for _, status := range tc.statuses {
-				if !strings.Contains(output, status) {
-					t.Errorf("output lacks %q:\n%s", status, output)
+				// The per-PR table fits each status to its 30-cell column so
+				// redraws stay within the reserved rows; the summary keeps the
+				// full diagnostic (Test_ReadErrors_Summary).
+				want := status
+				if !tc.grouped {
+					want = text.Snip(status, 30, "…")
+				}
+				if !strings.Contains(output, want) {
+					t.Errorf("output lacks %q:\n%s", want, output)
 				}
 			}
 		})

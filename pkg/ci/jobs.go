@@ -77,7 +77,8 @@ func NewJobsResult(repository string) *JobsResult {
 // the step it is in and when that step last wrote output. Exit 3 when
 // CircleCI has no such pipeline of the repository. Jobs or steps CircleCI
 // does not answer are a warning, not an outcome: the rest of the view still
-// tells where the pipeline stands.
+// tells where the pipeline stands. Caller cancellation ends the read with its
+// context error and retains the view assembled so far.
 func Jobs(ctx context.Context, client *circleciclient.Client, org, repo, pipeline string, now time.Time, result *JobsResult, warn func(string)) error {
 	detail, err := findPipeline(ctx, client, org, repo, pipeline)
 	if err != nil {
@@ -110,6 +111,10 @@ func Jobs(ctx context.Context, client *circleciclient.Client, org, repo, pipelin
 		}
 		for _, job := range jobs {
 			w.Jobs = append(w.Jobs, newJob(ctx, client, org, repo, job, now, warn))
+			if err := ctx.Err(); err != nil {
+				result.Workflows = append(result.Workflows, w)
+				return err
+			}
 		}
 		result.Workflows = append(result.Workflows, w)
 	}

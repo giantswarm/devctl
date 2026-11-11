@@ -63,7 +63,7 @@ func TestRunUsageErrorsAreDocuments(t *testing.T) {
 		reason string
 	}{
 		{name: "no arguments", args: nil, reason: "usage: devctl rollout wait <installation> <owner/repo>"},
-		{name: "no repository", args: []string{"myinstallation"}, reason: "got 1 argument(s)"},
+		{name: "no repository or component", args: []string{"myinstallation"}, reason: "pass --chart <name> and --version"},
 		{name: "too many arguments", args: []string{"myinstallation", "giantswarm/devctl", "v1.2.3", "v1.2.4"}, reason: "got 4 argument(s)"},
 		{name: "installation with a slash", args: []string{"giantswarm/devctl", "v1.2.3"}, reason: "is not an installation name"},
 		{name: "no slash", args: []string{"myinstallation", "devctl", "v1.2.3"}, reason: "expected owner/repo"},
