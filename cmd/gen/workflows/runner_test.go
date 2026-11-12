@@ -226,7 +226,8 @@ func Test_Run_FleetMctl(t *testing.T) {
 		t.Run(flavour.String(), func(t *testing.T) {
 			t.Chdir(t.TempDir())
 			require.NoError(t, os.MkdirAll(".github/workflows", 0o750))
-			for _, name := range append(legacy, "lint.yaml") {
+			// A stale generated check proves the generic run deletes it.
+			for _, name := range append(legacy, "lint.yaml", "zz_generated.validate_organization_kustomizations.yaml") {
 				require.NoError(t, os.WriteFile(filepath.Join(".github/workflows", name), []byte("name: x\n"), 0o600))
 			}
 
