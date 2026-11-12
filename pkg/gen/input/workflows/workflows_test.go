@@ -3,6 +3,7 @@ package workflows
 import (
 	"bytes"
 	"flag"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -428,6 +429,71 @@ func Test_ReservationCommandIsValidYAML(t *testing.T) {
 func Test_ReservationCommandGolden(t *testing.T) {
 	got := renderInput(t, withFixedHeader(t, newWorkflows(t, gen.FlavourApp).ReservationCommand()))
 	assertGolden(t, "testdata/reservation_command.yaml.golden", got)
+}
+
+// Test_ValidateOrganizationKustomizations checks what a required check needs: the
+// workflow runs on every pull request (a path filter would leave the check pending on
+// the others), the job keeps its name (the required context), and the check's code
+// comes from management-cluster-bases, not from the pull request.
+func Test_ValidateOrganizationKustomizations(t *testing.T) {
+	in := newWorkflows(t, gen.FlavourManagementClustersFleet).ValidateOrganizationKustomizations()
+	if want := filepath.Join(".github", "workflows", "zz_generated.validate_organization_kustomizations.yaml"); in.Path != want {
+		t.Errorf("path = %q, want %q", in.Path, want)
+	}
+	got := renderInput(t, in)
+
+	var wf struct {
+		On          []string          `yaml:"on"`
+		Permissions map[string]string `yaml:"permissions"`
+		Jobs        map[string]struct {
+			Name        string            `yaml:"name"`
+			If          string            `yaml:"if"`
+			Permissions map[string]string `yaml:"permissions"`
+			Steps       []struct {
+				Uses string `yaml:"uses"`
+				Run  string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(got), &wf); err != nil {
+		t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, got)
+	}
+
+	if !slices.Equal(wf.On, []string{"pull_request", "merge_group"}) {
+		t.Errorf("on = %v, want [pull_request merge_group] with no filter", wf.On)
+	}
+	if len(wf.Permissions) != 0 {
+		t.Errorf("top-level permissions = %v, want none", wf.Permissions)
+	}
+	job, ok := wf.Jobs["check"]
+	if !ok || len(wf.Jobs) != 1 {
+		t.Fatalf("jobs = %v, want the one job check", wf.Jobs)
+	}
+	if want := "Organization kustomizations stay in their directory"; job.Name != want {
+		t.Errorf("job name = %q, want %q: it is the required check's context", job.Name, want)
+	}
+	if job.If != "" {
+		t.Errorf("job if = %q: a skipped job leaves the required check pending", job.If)
+	}
+	if !maps.Equal(job.Permissions, map[string]string{"contents": "read"}) {
+		t.Errorf("job permissions = %v, want contents: read", job.Permissions)
+	}
+	const action = "giantswarm/management-cluster-bases/.github/actions/organization-kustomizations@main"
+	var uses []string
+	for _, s := range job.Steps {
+		if s.Run != "" {
+			t.Errorf("step runs %q: the check's code must come from management-cluster-bases", s.Run)
+		}
+		uses = append(uses, s.Uses)
+	}
+	if len(uses) != 2 || !strings.HasPrefix(uses[0], "actions/checkout@") || uses[1] != action {
+		t.Errorf("steps use %v, want actions/checkout, then %s", uses, action)
+	}
+}
+
+func Test_ValidateOrganizationKustomizationsGolden(t *testing.T) {
+	got := renderInput(t, withFixedHeader(t, newWorkflows(t, gen.FlavourManagementClustersFleet).ValidateOrganizationKustomizations()))
+	assertGolden(t, "testdata/validate_organization_kustomizations.yaml.golden", got)
 }
 
 // Test_PullRequestWorkflowsConcurrency verifies that generated pull request

@@ -84,7 +84,9 @@ A repository to be used with GitOps containing kubernetes clusters.
 
 | Command | Result |
 |---------|--------|
-| `gen workflows` | `.github/workflows/zz_generated.cluster_app_values_validation_schema.yaml` -- validates the `management-clusters/**/cluster-app-manifests.yaml` committed in the repo against the corresponding cluster app schema, plus `zz_generated.mctl_*.yaml` |
+| `gen workflows` | `.github/workflows/zz_generated.cluster_app_values_validation_schema.yaml` -- validates the `management-clusters/**/cluster-app-manifests.yaml` committed in the repo against the corresponding cluster app schema, `zz_generated.validate_organization_kustomizations.yaml`, plus `zz_generated.mctl_*.yaml` |
+
+`zz_generated.validate_organization_kustomizations.yaml` runs on every pull request. Its job, *Organization kustomizations stay in their directory*, runs the composite action `giantswarm/management-cluster-bases/.github/actions/organization-kustomizations@main`: it fails when a kustomization file under `management-clusters/*/extras/agent-platform-organizations` (the Agent Platform organization paths that agent-manager writes in commit mode) has a field other than `apiVersion`, `kind`, `metadata` and `resources`, or a `resources` entry with `..`, an absolute path, a git or HTTP URL, or a symbolic link. A repository without organizations passes it, so the job can be a required check (`requiredChecks` in giantswarm/github).
 
 `devctl gen workflows` generates the mctl workflows of a `<customer>-management-clusters` repository (`zz_generated.mctl_*.yaml`: cluster init PR, `/init`, `/config`, `/create-mc`, the `mctl/ready-to-merge` gate and the merge and close cascades), running the mctl image tag devctl pins (`vars.MCTL_IMAGE` overrides it). They never run in `giantswarm/template-management-clusters`. The unprefixed copies and `op.env` that `mctl create cmc-repo` wrote are deleted.
 
