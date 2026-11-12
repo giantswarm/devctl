@@ -43,14 +43,15 @@ func (w *Waiter) staleValuesFailure(ctx context.Context, d Deployment, hr *unstr
 		} else {
 			// Preserve the JSON-to-YAML scalar conversion used by Flux, then
 			// order mapping nodes lexicographically at every depth. v4 no
-			// longer supports the v2 MapSlice representation.
+			// longer supports the v2 MapSlice representation. Flux's v2
+			// encoder folds long scalars at 80 columns, so the digest must too.
 			data, err = yaml.Marshal(values)
 			if err == nil {
 				var ordered goyaml.Node
 				err = goyaml.Unmarshal(data, &ordered)
 				if err == nil {
 					sortValues(&ordered)
-					data, err = goyaml.Dump(&ordered, goyaml.WithV2Defaults(), goyaml.WithCompactSeqIndent(), goyaml.WithLineWidth(-1))
+					data, err = goyaml.Dump(&ordered, goyaml.WithV2Defaults(), goyaml.WithCompactSeqIndent(), goyaml.WithLineWidth(80))
 				}
 			}
 		}

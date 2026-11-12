@@ -219,6 +219,7 @@ func TestValuesFailureDigest(t *testing.T) {
 		{name: "case 4: nested maps and compact sequences", input: "z:\n  key2: [two, three]\n  key10: {b: 2, a: 1}\n", canonical: "z:\n  key10:\n    a: 1\n    b: 2\n  key2:\n  - two\n  - three\n"},
 		{name: "case 5: JSON scalar conversion and YAML quoting", input: "text: 'yes'\nnumber: 2.0\n'null': null\nflag: true\n", canonical: "flag: true\n\"null\": null\nnumber: 2\ntext: \"yes\"\n"},
 		{name: "case 6: multiline strings", input: "message: |\n  first\n  second\n", canonical: "message: |\n  first\n  second\n"},
+		{name: "case 7: long strings fold at 80 columns like Flux", input: "description: this is a long description string with many words that exceeds eighty columns easily\n", canonical: "description: this is a long description string with many words that exceeds eighty\n  columns easily\n"},
 		// Independently calculated SHA1 of the literal YAML "replicas: 2\n".
 		{name: "case 3: legacy checksum", input: "replicas: 2\n", digest: "96bc5f992b874ad84925a2f144739ecfcc2621b0"},
 	} {
