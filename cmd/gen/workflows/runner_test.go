@@ -213,7 +213,8 @@ func git(t *testing.T, args ...string) {
 	require.NoError(t, err, string(out))
 }
 
-// Test_Run_FleetMctl checks fleet gets the mctl workflows and legacy deletions, other flavours neither.
+// Test_Run_FleetMctl checks fleet gets the mctl workflows, the organization kustomizations check and the
+// legacy deletions, other flavours none of them.
 func Test_Run_FleetMctl(t *testing.T) {
 	mctlWorkflows := []string{"close-cascade", "config", "create-mc", "init", "merge-cascade", "merge-gate", "patch-init", "validate-config", "validate-manifest"}
 	legacy := []string{"op.env"}
@@ -244,12 +245,15 @@ func Test_Run_FleetMctl(t *testing.T) {
 					require.FileExists(t, filepath.Join(".github/workflows", name))
 				}
 			}
+			generated := []string{".github/workflows/zz_generated.validate_organization_kustomizations.yaml"}
 			for _, name := range mctlWorkflows {
-				generated := filepath.Join(".github/workflows", "zz_generated.mctl_"+strings.ReplaceAll(name, "-", "_")+".yaml")
+				generated = append(generated, filepath.Join(".github/workflows", "zz_generated.mctl_"+strings.ReplaceAll(name, "-", "_")+".yaml"))
+			}
+			for _, path := range generated {
 				if flavour == gen.FlavourManagementClustersFleet {
-					require.FileExists(t, generated)
+					require.FileExists(t, path)
 				} else {
-					require.NoFileExists(t, generated)
+					require.NoFileExists(t, path)
 				}
 			}
 		})
