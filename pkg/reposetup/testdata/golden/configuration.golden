@@ -293,10 +293,6 @@ below. Where they differ from this block, they take precedence.
 - Giant Swarm's style guides are in <https://github.com/giantswarm/fmt>, one
   directory per topic (go, helm, kubernetes, prometheus, …). Read the relevant
   guide before you write or review that kind of code.
-- Name things with the term the specification, the upstream project or the
-  repository's `docs/glossary.md` already uses, and keep one meaning per word
-  in code, configuration and documentation. See
-  <https://github.com/giantswarm/fmt/blob/main/design/names.md>.
 - Use conventional commits for commit messages and pull request titles.
 - If `.github/workflows/zz_generated.auto_release.yaml` exists, GitHub Releases
   are written from pull request titles: do not edit CHANGELOG.md. Otherwise,

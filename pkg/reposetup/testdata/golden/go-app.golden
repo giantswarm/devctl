@@ -1939,16 +1939,6 @@ below. Where they differ from this block, they take precedence.
 - Giant Swarm's style guides are in <https://github.com/giantswarm/fmt>, one
   directory per topic (go, helm, kubernetes, prometheus, …). Read the relevant
   guide before you write or review that kind of code.
-- Follow the specification of what you build: the Kubernetes API conventions
-  for custom resources, the protocol (MCP, A2A, OAuth 2.1, OpenID Connect) and
-  the conventions of the upstream project. When a change would not follow it,
-  ask the user before you write it, or open a draft pull request when nobody
-  can be asked, and state the deviation and its reason in the pull request.
-  See <https://github.com/giantswarm/fmt/blob/main/design/specifications.md>.
-- Name things with the term the specification, the upstream project or the
-  repository's `docs/glossary.md` already uses, and keep one meaning per word
-  in code, configuration and documentation. See
-  <https://github.com/giantswarm/fmt/blob/main/design/names.md>.
 - Use conventional commits for commit messages and pull request titles.
 - If `.github/workflows/zz_generated.auto_release.yaml` exists, GitHub Releases
   are written from pull request titles: do not edit CHANGELOG.md. Otherwise,
@@ -1969,6 +1959,8 @@ below. Where they differ from this block, they take precedence.
 - Go: run `goimports -local github.com/giantswarm/<repository>` on the files
   you change. CI with architect-orb fails when imports are grouped
   differently.
+- Go: run `make lint` before you finish and fix what it reports. It runs the
+  same checks as CI.
 
 <!-- END devctl-managed -->
 

@@ -27,43 +27,10 @@ func TestBlockBody(t *testing.T) {
 			require.Equal(t, wantGo, slices.ContainsFunc(items, func(item string) bool {
 				return strings.HasPrefix(item, "Go: run `goimports -local github.com/giantswarm/<repository>`")
 			}))
+			require.Equal(t, wantGo, slices.Contains(items, "Go: run `make lint` before you finish and fix what it reports. It runs the same checks as CI."))
 			// Claude reads @ before a path or URL as an import.
 			require.NotContains(t, body, " @")
 			require.True(t, strings.HasSuffix(body, ".\n"), "the body ends with one newline")
-		})
-	}
-}
-
-func TestBlockBody_SpecificationRules(t *testing.T) {
-	const (
-		specItem  = "<https://github.com/giantswarm/fmt/blob/main/design/specifications.md>"
-		namesItem = "<https://github.com/giantswarm/fmt/blob/main/design/names.md>"
-	)
-	for _, tc := range []struct {
-		name     string
-		config   llm.Config
-		wantSpec bool
-	}{
-		{name: "Go", config: llm.Config{Language: "go", Flavours: gen.FlavourSlice{gen.FlavourCLI}}, wantSpec: true},
-		{name: "node", config: llm.Config{Language: "node", Flavours: gen.FlavourSlice{gen.FlavourApp}}, wantSpec: true},
-		{name: "python", config: llm.Config{Language: "python", Flavours: gen.FlavourSlice{gen.FlavourGeneric}}, wantSpec: true},
-		{name: "Kubernetes API types", config: llm.Config{Language: "generic", Flavours: gen.FlavourSlice{gen.FlavourKubernetesAPI}}, wantSpec: true},
-		{name: "chart", config: llm.Config{Language: "generic", Flavours: gen.FlavourSlice{gen.FlavourApp}}},
-		{name: "customer", config: llm.Config{Language: "generic", Flavours: gen.FlavourSlice{gen.FlavourCustomer}}},
-		{name: "kyverno policy", config: llm.Config{Language: "kyverno-policy", Flavours: gen.FlavourSlice{gen.FlavourGeneric}}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			l, err := llm.New(tc.config)
-			require.NoError(t, err)
-
-			body, err := l.BlockBody()
-			require.NoError(t, err)
-
-			items := strings.Join(listItems(body), "\n")
-			require.Equal(t, tc.wantSpec, strings.Contains(items, specItem))
-			require.Equal(t, tc.wantSpec, strings.Contains(items, "open a draft pull request when nobody can be asked"))
-			require.Contains(t, items, "keep one meaning per word")
-			require.Contains(t, items, namesItem)
 		})
 	}
 }
