@@ -133,6 +133,12 @@ system that will produce it:
    longer waited for: its jobs are its verdict (rule 1), and `actions[]` marks it `jobsCompleted`.
    GitHub has left a run `in_progress` for an hour after its only job succeeded; a job behind
    `needs:` is listed seconds after the jobs it needs complete, well inside the five minutes.
+   The newest run of a workflow that completed with a conclusion other than `success`, `neutral`
+   or `skipped` (`failure`, `startup_failure`, `timed_out`, `cancelled`, …) is red as
+   `actions run <name> concluded <conclusion>`, unless a job of it the head lists did not pass:
+   that job already carries the failure (rule 1), or the caller accepted it. A run that failed at
+   startup, a reusable workflow whose ref cannot be resolved for one, creates no jobs, and the
+   jobs of an older passed run of the same workflow do not count, as in the merge box.
 4. **Every required status context has reported**: the required status checks of the base
    branch's protection and of every ruleset in effect on it. A context nothing has reported under
    is unfinished, and so is one whose check run or status is registered and not completed. While
@@ -327,7 +333,7 @@ reset`). Any other `403` is an answer: a permission the token lacks.
 | `checks[]` | The head's check runs, every run of a name that counts, and its statuses, the latest per context, sorted by name and id. A check run carries its `id` and, when its job belongs to a GitHub Actions run of the head, its `workflow`. `source` is `check_run` or `status`; `status` is `queued`, `in_progress` or `completed` for a check run and `pending` or `completed` for a status; `conclusion` is the check run's conclusion or the status's state, empty while unfinished; `required` says whether the base requires this context. |
 | `checksVia` | `graphql` when the last poll read `checks[]` through GraphQL's `statusCheckRollup` because REST's check endpoints went unanswered (Polling); absent when REST answered. |
 | `circleci` | Present only when CircleCI was consulted: the newest pipeline of the head revision and its workflows, the newest run per name, sorted by name. |
-| `actions[]` | The head's GitHub Actions runs, the latest per workflow name, sorted by name. `jobsCompleted` is true on a run that still reads `in_progress` while all its jobs completed five minutes ago or longer (rule 3). |
+| `actions[]` | The head's GitHub Actions runs, the latest per workflow name, sorted by name; a completed one that did not pass is red (rule 3). `jobsCompleted` is true on a run that still reads `in_progress` while all its jobs completed five minutes ago or longer (rule 3). |
 | `failedJobs[]` | Present at exit 1 with `--failed-log`: each failed job with `name` (an Actions check run's name, with `[<workflow>, check run <id>]` when several runs share it; `<workflow>/<job>` on CircleCI), `source` (`actions` or `circleci`), `url`, and `logTail`, the last `--failed-log-lines` lines of its log, led by the lines from its first failure when that lies before them (zero keeps the full Actions log or all failed-step output on CircleCI), or `logError` when the log could not be read. A check run of another app, a commit status and a CircleCI workflow without a failed job are named in `reason` only. |
 | `blocking[]` | Present on a green head that GitHub's merge box still holds: each pending check the base does not require, which the wait did not wait for (`check Heimdall - PR Gatekeeper (in_progress, not required, not waited for)`, `status <context> (pending, not required, not waited for)`), and, while the pull request's `mergeable_state` is `blocked`, the review the base requires (`review: an approving review the base requires is missing`, `review: a reviewer requested changes`), read from GitHub's `reviewDecision`. Each is a warning too. |
 | `unfinished[]` | Present at exit 2 and 4: what the head was still waiting for, one line each (`check go-test (in_progress)`, `circleci workflow build (running)`, `actions run CI (awaiting approval)`, `required context lint (absent)`, `actions runs of .github/workflows/ci.yaml (none registered)`). |
