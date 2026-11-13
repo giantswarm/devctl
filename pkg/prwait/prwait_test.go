@@ -954,10 +954,12 @@ func Test_Wait_newestFailedSuiteWithoutRequiredJob(t *testing.T) {
 	})}
 	h := start(t, gh, sequence.Routes{}, false, 2*time.Minute)
 	result, err := h.waiter.Wait(context.Background(), "o", "r", 42)
-	if exitCode(err) != agentcli.ExitRequiredMissing {
-		t.Fatalf("want missing required job, got %d %v", exitCode(err), err)
+	// The newest run failed without creating ci-ok: its failure is the
+	// verdict, and the older runs' ci-ok does not count.
+	if exitCode(err) != agentcli.ExitRed {
+		t.Fatalf("want red for the failed newest run, got %d %v", exitCode(err), err)
 	}
-	if len(result.Checks) != 0 || !strings.Contains(err.Error(), "ci-ok") {
+	if len(result.Checks) != 0 || !strings.Contains(err.Error(), "actions run CI Build concluded failure") {
 		t.Errorf("stale checks must not satisfy ci-ok: checks=%+v err=%v", result.Checks, err)
 	}
 }
