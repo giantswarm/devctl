@@ -26,7 +26,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-containerregistry v0.22.1
 	github.com/google/go-github/v93 v93.0.0
-	github.com/jedib0t/go-pretty/v6 v6.9.0
+	github.com/jedib0t/go-pretty/v6 v6.9.1
 	github.com/losisin/helm-values-schema-json/v2 v2.6.0
 	github.com/manifoldco/promptui v0.9.0
 	github.com/mark3labs/mcp-go v1.5.0
