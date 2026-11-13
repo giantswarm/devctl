@@ -153,9 +153,13 @@ func Test_PreCommitActionConcurrency(t *testing.T) {
 // Test_PreCommitActionHooks verifies the hooks run without a third-party
 // action and with a cache key that restores the caches existing runs saved.
 func Test_PreCommitActionHooks(t *testing.T) {
-	for _, language := range []string{"go", "generic"} {
-		t.Run(language, func(t *testing.T) {
-			got := renderAction(t, params.Params{Language: language})
+	for name, p := range map[string]params.Params{
+		"go":        {Language: "go"},
+		"generic":   {Language: "generic"},
+		"helmchart": {Language: "generic", Flavors: []string{helmchartFlavor}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := renderAction(t, p)
 
 			var wf struct {
 				Jobs map[string]struct {
@@ -172,8 +176,11 @@ func Test_PreCommitActionHooks(t *testing.T) {
 			}
 
 			const wantKey = "pre-commit-3|${{ env.pythonLocation }}|${{ hashFiles('.pre-commit-config.yaml') }}"
-			var cached, ran bool
+			var installed, cached, ran bool
 			for _, step := range wf.Jobs["pre-commit"].Steps {
+				if step.Run == "python -m pip install pre-commit" {
+					installed = true
+				}
 				if strings.HasPrefix(step.Uses, "pre-commit/action@") {
 					t.Errorf("step %q uses pre-commit/action", step.Name)
 				}
@@ -185,8 +192,11 @@ func Test_PreCommitActionHooks(t *testing.T) {
 				}
 				if strings.HasPrefix(step.Run, "pre-commit run ") {
 					ran = true
-					if !cached {
-						t.Error("the pre-commit cache must be restored before the hooks run")
+					if !installed || !cached {
+						t.Error("pre-commit must be installed and its cache restored before the hooks run")
+					}
+					if !strings.Contains(step.Run, "--all-files") {
+						t.Errorf("hooks step %q does not check all files", step.Run)
 					}
 				}
 			}
