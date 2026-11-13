@@ -498,8 +498,10 @@ func Test_ValidateOrganizationKustomizationsGolden(t *testing.T) {
 
 // Test_PullRequestWorkflowsConcurrency verifies that generated pull request
 // workflows group runs by workflow and pull request number (falling back to
-// ref) and cancel in-progress runs only for pull_request events, while release
-// workflows retain their non-cancelling per-ref serialization.
+// ref) and cancel in-progress runs only for pull_request events (the
+// semantic-pull-request workflow keeps title-preserving edits out of that
+// group), while release workflows retain their non-cancelling per-ref
+// serialization.
 func Test_PullRequestWorkflowsConcurrency(t *testing.T) {
 	w := newWorkflows(t, gen.FlavourApp)
 
@@ -511,7 +513,6 @@ func Test_PullRequestWorkflowsConcurrency(t *testing.T) {
 		{name: "check-values-schema", input: w.CheckValuesSchema()},
 		{name: "check-readme-links", input: w.CheckReadmeLinks()},
 		{name: "gitleaks", input: w.Gitleaks()},
-		{name: "semantic-pull-request", input: w.SemanticPullRequest()},
 	}
 
 	wantGroup := "${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
@@ -539,6 +540,37 @@ func Test_PullRequestWorkflowsConcurrency(t *testing.T) {
 			}
 		})
 	}
+
+	// The template comment says why edits that keep the title get a group of
+	// their own.
+	t.Run("semantic-pull-request", func(t *testing.T) {
+		got := renderInput(t, w.SemanticPullRequest())
+
+		var wf struct {
+			Concurrency struct {
+				Group            string `yaml:"group"`
+				CancelInProgress string `yaml:"cancel-in-progress"`
+			} `yaml:"concurrency"`
+			Jobs map[string]struct {
+				If string `yaml:"if"`
+			} `yaml:"jobs"`
+		}
+		if err := yaml.Unmarshal([]byte(got), &wf); err != nil {
+			t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, got)
+		}
+
+		wantGroup := "${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}" +
+			"${{ github.event.action == 'edited' && github.event.changes.title == null && format('-{0}', github.run_id) || '' }}"
+		if wf.Concurrency.Group != wantGroup {
+			t.Errorf("concurrency.group = %q, want %q", wf.Concurrency.Group, wantGroup)
+		}
+		if wf.Concurrency.CancelInProgress != wantCancel {
+			t.Errorf("concurrency.cancel-in-progress = %q, want %q", wf.Concurrency.CancelInProgress, wantCancel)
+		}
+		if job := wf.Jobs["semantic-pull-request"]; job.If != "" {
+			t.Errorf("jobs.semantic-pull-request.if = %q, want none", job.If)
+		}
+	})
 
 	releaseWorkflows := []struct {
 		name  string
