@@ -217,6 +217,9 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 	report := &Report{Result: result}
 	slug := repository.Slug()
 	def := result.Definition
+	if result.FollowedProject {
+		progress("%s: CircleCI knew no project, followed it as you to create it", slug)
+	}
 	switch {
 	case result.CreatedDefinition:
 		progress("%s: created the GitHub App pipeline %s (%s)", slug, def.Name, def.ID)

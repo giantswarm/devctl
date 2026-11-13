@@ -14,9 +14,12 @@ import (
 // the writes.
 type fakeCircleCI struct {
 	noProject bool
-	forbidden bool
-	defs      []circleciclient.PipelineDefinition
-	triggers  map[string][]circleciclient.Trigger
+	// followCreates makes Follow create the project, as CircleCI does for
+	// an organization repository: an OAuth definition with its trigger.
+	followCreates bool
+	forbidden     bool
+	defs          []circleciclient.PipelineDefinition
+	triggers      map[string][]circleciclient.Trigger
 	// pipelines answers GetPipeline and ListPipelineWorkflows in turn, one
 	// read per entry; the last repeats.
 	reads  []pipelineRead
@@ -55,6 +58,19 @@ func (f *fakeCircleCI) GetProject(_ context.Context, org, repo string) (*circlec
 		return nil, notFound()
 	}
 	return &circleciclient.Project{ID: "p1", Slug: "gh/" + org + "/" + repo}, nil
+}
+
+func (f *fakeCircleCI) Follow(_ context.Context, org, repo string) error {
+	f.writes = append(f.writes, "follow "+org+"/"+repo)
+	if f.forbidden {
+		return forbidden()
+	}
+	if f.followCreates && f.noProject {
+		f.noProject = false
+		f.defs = append(f.defs, oauthDef())
+		f.triggers["oauth"] = append(f.triggers["oauth"], circleciclient.Trigger{ID: "followed"})
+	}
+	return nil
 }
 
 func (f *fakeCircleCI) ListPipelineDefinitions(context.Context, string) ([]circleciclient.PipelineDefinition, error) {

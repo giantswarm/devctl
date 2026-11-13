@@ -73,13 +73,51 @@ func TestEnsureReportsAndMigratesTheOAuthTrigger(t *testing.T) {
 	require.Equal(t, []string{"delete trigger implicit"}, ci.writes)
 }
 
-// TestEnsureRefusals: no project is IsProjectNotFound; a Read-only login is
-// refused with CircleCI's 403 on the first write.
-func TestEnsureRefusals(t *testing.T) {
-	_, err := Ensure(context.Background(), &fakeCircleCI{noProject: true}, repo, false)
-	require.True(t, IsProjectNotFound(err), "%v", err)
-
+// TestEnsureFollowsAMissingProject: CircleCI knows no project for a new
+// repository, so Ensure follows it as the person, which creates the project,
+// sets up the App pipeline and deletes the OAuth trigger the follow created,
+// also without migrate.
+func TestEnsureFollowsAMissingProject(t *testing.T) {
 	ci := newFake()
+	ci.noProject = true
+	ci.followCreates = true
+	result, err := Ensure(context.Background(), ci, repo, false)
+	require.NoError(t, err)
+	require.True(t, result.FollowedProject)
+	require.True(t, result.Changed())
+	require.True(t, result.CreatedDefinition)
+	require.True(t, result.CreatedTrigger)
+	require.Equal(t, []string{"followed"}, result.DeletedOAuthTriggers)
+	require.Empty(t, result.OAuthTriggers)
+	require.Equal(t, []string{
+		"follow giantswarm/sample",
+		"create definition sample-app repo 42 file .circleci/config.yml",
+		"create trigger all-pushes on created",
+		"delete trigger followed",
+	}, ci.writes)
+
+	// A second run finds the project and changes nothing.
+	ci.writes = nil
+	result, err = Ensure(context.Background(), ci, repo, false)
+	require.NoError(t, err)
+	require.False(t, result.FollowedProject)
+	require.False(t, result.Changed())
+	require.Empty(t, ci.writes)
+}
+
+// TestEnsureRefusals: no project after the follow is IsProjectNotFound; a
+// Read-only login is refused with CircleCI's 403 on the first write.
+func TestEnsureRefusals(t *testing.T) {
+	ci := &fakeCircleCI{noProject: true, triggers: map[string][]circleciclient.Trigger{}}
+	_, err := Ensure(context.Background(), ci, repo, false)
+	require.True(t, IsProjectNotFound(err), "%v", err)
+	require.Equal(t, []string{"follow giantswarm/sample"}, ci.writes)
+
+	ci = &fakeCircleCI{noProject: true, forbidden: true}
+	_, err = Ensure(context.Background(), ci, repo, false)
+	require.True(t, circleciclient.IsForbidden(err), "%v", err)
+
+	ci = newFake()
 	ci.forbidden = true
 	_, err = Ensure(context.Background(), ci, repo, false)
 	require.True(t, circleciclient.IsForbidden(err), "%v", err)

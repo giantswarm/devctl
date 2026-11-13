@@ -331,6 +331,11 @@ stops when they leave.
 
 The command is idempotent:
 
+0. When CircleCI knows no project for the repository, it follows the repository as you, which creates
+   the project; CircleCI creates none on its own for a new organization repository, although its GitHub
+   App is installed on all of them. The follow builds the default branch once on the OAuth pipeline, and
+   that build's red `setup` status shows on the branch until its next push. The OAuth trigger the follow
+   created is deleted, as with `--migrate`.
 1. It finds the project's GitHub App pipeline, or creates `<repository>-app` (config and checkout
    through the GitHub App, `.circleci/config.yml`).
 2. It gives the pipeline an `all-pushes` trigger (branches and tags) unless it has an enabled one, and
