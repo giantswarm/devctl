@@ -30,6 +30,11 @@ func (f *fakeCircleCI) GetProject(context.Context, string, string) (*circlecicli
 	return &circleciclient.Project{ID: "p1"}, nil
 }
 
+func (f *fakeCircleCI) Follow(context.Context, string, string) error {
+	f.writes = append(f.writes, "follow")
+	return nil
+}
+
 func (f *fakeCircleCI) ListPipelineDefinitions(context.Context, string) ([]circleciclient.PipelineDefinition, error) {
 	defs := []circleciclient.PipelineDefinition{{ID: "oauth", ConfigSource: circleciclient.DefinitionSource{Provider: circleciclient.ProviderGitHubOAuth}}}
 	if f.setUp {

@@ -25,6 +25,7 @@ import (
 // CircleCI is what Ensure and Wait ask of CircleCI, as the person.
 type CircleCI interface {
 	GetProject(ctx context.Context, org, repo string) (*circleciclient.Project, error)
+	Follow(ctx context.Context, org, repo string) error
 	ListPipelineDefinitions(ctx context.Context, projectID string) ([]circleciclient.PipelineDefinition, error)
 	CreatePipelineDefinition(ctx context.Context, projectID string, def circleciclient.PipelineDefinition) (*circleciclient.PipelineDefinition, error)
 	ListTriggers(ctx context.Context, projectID, definitionID string) ([]circleciclient.Trigger, error)
@@ -56,6 +57,9 @@ func DefinitionName(repo string) string { return repo + "-app" }
 // Result is what Ensure found and did.
 type Result struct {
 	ProjectID string
+	// FollowedProject says Ensure followed the repository as the person,
+	// because CircleCI knew no project for it.
+	FollowedProject bool
 	// Definition is the GitHub App pipeline, found or created.
 	Definition circleciclient.PipelineDefinition
 	// CreatedDefinition and CreatedTrigger say Ensure created them.
@@ -77,7 +81,7 @@ type Result struct {
 
 // Changed says Ensure wrote anything.
 func (r *Result) Changed() bool {
-	return r.CreatedDefinition || r.CreatedTrigger || len(r.DeletedOAuthTriggers) > 0 || r.EnabledSetupWorkflows
+	return r.FollowedProject || r.CreatedDefinition || r.CreatedTrigger || len(r.DeletedOAuthTriggers) > 0 || r.EnabledSetupWorkflows
 }
 
 // Ensure makes repo build on a GitHub App pipeline, idempotently: it finds
@@ -91,15 +95,30 @@ func (r *Result) Changed() bool {
 // the person the settings (403) is noted in the result, not an error. A login
 // that granted Read access only is refused with circleciclient.IsForbidden on
 // the first write.
+//
+// CircleCI creates no project for a new organization repository on its own,
+// although its GitHub App is installed on all of them. When it knows none,
+// Ensure follows the repository as the person, which creates the project,
+// and deletes the OAuth pipeline's triggers that the follow created, as with
+// migrate: nothing else builds on them yet.
 func Ensure(ctx context.Context, ci CircleCI, repo Repository, migrate bool) (*Result, error) {
+	followed := false
 	project, err := ci.GetProject(ctx, repo.Owner, repo.Name)
+	if circleciclient.IsNotFound(err) {
+		if err := ci.Follow(ctx, repo.Owner, repo.Name); err != nil {
+			return nil, microerror.Mask(err)
+		}
+		followed = true
+		migrate = true
+		project, err = ci.GetProject(ctx, repo.Owner, repo.Name)
+	}
 	switch {
 	case circleciclient.IsNotFound(err):
-		return nil, microerror.Maskf(projectNotFoundError, "CircleCI knows no project %s: an organization repository has one once CircleCI saw the organization's GitHub App installation, so check that the CircleCI GitHub App is installed on it", repo.Slug())
+		return nil, microerror.Maskf(projectNotFoundError, "CircleCI knows no project %s, also after following it as you", repo.Slug())
 	case err != nil:
 		return nil, microerror.Mask(err)
 	}
-	result := &Result{ProjectID: project.ID}
+	result := &Result{ProjectID: project.ID, FollowedProject: followed}
 	defs, err := ci.ListPipelineDefinitions(ctx, project.ID)
 	if err != nil {
 		return nil, microerror.Mask(err)
