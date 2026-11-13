@@ -149,3 +149,50 @@ func Test_PreCommitActionConcurrency(t *testing.T) {
 		t.Errorf("concurrency.cancel-in-progress = %q, want %q", wf.Concurrency.CancelInProgress, wantCancel)
 	}
 }
+
+// Test_PreCommitActionHooks verifies the hooks run without a third-party
+// action and with a cache key that restores the caches existing runs saved.
+func Test_PreCommitActionHooks(t *testing.T) {
+	for _, language := range []string{"go", "generic"} {
+		t.Run(language, func(t *testing.T) {
+			got := renderAction(t, params.Params{Language: language})
+
+			var wf struct {
+				Jobs map[string]struct {
+					Steps []struct {
+						Name string            `yaml:"name"`
+						Uses string            `yaml:"uses"`
+						Run  string            `yaml:"run"`
+						With map[string]string `yaml:"with"`
+					} `yaml:"steps"`
+				} `yaml:"jobs"`
+			}
+			if err := yaml.Unmarshal([]byte(got), &wf); err != nil {
+				t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, got)
+			}
+
+			const wantKey = "pre-commit-3|${{ env.pythonLocation }}|${{ hashFiles('.pre-commit-config.yaml') }}"
+			var cached, ran bool
+			for _, step := range wf.Jobs["pre-commit"].Steps {
+				if strings.HasPrefix(step.Uses, "pre-commit/action@") {
+					t.Errorf("step %q uses pre-commit/action", step.Name)
+				}
+				if step.With["path"] == "~/.cache/pre-commit" {
+					cached = true
+					if step.With["key"] != wantKey {
+						t.Errorf("pre-commit cache key = %q, want %q", step.With["key"], wantKey)
+					}
+				}
+				if strings.HasPrefix(step.Run, "pre-commit run ") {
+					ran = true
+					if !cached {
+						t.Error("the pre-commit cache must be restored before the hooks run")
+					}
+				}
+			}
+			if !cached || !ran {
+				t.Errorf("cache step found: %v, hooks step found: %v\n%s", cached, ran, got)
+			}
+		})
+	}
+}
