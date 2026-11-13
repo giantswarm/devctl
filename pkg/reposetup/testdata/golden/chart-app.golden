@@ -1536,9 +1536,11 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+# No concurrency group. A push and a description edit seconds later trigger
+# two runs for the same head commit, and each run is its own check suite: a
+# cancelled run stays on the commit next to the successful one and turns the
+# commit's check rollup red. The job takes seconds and reads the title from
+# the API, so every run checks the current title.
 
 jobs:
   semantic-pull-request:

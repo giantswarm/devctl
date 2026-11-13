@@ -498,8 +498,9 @@ func Test_ValidateOrganizationKustomizationsGolden(t *testing.T) {
 
 // Test_PullRequestWorkflowsConcurrency verifies that generated pull request
 // workflows group runs by workflow and pull request number (falling back to
-// ref) and cancel in-progress runs only for pull_request events, while release
-// workflows retain their non-cancelling per-ref serialization.
+// ref) and cancel in-progress runs only for pull_request events, that the
+// semantic-pull-request workflow cancels nothing, and that release workflows
+// retain their non-cancelling per-ref serialization.
 func Test_PullRequestWorkflowsConcurrency(t *testing.T) {
 	w := newWorkflows(t, gen.FlavourApp)
 
@@ -511,7 +512,6 @@ func Test_PullRequestWorkflowsConcurrency(t *testing.T) {
 		{name: "check-values-schema", input: w.CheckValuesSchema()},
 		{name: "check-readme-links", input: w.CheckReadmeLinks()},
 		{name: "gitleaks", input: w.Gitleaks()},
-		{name: "semantic-pull-request", input: w.SemanticPullRequest()},
 	}
 
 	wantGroup := "${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
@@ -539,6 +539,21 @@ func Test_PullRequestWorkflowsConcurrency(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("semantic-pull-request", func(t *testing.T) {
+		got := renderInput(t, w.SemanticPullRequest())
+
+		var wf map[string]any
+		if err := yaml.Unmarshal([]byte(got), &wf); err != nil {
+			t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, got)
+		}
+		// A push and a description edit run the title check twice for the
+		// same head; a cancelled run would stay on the commit and turn its
+		// check rollup red.
+		if c, ok := wf["concurrency"]; ok {
+			t.Errorf("concurrency = %v, want none", c)
+		}
+	})
 
 	releaseWorkflows := []struct {
 		name  string
