@@ -16,12 +16,18 @@ on:
 
 permissions: {}
 
+# Every run checks the title it reads when its job starts, and each run is
+# its own check suite on the head commit. GitHub takes the latest run of a
+# check name, so a run that reads a title must not finish after a newer one:
+# a newer run cancels it. An edit that leaves the title alone cannot change
+# the result, so it gets a group of its own, cancels nothing and skips the job.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}${{ github.event.action == 'edited' && github.event.changes.title == null && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   semantic-pull-request:
+    if: github.event.action != 'edited' || github.event.changes.title != null
     uses: giantswarm/github-workflows/.github/workflows/semantic-pull-request.yaml@main
     permissions:
       pull-requests: read
