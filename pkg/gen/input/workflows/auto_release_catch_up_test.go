@@ -52,6 +52,7 @@ func Test_AutoReleaseCatchUpOrder(t *testing.T) {
 			require.Equal(t, "${{ secrets.RELEASE_BOT_PRIVATE_KEY }}", token.With["private-key"])
 			require.Equal(t, "write", token.With["permission-contents"])
 			require.Equal(t, "write", token.With["permission-pull-requests"])
+			require.Equal(t, "write", token.With["permission-workflows"])
 			prepare := steps[slices.Index(ids, "catch-up-pr")]
 			require.Equal(t, "${{ steps.catch-up-token.outputs.token }}", prepare.Env["GH_TOKEN"])
 			var checkedOut bool

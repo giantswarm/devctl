@@ -84,9 +84,10 @@ func Test_AutoReleaseReleaseToken(t *testing.T) {
 				t.Errorf("token action = %q, want create-github-app-token", token.Uses)
 			}
 			wantInputs := map[string]string{
-				"client-id":           "${{ secrets.RELEASE_BOT_CLIENT_ID }}",
-				"private-key":         "${{ secrets.RELEASE_BOT_PRIVATE_KEY }}",
-				"permission-contents": "write",
+				"client-id":            "${{ secrets.RELEASE_BOT_CLIENT_ID }}",
+				"private-key":          "${{ secrets.RELEASE_BOT_PRIVATE_KEY }}",
+				"permission-contents":  "write",
+				"permission-workflows": "write",
 			}
 			if diff := cmp.Diff(wantInputs, token.With); diff != "" {
 				t.Errorf("App inputs (-want +got):\n%s", diff)
