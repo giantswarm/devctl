@@ -71,12 +71,15 @@ func devSource(original object, sourceName string, req Request, semverFilter str
 
 	spec, _ := o["spec"].(map[string]any)
 	spec["interval"] = SourceInterval
-	spec["ref"] = map[string]any{
-		"semver":       devSemverRange,
-		"semverFilter": semverFilter,
-	}
+	spec["ref"] = devRef(semverFilter)
 
 	return o
+}
+
+// devRef is the OCIRepository spec.ref that follows the dev builds semverFilter
+// selects.
+func devRef(semverFilter string) map[string]any {
+	return map[string]any{"semver": devSemverRange, "semverFilter": semverFilter}
 }
 
 // reservationAnnotations are the annotations a reserved source carries, so
