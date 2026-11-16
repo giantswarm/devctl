@@ -712,6 +712,17 @@ workflows:
 {{- else }}
             command: echo 'export ABS_HELM_IMAGE_REFERENCE_VALIDATOR_OWN_IMAGE={{ index .OwnImages 0 }}' >> "$BASH_ENV"
 {{- end }}
+{{- else if .SkipBuildChartImageCheck }}
+        # app-build-suite fails a chart whose gsoci image references the registry
+        # does not carry. This chart keeps its declared appVersion and references
+        # this pipeline's own image at the chart version, which is pushed only
+        # after build-chart and which the check cannot exempt, so build-chart
+        # skips the check. push-chart and push-chart-release require the image
+        # job and resolve every reference.
+        pre-steps:
+        - run:
+            name: Skip the image reference check before this pipeline's own image is pushed
+            command: echo 'export ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR=true' >> "$BASH_ENV"
 {{- end }}
         requires:
         - pin-version

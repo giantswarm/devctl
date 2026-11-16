@@ -1398,6 +1398,19 @@ func Test_ImageReferenceCheckExemptsOwnImageInBuildChart(t *testing.T) {
 		}
 	}
 
+	got = render(t, Config{
+		RepoName:      repoSitesearch,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: false,
+	})
+	if contains(got, "ABS_HELM_IMAGE_REFERENCE_VALIDATOR_OWN_IMAGE") || contains(got, "ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR") {
+		t.Errorf("a chart of images built elsewhere must resolve every image reference in build-chart:\n%s", got)
+	}
+
+	// A chart that keeps its declared appVersion references the pipeline's own
+	// image at the chart version, which the check cannot exempt: build-chart
+	// skips the check and the push jobs, which require the image job, run it.
+	skip := `echo 'export ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR=true' >> "$BASH_ENV"`
 	keep := false
 	for name, c := range map[string]Config{
 		"a chart that keeps its declared appVersion beside a custom image": {
@@ -1407,11 +1420,7 @@ func Test_ImageReferenceCheckExemptsOwnImageInBuildChart(t *testing.T) {
 			HasDockerfile:           true,
 			CustomImages:            []string{"giantswarm/second-image"},
 			OverrideChartAppVersion: &keep,
-		},
-		"a chart of images built elsewhere": {
-			RepoName:      repoSitesearch,
-			Flavours:      gen.FlavourSlice{gen.FlavourApp},
-			HasDockerfile: false,
+			BranchPublish:           true,
 		},
 		"a chart that keeps its declared appVersion": {
 			RepoName:                repoMCPKubernetes,
@@ -1419,11 +1428,20 @@ func Test_ImageReferenceCheckExemptsOwnImageInBuildChart(t *testing.T) {
 			Flavours:                gen.FlavourSlice{gen.FlavourApp},
 			HasDockerfile:           true,
 			OverrideChartAppVersion: &keep,
+			BranchPublish:           true,
 		},
 	} {
 		got := render(t, c)
-		if contains(got, "ABS_HELM_IMAGE_REFERENCE_VALIDATOR_OWN_IMAGE") || contains(got, "ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR") {
-			t.Errorf("%s must resolve every image reference in build-chart:\n%s", name, got)
+		if cmd := preSteps(got, "build-chart"); cmd != skip {
+			t.Errorf("%s: build-chart pre-steps = %q, want %q", name, cmd, skip)
+		}
+		for _, job := range []string{"push-chart", "push-chart-release"} {
+			if cmd := preSteps(got, job); cmd != "" {
+				t.Errorf("%s: %s must resolve every image reference, got pre-steps %q", name, job, cmd)
+			}
+		}
+		if contains(got, "ABS_HELM_IMAGE_REFERENCE_VALIDATOR_OWN_IMAGE") {
+			t.Errorf("%s must not name own images, the check exempts the stamped appVersion only:\n%s", name, got)
 		}
 	}
 }

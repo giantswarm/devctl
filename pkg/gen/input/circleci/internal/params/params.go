@@ -155,6 +155,14 @@ type Params struct {
 	// when the repo builds no image or the chart keeps the appVersion
 	// Chart.yaml declares.
 	OwnImages []string
+	// SkipBuildChartImageCheck switches app-build-suite's image reference check
+	// off in build-chart when the pipeline builds its own images but the chart
+	// keeps the appVersion Chart.yaml declares. Such a chart references its own
+	// image at the chart version, which is pushed only after build-chart and
+	// which the check cannot exempt (it exempts the stamped appVersion only).
+	// The chart push jobs require the image jobs and still resolve every
+	// reference.
+	SkipBuildChartImageCheck bool
 	// ImagePlatforms overrides the buildx platform list for the image build
 	// (the push-to-registries `platforms` param on the build-image and
 	// push-to-registries-release jobs). Empty lets the orb fall back to its
