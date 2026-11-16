@@ -1,11 +1,9 @@
 package reservation
 
 import (
-	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -19,10 +17,6 @@ const (
 	chartFile = "Chart.yaml"
 	extrasDir = "extras"
 )
-
-// urlField matches the value of a `url:` key in a YAML file. It reads the
-// extras tree, which is scanned as text rather than rendered.
-var urlField = regexp.MustCompile(`(?m)^\s*url:\s*['"]?(\S+?)['"]?\s*$`)
 
 // resolution is the app a reservation moves: the chart it ships, the source
 // objects serving that chart, and every release running it.
@@ -208,59 +202,10 @@ func inlineChartReleases(objects []object, chart string) []string {
 	return names
 }
 
-// noMatchError explains a render that holds no such chart. It looks in the
-// cluster's extras tree first: "not found" would send the reader hunting for a
-// typo in a command that was right.
+// noMatchError explains a chart that neither the collections nor the extras
+// of the cluster serve.
 func noMatchError(req Request, chart string) error {
-	if files := extrasFilesServing(req, chart); len(files) > 0 {
-		return microerror.Maskf(appNotSupportedError,
-			"chart %q is served from the extras folder of %s (%s), not from its collections. This version covers collection apps only",
-			chart, req.Cluster, strings.Join(files, ", "))
-	}
-
 	return microerror.Maskf(appNotFoundError,
-		"a render of %s holds no %s in namespace %s serving chart %q, so %q is not a collection app on %s. Name the app explicitly if its chart name differs from the chart its URL serves",
-		req.clusterPath(collectionsDir), ociRepositoryKind, Namespace, chart, chart, req.Cluster)
-}
-
-// extrasFilesServing returns the repo-relative extras files that mention a URL
-// serving the chart.
-//
-// It is a text scan, not a render: extras kustomizations nest two levels deep
-// and are wired up by Flux Kustomization objects, so there is no single overlay
-// to build. It only has to be good enough to turn a bare "not found" into the
-// real reason.
-// ponytail: text scan over extras; render it properly only if extras ever
-// becomes supported.
-func extrasFilesServing(req Request, chart string) []string {
-	root := filepath.Join(req.RepoDir, clustersDir, req.Cluster, extrasDir)
-
-	var files []string
-	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil //nolint:nilerr // a missing or unreadable extras tree just means no hint
-		}
-		if ext := filepath.Ext(p); ext != ".yaml" && ext != ".yml" {
-			return nil
-		}
-		b, err := os.ReadFile(p) //nolint:gosec // the path comes from walking the repo checkout
-		if err != nil {
-			return nil //nolint:nilerr // an unreadable file just means no hint
-		}
-		for _, m := range urlField.FindAllStringSubmatch(string(b), -1) {
-			if chartFromURL(m[1]) == chart {
-				rel, err := filepath.Rel(req.RepoDir, p)
-				if err != nil {
-					rel = p
-				}
-				files = append(files, filepath.ToSlash(rel))
-				break
-			}
-		}
-
-		return nil
-	})
-	sort.Strings(files)
-
-	return files
+		"neither a render of %s nor one of %s holds an %s serving chart %q. Name the app explicitly if its chart name differs from the chart its URL serves",
+		req.clusterPath(collectionsDir), req.clusterPath(extrasDir), ociRepositoryKind, chart)
 }

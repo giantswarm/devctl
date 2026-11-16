@@ -255,6 +255,9 @@ func Reserve(req Request) (res Result, err error) {
 		return Result{}, microerror.Mask(err)
 	}
 	if ok {
+		if err := checkExtras(req, chart, extras); err != nil {
+			return Result{}, microerror.Mask(err)
+		}
 		res, err := reserveExtras(req, chart, extras, from, until, replaced)
 		return res, microerror.Mask(err)
 	}
