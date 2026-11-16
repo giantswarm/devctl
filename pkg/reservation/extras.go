@@ -414,6 +414,24 @@ func removeBlock(path, chart string) error {
 	return microerror.Mask(writeLines(path, lines))
 }
 
+// writeBlockAnnotations moves the window in the chart's block: three
+// annotations per source.
+func writeBlockAnnotations(path, chart, user string, from, until time.Time) error {
+	lines, err := readLines(path)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	begin, end, ok := findBlock(lines, chart)
+	if !ok {
+		return microerror.Maskf(componentNotFoundError, "%s holds no reservation block of %q", path, chart)
+	}
+	if found := setWindowAnnotations(lines[begin:end+1], user, from, until); found == 0 || found%3 != 0 {
+		return microerror.Maskf(invalidConfigError, "the reservation block of %q in %s carries no %suser/%sfrom/%suntil annotations to update", chart, path, AnnotationPrefix, AnnotationPrefix, AnnotationPrefix)
+	}
+
+	return microerror.Mask(writeLines(path, lines))
+}
+
 // assertExtrasReserved is guard 1: every source of the chart comes out of the
 // render on the dev builds. kustomize skips a patch whose target matches
 // nothing without an error, so a render that succeeds proves nothing.

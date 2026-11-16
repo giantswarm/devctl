@@ -159,13 +159,21 @@ func writeSourceAnnotations(path, user string, from, until time.Time) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
+	if found := setWindowAnnotations(lines, user, from, until); found != 3 {
+		return microerror.Maskf(invalidConfigError, "%s carries no %suser/%sfrom/%suntil annotations to update", path, AnnotationPrefix, AnnotationPrefix, AnnotationPrefix)
+	}
 
+	return microerror.Mask(writeLines(path, lines))
+}
+
+// setWindowAnnotations rewrites the user, from and until annotations in lines,
+// in place, and returns how many it rewrote.
+func setWindowAnnotations(lines []string, user string, from, until time.Time) (found int) {
 	want := map[string]string{
 		annotationUser:  user,
 		annotationFrom:  from.Format(time.RFC3339),
 		annotationUntil: until.Format(time.RFC3339),
 	}
-	found := 0
 	for i, l := range lines {
 		m := sourceAnnotation.FindStringSubmatch(l)
 		if m == nil {
@@ -176,11 +184,8 @@ func writeSourceAnnotations(path, user string, from, until time.Time) error {
 			found++
 		}
 	}
-	if found != len(want) {
-		return microerror.Maskf(invalidConfigError, "%s carries no %suser/%sfrom/%suntil annotations to update", path, AnnotationPrefix, AnnotationPrefix, AnnotationPrefix)
-	}
 
-	return microerror.Mask(writeLines(path, lines))
+	return found
 }
 
 // blockEnd returns the index of the last line in the indented block after
