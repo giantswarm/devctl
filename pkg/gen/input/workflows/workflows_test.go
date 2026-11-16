@@ -3,6 +3,7 @@ package workflows
 import (
 	"bytes"
 	"flag"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -430,10 +431,77 @@ func Test_ReservationCommandGolden(t *testing.T) {
 	assertGolden(t, "testdata/reservation_command.yaml.golden", got)
 }
 
+// Test_ValidateOrganizationKustomizations checks what a required check needs: the
+// workflow runs on every pull request (a path filter would leave the check pending on
+// the others), the job keeps its name (the required context), and the check's code
+// comes from management-cluster-bases, not from the pull request.
+func Test_ValidateOrganizationKustomizations(t *testing.T) {
+	in := newWorkflows(t, gen.FlavourManagementClustersFleet).ValidateOrganizationKustomizations()
+	if want := filepath.Join(".github", "workflows", "zz_generated.validate_organization_kustomizations.yaml"); in.Path != want {
+		t.Errorf("path = %q, want %q", in.Path, want)
+	}
+	got := renderInput(t, in)
+
+	var wf struct {
+		On          []string          `yaml:"on"`
+		Permissions map[string]string `yaml:"permissions"`
+		Jobs        map[string]struct {
+			Name        string            `yaml:"name"`
+			If          string            `yaml:"if"`
+			Permissions map[string]string `yaml:"permissions"`
+			Steps       []struct {
+				Uses string `yaml:"uses"`
+				Run  string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(got), &wf); err != nil {
+		t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, got)
+	}
+
+	if !slices.Equal(wf.On, []string{"pull_request", "merge_group"}) {
+		t.Errorf("on = %v, want [pull_request merge_group] with no filter", wf.On)
+	}
+	if len(wf.Permissions) != 0 {
+		t.Errorf("top-level permissions = %v, want none", wf.Permissions)
+	}
+	job, ok := wf.Jobs["check"]
+	if !ok || len(wf.Jobs) != 1 {
+		t.Fatalf("jobs = %v, want the one job check", wf.Jobs)
+	}
+	if want := "Organization kustomizations stay in their directory"; job.Name != want {
+		t.Errorf("job name = %q, want %q: it is the required check's context", job.Name, want)
+	}
+	if job.If != "" {
+		t.Errorf("job if = %q: a skipped job leaves the required check pending", job.If)
+	}
+	if !maps.Equal(job.Permissions, map[string]string{"contents": "read"}) {
+		t.Errorf("job permissions = %v, want contents: read", job.Permissions)
+	}
+	const action = "giantswarm/management-cluster-bases/.github/actions/organization-kustomizations@main"
+	var uses []string
+	for _, s := range job.Steps {
+		if s.Run != "" {
+			t.Errorf("step runs %q: the check's code must come from management-cluster-bases", s.Run)
+		}
+		uses = append(uses, s.Uses)
+	}
+	if len(uses) != 2 || !strings.HasPrefix(uses[0], "actions/checkout@") || uses[1] != action {
+		t.Errorf("steps use %v, want actions/checkout, then %s", uses, action)
+	}
+}
+
+func Test_ValidateOrganizationKustomizationsGolden(t *testing.T) {
+	got := renderInput(t, withFixedHeader(t, newWorkflows(t, gen.FlavourManagementClustersFleet).ValidateOrganizationKustomizations()))
+	assertGolden(t, "testdata/validate_organization_kustomizations.yaml.golden", got)
+}
+
 // Test_PullRequestWorkflowsConcurrency verifies that generated pull request
 // workflows group runs by workflow and pull request number (falling back to
-// ref) and cancel in-progress runs only for pull_request events, while release
-// workflows retain their non-cancelling per-ref serialization.
+// ref) and cancel in-progress runs only for pull_request events (the
+// semantic-pull-request workflow keeps title-preserving edits out of that
+// group), while release workflows retain their non-cancelling per-ref
+// serialization.
 func Test_PullRequestWorkflowsConcurrency(t *testing.T) {
 	w := newWorkflows(t, gen.FlavourApp)
 
@@ -445,7 +513,6 @@ func Test_PullRequestWorkflowsConcurrency(t *testing.T) {
 		{name: "check-values-schema", input: w.CheckValuesSchema()},
 		{name: "check-readme-links", input: w.CheckReadmeLinks()},
 		{name: "gitleaks", input: w.Gitleaks()},
-		{name: "semantic-pull-request", input: w.SemanticPullRequest()},
 	}
 
 	wantGroup := "${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
@@ -473,6 +540,37 @@ func Test_PullRequestWorkflowsConcurrency(t *testing.T) {
 			}
 		})
 	}
+
+	// The template comment says why edits that keep the title get a group of
+	// their own.
+	t.Run("semantic-pull-request", func(t *testing.T) {
+		got := renderInput(t, w.SemanticPullRequest())
+
+		var wf struct {
+			Concurrency struct {
+				Group            string `yaml:"group"`
+				CancelInProgress string `yaml:"cancel-in-progress"`
+			} `yaml:"concurrency"`
+			Jobs map[string]struct {
+				If string `yaml:"if"`
+			} `yaml:"jobs"`
+		}
+		if err := yaml.Unmarshal([]byte(got), &wf); err != nil {
+			t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, got)
+		}
+
+		wantGroup := "${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}" +
+			"${{ github.event.action == 'edited' && github.event.changes.title == null && format('-{0}', github.run_id) || '' }}"
+		if wf.Concurrency.Group != wantGroup {
+			t.Errorf("concurrency.group = %q, want %q", wf.Concurrency.Group, wantGroup)
+		}
+		if wf.Concurrency.CancelInProgress != wantCancel {
+			t.Errorf("concurrency.cancel-in-progress = %q, want %q", wf.Concurrency.CancelInProgress, wantCancel)
+		}
+		if job := wf.Jobs["semantic-pull-request"]; job.If != "" {
+			t.Errorf("jobs.semantic-pull-request.if = %q, want none", job.If)
+		}
+	})
 
 	releaseWorkflows := []struct {
 		name  string

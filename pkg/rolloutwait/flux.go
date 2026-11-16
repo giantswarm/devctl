@@ -214,7 +214,7 @@ func (w *Waiter) judgeHelmRelease(ctx context.Context, hr *unstructured.Unstruct
 		if reconciling.status == conditionTrue {
 			return d.set(StateProgressing, "runs %s; %s %s, helm-controller retrying: %s", orNone(d.RunningVersion), ready.reason, w.version, strings.TrimSpace(reconciling.reason+" "+reconciling.message)), nil
 		}
-		if pending, stale, err := w.staleValuesFailure(ctx, d, hr); stale || err != nil {
+		if pending, stale, err := w.staleValues(ctx, d, hr); stale || err != nil {
 			return pending, err
 		}
 		return d.set(StateFailed, "%s %s: %s", ready.reason, w.version, ready.message), nil
@@ -222,6 +222,9 @@ func (w *Waiter) judgeHelmRelease(ctx context.Context, hr *unstructured.Unstruct
 	if atLeast(d.RunningVersion, w.version) {
 		if !current || ready.status != conditionTrue {
 			return d.set(StateProgressing, "%s deployed, the HelmRelease not ready: %s", d.RunningVersion, orUnknown(ready)), nil
+		}
+		if pending, stale, err := w.staleValues(ctx, d, hr); stale || err != nil {
+			return pending, err
 		}
 		if _, remote, _ := unstructured.NestedMap(hr.Object, "spec", "kubeConfig"); remote {
 			w.warnPoll(fmt.Sprintf("%s deploys to a remote cluster: its workloads are not checked, helm-controller's wait vouches for them", d.id()))
@@ -239,7 +242,8 @@ func (w *Waiter) judgeHelmRelease(ctx context.Context, hr *unstructured.Unstruct
 // deploys none of the release's charts (a component a meta chart renders):
 // its chart has a version line of its own, so the release's version says
 // nothing about it. It has rolled out once it is Ready at its current
-// generation with no reconcile in flight and its workloads are rolled out;
+// generation and values with no reconcile in flight and its workloads are
+// rolled out;
 // it failed when its attempt at that generation stalled or failed.
 func (w *Waiter) judgeNamedHelmRelease(ctx context.Context, d Deployment, hr *unstructured.Unstructured, namespace, release string) (Deployment, error) {
 	ready, stalled, reconciling := condition(hr, "Ready"), condition(hr, "Stalled"), condition(hr, "Reconciling")
@@ -250,13 +254,16 @@ func (w *Waiter) judgeNamedHelmRelease(ctx context.Context, d Deployment, hr *un
 		if reconciling.status == conditionTrue {
 			return d.set(StateProgressing, "runs %s; helm-controller retrying: %s", orNone(d.RunningVersion), orUnknown(reconciling)), nil
 		}
-		if pending, stale, err := w.staleValuesFailure(ctx, d, hr); stale || err != nil {
+		if pending, stale, err := w.staleValues(ctx, d, hr); stale || err != nil {
 			return pending, err
 		}
 		return d.set(StateFailed, "%s at generation %d: %s", ready.reason, hr.GetGeneration(), ready.message), nil
 	}
 	if ready.status != conditionTrue || reconciling.status == conditionTrue || d.RunningVersion == "" {
 		return d.set(StateProgressing, "runs %s, the HelmRelease not ready: %s", orNone(d.RunningVersion), orUnknown(ready)), nil
+	}
+	if pending, stale, err := w.staleValues(ctx, d, hr); stale || err != nil {
+		return pending, err
 	}
 	if _, remote, _ := unstructured.NestedMap(hr.Object, "spec", "kubeConfig"); remote {
 		w.warnPoll(fmt.Sprintf("%s deploys to a remote cluster: its workloads are not checked, helm-controller's wait vouches for them", d.id()))

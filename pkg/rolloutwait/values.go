@@ -17,11 +17,13 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// staleValuesFailure compares the inputs of a failed attempt with the values
-// helm-controller would read now. A valuesFrom update does not increment the
-// HelmRelease's generation. The digest covers the merged values, not the raw
-// YAML or the ConfigMap's metadata (which can change without new values).
-func (w *Waiter) staleValuesFailure(ctx context.Context, d Deployment, hr *unstructured.Unstructured) (Deployment, bool, error) {
+// staleValues compares the inputs of the last attempt, failed or Ready, with
+// the values helm-controller would read now. A valuesFrom update does not
+// increment the HelmRelease's generation, so a HelmRelease can be Ready, or
+// failed, on values it no longer has. The digest covers the merged values,
+// not the raw YAML or the ConfigMap's metadata (which can change without new
+// values).
+func (w *Waiter) staleValues(ctx context.Context, d Deployment, hr *unstructured.Unstructured) (Deployment, bool, error) {
 	attempted := str(hr, "status", "lastAttemptedConfigDigest")
 	legacy := attempted == ""
 	if legacy {
@@ -67,6 +69,13 @@ func (w *Waiter) staleValuesFailure(ctx context.Context, d Deployment, hr *unstr
 		return d, false, nil
 	}
 	self := object{resource: helmReleases, kind: KindHelmRelease, namespace: hr.GetNamespace(), name: hr.GetName()}
+	// helm-controller handled the reconcile --reconcile requested and read
+	// the values as they are: its verdict stands, even if this digest cannot
+	// match Flux's for these values.
+	if requestedAt := w.requested[self.String()]; requestedAt != "" && str(hr, "status", "lastHandledReconcileAt") == requestedAt {
+		w.warnPoll(fmt.Sprintf("%s handled the requested reconcile, but its last attempt's values digest still differs from the values read now: trusting helm-controller", d.id()))
+		return d, false, nil
+	}
 	d.self = &self
 	return d.set(StateProgressing, "runs %s; values have changed since the last attempt; waiting for helm-controller (its interval, or --reconcile)", orNone(d.RunningVersion)), true, nil
 }

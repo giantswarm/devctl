@@ -23,7 +23,9 @@ run and commit status of the head (the latest run per name, so a rerun replaces 
 stale failed run), every CircleCI workflow of the head revision (read from
 CircleCI: a job behind requires: has posted nothing to GitHub until it starts),
 no GitHub Actions run of the head queued, in progress, waiting or awaiting a
-maintainer's approval, and every status context the base requires reported.
+maintainer's approval, no newest Actions run of a workflow failed (one that
+failed at startup creates no job, yet is red), and every status context the
+base requires reported.
 
 Drafts wait for their checks like other open pull requests; the document's
 draft field is true for one. A green draft still cannot be merged

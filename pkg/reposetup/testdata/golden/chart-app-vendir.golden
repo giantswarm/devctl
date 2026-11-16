@@ -1460,8 +1460,17 @@ jobs:
           download_url: "https://github.com/norwoodj/helm-docs/releases/download/v${version}/helm-docs_${version}_Linux_x86_64.tar.gz"
           tarball_binary_path: "helm-docs"
           smoke_test: "${binary} --version"
+      - name: Install pre-commit
+        run: python -m pip install pre-commit
+      - name: List installed Python packages
+        run: python -m pip freeze --local
+      - name: Restore pre-commit cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-3|${{ env.pythonLocation }}|${{ hashFiles('.pre-commit-config.yaml') }}
       - name: Execute pre-commit hooks
-        uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+        run: pre-commit run --show-diff-on-failure --color=always --all-files
         env:
           GOGC: "20"
 
@@ -1527,8 +1536,14 @@ on:
 
 permissions: {}
 
+# GitHub judges this check on a commit by the workflow's newest run, and a run
+# checks the title it reads when its job starts. A newer run cancels an older
+# one, so no run that read an older title finishes after it. An edit that
+# leaves the title alone (the description, the base) gets a group of its own:
+# it cancels nothing and checks the same title. It still runs the job: a
+# skipped newest run would count as green over a failed title check.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}${{ github.event.action == 'edited' && github.event.changes.title == null && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -2201,7 +2216,7 @@ install-helm-unittest:
 	if [ "$$have" != "$$want" ] || ! helm unittest --version >/dev/null 2>&1; then \
 		[ -z "$$have" ] || helm plugin uninstall unittest >/dev/null 2>&1 || true; \
 		verify=""; \
-		helm plugin install --help 2>&1 | grep -q -e '--verify' && verify="--verify=false"; \
+		helm plugin install --help 2>&1 | grep -e '--verify' >/dev/null && verify="--verify=false"; \
 		attempt=1; \
 		until helm plugin install $$verify https://github.com/helm-unittest/helm-unittest --version $(HELM_UNITTEST_VERSION); do \
 			helm plugin uninstall unittest >/dev/null 2>&1 || true; \

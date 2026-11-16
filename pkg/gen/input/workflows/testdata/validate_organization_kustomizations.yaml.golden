@@ -1,0 +1,36 @@
+# DO NOT EDIT. Generated with:
+#
+#    devctl
+#
+
+# Refuses an Agent Platform organization's kustomization file under
+# management-clusters/*/extras/agent-platform-organizations that loads anything outside its
+# own directory: a field other than apiVersion, kind, metadata and resources, or a resources
+# entry with '..', an absolute path, a git or HTTP URL, or a symbolic link
+# (giantswarm/giantswarm#39013). It runs on every pull request, so it can be a required check;
+# a repository without organizations passes it.
+
+name: Validate organization kustomizations
+
+on:
+  - pull_request
+  - merge_group
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: Organization kustomizations stay in their directory
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: giantswarm/management-cluster-bases/.github/actions/organization-kustomizations@main

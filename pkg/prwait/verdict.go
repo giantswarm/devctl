@@ -248,7 +248,9 @@ func (e *evaluation) approvalReason() string {
 //  3. no GitHub Actions run of the head is queued, in progress, waiting or
 //     awaiting approval; a run in progress whose listed jobs have all
 //     completed RunSettleGrace ago is judged by them (rule 1), as GitHub may
-//     leave it in progress long after;
+//     leave it in progress long after; the newest run of a workflow that
+//     completed red is red even without a failed job of its own (a run that
+//     failed at startup creates none);
 //  4. every required status context has reported;
 //  5. when CircleCI is read through its commit statuses, every job the head's
 //     configuration runs has posted one: a job behind requires: posts
@@ -366,6 +368,8 @@ func evaluate(s snapshot) *evaluation {
 			e.actions[len(e.actions)-1].JobsCompleted = true
 		case workflowRunOpen(action.Status):
 			e.unfinished = append(e.unfinished, fmt.Sprintf("actions run %s (%s)", action.Name, action.Status))
+		case action.Status == statusCompleted && !checkRunPassed(action.Conclusion) && !jobsConcluded(run, checkRuns):
+			e.red = append(e.red, fmt.Sprintf("actions run %s concluded %s", action.Name, action.Conclusion))
 		}
 	}
 
@@ -548,6 +552,20 @@ func jobsCompleted(run *github.WorkflowRun, checkRuns []headCheckRun, now time.T
 		}
 	}
 	return !last.IsZero() && !now.Before(last.Add(RunSettleGrace))
+}
+
+// jobsConcluded: a job of the run the head lists did not pass, so rule 1
+// already judges the run's failure (red, or accepted by the caller). A run
+// that failed without such a job, at startup (an unresolvable reusable
+// workflow, an invalid workflow file) or with every job green, is judged by
+// its own conclusion.
+func jobsConcluded(run *github.WorkflowRun, checkRuns []headCheckRun) bool {
+	for _, c := range checkRuns {
+		if c.workflow.GetID() == run.GetID() && c.run.GetStatus() == statusCompleted && !checkRunPassed(c.run.GetConclusion()) {
+			return true
+		}
+	}
+	return false
 }
 
 // otherApp: the check run is reported by a named app other than GitHub

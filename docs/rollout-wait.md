@@ -161,13 +161,13 @@ the version. One of none of them (a component a meta chart renders, on a version
 by itself: rolled out once it is Ready at its current generation (`status.observedGeneration`) with no
 reconcile in flight (`Reconciling` not True) and its workloads are rolled out; `Progressing` or
 `DependencyNotReady` keeps the wait open; Stalled, or not Ready after a failed install, upgrade or test, is
-exit 1. A failure on obsolete values keeps waiting as described below; `--reconcile` asks it to
+exit 1. A Ready state or a failure on obsolete values keeps waiting as described below; `--reconcile` asks it to
 attempt the changed values once.
 
 ### When a deployment has rolled out
 
 It runs the version or a newer one (a newer one with a warning), the HelmRelease is Ready at its
-current generation, and every Deployment, StatefulSet, DaemonSet and Flux HelmRelease of its Helm release (Helm's
+current generation and on its current values (see below), and every Deployment, StatefulSet, DaemonSet and Flux HelmRelease of its Helm release (Helm's
 `meta.helm.sh/release-name` and `release-namespace` annotations, in any namespace: kagent's chart
 renders its controller into `kagent` from a release in `agent-platform`) is rolled
 out the way `kubectl rollout status` judges it: the new generation observed, every replica updated,
@@ -200,12 +200,16 @@ The wait ends at once with exit 1 when the version was attempted and failed: the
 reports a `failed` release; a Deployment of the release is past its progress deadline. A failure of an
 older revision is not the version's: the wait goes on.
 
-A failed HelmRelease attempt must also have used the current values. The wait resolves `spec.valuesFrom`
+A HelmRelease's last attempt, Ready or failed, must also have used the current values: a change to a
+`valuesFrom` ConfigMap or Secret does not change the HelmRelease's generation, so it stays Ready on its
+previous values until helm-controller's interval comes round. The wait resolves `spec.valuesFrom`
 ConfigMaps and Secrets in the HelmRelease's namespace, merges them with inline `spec.values` using Flux's
 precedence and Helm `targetPath` rules, and compares Flux's `lastAttemptedConfigDigest` (or the legacy
 `lastAttemptedValuesChecksum`). A mismatch keeps waiting for a new attempt, even if the chart version and
 HelmRelease generation did not change. A new settled failure on those values is exit 1 with its current
-message, including when that chart version was deployed before. The same rule applies to explicitly named
+message, including when that chart version was deployed before; a new Ready attempt goes on to the workloads.
+Once helm-controller has handled a `--reconcile` request of the wait, its verdict stands even if the digests
+still differ, with a warning. The same rule applies to explicitly named
 components. Values are never printed in comparison errors; a refused input read is a tooling or authentication
 failure. Without either attempt digest, the existing generation-based failure judgment applies.
 
@@ -217,8 +221,8 @@ reconcile requests; a timeout retains the last completed poll. Flux polls an OCI
 interval, often ten minutes; `--reconcile` sets `reconcile.fluxcd.io/requestedAt` once on the source and the HelmRelease
 of each deployment still behind, the annotation `flux reconcile` sets, so Flux looks now. It is the
 only write the command makes; without it the command only reads.
-It also requests a HelmRelease whose failure used obsolete values, including a named component or a
-release already at the chart version. Each such HelmRelease is requested once.
+It also requests a HelmRelease whose last attempt, Ready or failed, used obsolete values, including a named
+component or a release already at the chart version. Each such HelmRelease is requested once.
 
 ## The document
 

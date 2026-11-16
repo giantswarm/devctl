@@ -212,6 +212,7 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 
 	if r.flag.Flavours.Contains(gen.FlavourManagementClustersFleet) {
 		inputs = append(inputs, workflowsInput.ClusterAppValuesValidationUsingSchema())
+		inputs = append(inputs, workflowsInput.ValidateOrganizationKustomizations())
 		inputs = append(inputs, workflowsInput.Mctl()...)
 		inputs = append(inputs, workflowsInput.MctlLegacyDeletion()...)
 	}
@@ -243,6 +244,7 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 		workflowsInput.RunOSSFScorecard(),
 		workflowsInput.AnalyzeGithubActions(),
 		workflowsInput.ClusterAppValuesValidationUsingSchema(),
+		workflowsInput.ValidateOrganizationKustomizations(),
 		workflowsInput.PublishTechdocsInput(),
 	}
 	optional = append(optional, workflowsInput.Mctl()...)

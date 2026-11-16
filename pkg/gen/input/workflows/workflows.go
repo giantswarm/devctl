@@ -207,6 +207,13 @@ func (w *Workflows) ValidateChangelogDeletion() input.Input {
 	return file.NewValidateChangelogDeletionInput(w.params)
 }
 
+// ValidateOrganizationKustomizations checks, on every pull request of a
+// management-clusters repository, that no Agent Platform organization's
+// kustomization file loads anything outside its own directory.
+func (w *Workflows) ValidateOrganizationKustomizations() input.Input {
+	return file.NewValidateOrganizationKustomizationsInput(w.params)
+}
+
 func (w *Workflows) AnalyzeGithubActions() input.Input {
 	return file.NewAnalyzeGithubActionsInput(w.params)
 }

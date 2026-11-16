@@ -89,6 +89,40 @@ workflows:
 
 A stable minor or major release is cut only by running the workflow by hand with `release-type: stable`. It promotes the latest candidate since the last stable release, or the one its `version` input names (`vX.Y.Z-rc.N`, one of those candidates: one built while a later one still builds, or the one proven; any other tag fails the run): the workflow checks that candidate out, so the version, the release notes and the tag's commit are all the candidate's, and whatever merged after it waits for the next candidate. The run fails when there is no candidate to promote, when the candidate has no GitHub pre-release (the run that cut it did not finish), or when a commit status of its commit failed or is still pending (the pipelines that build and publish it report there). A failed `ci/circleci: sync-china-registry`, the in-China mirror the release does not require, is a warning on the run, not a refusal, as in `devctl release wait` and `devctl release promote`. Only commit statuses count, which CircleCI writes; a GitHub Actions workflow of the repository's own that publishes on a tag reports check runs, and the promotion does not wait for it. A repository's own rules for a stable release go in `.github/release-gate.custom.sh`: when the released commit carries it (the promoted candidate, or a patch push's head), the run executes it with bash on that checkout, with the version about to be tagged as its argument, after the version is decided and before the tag and the GitHub release are created; a non-zero exit fails the run and cuts neither. A repository without the script has no gate. A check in the tag's own pipeline runs after the release exists, so a refusal there leaves a release that looks published with nothing built. One commit releases one version: every run that is about to tag, a candidate or a stable, first reads the remote's tags, and when the commit already carries the release tag (`vX.Y.Z`, `vX.Y.Z-rc.N`) of another version the run fails naming both and cuts no tag and no release. A stable on its own candidate's commit is the same version and passes; a tag outside that pattern (an upstream pre-release) counts for nothing. `release-type: auto` applies the same rule as a push. A `stable` run queued behind a push run waits in the branch's concurrency group, where GitHub keeps one waiting run: a further push replaces it, and the promotion has to be started again.
 
+#### Adopting the non-releasing commit policy
+
+Existing repositories need regenerated files to stop `ci` and `chore` commits from
+releasing. The template fix ships in [devctl v8.166.0](https://github.com/giantswarm/devctl/releases/tag/v8.166.0).
+Upgrading the generator alone does not update a repository's checked-in `cliff.toml`.
+Use that version or newer through the repository's Align files automation, or rerun
+`devctl gen workflows --release-workflow=auto-release` with its existing flavour,
+language and release options. Preserve the fork's `--release-branch`,
+`--maintenance-branches` and `--patch-candidates` settings where enabled.
+Merge the generated `cliff.toml` and workflow changes through a pull request.
+
+In the generated `cliff.toml`, these entries in `[git].commit_parsers` must have
+`skip = true`:
+
+```toml
+  { message = "^docs",     skip = true },
+  { message = "^chore",    skip = true },
+  { message = "^ci",       skip = true },
+```
+
+These are entries from the array, not a replacement for the whole configuration.
+Assigning a commit to `Changed` or another changelog group still counts it toward
+a release. Plain and scoped subjects, such as `ci: update tooling` and
+`ci(deps): update tooling`, are both skipped.
+
+To verify adoption, inspect the Auto-release run for a subsequent `ci`, `chore` or
+`docs` merge when no releasable commits are waiting. Its **Decide whether to tag**
+step should report `No releasable commits since <version>; skipping tag.`, naming
+the last stable release or the existing candidate. **Create release (and the tag,
+atomically)** should be skipped. A green run alone does not prove that nothing
+released. A push that also includes pending `fix` or `feat` commits can still
+release those changes; the skipped commits ship with them without affecting the
+version or release notes.
+
 #### CHANGELOG.md
 
 On `auto-release` the GitHub Releases are the changelog. Each release's notes are git-cliff's grouping of the pull request titles merged since the previous release (the squash commit subjects), so the pull request title is the entry and nothing writes `CHANGELOG.md`: no changelog commit or PR after a release, no changelog check, and no conflict between parallel pull requests on the file.

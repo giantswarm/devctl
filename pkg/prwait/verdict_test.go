@@ -916,3 +916,87 @@ func Test_evaluate_newestSuiteMissingRequiredJob(t *testing.T) {
 		})
 	}
 }
+
+// A workflow's newest run that completed red is red even when it created no
+// job: a run that fails at startup (an unresolvable reusable workflow)
+// leaves only the older runs' jobs on the head.
+func Test_evaluate_failedRunWithoutJobs(t *testing.T) {
+	oldJob := func(id int64, conclusion string, suite int64) *github.CheckRun {
+		return inSuite(ofApp(checkRun(id, "ci", "completed", conclusion, time.Time{}), actionsApp), suite)
+	}
+	testCases := []struct {
+		name      string
+		checkRuns []*github.CheckRun
+		runs      []*github.WorkflowRun
+		accepted  map[string]bool
+		wantRed   []string
+		wantGreen bool
+	}{
+		{
+			name:      "newest run failed at startup, an older run passed: red",
+			checkRuns: []*github.CheckRun{oldJob(1, "success", 100)},
+			runs: []*github.WorkflowRun{
+				ofWorkflow(workflowRun(10, "CI", "completed", "success"), 1, 100),
+				ofWorkflow(workflowRun(20, "CI", "completed", "failure"), 1, 200),
+			},
+			wantRed: []string{"actions run CI concluded failure"},
+		},
+		{
+			name:    "startup_failure without jobs: red",
+			runs:    []*github.WorkflowRun{ofWorkflow(workflowRun(20, "CI", "completed", "startup_failure"), 1, 200)},
+			wantRed: []string{"actions run CI concluded startup_failure"},
+		},
+		{
+			name:    "timed_out without jobs: red",
+			runs:    []*github.WorkflowRun{ofWorkflow(workflowRun(20, "CI", "completed", "timed_out"), 1, 200)},
+			wantRed: []string{"actions run CI concluded timed_out"},
+		},
+		{
+			name:      "failed run with every listed job green: red",
+			checkRuns: []*github.CheckRun{oldJob(2, "success", 200)},
+			runs:      []*github.WorkflowRun{ofWorkflow(workflowRun(20, "CI", "completed", "failure"), 1, 200)},
+			wantRed:   []string{"actions run CI concluded failure"},
+		},
+		{
+			name:      "failed run with a failed job: red once, by its job",
+			checkRuns: []*github.CheckRun{oldJob(2, "failure", 200)},
+			runs:      []*github.WorkflowRun{ofWorkflow(workflowRun(20, "CI", "completed", "failure"), 1, 200)},
+			wantRed:   []string{"check ci concluded failure"},
+		},
+		{
+			name:      "failed run whose failed job the caller accepts: green",
+			checkRuns: []*github.CheckRun{oldJob(2, "failure", 200)},
+			runs:      []*github.WorkflowRun{ofWorkflow(workflowRun(20, "CI", "completed", "failure"), 1, 200)},
+			accepted:  map[string]bool{"ci": true},
+			wantGreen: true,
+		},
+		{
+			name:      "an older failed run, the newest passed: green",
+			checkRuns: []*github.CheckRun{oldJob(2, "success", 200)},
+			runs: []*github.WorkflowRun{
+				ofWorkflow(workflowRun(10, "CI", "completed", "failure"), 1, 100),
+				ofWorkflow(workflowRun(20, "CI", "completed", "success"), 1, 200),
+			},
+			wantGreen: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := evaluate(snapshot{checkRuns: tc.checkRuns, runs: tc.runs, accepted: tc.accepted})
+			if e.green() != tc.wantGreen {
+				t.Errorf("green: want %v, got %v (red %q, unfinished %q)", tc.wantGreen, e.green(), e.red, e.unfinished)
+			}
+			if diff := cmp.Diff(tc.wantRed, e.red, cmp.Transformer("nilToEmpty", nilToEmpty)); diff != "" {
+				t.Errorf("red:\n%s", diff)
+			}
+			if tc.wantRed != nil && !e.redDecided() {
+				t.Errorf("red must be decided: nothing else is pending")
+			}
+			for _, c := range e.checks {
+				if c.ID == 1 {
+					t.Errorf("the superseded run's job counts: %+v", c)
+				}
+			}
+		})
+	}
+}
