@@ -8,6 +8,7 @@ import (
 	"github.com/giantswarm/micrologger"
 	"github.com/spf13/cobra"
 
+	"github.com/giantswarm/devctl/v8/cmd/reservation/checkextras"
 	"github.com/giantswarm/devctl/v8/cmd/reservation/extend"
 	"github.com/giantswarm/devctl/v8/cmd/reservation/list"
 	"github.com/giantswarm/devctl/v8/cmd/reservation/reap"
@@ -30,8 +31,11 @@ applies the change to the cluster.
   list     shows the reservations on a management cluster.
   reap     releases every expired, closed or renamed reservation.
 
-Every command except list takes --dry-run, which pushes nothing. Every command
-takes --output table|json.`
+  check-extras  checks that reservation blocks are the last patches of an
+                extras kustomization. CI runs it on the GitOps repository.
+
+Every command except list and check-extras takes --dry-run, which pushes
+nothing, and --output table|json.`
 )
 
 type Config struct {
@@ -111,6 +115,11 @@ func New(config Config) (*cobra.Command, error) {
 		}
 	}
 
+	checkExtrasCmd, err := checkextras.New(checkextras.Config{Stdout: config.Stdout})
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+
 	var extendCmd *cobra.Command
 	{
 		c := extend.Config{
@@ -149,6 +158,7 @@ func New(config Config) (*cobra.Command, error) {
 	c.AddCommand(listCmd)
 	c.AddCommand(reapCmd)
 	c.AddCommand(extendCmd)
+	c.AddCommand(checkExtrasCmd)
 
 	return c, nil
 }
