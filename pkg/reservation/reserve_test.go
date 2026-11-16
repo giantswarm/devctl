@@ -90,6 +90,9 @@ func TestReserveWritesTheReservationInOneCommit(t *testing.T) {
 	if res.SourceName != fixtureApp+"-dev-reservation" {
 		t.Errorf("source name: got %q", res.SourceName)
 	}
+	if diff := cmp.Diff([]string{"giantswarm/hello-world"}, res.HelmReleases); diff != "" {
+		t.Errorf("moved releases (-want +got):\n%s", diff)
+	}
 	if got, want := res.Until, req.Now.Add(10*time.Hour); !got.Equal(want) {
 		t.Errorf("until: got %s, want %s", got, want)
 	}

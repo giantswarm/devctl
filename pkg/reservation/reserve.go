@@ -91,6 +91,9 @@ type Result struct {
 	// SourceName is the name of the new OCIRepository. For an app the extras
 	// serve, it is the patched sources instead, joined with ", ".
 	SourceName string `json:"sourceName"`
+	// HelmReleases are "<namespace>/<name>" of every release the reservation
+	// moves to the dev builds, sorted.
+	HelmReleases []string `json:"helmReleases,omitempty"`
 	// SemverFilter is the version selector the new OCIRepository carries.
 	SemverFilter string `json:"semverFilter"`
 	// Files are the repo-relative paths Reserve wrote, sorted.
@@ -102,6 +105,17 @@ type Result struct {
 	// or pull request, that Reserve took over. Its pull request still reads
 	// "reserved" until somebody tells it otherwise.
 	Replaced *Reservation `json:"replaced,omitempty"`
+}
+
+// namespaced prefixes the names of collection releases, which all live in
+// Namespace, the way Result.HelmReleases spells them.
+func namespaced(names []string) []string {
+	out := make([]string, 0, len(names))
+	for _, n := range names {
+		out = append(out, Namespace+"/"+n)
+	}
+
+	return out
 }
 
 func (r Request) validate() error {
@@ -321,6 +335,7 @@ func Reserve(req Request) (res Result, err error) {
 		PullRequest:  req.PullRequest,
 		Commit:       commit,
 		SourceName:   sourceName,
+		HelmReleases: namespaced(resolved.helmReleases),
 		SemverFilter: semverFilter,
 		Files:        files,
 		From:         from,
