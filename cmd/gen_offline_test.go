@@ -11,10 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/giantswarm/micrologger"
 
 	"github.com/giantswarm/devctl/v8/pkg/agentcli"
 	"github.com/giantswarm/devctl/v8/pkg/authstore"
+	"github.com/giantswarm/devctl/v8/pkg/project"
 )
 
 // offlineContainer is a plain container: no session bus, so no keychain, no
@@ -91,6 +93,9 @@ func TestGenCircleCIOffline(t *testing.T) {
 // TestGateOutsideGen verifies that a confirmed newer release still blocks a
 // command outside gen, even though unavailable release discovery is best-effort.
 func TestGateOutsideGen(t *testing.T) {
+	if _, err := semver.Parse(project.Version()); err != nil {
+		t.Skipf("the gate needs a release version, %q is not one: run `make test`, which sets it with -ldflags", project.Version())
+	}
 	offlineContainer(t)
 	t.Setenv("DEVCTL_UNSAFE_SKIP_VERSION_CHECK", "")
 	config := t.TempDir()
