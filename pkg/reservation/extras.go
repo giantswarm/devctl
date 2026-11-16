@@ -154,6 +154,7 @@ func reserveExtras(req Request, chart string, resolved extrasResolution, from, u
 		PullRequest:  req.PullRequest,
 		Commit:       commit,
 		SourceName:   strings.Join(resolved.sourceNames(), ", "),
+		HelmReleases: resolved.helmReleases,
 		SemverFilter: semverFilter,
 		Files:        files,
 		From:         from,
