@@ -27,7 +27,7 @@ require (
 	github.com/google/go-containerregistry v0.22.1
 	github.com/google/go-github/v93 v93.0.0
 	github.com/jedib0t/go-pretty/v6 v6.8.3
-	github.com/losisin/helm-values-schema-json/v2 v2.6.1-0.20261112132705-e6121660d034
+	github.com/losisin/helm-values-schema-json/v2 v2.6.1
 	github.com/manifoldco/promptui v0.9.0
 	github.com/mark3labs/mcp-go v1.5.0
 	github.com/mattn/go-isatty v0.0.24

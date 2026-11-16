@@ -127,7 +127,7 @@ repos:
       - id: helm-schema-devctl
         name: "verify helm/devctl/values.schema.json is up to date"
         language: golang
-        additional_dependencies: ['github.com/giantswarm/schemalint/v2@v2.6.3', 'github.com/losisin/helm-values-schema-json/v2@v2.6.1-0.20261112132705-e6121660d034']
+        additional_dependencies: ['github.com/giantswarm/schemalint/v2@v2.6.3', 'github.com/losisin/helm-values-schema-json/v2@v2.6.1']
         files: ^helm/devctl/(values\.yaml|\.schema\.yaml|values\.schema\.json|zz_generated\.app-platform\.values\.yaml)$
         pass_filenames: false
         require_serial: true
