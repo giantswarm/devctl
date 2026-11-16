@@ -43,6 +43,9 @@ func TestListReturnsTheActiveReservationsFields(t *testing.T) {
 		Scope:       reservation.ScopeApp,
 		From:        reserved.From,
 		Until:       reserved.Until,
+
+		GitOpsSource:         reservation.GitOpsSourceCollections,
+		RecordedGitOpsSource: reservation.GitOpsSourceCollections,
 	}
 	if diff := cmp.Diff(want, reservations[0]); diff != "" {
 		t.Errorf("reservation mismatch (-want +got):\n%s", diff)

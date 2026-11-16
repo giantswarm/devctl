@@ -363,12 +363,13 @@ func TestReserveWritesAnEntryThatReadsBack(t *testing.T) {
 	}
 
 	want := map[string]string{
-		"user":   testUser,
-		"branch": "fix/crash, {really}",
-		"pr":     testPullRequest,
-		"scope":  "app",
-		"from":   "2026-09-15T10:00:00Z",
-		"until":  "2026-09-15T20:00:00Z",
+		"user":          testUser,
+		"branch":        "fix/crash, {really}",
+		"pr":            testPullRequest,
+		"scope":         "app",
+		"gitops-source": "collections",
+		"from":          "2026-09-15T10:00:00Z",
+		"until":         "2026-09-15T20:00:00Z",
 	}
 	if diff := cmp.Diff(want, reservationEntries(t, dir, fixtureCluster)[fixtureApp]); diff != "" {
 		t.Errorf("reservation entry (-want +got):\n%s", diff)

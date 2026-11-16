@@ -58,6 +58,15 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (er
 		return microerror.Mask(checkout.Explain(err))
 	}
 
+	// The files win: release, extend and reap follow them, so the output shows
+	// their GitOps source and only stderr tells about a wrong entry.
+	for _, res := range all {
+		if res.RecordedGitOpsSource != "" && res.RecordedGitOpsSource != res.GitOpsSource {
+			_, _ = fmt.Fprintf(r.stderr, "warning: %s/%s: ConfigMap says gitops-source %s, files say %s\n",
+				r.flag.Cluster, res.App, res.RecordedGitOpsSource, res.GitOpsSource)
+		}
+	}
+
 	// An entry past its Until that the reaper has not swept yet is shown, marked
 	// expired: it no longer holds the app, but it is still on record.
 	now := time.Now()
@@ -79,10 +88,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (er
 	}
 
 	w := tabwriter.NewWriter(r.stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "APP\tUSER\tBRANCH\tPULL REQUEST\tSCOPE\tEXPIRES\tSTATUS")
+	_, _ = fmt.Fprintln(w, "APP\tUSER\tBRANCH\tPULL REQUEST\tSCOPE\tGITOPS SOURCE\tEXPIRES\tSTATUS")
 	for _, res := range all {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			res.App, res.User, res.Branch, res.PullRequest, res.Scope, res.Until.Format("2006-01-02 15:04 MST"), status(res, now))
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			res.App, res.User, res.Branch, res.PullRequest, res.Scope, res.GitOpsSource, res.Until.Format("2006-01-02 15:04 MST"), status(res, now))
 	}
 
 	return microerror.Mask(w.Flush())

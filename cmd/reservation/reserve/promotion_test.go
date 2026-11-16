@@ -165,6 +165,8 @@ func TestReserveReportsEffectivePullRequest(t *testing.T) {
 					if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
 						t.Fatal(err)
 					}
+					// The JSON carries no recorded GitOps source, only the one the files show.
+					doc.RecordedGitOpsSource = after.RecordedGitOpsSource
 					if doc != after {
 						t.Errorf("JSON reports %+v, stored %+v", doc, after)
 					}

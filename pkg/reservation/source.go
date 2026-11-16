@@ -100,15 +100,23 @@ func reservationAnnotations(req Request, from, until time.Time) map[string]strin
 	return annotations
 }
 
+// The GitOps sources a reservation can live in: a component directory in the
+// cluster's collections, or a block in its extras kustomization.
+const (
+	GitOpsSourceCollections = "collections"
+	GitOpsSourceExtras      = "extras"
+)
+
 // reservationEntry renders one reservation as the one-line YAML flow mapping the
 // reservations ConfigMap stores, so `kubectl get cm reservations -o yaml` stays
 // readable and a machine can still parse it.
-func reservationEntry(chart string, req Request, from, until time.Time) (string, error) {
+func reservationEntry(chart string, req Request, gitopsSource string, from, until time.Time) (string, error) {
 	fields := [][2]string{
 		{annotationUser, req.User},
 		{"branch", req.Branch},
 		{"pr", req.PullRequest},
 		{"scope", req.Scope},
+		{"gitops-source", gitopsSource},
 		{annotationFrom, from.Format(time.RFC3339)},
 		{annotationUntil, until.Format(time.RFC3339)},
 	}

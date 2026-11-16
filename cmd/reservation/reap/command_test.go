@@ -131,11 +131,11 @@ func TestReapCommitsAndPushesWithNoToken(t *testing.T) {
 
 	out := strings.TrimSpace(stdout.String())
 	fields := strings.Split(out, "\t")
-	if len(fields) != 8 {
-		t.Fatalf("stdout: got %d tab-separated fields, want 8: %q", len(fields), out)
+	if len(fields) != 9 {
+		t.Fatalf("stdout: got %d tab-separated fields, want 9: %q", len(fields), out)
 	}
 	wantCluster, wantApp, wantUser, wantReason := cluster, app, "alice", "expired"
-	if fields[0] != wantCluster || fields[1] != wantApp || fields[2] != wantUser || fields[5] != wantReason {
+	if fields[0] != wantCluster || fields[1] != wantApp || fields[2] != wantUser || fields[5] != wantReason || fields[8] != "collections" {
 		t.Errorf("stdout fields: got %q", out)
 	}
 

@@ -145,7 +145,7 @@ func reserveExtras(req Request, chart string, resolved extrasResolution, from, u
 	if err := writeBlock(path, chart, block); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
-	entry, err := reservationEntry(chart, req, from, until)
+	entry, err := reservationEntry(chart, req, GitOpsSourceExtras, from, until)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
@@ -175,6 +175,7 @@ func reserveExtras(req Request, chart string, resolved extrasResolution, from, u
 		App:          chart,
 		PullRequest:  req.PullRequest,
 		Commit:       commit,
+		GitOpsSource: GitOpsSourceExtras,
 		SourceName:   strings.Join(resolved.sourceNames(), ", "),
 		HelmReleases: resolved.helmReleases,
 		SemverFilter: semverFilter,

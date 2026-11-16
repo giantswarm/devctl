@@ -49,6 +49,9 @@ type Extended struct {
 	App string `json:"app"`
 	// Scope is the reservation's scope, e.g. ScopeApp. Extend keeps it.
 	Scope string `json:"scope"`
+	// GitOpsSource is where the reservation lives, GitOpsSourceCollections or
+	// GitOpsSourceExtras, as the files show it.
+	GitOpsSource string `json:"gitopsSource"`
 	// Commit is the hash of the commit Extend made.
 	Commit string `json:"commit"`
 	// From and Until bound the new window, in UTC.
@@ -195,7 +198,8 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 		}
 
 		until := now.Add(duration)
-		entry, err := reservationEntry(current.App, Request{User: req.User, Branch: current.Branch, PullRequest: current.PullRequest, Scope: current.Scope}, now, until)
+		gitopsSource := current.GitOpsSource
+		entry, err := reservationEntry(current.App, Request{User: req.User, Branch: current.Branch, PullRequest: current.PullRequest, Scope: current.Scope}, gitopsSource, now, until)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -206,8 +210,8 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 		// access to the GitOps repo reads /from and /until off the OCIRepository
 		// with kubectl, and the two must never disagree, in any commit.
 		files := []string{clusterPath(cluster, ConfigMapFile)}
-		if extrasPath := extrasKustomizationPath(req.RepoDir, cluster); hasBlock(extrasPath, current.App) {
-			err = writeBlockAnnotations(extrasPath, current.App, req.User, now, until)
+		if gitopsSource == GitOpsSourceExtras {
+			err = writeBlockAnnotations(extrasKustomizationPath(req.RepoDir, cluster), current.App, req.User, now, until)
 			files = append(files, clusterPath(cluster, extrasDir, "kustomization.yaml"))
 		} else {
 			err = writeSourceAnnotations(sourcePath, req.User, now, until)
@@ -222,7 +226,7 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 			return microerror.Mask(err)
 		}
 
-		result = Extended{Cluster: cluster, App: current.App, Scope: current.Scope, Commit: commit, From: now, Until: until}
+		result = Extended{Cluster: cluster, App: current.App, Scope: current.Scope, GitOpsSource: gitopsSource, Commit: commit, From: now, Until: until}
 		return nil
 	}
 

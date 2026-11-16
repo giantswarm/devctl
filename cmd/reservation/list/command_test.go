@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -23,11 +24,17 @@ const repoDirFlag = "--gitops-dir"
 func newCommand(t *testing.T, stdout io.Writer) *cobra.Command {
 	t.Helper()
 
+	return newCommandWithStderr(t, stdout, io.Discard)
+}
+
+func newCommandWithStderr(t *testing.T, stdout, stderr io.Writer) *cobra.Command {
+	t.Helper()
+
 	logger, err := micrologger.New(micrologger.Config{IOWriter: io.Discard})
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd, err := list.New(list.Config{Logger: logger, Stderr: io.Discard, Stdout: stdout})
+	cmd, err := list.New(list.Config{Logger: logger, Stderr: stderr, Stdout: stdout})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +190,7 @@ func TestListPrintsJSON(t *testing.T) {
 		configMap string
 		want      string
 	}{
-		"one entry": {configMap, `[{"app":"hello-world","branch":"fix/crash","pullRequest":"giantswarm/hello-world#123","scope":"app","status":"expired","user":"alice"}]`},
+		"one entry": {configMap, `[{"app":"hello-world","branch":"fix/crash","gitopsSource":"collections","pullRequest":"giantswarm/hello-world#123","scope":"app","status":"expired","user":"alice"}]`},
 		"empty":     {"data: {}\n", `[]`},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -210,5 +217,40 @@ func TestListPrintsJSON(t *testing.T) {
 				t.Errorf("stdout: got %s, want %s", gotJSON, tc.want)
 			}
 		})
+	}
+}
+
+// TestListShowsTheGitOpsSourceOfTheFiles: the GITOPS SOURCE column follows the
+// files. When the ConfigMap says otherwise, list warns on stderr and keeps
+// stdout for the table only.
+func TestListShowsTheGitOpsSourceOfTheFiles(t *testing.T) {
+	const cluster, chart = "graveler", "hello-world"
+	until := time.Now().Add(10 * time.Hour).UTC()
+	// No extras block holds the chart, so the files say collections.
+	configMap := "data:\n" +
+		"  " + chart + ": '{user: alice, branch: fix/crash, pr: \"\", scope: app, gitops-source: extras, from: 2026-09-15T10:00:00Z, until: " + until.Format(time.RFC3339) + "}'\n"
+	dir := newCheckout(t, map[string]string{"management-clusters/" + cluster + "/configmap-reservations.yaml": configMap})
+
+	var stdout, stderr bytes.Buffer
+	cmd := newCommandWithStderr(t, &stdout, &stderr)
+	cmd.SetArgs([]string{repoDirFlag, dir, "--cluster", cluster})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("stdout: got %d lines, want the header and one row:\n%s", len(lines), stdout.String())
+	}
+	header, row := strings.Fields(lines[0]), strings.Fields(lines[1])
+	// PULL REQUEST is two words in the header and empty in the row.
+	if i := slices.Index(header, "GITOPS"); i < 0 || header[i+1] != "SOURCE" || header[i-1] != "SCOPE" {
+		t.Fatalf("header: got %q, want GITOPS SOURCE after SCOPE", lines[0])
+	} else if got := row[i-2]; got != "collections" {
+		t.Errorf("gitops source: got %q, want collections:\n%s", got, stdout.String())
+	}
+	want := "warning: " + cluster + "/" + chart + ": ConfigMap says gitops-source extras, files say collections"
+	if !strings.Contains(stderr.String(), want) {
+		t.Errorf("stderr does not hold %q:\n%s", want, stderr.String())
 	}
 }
