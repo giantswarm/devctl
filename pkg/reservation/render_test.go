@@ -18,7 +18,20 @@ import (
 func renderCluster(t *testing.T, dir, cluster string) map[string]map[string]any {
 	t.Helper()
 
-	target := filepath.Join(dir, "management-clusters", cluster, "collections")
+	return renderTree(t, dir, cluster, "collections")
+}
+
+// renderExtras is renderCluster for the cluster's extras.
+func renderExtras(t *testing.T, dir, cluster string) map[string]map[string]any {
+	t.Helper()
+
+	return renderTree(t, dir, cluster, "extras")
+}
+
+func renderTree(t *testing.T, dir, cluster, tree string) map[string]map[string]any {
+	t.Helper()
+
+	target := filepath.Join(dir, "management-clusters", cluster, tree)
 	res, err := krusty.MakeKustomizer(krusty.MakeDefaultOptions()).Run(filesys.MakeFsOnDisk(), target)
 	if err != nil {
 		t.Fatalf("rendering %s: %v", target, err)
