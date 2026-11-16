@@ -198,3 +198,42 @@ func Test_NewCreateValuesSchemaInput_appPlatformValues(t *testing.T) {
 		})
 	}
 }
+
+// Test_NewCreateValuesSchemaInput_helmDocsDashes checks that a helm-docs description
+// continuation line containing "--", such as one naming a CLI flag, stays in the
+// generated description.
+func Test_NewCreateValuesSchemaInput_helmDocsDashes(t *testing.T) {
+	dir := t.TempDir()
+	chartDir := filepath.Join(dir, "helm", "test-chart")
+	if err := os.MkdirAll(chartDir, 0750); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(chartDir, "values.yaml"), []byte(
+		"# -- Secret with the CA;\n# passed to the binary as `--ca-file`.\n# @default -- none\ncaSecret: \"\"\n",
+	), 0600); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(chartDir, "zz_generated.app-platform.values.yaml"), nil, 0600); err != nil {
+		t.Fatalf("setup failed: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	got, err := NewCreateValuesSchemaInput(params.Params{K8sSchemaVersion: "v1.33.1"}, "test-chart").Generate(context.Background())
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	var schema struct {
+		Properties map[string]struct {
+			Description string `json:"description"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(got, &schema); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, got)
+	}
+	want := "Secret with the CA; passed to the binary as `--ca-file`."
+	if got := schema.Properties["caSecret"].Description; got != want {
+		t.Errorf("description: expected %q, got %q", want, got)
+	}
+}
