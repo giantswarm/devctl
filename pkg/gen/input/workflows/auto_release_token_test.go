@@ -87,6 +87,11 @@ func Test_AutoReleaseReleaseToken(t *testing.T) {
 				"client-id":           "${{ secrets.RELEASE_BOT_CLIENT_ID }}",
 				"private-key":         "${{ secrets.RELEASE_BOT_PRIVATE_KEY }}",
 				"permission-contents": "write",
+				// A stable promotion tags the candidate's commit, which can be
+				// behind workflow changes on the branch: GitHub refuses an App
+				// that ref without Workflows write. Other runs tag the head and
+				// ask for nothing more (an empty input is left out).
+				"permission-workflows": "${{ inputs.release-type == 'stable' && 'write' || '' }}",
 			}
 			if diff := cmp.Diff(wantInputs, token.With); diff != "" {
 				t.Errorf("App inputs (-want +got):\n%s", diff)

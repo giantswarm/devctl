@@ -33,7 +33,8 @@
 #
 # Tags and releases are created with the giantswarm-release GitHub App token,
 # so GitHub Actions workflows listening on push.tags or release can start.
-# Requires the App installed on this repository with Contents write and the
+# Requires the App installed on this repository with Contents write and
+# Workflows write (for a stable promotion, see the token step) and the
 # RELEASE_BOT_CLIENT_ID / RELEASE_BOT_PRIVATE_KEY secrets available to this
 # workflow. Missing or unusable App credentials fail before creating a release;
 # there is no GITHUB_TOKEN fallback, whose events cannot start those workflows.
@@ -624,6 +625,13 @@ jobs:
 
       # Mint just before publishing, after the release guards have passed.
       # With owner/repositories unset, the token is scoped to this repository.
+      #
+      # A stable promotion tags the candidate's commit, which can be behind
+      # the branch. When .github/workflows changed since that commit, GitHub
+      # refuses an App the new ref (403 "Resource not accessible by
+      # integration") unless the token holds Workflows write. Only a stable
+      # run asks for it: a candidate or an auto release tags the branch head,
+      # and an empty permission input is left out of the token.
       - name: Generate the giantswarm-release token
         id: release-token
         if: steps.decide.outputs.tag != ''
@@ -632,6 +640,7 @@ jobs:
           client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
           permission-contents: write
+          permission-workflows: ${{ inputs.release-type == 'stable' && 'write' || '' }}
 
       # Create the tag AND the GitHub Release in one atomic API call. GitHub's
       # release-create endpoint accepts a tag_name + target_commitish and, if
