@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -144,14 +143,16 @@ func TestListMarksAnExpiredReservation(t *testing.T) {
 		t.Fatalf("list: %v", err)
 	}
 
+	// STATUS is the column before the last one, GITOPS SOURCE.
 	for _, line := range strings.Split(stdout.String(), "\n") {
+		fields := strings.Fields(line)
 		switch {
 		case strings.HasPrefix(line, expiredApp):
-			if !strings.HasSuffix(line, "expired") {
+			if fields[len(fields)-2] != "expired" {
 				t.Errorf("expired row is not marked expired: %q", line)
 			}
 		case strings.HasPrefix(line, activeApp):
-			if !strings.HasSuffix(line, "active") {
+			if fields[len(fields)-2] != "active" {
 				t.Errorf("active row is not marked active: %q", line)
 			}
 		}
@@ -221,36 +222,54 @@ func TestListPrintsJSON(t *testing.T) {
 }
 
 // TestListShowsTheGitOpsSourceOfTheFiles: the GITOPS SOURCE column follows the
-// files. When the ConfigMap says otherwise, list warns on stderr and keeps
-// stdout for the table only.
+// files and comes last, so the older columns keep their place. When the
+// ConfigMap says otherwise, list warns on stderr and keeps stdout for the table
+// only.
 func TestListShowsTheGitOpsSourceOfTheFiles(t *testing.T) {
 	const cluster, chart = "graveler", "hello-world"
-	until := time.Now().Add(10 * time.Hour).UTC()
-	// No extras block holds the chart, so the files say collections.
-	configMap := "data:\n" +
-		"  " + chart + ": '{user: alice, branch: fix/crash, pr: \"\", scope: app, gitops-source: extras, from: 2026-09-15T10:00:00Z, until: " + until.Format(time.RFC3339) + "}'\n"
-	dir := newCheckout(t, map[string]string{"management-clusters/" + cluster + "/configmap-reservations.yaml": configMap})
+	block := "patches:\n" +
+		"  # BEGIN reservation of " + chart + ", written by `devctl reservation reserve`. Do not edit.\n" +
+		"  # END reservation of " + chart + ", written by `devctl reservation reserve`\n"
+	for name, tc := range map[string]struct {
+		extras   string
+		recorded string
+		want     string
+	}{
+		"collections": {"", "extras", "collections"},
+		"extras":      {block, "collections", "extras"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			until := time.Now().Add(10 * time.Hour).UTC()
+			files := map[string]string{
+				"management-clusters/" + cluster + "/configmap-reservations.yaml": "data:\n" +
+					"  " + chart + ": '{user: alice, branch: fix/crash, pr: \"\", scope: app, gitops-source: " + tc.recorded + ", from: 2026-09-15T10:00:00Z, until: " + until.Format(time.RFC3339) + "}'\n",
+			}
+			if tc.extras != "" {
+				files["management-clusters/"+cluster+"/extras/kustomization.yaml"] = tc.extras
+			}
+			dir := newCheckout(t, files)
 
-	var stdout, stderr bytes.Buffer
-	cmd := newCommandWithStderr(t, &stdout, &stderr)
-	cmd.SetArgs([]string{repoDirFlag, dir, "--cluster", cluster})
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("list: %v", err)
-	}
+			var stdout, stderr bytes.Buffer
+			cmd := newCommandWithStderr(t, &stdout, &stderr)
+			cmd.SetArgs([]string{repoDirFlag, dir, "--cluster", cluster})
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("list: %v", err)
+			}
 
-	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("stdout: got %d lines, want the header and one row:\n%s", len(lines), stdout.String())
-	}
-	header, row := strings.Fields(lines[0]), strings.Fields(lines[1])
-	// PULL REQUEST is two words in the header and empty in the row.
-	if i := slices.Index(header, "GITOPS"); i < 0 || header[i+1] != "SOURCE" || header[i-1] != "SCOPE" {
-		t.Fatalf("header: got %q, want GITOPS SOURCE after SCOPE", lines[0])
-	} else if got := row[i-2]; got != "collections" {
-		t.Errorf("gitops source: got %q, want collections:\n%s", got, stdout.String())
-	}
-	want := "warning: " + cluster + "/" + chart + ": ConfigMap says gitops-source extras, files say collections"
-	if !strings.Contains(stderr.String(), want) {
-		t.Errorf("stderr does not hold %q:\n%s", want, stderr.String())
+			lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
+			if len(lines) != 2 {
+				t.Fatalf("stdout: got %d lines, want the header and one row:\n%s", len(lines), stdout.String())
+			}
+			if !strings.HasSuffix(lines[0], "STATUS  GITOPS SOURCE") {
+				t.Fatalf("header: got %q, want GITOPS SOURCE last, after STATUS", lines[0])
+			}
+			if row := strings.Fields(lines[1]); row[len(row)-1] != tc.want {
+				t.Errorf("gitops source: got %q, want %q:\n%s", row[len(row)-1], tc.want, stdout.String())
+			}
+			want := "warning: " + cluster + "/" + chart + ": ConfigMap says gitops-source " + tc.recorded + ", files say " + tc.want
+			if !strings.Contains(stderr.String(), want) {
+				t.Errorf("stderr does not hold %q:\n%s", want, stderr.String())
+			}
+		})
 	}
 }
