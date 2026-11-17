@@ -88,17 +88,13 @@ func List(req ListRequest) ([]Reservation, error) {
 		return nil, microerror.Maskf(invalidConfigError, "parsing %s: %v", configMapPath, err)
 	}
 
-	extrasPath := extrasKustomizationPath(req.RepoDir, req.Cluster)
 	reservations := make([]Reservation, 0, len(configMap.Data))
 	for app, entry := range configMap.Data {
 		reservation, err := parseReservationEntry(app, entry)
 		if err != nil {
 			return nil, microerror.Maskf(invalidConfigError, "parsing the reservation entry of %q in %s: %v", app, configMapPath, err)
 		}
-		reservation.GitOpsSource = GitOpsSourceCollections
-		if hasBlock(extrasPath, app) {
-			reservation.GitOpsSource = GitOpsSourceExtras
-		}
+		reservation.GitOpsSource = gitopsSourceOf(req.RepoDir, req.Cluster, app)
 		reservations = append(reservations, reservation)
 	}
 	sort.Slice(reservations, func(i, j int) bool { return reservations[i].App < reservations[j].App })

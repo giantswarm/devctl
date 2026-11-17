@@ -94,7 +94,7 @@ func Release(req ReleaseRequest) (res ReleaseResult, err error) {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
 
-	if hasBlock(extrasKustomizationPath(req.RepoDir, req.Cluster), chart) {
+	if gitopsSourceOf(req.RepoDir, req.Cluster, chart) == GitOpsSourceExtras {
 		res, err := releaseExtras(req, chart)
 		return res, microerror.Mask(err)
 	}

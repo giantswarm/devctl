@@ -356,6 +356,16 @@ func listEnd(lines []string, start int) (last int) {
 	return last
 }
 
+// gitopsSourceOf returns where the app's reservation lives on the cluster. The
+// files decide, and list, extend and release all ask here.
+func gitopsSourceOf(repoDir, cluster, app string) string {
+	if hasBlock(extrasKustomizationPath(repoDir, cluster), app) {
+		return GitOpsSourceExtras
+	}
+
+	return GitOpsSourceCollections
+}
+
 // hasBlock reports whether the kustomization at path holds the chart's block.
 func hasBlock(path, chart string) bool {
 	lines, err := readLines(path)
