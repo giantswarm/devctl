@@ -67,7 +67,7 @@ A push whose commits git-cliff all skips (`ci`, `chore`, `docs`, `style`, `test`
 
 Use `fix` or `feat` for a dependency or build change that needs its own release. A `ci`, `chore` or `docs` change waits for the next releasable commit, including on fork lines.
 
-The single-version Auto-release workflow creates its tags and GitHub releases with a short-lived installation token of the `giantswarm-release` GitHub App, so a repository's GitHub Actions workflows listening on `push.tags` (for example `v*`) or `release` can run for candidates and stable releases. The App must be installed on the consuming repository with **Contents: write**, and `RELEASE_BOT_CLIENT_ID` and `RELEASE_BOT_PRIVATE_KEY` must be available as Actions secrets. The token is scoped to that repository and minted only when a tag was selected, after the release guards pass. Missing or unusable App credentials fail the job before a tag or release is created; there is no fallback to `GITHUB_TOKEN`, whose tag pushes and release events [do not start workflows](https://docs.github.com/en/actions/concepts/security/github_token#when-github_token-triggers-workflow-runs). Checkout, release-note lookups and CircleCI verification keep using the workflow's own read-only token. Existing repositories need the regenerated workflow; a tag already created with `GITHUB_TOKEN` gains no run retroactively. The separate `multi-image` workflow still uses `GITHUB_TOKEN` and relies on CircleCI for tag builds.
+The single-version Auto-release workflow creates its tags and GitHub releases with a short-lived installation token of the `giantswarm-release` GitHub App, so a repository's GitHub Actions workflows listening on `push.tags` (for example `v*`) or `release` can run for candidates and stable releases. The App must be installed on the consuming repository with **Contents: write** and **Workflows: write**, and `RELEASE_BOT_CLIENT_ID` and `RELEASE_BOT_PRIVATE_KEY` must be available as Actions secrets. The token is scoped to that repository and minted only when a tag was selected, after the release guards pass. A stable promotion's token also asks for Workflows write: it tags the candidate's commit, and GitHub refuses the App that tag when `.github/workflows` changed on the branch since. Candidates and auto releases tag the branch head with Contents write alone. Missing or unusable App credentials fail the job before a tag or release is created; there is no fallback to `GITHUB_TOKEN`, whose tag pushes and release events [do not start workflows](https://docs.github.com/en/actions/concepts/security/github_token#when-github_token-triggers-workflow-runs). Checkout, release-note lookups and CircleCI verification keep using the workflow's own read-only token. Existing repositories need the regenerated workflow; a tag already created with `GITHUB_TOKEN` gains no run retroactively. The separate `multi-image` workflow still uses `GITHUB_TOKEN` and relies on CircleCI for tag builds.
 
 A job of the repository's own that must not see a candidate, in a hand-written pipeline or in `.circleci/custom.yml`, filters on stable tags before the repository moves to `auto-release`. The krew index update of a CLI is one: krew-release-bot refuses a GitHub pre-release, so a `/^v.*/` filter turns the first candidate's pipeline red.
 
@@ -255,20 +255,6 @@ from the repository root: a bare `devctl gen precommit` uses empty language and 
 defaults, which removes the language and Helm hooks and skips schema generation. For
 example, a Go repository with a chart can regenerate with
 `devctl gen precommit --language go --flavors helmchart`; keep any other original options.
-
-Each chart also gets a `helm-docs-description-<chart>` check for its `values.yaml`. The pinned schema generator
-silently drops description continuation lines containing `--`. This check reports the file and line to reword
-(for example, replace the dash pair with an em dash), while allowing `--` in the first description line and the
-`@default`, `@notationType` and `@section` annotations. Ordinary comments and text inside YAML strings or block
-scalars are allowed. The hook installs pinned PyYAML in its isolated Python environment; the check itself runs
-offline and changes no files. Run pre-commit after `devctl gen precommit`: generation alone still uses the
-upstream parser. For example, reword the second line here before regenerating the schema:
-
-```yaml
-# -- Storage class of the volume.
-# Empty means the cluster default -- never a literal "--".
-storageClass: ""
-```
 
 A Go repository's config also refuses a `require` line in any `go.mod` (single or in a block) whose trailing comment has more than one word (`go-mod-require-comment`): Renovate's gomod manager reads only a one-word comment such as `// indirect` and skips the whole line otherwise, so that dependency is never updated and nothing says so. The explanation goes on a comment line above the require.
 

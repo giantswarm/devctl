@@ -1398,33 +1398,51 @@ func Test_ImageReferenceCheckExemptsOwnImageInBuildChart(t *testing.T) {
 		}
 	}
 
+	// A chart that keeps its declared appVersion references its own images at
+	// the stamped chart version, which app-build-suite exempts the same way.
 	keep := false
-	for name, c := range map[string]Config{
-		"a chart that keeps its declared appVersion beside a custom image": {
-			RepoName:                repoMCPKubernetes,
-			Language:                gen.LanguageGo,
-			Flavours:                gen.FlavourSlice{gen.FlavourApp},
-			HasDockerfile:           true,
-			CustomImages:            []string{"giantswarm/second-image"},
-			OverrideChartAppVersion: &keep,
-		},
-		"a chart of images built elsewhere": {
-			RepoName:      repoSitesearch,
-			Flavours:      gen.FlavourSlice{gen.FlavourApp},
-			HasDockerfile: false,
-		},
+	for name, tc := range map[string]struct {
+		config Config
+		want   string
+	}{
 		"a chart that keeps its declared appVersion": {
-			RepoName:                repoMCPKubernetes,
-			Language:                gen.LanguageGo,
-			Flavours:                gen.FlavourSlice{gen.FlavourApp},
-			HasDockerfile:           true,
-			OverrideChartAppVersion: &keep,
+			config: Config{
+				RepoName:                repoMCPKubernetes,
+				Language:                gen.LanguageGo,
+				Flavours:                gen.FlavourSlice{gen.FlavourApp},
+				HasDockerfile:           true,
+				OverrideChartAppVersion: &keep,
+			},
+			want: exempt("gsoci.azurecr.io/giantswarm/mcp-kubernetes"),
+		},
+		"a chart that keeps its declared appVersion beside a custom image": {
+			config: Config{
+				RepoName:                repoMCPKubernetes,
+				Language:                gen.LanguageGo,
+				Flavours:                gen.FlavourSlice{gen.FlavourApp},
+				HasDockerfile:           true,
+				CustomImages:            []string{"giantswarm/second-image"},
+				OverrideChartAppVersion: &keep,
+			},
+			want: exempt(`"[gsoci.azurecr.io/giantswarm/mcp-kubernetes, gsoci.azurecr.io/giantswarm/second-image]"`),
 		},
 	} {
-		got := render(t, c)
-		if contains(got, "ABS_HELM_IMAGE_REFERENCE_VALIDATOR_OWN_IMAGE") || contains(got, "ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR") {
-			t.Errorf("%s must resolve every image reference in build-chart:\n%s", name, got)
+		got := render(t, tc.config)
+		if cmd := preSteps(got, "build-chart"); cmd != tc.want {
+			t.Errorf("%s: build-chart pre-steps = %q, want %q", name, cmd, tc.want)
 		}
+		if contains(got, "ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR") {
+			t.Errorf("%s: no job may switch the image reference check off:\n%s", name, got)
+		}
+	}
+
+	got = render(t, Config{
+		RepoName:      repoSitesearch,
+		Flavours:      gen.FlavourSlice{gen.FlavourApp},
+		HasDockerfile: false,
+	})
+	if contains(got, "ABS_HELM_IMAGE_REFERENCE_VALIDATOR_OWN_IMAGE") || contains(got, "ABS_DISABLE_HELM_IMAGE_REFERENCE_VALIDATOR") {
+		t.Errorf("a chart of images built elsewhere must resolve every image reference in build-chart:\n%s", got)
 	}
 }
 

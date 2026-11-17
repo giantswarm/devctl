@@ -81,7 +81,7 @@ workflows:
 # workflow in .circleci/config.yml merges into this file at pipeline runtime.
 version: 2.1
 orbs:
-  architect: giantswarm/architect@10.17.4
+  architect: giantswarm/architect@10.18.0
 
 commands:
   # Pre-steps of the chart-test jobs: pull the images run-tests-with-ats starts
@@ -552,7 +552,8 @@ jobs:
 #
 # Tags and releases are created with the giantswarm-release GitHub App token,
 # so GitHub Actions workflows listening on push.tags or release can start.
-# Requires the App installed on this repository with Contents write and the
+# Requires the App installed on this repository with Contents write and
+# Workflows write (stable promotions, see the release token step), and the
 # RELEASE_BOT_CLIENT_ID / RELEASE_BOT_PRIVATE_KEY secrets available to this
 # workflow. Missing or unusable App credentials fail before creating a release;
 # there is no GITHUB_TOKEN fallback, whose events cannot start those workflows.
@@ -1049,6 +1050,10 @@ jobs:
 
       # Mint just before publishing, after the release guards have passed.
       # With owner/repositories unset, the token is scoped to this repository.
+      # A stable promotion tags the candidate's commit, which can be behind
+      # .github/workflows changes on the branch (an align-files commit). GitHub
+      # refuses an App that tag without `workflows`. Other runs tag the branch
+      # head; for them the empty input is left out of the token.
       - name: Generate the giantswarm-release token
         id: release-token
         if: steps.decide.outputs.tag != ''
@@ -1057,6 +1062,7 @@ jobs:
           client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
           permission-contents: write
+          permission-workflows: ${{ inputs.release-type == 'stable' && 'write' || '' }}
 
       # Create the tag AND the GitHub Release in one atomic API call. GitHub's
       # release-create endpoint accepts a tag_name + target_commitish and, if
@@ -1160,6 +1166,7 @@ jobs:
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
+          permission-workflows: write
       - name: Check out the catch-up head
         if: steps.catch-up.outputs.prepare == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1558,8 +1565,17 @@ jobs:
           binary: golangci-lint
           version: "2.15.0"
           download_url: "https://github.com/golangci/golangci-lint/releases/download/v${version}/${binary}-${version}-linux-amd64.tar.gz"
+      - name: Install pre-commit
+        run: python -m pip install pre-commit
+      - name: List installed Python packages
+        run: python -m pip freeze --local
+      - name: Restore pre-commit cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-3|${{ env.pythonLocation }}|${{ hashFiles('.pre-commit-config.yaml') }}
       - name: Execute pre-commit hooks
-        uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+        run: pre-commit run --show-diff-on-failure --color=always --all-files
         env:
           GOGC: "20"
 
@@ -1625,8 +1641,14 @@ on:
 
 permissions: {}
 
+# GitHub judges this check on a commit by the workflow's newest run, and a run
+# checks the title it reads when its job starts. A newer run cancels an older
+# one, so no run that read an older title finishes after it. An edit that
+# leaves the title alone (the description, the base) gets a group of its own:
+# it cancels nothing and checks the same title. It still runs the job: a
+# skipped newest run would count as green over a failed title check.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}${{ github.event.action == 'edited' && github.event.changes.title == null && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -1812,65 +1834,10 @@ repos:
   # lines from hello-world-app's) and CI then rejected it.
   - repo: local
     hooks:
-      # The schema generator drops a description continuation containing --.
-      # Keep real helm-docs annotations, but name prose that needs rewording.
-      - id: helm-docs-description-example-go-service
-        name: "check helm/example-go-service/values.yaml description continuations"
-        language: python
-        additional_dependencies: ['PyYAML==6.0.3']
-        files: ^helm/example-go-service/values\.yaml$
-        entry: python -c
-        args:
-          - |
-            import re
-            import sys
-            import yaml
-            # Match the description opener accepted by helm-values-schema-json v2.6.0,
-            # including an optional path and type. Only continuation lines lose text.
-            opener = re.compile(r'^#\s+(?:"[^"]*"|[^@\-\s]*)(?:\.(?:"[^"]*"|[^\s.]*))*\s*--')
-            annotations = {"@default", "@notationType", "@section"}
-            failed = False
-            for path in sys.argv[1:]:
-                with open(path, encoding="utf-8") as source:
-                    text = source.read()
-                # A line beginning with '#' inside a YAML scalar is data, not a comment.
-                # Scanning tokens also handles quoted multiline strings and block scalars.
-                try:
-                    scalars = iter(token for token in yaml.scan(text) if isinstance(token, yaml.ScalarToken))
-                    scalar = next(scalars, None)
-                    offset = 0
-                    active = False
-                    for number, line in enumerate(text.splitlines(keepends=True), 1):
-                        comment = line.lstrip(" \t")
-                        start = offset + len(line) - len(comment)
-                        offset += len(line)
-                        while scalar is not None and scalar.end_mark.index <= start:
-                            scalar = next(scalars, None)
-                        if not comment.startswith("#") or (
-                            scalar is not None and scalar.start_mark.index <= start < scalar.end_mark.index
-                        ):
-                            active = False
-                            continue
-                        if not active:
-                            active = opener.match(comment) is not None
-                            continue
-                        annotation, separator, _ = comment[1:].strip().partition("--")
-                        if separator and annotation.strip() not in annotations:
-                            print(
-                                f"{path}:{number}: '--' in a helm-docs description continuation is "
-                                "silently dropped by helm-values-schema-json; reword this line "
-                                "(for example, use an em dash).",
-                                file=sys.stderr,
-                            )
-                            failed = True
-                except yaml.YAMLError as error:
-                    print(f"{path}: {error}", file=sys.stderr)
-                    failed = True
-            sys.exit(1 if failed else 0)
       - id: helm-schema-example-go-service
         name: "verify helm/example-go-service/values.schema.json is up to date"
         language: golang
-        additional_dependencies: ['github.com/giantswarm/schemalint/v2@v2.6.3', 'github.com/losisin/helm-values-schema-json/v2@v2.6.0']
+        additional_dependencies: ['github.com/giantswarm/schemalint/v2@v2.6.3', 'github.com/losisin/helm-values-schema-json/v2@v2.6.1']
         files: ^helm/example-go-service/(values\.yaml|\.schema\.yaml|values\.schema\.json|zz_generated\.app-platform\.values\.yaml)$
         pass_filenames: false
         require_serial: true

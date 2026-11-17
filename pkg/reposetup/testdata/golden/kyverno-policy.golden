@@ -184,8 +184,14 @@ on:
 
 permissions: {}
 
+# GitHub judges this check on a commit by the workflow's newest run, and a run
+# checks the title it reads when its job starts. A newer run cancels an older
+# one, so no run that read an older title finishes after it. An edit that
+# leaves the title alone (the description, the base) gets a group of its own:
+# it cancels nothing and checks the same title. It still runs the job: a
+# skipped newest run would count as green over a failed title check.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}${{ github.event.action == 'edited' && github.event.changes.title == null && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -632,6 +638,13 @@ install-kyverno:
 		| kubectl create -f -
 	# Wait for every controller, not only the admission controller: the cleanup controller registers its webhook before its pod is ready
 	kubectl -n kyverno wait --for=condition=available deployment --all --timeout 300s
+	# An available admission controller can still refuse connections for a few seconds: wait until its policy webhook answers a server-side dry run
+	for i in $$(seq 1 30); do \
+		echo '{"apiVersion":"kyverno.io/v1","kind":"ClusterPolicy","metadata":{"name":"webhook-ready-probe"},"spec":{"rules":[{"name":"probe","match":{"any":[{"resources":{"kinds":["ConfigMap"]}}]},"validate":{"message":"probe","pattern":{"metadata":{"name":"?*"}}}}]}}' \
+			| kubectl apply --dry-run=server -f - >/dev/null && exit 0; \
+		sleep 2; \
+	done; \
+	echo "Kyverno policy webhook did not answer within 60s" >&2; exit 1
 
 .PHONY: install-policies
 install-policies: check-kyverno-policies-chart
