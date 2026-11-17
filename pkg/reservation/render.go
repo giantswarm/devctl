@@ -102,7 +102,7 @@ func assertReserved(objects []object, resolved resolution, sourceName, semverFil
 		return microerror.Maskf(renderAssertionError,
 			"the rendered collections carry no %s named %q", ociRepositoryKind, sourceName)
 	}
-	wantRef := map[string]any{"semver": devSemverRange, "semverFilter": semverFilter}
+	wantRef := devRef(semverFilter)
 	if got := source.nested("spec", "ref"); !reflect.DeepEqual(got, wantRef) {
 		return microerror.Maskf(renderAssertionError,
 			"the rendered %s %q selects %v, want %v", ociRepositoryKind, sourceName, got, wantRef)

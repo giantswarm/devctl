@@ -250,7 +250,7 @@ func extrasBlock(chart string, sources []object, semverFilter string, annotation
 		ref, err := marshalYAML([]map[string]any{{
 			"op":    "add",
 			"path":  "/spec/ref",
-			"value": map[string]any{"semver": devSemverRange, "semverFilter": semverFilter},
+			"value": devRef(semverFilter),
 		}})
 		if err != nil {
 			return nil, microerror.Mask(err)
@@ -414,7 +414,7 @@ func removeBlock(path, chart string) error {
 // render on the dev builds. kustomize skips a patch whose target matches
 // nothing without an error, so a render that succeeds proves nothing.
 func assertExtrasReserved(objects []object, resolved extrasResolution, semverFilter string, annotations map[string]string) error {
-	wantRef := map[string]any{"semver": devSemverRange, "semverFilter": semverFilter}
+	wantRef := devRef(semverFilter)
 	for _, s := range resolved.sources {
 		var got object
 		for _, o := range objects {
