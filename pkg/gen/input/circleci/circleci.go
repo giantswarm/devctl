@@ -800,23 +800,22 @@ func New(config Config) (*CircleCI, error) {
 	if config.OverrideChartAppVersion != nil {
 		keepChartAppVersion = !*config.OverrideChartAppVersion
 	}
-	// The images the chart references at the stamped appVersion, which
-	// build-chart packages before the pipeline pushes them: the generated
-	// image and every image the repo's custom.yml pushes. A chart that keeps
-	// its declared appVersion references no such unpushed tag.
+	// The images the pipeline pushes after build-chart packages the chart: the
+	// generated image and every image the repo's custom.yml pushes. The chart
+	// references them at the version it is stamped with: the appVersion, or,
+	// when it keeps its declared appVersion, the chart version.
+	// app-build-suite exempts both.
 	var ownImages []string
-	if !keepChartAppVersion {
-		if hasDockerfile {
-			imageName := config.ImageName
-			if imageName == "" {
-				imageName = "giantswarm/" + config.RepoName
-			}
-			ownImages = append(ownImages, "gsoci.azurecr.io/"+imageName)
+	if hasDockerfile {
+		imageName := config.ImageName
+		if imageName == "" {
+			imageName = "giantswarm/" + config.RepoName
 		}
-		for _, image := range config.CustomImages {
-			if reference := "gsoci.azurecr.io/" + image; !slices.Contains(ownImages, reference) {
-				ownImages = append(ownImages, reference)
-			}
+		ownImages = append(ownImages, "gsoci.azurecr.io/"+imageName)
+	}
+	for _, image := range config.CustomImages {
+		if reference := "gsoci.azurecr.io/" + image; !slices.Contains(ownImages, reference) {
+			ownImages = append(ownImages, reference)
 		}
 	}
 	isNode := config.Language == gen.LanguageNode
