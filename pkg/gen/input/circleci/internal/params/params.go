@@ -148,12 +148,10 @@ type Params struct {
 	ImageName string
 	// OwnImages are the gsoci images this pipeline builds
 	// (`gsoci.azurecr.io/<ImageName or giantswarm/<repo>>`, then the images the
-	// repo's custom.yml pushes), set when the chart build stamps appVersion
-	// with the build version. build-chart runs before those images are pushed,
-	// so it names them to app-build-suite's image reference check, which skips
-	// them at the stamped version and resolves every other reference. Empty
-	// when the repo builds no image or the chart keeps the appVersion
-	// Chart.yaml declares.
+	// repo's custom.yml pushes). build-chart runs before those images are
+	// pushed, so it names them to app-build-suite's image reference check,
+	// which skips them at the stamped appVersion or chart version and resolves
+	// every other reference. Empty when the repo builds no image.
 	OwnImages []string
 	// ImagePlatforms overrides the buildx platform list for the image build
 	// (the push-to-registries `platforms` param on the build-image and
