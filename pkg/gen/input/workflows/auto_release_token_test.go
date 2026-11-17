@@ -87,7 +87,7 @@ func Test_AutoReleaseReleaseToken(t *testing.T) {
 				"client-id":            "${{ secrets.RELEASE_BOT_CLIENT_ID }}",
 				"private-key":          "${{ secrets.RELEASE_BOT_PRIVATE_KEY }}",
 				"permission-contents":  "write",
-				"permission-workflows": "write",
+				"permission-workflows": "${{ inputs.release-type == 'stable' && 'write' || '' }}",
 			}
 			if diff := cmp.Diff(wantInputs, token.With); diff != "" {
 				t.Errorf("App inputs (-want +got):\n%s", diff)
