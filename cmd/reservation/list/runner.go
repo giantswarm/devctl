@@ -61,9 +61,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (er
 	// The files win: release, extend and reap follow them, so the output shows
 	// their GitOps source and only stderr tells about a wrong entry.
 	for _, res := range all {
-		if res.RecordedGitOpsSource != "" && res.RecordedGitOpsSource != res.GitOpsSource {
+		if recorded, stale := res.StaleGitOpsSource(); stale {
 			_, _ = fmt.Fprintf(r.stderr, "warning: %s/%s: ConfigMap says gitops-source %s, files say %s\n",
-				r.flag.Cluster, res.App, res.RecordedGitOpsSource, res.GitOpsSource)
+				r.flag.Cluster, res.App, recorded, res.GitOpsSource)
 		}
 	}
 

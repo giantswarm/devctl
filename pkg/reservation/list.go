@@ -35,12 +35,19 @@ type Reservation struct {
 	// GitOpsSourceExtras. It comes from the files: release, extend and reap
 	// follow them, so the files win over the entry.
 	GitOpsSource string `json:"gitopsSource"`
-	// RecordedGitOpsSource is the gitops-source of the entry, empty when the
-	// entry has none. It is for a warning when it disagrees with GitOpsSource.
-	RecordedGitOpsSource string `json:"-"`
+	// recordedGitOpsSource is the gitops-source of the entry, empty when the
+	// entry has none. See StaleGitOpsSource.
+	recordedGitOpsSource string
 	// From and Until bound the reservation, in UTC. Until is the expiry.
 	From  time.Time `json:"from"`
 	Until time.Time `json:"until"`
+}
+
+// StaleGitOpsSource returns the gitops-source the entry records, and whether it
+// disagrees with GitOpsSource, the one the files show. An entry that records
+// none is not stale: an older devctl wrote it.
+func (r Reservation) StaleGitOpsSource() (recorded string, stale bool) {
+	return r.recordedGitOpsSource, r.recordedGitOpsSource != "" && r.recordedGitOpsSource != r.GitOpsSource
 }
 
 // Expired reports whether the reservation no longer holds at now. An expired
@@ -131,6 +138,6 @@ func parseReservationEntry(app, entry string) (Reservation, error) {
 		From:        from,
 		Until:       until,
 
-		RecordedGitOpsSource: fields.GitOpsSource,
+		recordedGitOpsSource: fields.GitOpsSource,
 	}, nil
 }

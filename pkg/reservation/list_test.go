@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
@@ -44,11 +45,13 @@ func TestListReturnsTheActiveReservationsFields(t *testing.T) {
 		From:        reserved.From,
 		Until:       reserved.Until,
 
-		GitOpsSource:         reservation.GitOpsSourceCollections,
-		RecordedGitOpsSource: reservation.GitOpsSourceCollections,
+		GitOpsSource: reservation.GitOpsSourceCollections,
 	}
-	if diff := cmp.Diff(want, reservations[0]); diff != "" {
+	if diff := cmp.Diff(want, reservations[0], cmpopts.IgnoreUnexported(reservation.Reservation{})); diff != "" {
 		t.Errorf("reservation mismatch (-want +got):\n%s", diff)
+	}
+	if recorded, stale := reservations[0].StaleGitOpsSource(); stale {
+		t.Errorf("the entry records gitops-source %q, the files say %q", recorded, reservations[0].GitOpsSource)
 	}
 }
 

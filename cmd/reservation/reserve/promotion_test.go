@@ -165,9 +165,17 @@ func TestReserveReportsEffectivePullRequest(t *testing.T) {
 					if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
 						t.Fatal(err)
 					}
-					// The JSON carries no recorded GitOps source, only the one the files show.
-					doc.RecordedGitOpsSource = after.RecordedGitOpsSource
-					if doc != after {
+					// Compare JSON with JSON: the stored reservation also
+					// holds what the entry records, which JSON leaves out.
+					b, err := json.Marshal(after)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var stored reservation.Reservation
+					if err := json.Unmarshal(b, &stored); err != nil {
+						t.Fatal(err)
+					}
+					if doc != stored {
 						t.Errorf("JSON reports %+v, stored %+v", doc, after)
 					}
 				}

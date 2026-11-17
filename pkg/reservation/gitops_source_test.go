@@ -96,8 +96,8 @@ func TestExtendWritesTheGitOpsSourceOfTheFiles(t *testing.T) {
 }
 
 // TestListShowsTheGitOpsSourceOfTheFiles: list finds the GitOps source in the
-// files, and also returns the recorded one, so the caller can warn when the
-// two disagree.
+// files, and a reservation tells when its entry records a different one, so the
+// caller can warn.
 func TestListShowsTheGitOpsSourceOfTheFiles(t *testing.T) {
 	for name, tc := range map[string]struct {
 		request  func(string) reservation.Request
@@ -105,12 +105,13 @@ func TestListShowsTheGitOpsSourceOfTheFiles(t *testing.T) {
 		recorded string
 		edit     bool
 		want     string
+		stale    bool
 	}{
-		"collections":        {testRequest, fixtureApp, reservation.GitOpsSourceCollections, false, reservation.GitOpsSourceCollections},
-		"extras":             {extrasRequest, fixtureExtrasApp, reservation.GitOpsSourceExtras, false, reservation.GitOpsSourceExtras},
-		"extras, absent":     {extrasRequest, fixtureExtrasApp, "", true, reservation.GitOpsSourceExtras},
-		"extras, wrong":      {extrasRequest, fixtureExtrasApp, reservation.GitOpsSourceCollections, true, reservation.GitOpsSourceExtras},
-		"collections, wrong": {testRequest, fixtureApp, reservation.GitOpsSourceExtras, true, reservation.GitOpsSourceCollections},
+		"collections":        {testRequest, fixtureApp, reservation.GitOpsSourceCollections, false, reservation.GitOpsSourceCollections, false},
+		"extras":             {extrasRequest, fixtureExtrasApp, reservation.GitOpsSourceExtras, false, reservation.GitOpsSourceExtras, false},
+		"extras, absent":     {extrasRequest, fixtureExtrasApp, "", true, reservation.GitOpsSourceExtras, false},
+		"extras, wrong":      {extrasRequest, fixtureExtrasApp, reservation.GitOpsSourceCollections, true, reservation.GitOpsSourceExtras, true},
+		"collections, wrong": {testRequest, fixtureApp, reservation.GitOpsSourceExtras, true, reservation.GitOpsSourceCollections, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir, _ := newReapFixture(t, fixtureOptions{})
@@ -126,9 +127,12 @@ func TestListShowsTheGitOpsSourceOfTheFiles(t *testing.T) {
 			if len(got) != 1 {
 				t.Fatalf("got %d reservations, want 1: %+v", len(got), got)
 			}
-			if got[0].GitOpsSource != tc.want || got[0].RecordedGitOpsSource != tc.recorded {
-				t.Errorf("gitops source: got %q (recorded %q), want %q (recorded %q)",
-					got[0].GitOpsSource, got[0].RecordedGitOpsSource, tc.want, tc.recorded)
+			if got[0].GitOpsSource != tc.want {
+				t.Errorf("gitops source: got %q, want %q", got[0].GitOpsSource, tc.want)
+			}
+			recorded, stale := got[0].StaleGitOpsSource()
+			if stale != tc.stale || (stale && recorded != tc.recorded) {
+				t.Errorf("StaleGitOpsSource: got (%q, %v), want (%q, %v)", recorded, stale, tc.recorded, tc.stale)
 			}
 		})
 	}
