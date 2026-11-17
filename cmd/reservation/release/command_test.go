@@ -249,6 +249,12 @@ func TestReleaseByPullRequestNeedsNoClusterOrApp(t *testing.T) {
 			t.Errorf("stdout does not mention %q: %s", chart, stdout.String())
 		}
 	}
+	// The GitOps source comes last, so the older columns keep their place.
+	for _, line := range strings.Split(strings.TrimSpace(stdout.String()), "\n") {
+		if fields := strings.Split(line, "\t"); len(fields) != 4 || fields[3] != "collections" {
+			t.Errorf("line %q: want 4 tab-separated fields, the last one collections", line)
+		}
+	}
 
 	configMap := gittest.GitOutput(t, origin, "show", "main:management-clusters/"+cluster+"/configmap-reservations.yaml")
 	for _, chart := range []string{chartA, chartB} {
@@ -283,6 +289,9 @@ func TestReleaseOneClusterChecksThePullRequest(t *testing.T) {
 	})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("release from the holding pull request: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "(GitOps source: collections).") {
+		t.Errorf("stdout does not name the GitOps source: %s", stdout.String())
 	}
 
 	// An unrelated pull request is refused, and the reservation survives.

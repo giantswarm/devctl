@@ -228,7 +228,7 @@ func releaseExtras(req ReleaseRequest, chart string) (res ReleaseResult, err err
 		return ReleaseResult{}, microerror.Mask(err)
 	}
 
-	return ReleaseResult{App: chart, Commit: commit, Files: files}, nil
+	return ReleaseResult{App: chart, Commit: commit, Files: files, GitOpsSource: GitOpsSourceExtras}, nil
 }
 
 // discardExtrasWrites restores the two files an extras reservation edits.

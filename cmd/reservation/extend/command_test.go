@@ -132,10 +132,11 @@ func TestExtendCommitsAndPushesWithNoToken(t *testing.T) {
 
 	out := strings.TrimSpace(stdout.String())
 	fields := strings.Split(out, "\t")
-	if len(fields) != 3 {
-		t.Fatalf("stdout: got %d tab-separated fields, want 3: %q", len(fields), out)
+	// The GitOps source comes last, so the older columns keep their place.
+	if len(fields) != 4 {
+		t.Fatalf("stdout: got %d tab-separated fields, want 4: %q", len(fields), out)
 	}
-	if fields[0] != cluster || fields[1] != app {
+	if fields[0] != cluster || fields[1] != app || fields[3] != "collections" {
 		t.Errorf("stdout fields: got %q", out)
 	}
 

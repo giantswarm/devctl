@@ -184,6 +184,14 @@ func TestReserveReportsEffectivePullRequest(t *testing.T) {
 	}
 }
 
+// TestReserveTextNamesTheGitOpsSource: a human sees where the reservation lives.
+func TestReserveTextNamesTheGitOpsSource(t *testing.T) {
+	stdout, _ := runReserve(t, newReserveCheckout(t), "table")
+	if !strings.Contains(stdout, "(GitOps source: collections).") {
+		t.Errorf("stdout does not name the GitOps source: %s", stdout)
+	}
+}
+
 // TestReserveJSONNamesTheGitOpsSource pins the JSON key that callers parse.
 func TestReserveJSONNamesTheGitOpsSource(t *testing.T) {
 	stdout, _ := runReserve(t, newReserveCheckout(t), "json")
