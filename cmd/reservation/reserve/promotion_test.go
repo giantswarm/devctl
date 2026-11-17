@@ -175,3 +175,16 @@ func TestReserveReportsEffectivePullRequest(t *testing.T) {
 		}
 	}
 }
+
+// TestReserveJSONNamesTheGitOpsSource pins the JSON key that callers parse.
+func TestReserveJSONNamesTheGitOpsSource(t *testing.T) {
+	stdout, _ := runReserve(t, newReserveCheckout(t), "json")
+
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	if got := doc["gitopsSource"]; got != reservation.GitOpsSourceCollections {
+		t.Errorf("gitopsSource: got %v, want %q:\n%s", got, reservation.GitOpsSourceCollections, stdout)
+	}
+}
