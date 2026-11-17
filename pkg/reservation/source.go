@@ -82,18 +82,32 @@ func devRef(semverFilter string) map[string]any {
 	return map[string]any{"semver": devSemverRange, "semverFilter": semverFilter}
 }
 
+// hold is who holds a reservation and for which window: the part of the
+// annotations that extend moves as well as reserve.
+type hold struct {
+	User        string
+	From, Until time.Time
+}
+
+// annotations returns the hold's annotations, keyed without AnnotationPrefix.
+func (h hold) annotations() map[string]string {
+	return map[string]string{
+		annotationUser:  h.User,
+		annotationFrom:  h.From.Format(time.RFC3339),
+		annotationUntil: h.Until.Format(time.RFC3339),
+	}
+}
+
 // reservationAnnotations are the annotations a reserved source carries, so
 // `kubectl get` on the source alone shows who holds it and until when.
 func reservationAnnotations(req Request, from, until time.Time) map[string]string {
+	keys := hold{User: req.User, From: from, Until: until}.annotations()
+	keys["branch"] = req.Branch
+	keys["pr"] = req.PullRequest
+	keys["scope"] = req.Scope
+
 	annotations := map[string]string{}
-	for key, value := range map[string]string{
-		annotationUser:  req.User,
-		"branch":        req.Branch,
-		"pr":            req.PullRequest,
-		"scope":         req.Scope,
-		annotationFrom:  from.Format(time.RFC3339),
-		annotationUntil: until.Format(time.RFC3339),
-	} {
+	for key, value := range keys {
 		annotations[AnnotationPrefix+key] = value
 	}
 

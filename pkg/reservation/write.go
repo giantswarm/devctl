@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/giantswarm/microerror"
 	"github.com/go-git/go-git/v5"
@@ -154,26 +153,22 @@ patches:
 // ConfigMap, so nothing else in the file -- key order, quoting, the
 // generatedBy header -- moves. Extend calls it alongside writeReservationEntry
 // so a `kubectl` read of either one always shows the current window.
-func writeSourceAnnotations(path, user string, from, until time.Time) error {
+func writeSourceAnnotations(path string, h hold) error {
 	lines, err := readLines(path)
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	if found := setWindowAnnotations(lines, user, from, until); found != 3 {
+	if found := setWindowAnnotations(lines, h); found != len(h.annotations()) {
 		return microerror.Maskf(invalidConfigError, "%s carries no %suser/%sfrom/%suntil annotations to update", path, AnnotationPrefix, AnnotationPrefix, AnnotationPrefix)
 	}
 
 	return microerror.Mask(writeLines(path, lines))
 }
 
-// setWindowAnnotations rewrites the user, from and until annotations in lines,
-// in place, and returns how many it rewrote.
-func setWindowAnnotations(lines []string, user string, from, until time.Time) (found int) {
-	want := map[string]string{
-		annotationUser:  user,
-		annotationFrom:  from.Format(time.RFC3339),
-		annotationUntil: until.Format(time.RFC3339),
-	}
+// setWindowAnnotations rewrites the annotations of the hold in lines, in place,
+// and returns how many it rewrote.
+func setWindowAnnotations(lines []string, h hold) (found int) {
+	want := h.annotations()
 	for i, l := range lines {
 		m := sourceAnnotation.FindStringSubmatch(l)
 		if m == nil {

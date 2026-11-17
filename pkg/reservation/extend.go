@@ -207,13 +207,14 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 		// The ConfigMap entry above and this are one change: a human with no
 		// access to the GitOps repo reads /from and /until off the OCIRepository
 		// with kubectl, and the two must never disagree, in any commit.
+		h := hold{User: req.User, From: now, Until: until}
 		var annotated string
 		if current.GitOpsSource == GitOpsSourceExtras {
 			annotated = clusterPath(cluster, extrasDir, "kustomization.yaml")
-			err = writeBlockAnnotations(filepath.Join(req.RepoDir, annotated), current.App, req.User, now, until)
+			err = writeBlockAnnotations(filepath.Join(req.RepoDir, annotated), current.App, h)
 		} else {
 			annotated = clusterPath(cluster, collectionsDir, reservationsDir, current.App, current.App+SourceNameSuffix+".yaml")
-			err = writeSourceAnnotations(filepath.Join(req.RepoDir, annotated), req.User, now, until)
+			err = writeSourceAnnotations(filepath.Join(req.RepoDir, annotated), h)
 		}
 		if err != nil {
 			return microerror.Mask(err)

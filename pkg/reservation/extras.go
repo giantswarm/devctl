@@ -425,9 +425,9 @@ func removeBlock(path, chart string) error {
 	return microerror.Mask(writeLines(path, lines))
 }
 
-// writeBlockAnnotations moves the window in the chart's block: three
-// annotations per source.
-func writeBlockAnnotations(path, chart, user string, from, until time.Time) error {
+// writeBlockAnnotations moves the hold in the chart's block: the annotations
+// of the hold, once per source.
+func writeBlockAnnotations(path, chart string, h hold) error {
 	lines, err := readLines(path)
 	if err != nil {
 		return microerror.Mask(err)
@@ -436,7 +436,7 @@ func writeBlockAnnotations(path, chart, user string, from, until time.Time) erro
 	if !ok {
 		return microerror.Maskf(componentNotFoundError, "%s holds no reservation block of %q", path, chart)
 	}
-	if found := setWindowAnnotations(lines[begin:end+1], user, from, until); found == 0 || found%3 != 0 {
+	if found := setWindowAnnotations(lines[begin:end+1], h); found == 0 || found%len(h.annotations()) != 0 {
 		return microerror.Maskf(invalidConfigError, "the reservation block of %q in %s carries no %suser/%sfrom/%suntil annotations to update", chart, path, AnnotationPrefix, AnnotationPrefix, AnnotationPrefix)
 	}
 
