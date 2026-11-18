@@ -165,11 +165,42 @@ func TestReserveReportsEffectivePullRequest(t *testing.T) {
 					if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
 						t.Fatal(err)
 					}
-					if doc != after {
+					// Compare JSON with JSON: the stored reservation also
+					// holds what the entry records, which JSON leaves out.
+					b, err := json.Marshal(after)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var stored reservation.Reservation
+					if err := json.Unmarshal(b, &stored); err != nil {
+						t.Fatal(err)
+					}
+					if doc != stored {
 						t.Errorf("JSON reports %+v, stored %+v", doc, after)
 					}
 				}
 			})
 		}
+	}
+}
+
+// TestReserveTextNamesTheGitOpsSource: a human sees where the reservation lives.
+func TestReserveTextNamesTheGitOpsSource(t *testing.T) {
+	stdout, _ := runReserve(t, newReserveCheckout(t), "table")
+	if !strings.Contains(stdout, "(GitOps source: collections).") {
+		t.Errorf("stdout does not name the GitOps source: %s", stdout)
+	}
+}
+
+// TestReserveJSONNamesTheGitOpsSource pins the JSON key that callers parse.
+func TestReserveJSONNamesTheGitOpsSource(t *testing.T) {
+	stdout, _ := runReserve(t, newReserveCheckout(t), "json")
+
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	if got := doc["gitopsSource"]; got != reservation.GitOpsSourceCollections {
+		t.Errorf("gitopsSource: got %v, want %q:\n%s", got, reservation.GitOpsSourceCollections, stdout)
 	}
 }

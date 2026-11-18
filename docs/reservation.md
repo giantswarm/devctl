@@ -35,13 +35,15 @@ devctl reservation list --cluster graveler
 
 It reads the tip of `main`, not the cluster. Each reservation shows as `active` until it expires. After that it shows as `expired` until the reaper removes it; an expired one doesn't block anyone.
 
+`GITOPS SOURCE`, the last column, says where the reservation lives: `collections` (a component in `collections/reservations/<app>/`) or `extras` (a block in `extras/kustomization.yaml`). `reserve` and `extend` record it as `gitops-source` in the ConfigMap entry. `list` always takes it from the files, so an older entry without it still shows the right value. If the entry says something else, `list` prints a warning on stderr, and the next `extend` fixes the entry.
+
 ## Extend
 
 ```
 devctl reservation extend --pull-request giantswarm/hello-world#123 --user alice
 ```
 
-Restarts the window of every reservation that PR holds, with the same duration as before. `--user` becomes the holder, so you can take over a reservation someone else made. An expired reservation can't be extended, reserve it again.
+Restarts the window of every reservation that PR holds, with the same duration as before. For an extras reservation it rewrites the annotations in the reservation block of `extras/kustomization.yaml`, in the same commit as the ConfigMap entry. `--user` becomes the holder, so you can take over a reservation someone else made. An expired reservation can't be extended, reserve it again.
 
 ## Release
 
@@ -70,11 +72,11 @@ Fails when an extras kustomization holds a patch after a reservation block, or a
 
 ## Output
 
-By default (`--output table`) `reserve` prints one line: what, where, for whom and until when. `--log-level debug` also shows the source object, the version filter and the commit. `extend`, `reap` and `release --pull-request` print one tab-separated line per change. `list` prints a table.
+By default (`--output table`) `reserve` prints one line: what, where, for whom, until when and the GitOps source. `release --cluster` prints one line: what, where and the GitOps source. `--log-level debug` also shows the source object, the version filter and the commit. `extend`, `reap` and `release --pull-request` print one tab-separated line per change, and the last column is the GitOps source. `list` prints a table.
 
 `--output json` prints the same data as JSON, for scripts. `reserve` and `release --cluster` print one object. `extend`, `reap`, `release --pull-request` and `list` print an array, `[]` when there is nothing.
 
-The `reserve` object carries `replaced` when it took over an expired reservation of another branch or pull request, so a caller can tell that pull request. Each `extend` entry carries the reservation's `scope` and the `commit` it made.
+The `reserve` object carries `replaced` when it took over an expired reservation of another branch or pull request, so a caller can tell that pull request. Each `extend` entry carries the reservation's `scope` and the `commit` it made. The JSON of every command carries `gitopsSource`.
 
 ## Dry run
 

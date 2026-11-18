@@ -51,6 +51,8 @@ type Released struct {
 	Branch string `json:"branch"`
 	// Commit is the hash of the commit Release made.
 	Commit string `json:"commit"`
+	// GitOpsSource is where the reservation lived.
+	GitOpsSource string `json:"gitopsSource"`
 }
 
 // ReleaseAll releases every reservation req.PullRequest holds across every
@@ -121,6 +123,8 @@ func releaseAllCluster(ctx context.Context, req ReleaseAllRequest, cluster strin
 			User:    r.User,
 			Branch:  r.Branch,
 			Commit:  result.Commit,
+
+			GitOpsSource: result.GitOpsSource,
 		})
 	}
 

@@ -131,11 +131,11 @@ func TestReapCommitsAndPushesWithNoToken(t *testing.T) {
 
 	out := strings.TrimSpace(stdout.String())
 	fields := strings.Split(out, "\t")
-	if len(fields) != 8 {
-		t.Fatalf("stdout: got %d tab-separated fields, want 8: %q", len(fields), out)
+	if len(fields) != 9 {
+		t.Fatalf("stdout: got %d tab-separated fields, want 9: %q", len(fields), out)
 	}
 	wantCluster, wantApp, wantUser, wantReason := cluster, app, "alice", "expired"
-	if fields[0] != wantCluster || fields[1] != wantApp || fields[2] != wantUser || fields[5] != wantReason {
+	if fields[0] != wantCluster || fields[1] != wantApp || fields[2] != wantUser || fields[5] != wantReason || fields[8] != "collections" {
 		t.Errorf("stdout fields: got %q", out)
 	}
 
@@ -227,14 +227,13 @@ func TestReapDryRunPushesNothing(t *testing.T) {
 		t.Fatalf("reap: %v", err)
 	}
 
-	var reaped []struct {
-		Cluster, App, Reason string
-	}
+	// A map, not a struct: the keys are what callers parse.
+	var reaped []map[string]any
 	if err := json.Unmarshal(stdout.Bytes(), &reaped); err != nil {
 		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
 	}
-	if len(reaped) != 1 || reaped[0].Cluster != cluster || reaped[0].App != app || reaped[0].Reason != "expired" {
-		t.Errorf("stdout: got %+v", reaped)
+	if len(reaped) != 1 || reaped[0]["cluster"] != cluster || reaped[0]["app"] != app || reaped[0]["reason"] != "expired" || reaped[0]["gitopsSource"] != "collections" {
+		t.Errorf("stdout: got %s", stdout.String())
 	}
 
 	if got := gittest.GitOutput(t, origin, "rev-parse", "main"); got != before {

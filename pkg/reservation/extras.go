@@ -145,7 +145,7 @@ func reserveExtras(req Request, chart string, resolved extrasResolution, from, u
 	if err := writeBlock(path, chart, block); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
-	entry, err := reservationEntry(chart, req, from, until)
+	entry, err := reservationEntry(chart, req, GitOpsSourceExtras, from, until)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
@@ -175,6 +175,7 @@ func reserveExtras(req Request, chart string, resolved extrasResolution, from, u
 		App:          chart,
 		PullRequest:  req.PullRequest,
 		Commit:       commit,
+		GitOpsSource: GitOpsSourceExtras,
 		SourceName:   strings.Join(resolved.sourceNames(), ", "),
 		HelmReleases: resolved.helmReleases,
 		SemverFilter: semverFilter,
@@ -227,7 +228,7 @@ func releaseExtras(req ReleaseRequest, chart string) (res ReleaseResult, err err
 		return ReleaseResult{}, microerror.Mask(err)
 	}
 
-	return ReleaseResult{App: chart, Commit: commit, Files: files}, nil
+	return ReleaseResult{App: chart, Commit: commit, Files: files, GitOpsSource: GitOpsSourceExtras}, nil
 }
 
 // discardExtrasWrites restores the two files an extras reservation edits.
@@ -355,6 +356,16 @@ func listEnd(lines []string, start int) (last int) {
 	return last
 }
 
+// gitopsSourceOf returns where the app's reservation lives on the cluster. The
+// files decide, and list, extend and release all ask here.
+func gitopsSourceOf(repoDir, cluster, app string) string {
+	if hasBlock(extrasKustomizationPath(repoDir, cluster), app) {
+		return GitOpsSourceExtras
+	}
+
+	return GitOpsSourceCollections
+}
+
 // hasBlock reports whether the kustomization at path holds the chart's block.
 func hasBlock(path, chart string) bool {
 	lines, err := readLines(path)
@@ -409,6 +420,24 @@ func removeBlock(path, chart string) error {
 		} else {
 			lines[start] = "patches: []"
 		}
+	}
+
+	return microerror.Mask(writeLines(path, lines))
+}
+
+// writeBlockAnnotations moves the hold in the chart's block: the annotations
+// of the hold, once per source.
+func writeBlockAnnotations(path, chart string, h hold) error {
+	lines, err := readLines(path)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	begin, end, ok := findBlock(lines, chart)
+	if !ok {
+		return microerror.Maskf(componentNotFoundError, "%s holds no reservation block of %q", path, chart)
+	}
+	if found := setWindowAnnotations(lines[begin:end+1], h); found == 0 || found%len(h.annotations()) != 0 {
+		return microerror.Maskf(invalidConfigError, "the reservation block of %q in %s carries no %suser/%sfrom/%suntil annotations to update", chart, path, AnnotationPrefix, AnnotationPrefix, AnnotationPrefix)
 	}
 
 	return microerror.Mask(writeLines(path, lines))

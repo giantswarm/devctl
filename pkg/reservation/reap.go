@@ -168,14 +168,15 @@ func reapCluster(ctx context.Context, req ReapRequest, cluster string, now time.
 		// re-checked and deleted, which after a rebase can differ from r: r is
 		// only the stale pre-push List read this sweep started from.
 		reaped = append(reaped, Reaped{
-			Cluster:     cluster,
-			App:         result.App,
-			User:        condemned.User,
-			Branch:      condemned.Branch,
-			PullRequest: condemned.PullRequest,
-			Reason:      condemnedReason,
-			Until:       condemned.Until,
-			Commit:      result.Commit,
+			Cluster:      cluster,
+			App:          result.App,
+			User:         condemned.User,
+			Branch:       condemned.Branch,
+			PullRequest:  condemned.PullRequest,
+			GitOpsSource: condemned.GitOpsSource,
+			Reason:       condemnedReason,
+			Until:        condemned.Until,
+			Commit:       result.Commit,
 		})
 	}
 
@@ -302,6 +303,9 @@ type Reaped struct {
 	// PullRequest is the reservation's pull request, e.g.
 	// "giantswarm/hello-world#123", or empty when it named none.
 	PullRequest string `json:"pullRequest,omitempty"`
+	// GitOpsSource is where the reservation lived: GitOpsSourceCollections or
+	// GitOpsSourceExtras.
+	GitOpsSource string `json:"gitopsSource"`
 	// Reason is why Reap released it: ReasonExpired, ReasonClosed or
 	// ReasonRenamed.
 	Reason string `json:"reason"`

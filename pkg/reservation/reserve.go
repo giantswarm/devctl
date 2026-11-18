@@ -88,6 +88,9 @@ type Result struct {
 	PullRequest string `json:"pullRequest,omitempty"`
 	// Commit is the hash of the commit Reserve made.
 	Commit string `json:"commit"`
+	// GitOpsSource is where the reservation lives: GitOpsSourceCollections or
+	// GitOpsSourceExtras.
+	GitOpsSource string `json:"gitopsSource"`
 	// SourceName is the name of the new OCIRepository. For an app the extras
 	// serve, it is the patched sources instead, joined with ", ".
 	SourceName string `json:"sourceName"`
@@ -302,7 +305,7 @@ func Reserve(req Request) (res Result, err error) {
 	if err := addComponent(filepath.Join(collectionsPath, "kustomization.yaml"), component); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
-	entry, err := reservationEntry(chart, req, from, until)
+	entry, err := reservationEntry(chart, req, GitOpsSourceCollections, from, until)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
@@ -337,6 +340,7 @@ func Reserve(req Request) (res Result, err error) {
 		App:          chart,
 		PullRequest:  req.PullRequest,
 		Commit:       commit,
+		GitOpsSource: GitOpsSourceCollections,
 		SourceName:   sourceName,
 		HelmReleases: namespaced(resolved.helmReleases),
 		SemverFilter: semverFilter,

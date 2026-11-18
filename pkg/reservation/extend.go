@@ -49,6 +49,9 @@ type Extended struct {
 	App string `json:"app"`
 	// Scope is the reservation's scope, e.g. ScopeApp. Extend keeps it.
 	Scope string `json:"scope"`
+	// GitOpsSource is where the reservation lives, GitOpsSourceCollections or
+	// GitOpsSourceExtras, as the files show it.
+	GitOpsSource string `json:"gitopsSource"`
 	// Commit is the hash of the commit Extend made.
 	Commit string `json:"commit"`
 	// From and Until bound the new window, in UTC.
@@ -155,7 +158,6 @@ func extendCluster(ctx context.Context, req ExtendRequest, cluster string, now t
 // and re-renders should another change land first.
 func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Reservation, now time.Time) (Extended, error) {
 	configMapPath := filepath.Join(req.RepoDir, clustersDir, cluster, ConfigMapFile)
-	sourcePath := filepath.Join(req.RepoDir, clustersDir, cluster, collectionsDir, reservationsDir, r.App, r.App+SourceNameSuffix+".yaml")
 
 	var result Extended
 	render := func() error {
@@ -195,7 +197,7 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 		}
 
 		until := now.Add(duration)
-		entry, err := reservationEntry(current.App, Request{User: req.User, Branch: current.Branch, PullRequest: current.PullRequest, Scope: current.Scope}, now, until)
+		entry, err := reservationEntry(current.App, Request{User: req.User, Branch: current.Branch, PullRequest: current.PullRequest, Scope: current.Scope}, current.GitOpsSource, now, until)
 		if err != nil {
 			return microerror.Mask(err)
 		}
@@ -205,21 +207,26 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 		// The ConfigMap entry above and this are one change: a human with no
 		// access to the GitOps repo reads /from and /until off the OCIRepository
 		// with kubectl, and the two must never disagree, in any commit.
-		if err := writeSourceAnnotations(sourcePath, req.User, now, until); err != nil {
+		h := hold{User: req.User, From: now, Until: until}
+		var annotated string
+		if current.GitOpsSource == GitOpsSourceExtras {
+			annotated = clusterPath(cluster, extrasDir, "kustomization.yaml")
+			err = writeBlockAnnotations(filepath.Join(req.RepoDir, annotated), current.App, h)
+		} else {
+			annotated = clusterPath(cluster, collectionsDir, reservationsDir, current.App, current.App+SourceNameSuffix+".yaml")
+			err = writeSourceAnnotations(filepath.Join(req.RepoDir, annotated), h)
+		}
+		if err != nil {
 			return microerror.Mask(err)
 		}
-
-		files := []string{
-			clusterPath(cluster, ConfigMapFile),
-			clusterPath(cluster, collectionsDir, reservationsDir, current.App, current.App+SourceNameSuffix+".yaml"),
-		}
 		commit, err := commitAll(req.RepoDir, fmt.Sprintf(
-			"extend %s on %s for %s (until %s)", current.App, cluster, req.User, until.Format(time.RFC3339)), files)
+			"extend %s on %s for %s (until %s)", current.App, cluster, req.User, until.Format(time.RFC3339)),
+			[]string{clusterPath(cluster, ConfigMapFile), annotated})
 		if err != nil {
 			return microerror.Mask(err)
 		}
 
-		result = Extended{Cluster: cluster, App: current.App, Scope: current.Scope, Commit: commit, From: now, Until: until}
+		result = Extended{Cluster: cluster, App: current.App, Scope: current.Scope, GitOpsSource: current.GitOpsSource, Commit: commit, From: now, Until: until}
 		return nil
 	}
 
