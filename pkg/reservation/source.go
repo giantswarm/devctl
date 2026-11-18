@@ -65,6 +65,27 @@ func devSource(original object, sourceName string, req Request, semverFilter str
 		annotations = map[string]any{}
 		metadata["annotations"] = annotations
 	}
+	for key, value := range reservationAnnotations(req, from, until) {
+		annotations[key] = value
+	}
+
+	spec, _ := o["spec"].(map[string]any)
+	spec["interval"] = SourceInterval
+	spec["ref"] = devRef(semverFilter)
+
+	return o
+}
+
+// devRef is the OCIRepository spec.ref that follows the dev builds semverFilter
+// selects.
+func devRef(semverFilter string) map[string]any {
+	return map[string]any{"semver": devSemverRange, "semverFilter": semverFilter}
+}
+
+// reservationAnnotations are the annotations a reserved source carries, so
+// `kubectl get` on the source alone shows who holds it and until when.
+func reservationAnnotations(req Request, from, until time.Time) map[string]string {
+	annotations := map[string]string{}
 	for key, value := range map[string]string{
 		annotationUser:  req.User,
 		"branch":        req.Branch,
@@ -76,14 +97,7 @@ func devSource(original object, sourceName string, req Request, semverFilter str
 		annotations[AnnotationPrefix+key] = value
 	}
 
-	spec, _ := o["spec"].(map[string]any)
-	spec["interval"] = SourceInterval
-	spec["ref"] = map[string]any{
-		"semver":       devSemverRange,
-		"semverFilter": semverFilter,
-	}
-
-	return o
+	return annotations
 }
 
 // reservationEntry renders one reservation as the one-line YAML flow mapping the

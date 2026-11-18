@@ -94,6 +94,11 @@ func Release(req ReleaseRequest) (res ReleaseResult, err error) {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
 
+	if hasBlock(extrasKustomizationPath(req.RepoDir, req.Cluster), chart) {
+		res, err := releaseExtras(req, chart)
+		return res, microerror.Mask(err)
+	}
+
 	collectionsPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, collectionsDir)
 	component := path.Join(reservationsDir, chart)
 	sourceName := chart + SourceNameSuffix

@@ -88,7 +88,8 @@ type Result struct {
 	PullRequest string `json:"pullRequest,omitempty"`
 	// Commit is the hash of the commit Reserve made.
 	Commit string `json:"commit"`
-	// SourceName is the name of the new OCIRepository.
+	// SourceName is the name of the new OCIRepository. For an app the extras
+	// serve, it is the patched sources instead, joined with ", ".
 	SourceName string `json:"sourceName"`
 	// SemverFilter is the version selector the new OCIRepository carries.
 	SemverFilter string `json:"semverFilter"`
@@ -234,11 +235,24 @@ func Reserve(req Request) (res Result, err error) {
 		until = promoted.Until
 	}
 
+	// An app the extras serve is reserved there, by patching its own sources.
+	extras, ok, err := resolveExtras(req, chart)
+	if err != nil {
+		return Result{}, microerror.Mask(err)
+	}
+	if ok {
+		res, err := reserveExtras(req, chart, extras, from, until, replaced)
+		return res, microerror.Mask(err)
+	}
+
 	collectionsPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, collectionsDir)
 
 	before, err := renderDir(collectionsPath)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
+	}
+	if len(extras.sources) > 0 && len(collectionSources(before, chart)) == 0 {
+		return Result{}, extras.movesNothingError(req, chart)
 	}
 	resolved, err := resolveApp(before, req, chart)
 	if err != nil {
