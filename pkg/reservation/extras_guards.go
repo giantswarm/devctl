@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/giantswarm/microerror"
+	"gopkg.in/yaml.v3"
 )
 
 // checkExtras runs the guards an extras reservation needs before it writes
@@ -22,7 +23,11 @@ func checkExtras(req Request, chart string, resolved extrasResolution) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	if err := checkBlocksLast(lines, req.clusterPath(extrasDir, "kustomization.yaml")); err != nil {
+	name := req.clusterPath(extrasDir, "kustomization.yaml")
+	if err := checkBlocksLast(lines, name); err != nil {
+		return microerror.Mask(err)
+	}
+	if err := checkNoLaterTransforms(lines, name); err != nil {
 		return microerror.Mask(err)
 	}
 
@@ -39,7 +44,77 @@ func CheckExtrasPatches(path string) error {
 		return microerror.Mask(err)
 	}
 
-	return microerror.Mask(checkBlocksLast(lines, path))
+	if err := checkBlocksLast(lines, path); err != nil {
+		return microerror.Mask(err)
+	}
+	if !slices.ContainsFunc(lines, isBlockBegin) {
+		return nil
+	}
+
+	return microerror.Mask(checkNoLaterTransforms(lines, path))
+}
+
+func isBlockBegin(line string) bool {
+	return strings.HasPrefix(strings.TrimLeft(line, " "), "# BEGIN reservation of ")
+}
+
+// transformTarget is the selector of a patchesJson6902 or replacements entry.
+type transformTarget struct {
+	Kind string `yaml:"kind"`
+}
+
+// reachesSource is true for a selector that can match an OCIRepository: one
+// without a kind matches every kind.
+func (t transformTarget) reachesSource() bool {
+	return t.Kind == "" || t.Kind == ociRepositoryKind
+}
+
+// checkNoLaterTransforms is the rest of guard 2: kustomize runs
+// patchesJson6902, replacements and transformers after the patches: list, so
+// one that can reach an OCIRepository can change a reserved source after its
+// block. A replacement read from a file and a transformer can reach anything.
+func checkNoLaterTransforms(lines []string, name string) error {
+	var k struct {
+		PatchesJson6902 []struct {
+			Target transformTarget `yaml:"target"`
+		} `yaml:"patchesJson6902"`
+		Replacements []struct {
+			Path    string `yaml:"path"`
+			Targets []struct {
+				Select transformTarget `yaml:"select"`
+			} `yaml:"targets"`
+		} `yaml:"replacements"`
+		Transformers []any `yaml:"transformers"`
+	}
+	if err := yaml.Unmarshal([]byte(strings.Join(lines, "\n")), &k); err != nil {
+		return microerror.Maskf(invalidConfigError, "parsing %s: %v", name, err)
+	}
+
+	field := ""
+	for _, p := range k.PatchesJson6902 {
+		if p.Target.reachesSource() {
+			field = "patchesJson6902"
+		}
+	}
+	for _, r := range k.Replacements {
+		reaches := r.Path != ""
+		for _, t := range r.Targets {
+			reaches = reaches || t.Select.reachesSource()
+		}
+		if reaches {
+			field = "replacements"
+		}
+	}
+	if len(k.Transformers) > 0 {
+		field = "transformers"
+	}
+	if field != "" {
+		return microerror.Maskf(appNotSupportedError,
+			"%s holds %s that can change an %s. kustomize runs it after the patches: list, so it can change the reserved sources after the reservation blocks. Move it into patches:, above the blocks",
+			name, field, ociRepositoryKind)
+	}
+
+	return nil
 }
 
 func checkBlocksLast(lines []string, name string) error {
@@ -53,7 +128,7 @@ func checkBlocksLast(lines []string, name string) error {
 	for i := start + 1; i <= listEnd(lines, start); i++ {
 		t := strings.TrimLeft(lines[i], " ")
 		switch {
-		case strings.HasPrefix(t, "# BEGIN reservation of "):
+		case isBlockBegin(t):
 			inBlock = true
 		case strings.HasPrefix(t, "# END reservation of "):
 			inBlock, afterBlock = false, true
@@ -78,9 +153,10 @@ func checkBlocksLast(lines []string, name string) error {
 // the render. It reads every manifest of the cluster, not a render, as Flux
 // Kustomization objects wire them up in ways no single overlay shows.
 func checkNoHiddenReleases(req Request, resolved extrasResolution) error {
-	patched := map[string]bool{}
+	patched, patchedNames := map[string]bool{}, map[string]bool{}
 	for _, s := range resolved.sources {
 		patched[s.namespace()+"/"+s.name()] = true
+		patchedNames[s.name()] = true
 	}
 
 	var hidden []string
@@ -109,8 +185,19 @@ func checkNoHiddenReleases(req Request, resolved extrasResolution) error {
 			if namespace == "" {
 				namespace = o.namespace()
 			}
+			// A file without a namespace gets it from a kustomization or a Flux
+			// Kustomization that guard 3 does not read, so it matches on names.
+			usesPatched := patched[namespace+"/"+name]
+			if namespace == "" {
+				usesPatched = patchedNames[name]
+			}
 			release := o.namespace() + "/" + o.name()
-			if namespace == "" || !patched[namespace+"/"+name] || slices.Contains(resolved.helmReleases, release) {
+			rendered := slices.Contains(resolved.helmReleases, release)
+			if o.namespace() == "" {
+				release = o.name()
+				rendered = slices.ContainsFunc(resolved.helmReleases, func(r string) bool { return strings.HasSuffix(r, "/"+release) })
+			}
+			if !usesPatched || rendered {
 				continue
 			}
 			rel, _ := filepath.Rel(req.RepoDir, p)
