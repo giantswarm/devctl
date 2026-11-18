@@ -261,3 +261,54 @@ func TestReserveExtrasTwiceKeepsOneBlock(t *testing.T) {
 		t.Errorf("got %d blocks, want 1", n)
 	}
 }
+
+// extrasSourceOnly is an extras OCIRepository with no HelmRelease next to it,
+// as when a nested Flux Kustomization takes its chart from it.
+func extrasSourceOnly(chart string) string {
+	return `apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: ` + chart + `
+  namespace: giantswarm
+spec:
+  interval: 10m
+  ref:
+    semver: x.x.x
+  url: oci://gsoci.azurecr.io/charts/giantswarm/` + chart + `
+`
+}
+
+// TestReserveFallsBackToCollectionsWhenTheExtrasSourceMovesNothing: an extras
+// source of the chart that no HelmRelease uses must not block a reservation of
+// the collection app that serves the same chart.
+func TestReserveFallsBackToCollectionsWhenTheExtrasSourceMovesNothing(t *testing.T) {
+	dir := newGitOpsFixture(t, fixtureOptions{extraFiles: map[string]string{
+		pathExtras: `resources:
+- ./extras-app/
+- ./hello-world-source.yaml
+`,
+		"management-clusters/" + fixtureCluster + "/extras/hello-world-source.yaml": extrasSourceOnly(fixtureApp),
+	}})
+
+	res, err := reservation.Reserve(testRequest(dir))
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if want := fixtureApp + reservation.SourceNameSuffix; res.SourceName != want {
+		t.Errorf("source name: got %q, want the collections copy %q", res.SourceName, want)
+	}
+}
+
+// TestReserveRefusesAnExtrasSourceThatMovesNothing: a chart that only an extras
+// source with no HelmRelease serves keeps the refusal that names that source.
+func TestReserveRefusesAnExtrasSourceThatMovesNothing(t *testing.T) {
+	dir := newGitOpsFixture(t, fixtureOptions{extraFiles: map[string]string{
+		"management-clusters/" + fixtureCluster + "/extras/extras-app/extras-app.yaml": extrasSourceOnly(fixtureExtrasApp),
+	}})
+
+	_, err := reservation.Reserve(extrasRequest(dir))
+	if !reservation.IsAppNotFound(err) || !strings.Contains(err.Error(), "would change nothing") {
+		t.Fatalf("expected the extras refusal that names the unused source, got %v", err)
+	}
+	assertClean(t, dir)
+}
