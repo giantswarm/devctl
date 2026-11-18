@@ -60,6 +60,24 @@ func resolveExtras(req Request, chart string) (extrasResolution, bool, error) {
 		return extrasResolution{}, false, microerror.Mask(err)
 	}
 
+	// As for collections, a reservation replaces a chart reference, so an
+	// inline chart cannot move.
+	var inline []string
+	for _, o := range objects {
+		if o.kind() != helmReleaseKind {
+			continue
+		}
+		if name, _ := o.nested("spec", "chart", "spec", "chart").(string); name == chart {
+			inline = append(inline, o.namespace()+"/"+o.name())
+		}
+	}
+	if len(inline) > 0 {
+		sort.Strings(inline)
+		return extrasResolution{}, false, microerror.Maskf(appNotSupportedError,
+			"%s %s in the extras of %s carries chart %q inline under spec.chart instead of referencing it with spec.chartRef. A reservation replaces a chart reference, so it cannot move it",
+			helmReleaseKind, strings.Join(inline, ", "), req.Cluster, chart)
+	}
+
 	var res extrasResolution
 	served := map[string]bool{}
 	for _, o := range objects {

@@ -134,9 +134,9 @@ func TestReserveRefusesAnAppTheRenderDoesNotHold(t *testing.T) {
 	}
 }
 
-// TestReserveRefusesAnExtrasApp names the real reason. "Not found" would send
-// the reader looking for a typo in a command that was right.
-func TestReserveRefusesAnExtrasApp(t *testing.T) {
+// TestReserveRefusesAnAppInNeitherTree: a chart that only an unwired extras
+// file mentions is in neither render, so it is not found.
+func TestReserveRefusesAnAppInNeitherTree(t *testing.T) {
 	dir := newGitOpsFixture(t, fixtureOptions{extraFiles: map[string]string{
 		"management-clusters/" + fixtureCluster + "/extras/mystery/helmrelease.yaml": collectionApp("mystery", "mystery-app", "mystery"),
 	}})
@@ -145,13 +145,10 @@ func TestReserveRefusesAnExtrasApp(t *testing.T) {
 	req.App = "mystery-app"
 
 	_, err := reservation.Reserve(req)
-	if err == nil {
-		t.Fatal("expected a refusal, got none")
+	if !reservation.IsAppNotFound(err) {
+		t.Fatalf("expected an app-not-found error, got %v", err)
 	}
-	if !reservation.IsAppNotSupported(err) {
-		t.Fatalf("expected an app-not-supported error, got %v", err)
-	}
-	for _, want := range []string{"mystery-app", "extras", "collection"} {
+	for _, want := range []string{"mystery-app", "collections", "extras"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal does not mention %q: %s", want, err.Error())
 		}
