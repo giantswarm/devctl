@@ -35,7 +35,7 @@ applies the change to the cluster.
                 extras kustomization. CI runs it on the GitOps repository.
 
 Every command except list and check-extras takes --dry-run, which pushes
-nothing, and --output table|json.`
+nothing. Every command except check-extras takes --output table|json.`
 )
 
 type Config struct {
