@@ -2,6 +2,7 @@ package extend_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -131,10 +132,11 @@ func TestExtendCommitsAndPushesWithNoToken(t *testing.T) {
 
 	out := strings.TrimSpace(stdout.String())
 	fields := strings.Split(out, "\t")
-	if len(fields) != 3 {
-		t.Fatalf("stdout: got %d tab-separated fields, want 3: %q", len(fields), out)
+	// The GitOps source comes last, so the older columns keep their place.
+	if len(fields) != 4 {
+		t.Fatalf("stdout: got %d tab-separated fields, want 4: %q", len(fields), out)
 	}
-	if fields[0] != cluster || fields[1] != app {
+	if fields[0] != cluster || fields[1] != app || fields[3] != "collections" {
 		t.Errorf("stdout fields: got %q", out)
 	}
 
@@ -171,5 +173,33 @@ func TestExtendRefusalNamesDeploy(t *testing.T) {
 	}
 	if stdout.String() != "" {
 		t.Errorf("stdout: got %q, want empty", stdout.String())
+	}
+}
+
+// TestExtendJSONNamesTheGitOpsSource pins the JSON key that callers parse.
+func TestExtendJSONNamesTheGitOpsSource(t *testing.T) {
+	const cluster, app = "graveler", "hello-world"
+	from := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	until := time.Now().Add(3 * time.Hour).UTC().Format(time.RFC3339)
+	dir, _ := newExtendableFixture(t, cluster, app, from, until)
+
+	var stdout bytes.Buffer
+	cmd := newCommand(t, &stdout)
+	cmd.SetArgs([]string{
+		flagRepoDir, dir,
+		flagPullRequest, testPullRequest,
+		flagUser, "reservation-extend",
+		"--output", "json",
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("extend: %v", err)
+	}
+
+	var extended []map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &extended); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
+	}
+	if len(extended) != 1 || extended[0]["gitopsSource"] != "collections" {
+		t.Errorf("stdout: got %s, want one entry with gitopsSource collections", stdout.String())
 	}
 }

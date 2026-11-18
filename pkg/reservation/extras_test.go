@@ -229,6 +229,9 @@ resources:
 			if res.Commit != commit {
 				t.Errorf("result commit %q is not HEAD %q", res.Commit, commit)
 			}
+			if res.GitOpsSource != "extras" {
+				t.Errorf("result gitops source: got %q, want extras", res.GitOpsSource)
+			}
 			want := []string{pathReservations, pathExtras}
 			if diff := cmp.Diff(want, files); diff != "" {
 				t.Errorf("release commit files (-want +got):\n%s", diff)

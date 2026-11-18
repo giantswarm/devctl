@@ -91,9 +91,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (er
 		outputErr = gitops.WriteJSON(r.stdout, append([]reservation.Reaped{}, reaped...))
 	} else {
 		for _, entry := range reaped {
-			_, outputErr = fmt.Fprintf(r.stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			// The GitOps source comes last, so the older columns keep their place.
+			_, outputErr = fmt.Fprintf(r.stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				entry.Cluster, entry.App, entry.User, entry.Branch, entry.PullRequest,
-				entry.Reason, entry.Until.Format(time.RFC3339), entry.Commit)
+				entry.Reason, entry.Until.Format(time.RFC3339), entry.Commit, entry.GitOpsSource)
 			if outputErr != nil {
 				break
 			}

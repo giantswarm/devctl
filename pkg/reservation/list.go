@@ -19,7 +19,7 @@ type ListRequest struct {
 }
 
 // Reservation is one reservation, active or expired, read back exactly as
-// reservationEntry wrote it: never reconstructed from anything else.
+// reservationEntry wrote it. Only GitOpsSource comes from the files instead.
 type Reservation struct {
 	// App is the chart the reservation moved. It is the ConfigMap entry's key.
 	App string `json:"app"`
@@ -31,9 +31,23 @@ type Reservation struct {
 	PullRequest string `json:"pullRequest,omitempty"`
 	// Scope is the reservation's scope, e.g. ScopeApp.
 	Scope string `json:"scope"`
+	// GitOpsSource is where the reservation lives, GitOpsSourceCollections or
+	// GitOpsSourceExtras. It comes from the files: release, extend and reap
+	// follow them, so the files win over the entry.
+	GitOpsSource string `json:"gitopsSource"`
+	// recordedGitOpsSource is the gitops-source of the entry, empty when the
+	// entry has none. See StaleGitOpsSource.
+	recordedGitOpsSource string
 	// From and Until bound the reservation, in UTC. Until is the expiry.
 	From  time.Time `json:"from"`
 	Until time.Time `json:"until"`
+}
+
+// StaleGitOpsSource returns the gitops-source the entry records, and whether it
+// disagrees with GitOpsSource, the one the files show. An entry that records
+// none is not stale: an older devctl wrote it.
+func (r Reservation) StaleGitOpsSource() (recorded string, stale bool) {
+	return r.recordedGitOpsSource, r.recordedGitOpsSource != "" && r.recordedGitOpsSource != r.GitOpsSource
 }
 
 // Expired reports whether the reservation no longer holds at now. An expired
@@ -87,6 +101,7 @@ func List(req ListRequest) ([]Reservation, error) {
 		if err != nil {
 			return nil, microerror.Maskf(invalidConfigError, "parsing the reservation entry of %q in %s: %v", app, configMapPath, err)
 		}
+		reservation.GitOpsSource = gitopsSourceOf(req.RepoDir, req.Cluster, app)
 		reservations = append(reservations, reservation)
 	}
 	sort.Slice(reservations, func(i, j int) bool { return reservations[i].App < reservations[j].App })
@@ -94,11 +109,12 @@ func List(req ListRequest) ([]Reservation, error) {
 	return reservations, nil
 }
 
-// parseReservationEntry reverses reservationEntry: the same six fields, read
-// back the same way.
+// parseReservationEntry reverses reservationEntry: the same fields, read back
+// the same way. An entry from an older devctl has no gitops-source.
 func parseReservationEntry(app, entry string) (Reservation, error) {
 	var fields struct {
 		User, Branch, PR, Scope, From, Until string
+		GitOpsSource                         string `yaml:"gitops-source"`
 	}
 	if err := yaml.Unmarshal([]byte(entry), &fields); err != nil {
 		return Reservation{}, microerror.Mask(err)
@@ -121,5 +137,7 @@ func parseReservationEntry(app, entry string) (Reservation, error) {
 		Scope:       fields.Scope,
 		From:        from,
 		Until:       until,
+
+		recordedGitOpsSource: fields.GitOpsSource,
 	}, nil
 }

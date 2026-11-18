@@ -112,8 +112,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (er
 			reservation.Result
 		}{r.flag.Cluster, user, r.flag.Branch, result.PullRequest, scope, result})
 	}
-	_, _ = fmt.Fprintf(r.stdout, "Reserved %s on %s for %s until %s.\n",
-		result.App, r.flag.Cluster, user, result.Until.Format("2006-01-02 15:04 MST"))
+	_, _ = fmt.Fprintf(r.stdout, "Reserved %s on %s for %s until %s (GitOps source: %s).\n",
+		result.App, r.flag.Cluster, user, result.Until.Format("2006-01-02 15:04 MST"), result.GitOpsSource)
 	if termout.Debug(cmd) {
 		_, _ = fmt.Fprintf(r.stdout, "Source %s follows %s\n", result.SourceName, result.SemverFilter)
 		_, _ = fmt.Fprintf(r.stdout, "Commit %s on %s\n", result.Commit, r.flag.GitOps.Repo)
