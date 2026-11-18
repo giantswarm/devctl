@@ -137,23 +137,7 @@ func resolveApp(objects []object, req Request, chart string) (resolution, error)
 
 	res := resolution{chart: chart, originalRefs: map[string]any{}}
 
-	var sources []object
-	for _, o := range objects {
-		if o.kind() != ociRepositoryKind || o.namespace() != Namespace {
-			continue
-		}
-		// A reservation's own source, from an earlier reservation of this chart
-		// that expired but was never released, is not an original: it is about to
-		// be overwritten, not preserved.
-		if strings.HasSuffix(o.name(), SourceNameSuffix) {
-			continue
-		}
-		if url, _ := o.nested("spec", "url").(string); chartFromURL(url) == chart {
-			sources = append(sources, o)
-		}
-	}
-	sort.Slice(sources, func(i, j int) bool { return sources[i].name() < sources[j].name() })
-
+	sources := collectionSources(objects, chart)
 	if len(sources) == 0 {
 		return resolution{}, microerror.Mask(noMatchError(req, chart))
 	}
@@ -188,6 +172,29 @@ func resolveApp(objects []object, req Request, chart string) (resolution, error)
 	}
 
 	return res, nil
+}
+
+// collectionSources returns the original sources of the chart in a render of
+// the collections, sorted by name.
+func collectionSources(objects []object, chart string) []object {
+	var sources []object
+	for _, o := range objects {
+		if o.kind() != ociRepositoryKind || o.namespace() != Namespace {
+			continue
+		}
+		// A reservation's own source, from an earlier reservation of this chart
+		// that expired but was never released, is not an original: it is about to
+		// be overwritten, not preserved.
+		if strings.HasSuffix(o.name(), SourceNameSuffix) {
+			continue
+		}
+		if url, _ := o.nested("spec", "url").(string); chartFromURL(url) == chart {
+			sources = append(sources, o)
+		}
+	}
+	sort.Slice(sources, func(i, j int) bool { return sources[i].name() < sources[j].name() })
+
+	return sources
 }
 
 // inlineChartReleases names the releases that carry the chart inline under

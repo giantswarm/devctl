@@ -251,6 +251,9 @@ func Reserve(req Request) (res Result, err error) {
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
+	if len(extras.sources) > 0 && len(collectionSources(before, chart)) == 0 {
+		return Result{}, extras.movesNothingError(req, chart)
+	}
 	resolved, err := resolveApp(before, req, chart)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
