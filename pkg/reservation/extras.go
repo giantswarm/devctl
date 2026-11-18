@@ -48,7 +48,8 @@ func extrasKustomizationPath(repoDir, cluster string) string {
 }
 
 // resolveExtras finds the chart in a render of the cluster's extras. It reports
-// false when the cluster has no extras or the extras serve no such chart.
+// false when the cluster has no extras, the extras serve no such chart, or no
+// HelmRelease takes its chart from the sources that serve it.
 func resolveExtras(req Request, chart string) (extrasResolution, bool, error) {
 	path := extrasKustomizationPath(req.RepoDir, req.Cluster)
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -93,13 +94,16 @@ func resolveExtras(req Request, chart string) (extrasResolution, bool, error) {
 	}
 	sort.Strings(res.helmReleases)
 
-	if len(res.helmReleases) == 0 {
-		return extrasResolution{}, false, microerror.Maskf(appNotFoundError,
-			"the rendered extras of %s serve chart %q from %s %s, but no %s takes its chart from any of them, so a reservation would change nothing",
-			req.Cluster, chart, ociRepositoryKind, strings.Join(res.sourceNames(), ", "), helmReleaseKind)
-	}
+	// Sources that move no HelmRelease leave the chart to the collections. The
+	// caller refuses with movesNothingError only if the collections do not serve it.
+	return res, len(res.helmReleases) > 0, nil
+}
 
-	return res, true, nil
+// movesNothingError refuses a chart whose extras sources no HelmRelease uses.
+func (r extrasResolution) movesNothingError(req Request, chart string) error {
+	return microerror.Maskf(appNotFoundError,
+		"the rendered extras of %s serve chart %q from %s %s, but no %s takes its chart from any of them, so a reservation would change nothing",
+		req.Cluster, chart, ociRepositoryKind, strings.Join(r.sourceNames(), ", "), helmReleaseKind)
 }
 
 // reserveExtras writes the reservation block and the ConfigMap entry, checks
