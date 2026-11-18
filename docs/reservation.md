@@ -35,7 +35,7 @@ devctl reservation list --cluster graveler
 
 It reads the tip of `main`, not the cluster. Each reservation shows as `active` until it expires. After that it shows as `expired` until the reaper removes it; an expired one doesn't block anyone.
 
-`GITOPS SOURCE` says where the reservation lives: `collections` (a component in `collections/reservations/<app>/`) or `extras` (a block in `extras/kustomization.yaml`). `reserve` and `extend` record it as `gitops-source` in the ConfigMap entry. `list` always takes it from the files, so an older entry without it still shows the right value. If the entry says something else, `list` prints a warning on stderr, and the next `extend` fixes the entry.
+`GITOPS SOURCE`, the last column, says where the reservation lives: `collections` (a component in `collections/reservations/<app>/`) or `extras` (a block in `extras/kustomization.yaml`). `reserve` and `extend` record it as `gitops-source` in the ConfigMap entry. `list` always takes it from the files, so an older entry without it still shows the right value. If the entry says something else, `list` prints a warning on stderr, and the next `extend` fixes the entry.
 
 ## Extend
 
