@@ -61,3 +61,36 @@ func TestCheckExtras(t *testing.T) {
 		})
 	}
 }
+
+// TestCheckExtrasReportsEveryFile: CI passes the extras of every touched
+// cluster, and one run should name every bad file, not only the first.
+func TestCheckExtrasReportsEveryFile(t *testing.T) {
+	dir := t.TempDir()
+	var paths []string
+	for _, f := range []struct{ name, content string }{
+		{"bad1.yaml", "resources:\n  - ./app/\n" + block + humanPatch},
+		{"good.yaml", "resources:\n  - ./app/\n" + block},
+		{"bad2.yaml", "resources:\n  - ./app/\n" + block + humanPatch},
+	} {
+		path := filepath.Join(dir, f.name)
+		if err := os.WriteFile(path, []byte(f.content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, path)
+	}
+	var stdout bytes.Buffer
+	cmd, err := New(Config{Stdout: &stdout})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.SetArgs(paths)
+	cmd.SilenceUsage, cmd.SilenceErrors = true, true
+
+	err = cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), paths[0]) || !strings.Contains(err.Error(), paths[2]) {
+		t.Errorf("expected an error naming %s and %s, got %v", paths[0], paths[2], err)
+	}
+	if want := paths[1] + ": ok\n"; stdout.String() != want {
+		t.Errorf("stdout: got %q, want %q", stdout.String(), want)
+	}
+}

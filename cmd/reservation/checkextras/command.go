@@ -1,6 +1,7 @@
 package checkextras
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -20,7 +21,10 @@ reserve writes each extras reservation as a marked block at the end of the root
 patches list of management-clusters/<cluster>/extras/kustomization.yaml. A patch
 a human adds after such a block applies after the reservation and can change
 the source again, so no dev build matches. This command fails on any such
-patch, so CI can refuse the change.
+patch, and on a patchesJson6902, replacements or transformers entry that can
+change an OCIRepository, as kustomize runs those after the patches list too.
+It checks every file it is given and names every one that fails, so CI can
+refuse the change.
 
 It reads only the files it is given: no GitOps checkout, no cluster, no token.`
 	example = `  devctl reservation check-extras management-clusters/graveler/extras/kustomization.yaml`
@@ -42,15 +46,18 @@ func New(config Config) (*cobra.Command, error) {
 		Long:    longDescription,
 		Example: example,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Check every file, so one CI run names every bad one.
+			var errs []error
 			for _, path := range args {
 				if err := reservation.CheckExtrasPatches(path); err != nil {
-					return microerror.Mask(err)
+					errs = append(errs, err)
+					continue
 				}
 				if _, err := fmt.Fprintf(config.Stdout, "%s: ok\n", path); err != nil {
 					return microerror.Mask(err)
 				}
 			}
-			return nil
+			return microerror.Mask(errors.Join(errs...))
 		},
 	}, nil
 }

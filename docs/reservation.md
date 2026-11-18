@@ -66,7 +66,7 @@ Releases every expired reservation on every enabled cluster. With a GitHub token
 devctl reservation check-extras management-clusters/graveler/extras/kustomization.yaml
 ```
 
-Fails when an extras kustomization holds a patch after a reservation block. Such a patch applies after the reservation and can change the source again. The GitOps repository's CI runs it on every changed extras kustomization. It reads only the files it is given.
+Fails when an extras kustomization holds a patch after a reservation block, or a `patchesJson6902`, `replacements` or `transformers` entry that can change an `OCIRepository`. kustomize runs those after the reservation, so they can change the source again. It checks every file it is given and names each one that fails. The GitOps repository's CI runs it on every changed extras kustomization. It reads only the files it is given.
 
 ## Output
 
