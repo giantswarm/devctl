@@ -7,7 +7,7 @@ Everything is a commit pushed to `main` of the GitOps repo, Flux does the rest a
 ## Before you start
 
 - A checkout of the GitOps repo. By default devctl uses `$UMBRELLA_TARGET_DIR/cmc/giantswarm-management-clusters`, `--gitops-dir` points somewhere else. devctl never clones it.
-- The checkout has to be on a clean `main` (untracked files are fine). Every command fetches and fast-forwards first, so you always work on the newest state. If you have local commits, devctl refuses and tells you how to reset.
+- The checkout has to be on a clean `main` (untracked files are fine). Every command except `check-extras` fetches and fast-forwards first, so you always work on the newest state. If you have local commits, devctl refuses and tells you how to reset.
 - Your git identity (`git config user.name` and `user.email`). Commits are made as you, `--user` never changes that, it only says who holds the reservation.
 - `--user` defaults to the login of your GitHub token (`DEVCTL_GITHUB_TOKEN`, `GITHUB_TOKEN`, `OPSCTL_GITHUB_TOKEN`, or the `devctl auth login --github-only` login). With `--user` set, no token is needed. A GitHub App installation token has no login, so CI passes `--user`.
 - The cluster has to be enabled for reservations: it needs `configmap-reservations.yaml` with a `reservations` ConfigMap. If it's not there, `reserve` tells you exactly what to add.
@@ -76,7 +76,7 @@ By default (`--output table`) `reserve` prints one line: what, where, for whom, 
 
 `--output json` prints the same data as JSON, for scripts. `reserve` and `release --cluster` print one object. `extend`, `reap`, `release --pull-request` and `list` print an array, `[]` when there is nothing.
 
-The `reserve` object carries `replaced` when it took over an expired reservation of another branch or pull request, so a caller can tell that pull request. Each `extend` entry carries the reservation's `scope` and the `commit` it made. The JSON of every command carries `gitopsSource`.
+The `reserve` object carries `replaced` when it took over an expired reservation of another branch or pull request, so a caller can tell that pull request. Each `extend` entry carries the reservation's `scope` and the `commit` it made. The JSON of every command carries `gitopsSource`. `check-extras` prints no JSON.
 
 ## Dry run
 
