@@ -76,6 +76,16 @@ func TestCheckExtrasPatches(t *testing.T) {
 		"no block":            {readFixtureFile(t, newGitOpsFixture(t, fixtureOptions{}), pathExtras), true},
 		"block last":          {reserved, true},
 		"patch after a block": {reserved + humanPatch, false},
+		// kustomize runs patchesJson6902, replacements and transformers after
+		// patches:, so they too come after the blocks.
+		"json6902 on a source":      {reserved + json6902("OCIRepository"), false},
+		"json6902 without a kind":   {reserved + json6902(""), false},
+		"json6902 on a deployment":  {reserved + json6902("Deployment"), true},
+		"json6902 without a block":  {readFixtureFile(t, newGitOpsFixture(t, fixtureOptions{}), pathExtras) + json6902("OCIRepository"), true},
+		"replacement on a source":   {reserved + replacement("OCIRepository"), false},
+		"replacement on a release":  {reserved + replacement("HelmRelease"), true},
+		"replacement from a file":   {reserved + "replacements:\n  - path: replacement.yaml\n", false},
+		"transformers after blocks": {reserved + "transformers:\n  - transformer.yaml\n", false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "kustomization.yaml")
@@ -93,6 +103,32 @@ func TestCheckExtrasPatches(t *testing.T) {
 	}
 }
 
+func json6902(kind string) string {
+	return `patchesJson6902:
+  - target:
+      kind: ` + kind + `
+      name: extras-app
+    patch: |-
+      - op: replace
+        path: /spec/interval
+        value: 5m
+`
+}
+
+func replacement(kind string) string {
+	return `replacements:
+  - source:
+      kind: ConfigMap
+      name: versions
+      fieldPath: data.extras-app
+    targets:
+      - select:
+          kind: ` + kind + `
+        fieldPaths:
+          - spec.ref.semver
+`
+}
+
 // TestReserveExtrasRefusesAHiddenChartRef is guard 3: a release outside the
 // extras render that takes its chart from the patched source would move too,
 // without anybody seeing it in the render.
@@ -105,6 +141,36 @@ func TestReserveExtrasRefusesAHiddenChartRef(t *testing.T) {
 
 	_, err := reservation.Reserve(extrasRequest(dir))
 	assertRefused(t, dir, head, err, reservation.IsAppNotSupported, hidden, "monitoring/hidden")
+}
+
+// TestReserveExtrasRefusesAHiddenChartRefWithoutANamespace: a release file
+// without a namespace gets one from a kustomization or a Flux Kustomization
+// that guard 3 does not read, so it matches on the source name alone.
+func TestReserveExtrasRefusesAHiddenChartRefWithoutANamespace(t *testing.T) {
+	hidden := "management-clusters/" + fixtureCluster + "/other/hidden.yaml"
+	dir := newGitOpsFixture(t, fixtureOptions{extraFiles: map[string]string{
+		hidden: extrasRelease("hidden", "", fixtureExtrasApp, ""),
+	}})
+	head, _ := headFiles(t, dir)
+
+	_, err := reservation.Reserve(extrasRequest(dir))
+	assertRefused(t, dir, head, err, reservation.IsAppNotSupported, hidden, "hidden")
+}
+
+// TestReserveExtrasMatchesARenderedReleaseWithoutANamespace: an extras release
+// whose file has no namespace, as the extras kustomization sets it, is the
+// rendered release, not a hidden one.
+func TestReserveExtrasMatchesARenderedReleaseWithoutANamespace(t *testing.T) {
+	root := "management-clusters/" + fixtureCluster + "/extras/extras-app/"
+	dir := newGitOpsFixture(t, fixtureOptions{extraFiles: map[string]string{
+		root + "kustomization.yaml": "namespace: flux-giantswarm\nresources:\n  - extras-app.yaml\n",
+		root + "extras-app.yaml": extrasSource(fixtureExtrasApp, "flux-giantswarm", fixtureExtrasApp) +
+			extrasRelease(fixtureExtrasApp, "", fixtureExtrasApp, ""),
+	}})
+
+	if _, err := reservation.Reserve(extrasRequest(dir)); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestReserveExtrasIgnoresASameNameSourceInAnotherNamespace: guard 3 matches on
