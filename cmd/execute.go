@@ -72,7 +72,11 @@ func ExecuteThen(root *cobra.Command, stderr io.Writer, after func(executed *cob
 // Single errors retain their existing formatting, and debug retains the trace.
 func prettyError(err error, stackTrace bool) string {
 	for cause := err; cause != nil; cause = errors.Unwrap(cause) {
-		if _, joined := cause.(interface{ Unwrap() []error }); joined {
+		if joined, ok := cause.(interface{ Unwrap() []error }); ok {
+			// A join of one error that no wrapper adds text to is that error.
+			if errs := joined.Unwrap(); len(errs) == 1 && errs[0].Error() == err.Error() {
+				return prettyError(errs[0], stackTrace)
+			}
 			message := err.Error()
 			if stackTrace {
 				message += strings.TrimPrefix(microerror.Pretty(err, true), microerror.Pretty(err, false))
