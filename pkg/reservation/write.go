@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -175,7 +176,7 @@ func setWindowAnnotations(lines []string, h hold) (found int) {
 			continue
 		}
 		if value, ok := want[m[2]]; ok {
-			lines[i] = m[1] + AnnotationPrefix + m[2] + `: "` + value + `"`
+			lines[i] = m[1] + AnnotationPrefix + m[2] + ": " + yamlScalar(value)
 			found++
 		}
 	}
@@ -490,4 +491,15 @@ func trimTrailingBlank(lines []string) []string {
 	}
 
 	return lines
+}
+
+// yamlScalar renders s as the YAML encoder that reserve uses would, quoted only
+// where YAML needs it, so an extended file reads like a freshly reserved one.
+func yamlScalar(s string) string {
+	out, err := yaml.Marshal(s)
+	if err != nil {
+		return strconv.Quote(s) // a string always marshals; keep a valid scalar anyway
+	}
+
+	return strings.TrimSuffix(string(out), "\n")
 }
