@@ -343,3 +343,13 @@ func TestPending_RunningOutOfTimeSkipsTheRest(t *testing.T) {
 	require.Equal(t, []Outcome{OutcomeCreated, OutcomeSkipped, OutcomeSkipped}, outcomes(summary))
 	require.Equal(t, "the pass ran out of time", summary.Repositories[1].Reason)
 }
+
+// TestEntrySaysTheProjectWasFollowed: a pass that created the project by
+// following it says so, and that the branch shows the follow's red OAuth
+// setup status until its next push.
+func TestEntrySaysTheProjectWasFollowed(t *testing.T) {
+	e := entry("giantswarm/new-service", &circleciapp.Report{Result: &circleciapp.Result{FollowedProject: true, CreatedDefinition: true, CreatedTrigger: true}})
+	require.Equal(t, OutcomeCreated, e.Outcome)
+	require.Contains(t, e.Reason, "followed it as you to create it")
+	require.Contains(t, e.Reason, "red OAuth setup status")
+}

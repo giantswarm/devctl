@@ -262,19 +262,31 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 		if err != nil {
 			return nil, microerror.Mask(fmt.Errorf("reading the statuses of %s: %w", release.TagName, err))
 		}
-		// Single-image releases retain the status-time heuristic. OAuth
-		// statuses name jobs alone, so do not republish a tag they built.
-		built := len(reconcile.TagBuildStatuses(reconcile.AppStatuses(statuses), published)) > 0 || reconcile.OAuthBuiltSince(statuses, published)
-		if line, _, _ := reconcile.ReleaseLine(release.TagName); line != "" {
+		// An OAuth status names its job, whose pipeline names the ref it
+		// checked out: a tag an OAuth pipeline built is never republished,
+		// and the default branch build of the follow that created the
+		// project, on the commit a first release shares, is no build of
+		// the tag.
+		appBuilt := len(reconcile.TagBuildStatuses(reconcile.AppStatuses(statuses), published)) > 0
+		line, _, _ := reconcile.ReleaseLine(release.TagName)
+		if line != "" {
 			// Image tags can share a commit and its status contexts. Only
 			// the checkout tag of a workflow's pipeline identifies its image.
-			built, err = builds.built(ctx, release.TagName, reconcile.AppStatuses(statuses))
+			appBuilt, err = builds.built(ctx, release.TagName, reconcile.AppStatuses(statuses))
 			if err != nil {
 				return nil, microerror.Mask(fmt.Errorf("checking the build of %s: %w", release.TagName, err))
 			}
-			if !built && reconcile.OAuthBuiltSince(statuses, published) {
+		}
+		built := appBuilt
+		if !built {
+			oauthBuilt, identified, err := builds.oauthBuilt(ctx, owner, repo, release.TagName, statuses, published)
+			if err != nil {
+				return nil, microerror.Mask(fmt.Errorf("checking the OAuth build of %s: %w", release.TagName, err))
+			}
+			if line != "" && oauthBuilt && !identified {
 				return nil, fmt.Errorf("cannot identify which image tag the OAuth statuses built; refusing to republish %s", release.TagName)
 			}
+			built = oauthBuilt
 		}
 		recent := now().Sub(published) < reconcile.TagBuildGrace && !result.CreatedTrigger
 		switch {

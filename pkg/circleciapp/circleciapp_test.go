@@ -346,18 +346,78 @@ func TestSetupRunsAnUnbuiltBranch(t *testing.T) {
 	require.Equal(t, circleciclient.Ref{Branch: "main"}, report.Runs[0].Ref)
 }
 
-// TestSetupNeverRebuildsAnOAuthBuiltTag: a tag an OAuth follow built after
-// the release reads built, so the App pipeline does not publish it again.
+// TestSetupNeverRebuildsAnOAuthBuiltTag: a tag whose OAuth status links a
+// job of the tag's own pipeline reads built, so the App pipeline does not
+// publish it again; so does one whose OAuth job CircleCI does not show, as
+// nothing tells it was not built.
 func TestSetupNeverRebuildsAnOAuthBuiltTag(t *testing.T) {
 	published := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
-	oauth := status("go-build", "success", "job", published.Add(time.Minute))
-	oauth.Creator = &github.User{Login: new("alice")}
-	gh := (&fakeGitHub{release: release("v1.0.0", published), statuses: []*github.RepoStatus{oauth}}).built()
-	ci := newFake(appDef())
-	ci.triggers["app"] = []circleciclient.Trigger{{ID: "on"}}
-	report, err := Setup(context.Background(), ci, gh, "giantswarm", "sample", Options{Now: func() time.Time { return published.Add(time.Hour) }})
-	require.NoError(t, err)
-	require.Empty(t, report.Runs)
+	opts := Options{Now: func() time.Time { return published.Add(time.Hour) }}
+	branchJob := oauthWorkflowStatus("go-build", "success", "alice", "wf-branch", published.Add(2*time.Minute))
+	for name, tc := range map[string]struct {
+		jobs     map[int64]string
+		statuses []*github.RepoStatus
+	}{
+		"the tag's job": {jobs: map[int64]string{7: "v1.0.0"}, statuses: []*github.RepoStatus{oauthStatus("go-build", "success", "alice", 7, published.Add(time.Minute))}},
+		"an unseen job": {jobs: map[int64]string{}, statuses: []*github.RepoStatus{oauthStatus("go-build", "success", "alice", 7, published.Add(time.Minute))}},
+		"no job URL": {statuses: []*github.RepoStatus{func() *github.RepoStatus {
+			st := oauthStatus("go-build", "success", "alice", 7, published.Add(time.Minute))
+			st.TargetURL = nil
+			return st
+		}()}},
+		"a later branch job": {jobs: map[int64]string{7: "v1.0.0"}, statuses: []*github.RepoStatus{branchJob, oauthStatus("go-build", "success", "alice", 7, published.Add(time.Minute))}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			gh := (&fakeGitHub{release: release("v1.0.0", published), statuses: tc.statuses}).built()
+			ci := newFake(appDef())
+			ci.triggers["app"] = []circleciclient.Trigger{{ID: "on"}}
+			ci.oauthJobs = tc.jobs
+			ci.oauthWorkflows = map[string]string{"wf-branch": ""}
+			report, err := Setup(context.Background(), ci, gh, "giantswarm", "sample", opts)
+			require.NoError(t, err)
+			require.Empty(t, report.Runs)
+		})
+	}
+}
+
+// TestSetupBuildsATagAfterFollowingTheProject: the follow builds the default
+// branch on the OAuth pipeline, and a first release shares that commit, so
+// its OAuth statuses land on the tag after the release. Their job ran in the
+// branch's pipeline, not the tag's: the tag runs, in the run that followed
+// and in a rerun after that run failed before running it.
+func TestSetupBuildsATagAfterFollowingTheProject(t *testing.T) {
+	published := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	for name, st := range map[string]*github.RepoStatus{
+		// The form a follow posts, seen live: the job by workflow.
+		"workflow URL": oauthWorkflowStatus("setup", "failure", "alice", "wf1", published.Add(time.Minute)),
+		"job URL":      oauthStatus("setup", "failure", "alice", 1, published.Add(time.Minute)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			gh := &fakeGitHub{
+				release:  release("v0.1.0", published),
+				statuses: []*github.RepoStatus{st},
+				shas:     map[string]string{"main": "scaffold", "v0.1.0": "scaffold"},
+			}
+			ci := newFake()
+			ci.noProject = true
+			ci.followCreates = true
+			ci.oauthJobs = map[int64]string{1: ""}
+			ci.oauthWorkflows = map[string]string{"wf1": ""}
+			opts := Options{Now: func() time.Time { return published.Add(time.Hour) }}
+			report, err := Setup(context.Background(), ci, gh, "giantswarm", "sample", opts)
+			require.NoError(t, err)
+			require.True(t, report.Result.FollowedProject)
+			require.Len(t, report.Runs, 1)
+			require.Equal(t, circleciclient.Ref{Tag: "v0.1.0"}, report.Runs[0].Ref)
+
+			// The rerun finds the project the follow created.
+			report, err = Setup(context.Background(), ci, gh, "giantswarm", "sample", opts)
+			require.NoError(t, err)
+			require.False(t, report.Result.FollowedProject)
+			require.NotEmpty(t, report.Runs)
+			require.Equal(t, circleciclient.Ref{Tag: "v0.1.0"}, report.Runs[0].Ref)
+		})
+	}
 }
 
 // TestSetupSkipsTheBranchOnTheTagsCommit: a new repository's first tag is

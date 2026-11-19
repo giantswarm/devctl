@@ -84,6 +84,10 @@ func (f *fakeCircleCI) GetWorkflow(context.Context, string) (*circleciclient.Wor
 	return nil, fmt.Errorf("unexpected workflow attribution read")
 }
 
+func (f *fakeCircleCI) GetProjectJob(context.Context, string, string, int64) (*circleciclient.ProjectJob, error) {
+	return nil, fmt.Errorf("unexpected OAuth job read")
+}
+
 func (f *fakeCircleCI) ListPipelineWorkflows(context.Context, string) ([]circleciclient.Workflow, error) {
 	return []circleciclient.Workflow{{Name: "build", Status: f.workflowStatus}}, nil
 }

@@ -331,23 +331,28 @@ stops when they leave.
 
 The command is idempotent:
 
-0. When CircleCI knows no project for the repository, it follows the repository as you, which creates
+1. When CircleCI knows no project for the repository, it follows the repository as you, which creates
    the project; CircleCI creates none on its own for a new organization repository, although its GitHub
    App is installed on all of them. The follow builds the default branch once on the OAuth pipeline, and
-   that build's red `setup` status shows on the branch until its next push. The OAuth trigger the follow
-   created is deleted, as with `--migrate`.
-1. It finds the project's GitHub App pipeline, or creates `<repository>-app` (config and checkout
+   that build's red `setup` status shows on the branch until its next push. That build's statuses land
+   on a first release that shares the branch's commit, but are not taken for its build: an OAuth status
+   links its job, and the job's pipeline names the ref it built. The run that followed deletes the OAuth
+   trigger the follow created, as with `--migrate`, when CircleCI lists it already. A later run only
+   reports it: when the run that followed fails before deleting it, or CircleCI lists it only later,
+   delete it with `--migrate`.
+2. It finds the project's GitHub App pipeline, or creates `<repository>-app` (config and checkout
    through the GitHub App, `.circleci/config.yml`).
-2. It gives the pipeline an `all-pushes` trigger (branches and tags) unless it has an enabled one, and
+3. It gives the pipeline an `all-pushes` trigger (branches and tags) unless it has an enabled one, and
    switches the project's setup workflows on when they are off: the generated dynamic configuration needs
    them. CircleCI refusing the setting to you is a warning, not an error.
-3. With `--migrate` it deletes the OAuth pipeline's triggers, so a push builds once. Without it, a
+4. With `--migrate` it deletes the OAuth pipeline's triggers, so a push builds once. Without it, a
    remaining OAuth trigger is reported: every push builds twice.
-4. It runs every release that carries no CircleCI status of its own build (the latest `vX.Y.Z` release,
+5. It runs every release that carries no CircleCI status of its own build (the latest `vX.Y.Z` release,
    or the newest release of every line on a multi-image repository): a tag cut before the trigger
-   existed reached no pipeline. A tag an OAuth follow built is never run again. Then it runs the default
-   branch, when anything changed or the branch carries no status of the GitHub App pipeline.
-5. It waits for those runs (`--wait=false` returns at once, `--timeout` bounds the wait). The exit is 0
+   existed reached no pipeline. A tag an OAuth pipeline built (its status's job ran in the tag's
+   pipeline) is never run again, nor one whose OAuth job CircleCI does not show you. Then it runs the
+   default branch, when anything changed or the branch carries no status of the GitHub App pipeline.
+6. It waits for those runs (`--wait=false` returns at once, `--timeout` bounds the wait). The exit is 0
    when every run is green.
 
 The login is `devctl auth login --circleci-only`, granted **Write** on the consent page; a Read-only
