@@ -42,11 +42,11 @@ func TestExtendWritesWhatReserveWould(t *testing.T) {
 
 			_, files := headFiles(t, extendedDir)
 			for _, f := range files {
-				got, err := os.ReadFile(filepath.Join(extendedDir, f))
+				got, err := os.ReadFile(filepath.Join(extendedDir, f)) //nolint:gosec // a test fixture
 				if err != nil {
 					t.Fatal(err)
 				}
-				want, err := os.ReadFile(filepath.Join(reservedDir, f))
+				want, err := os.ReadFile(filepath.Join(reservedDir, f)) //nolint:gosec // a test fixture
 				if err != nil {
 					t.Fatal(err)
 				}
