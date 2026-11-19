@@ -49,6 +49,9 @@ type ReleaseResult struct {
 	Commit string `json:"commit"`
 	// Files are the repo-relative paths Release removed or edited, sorted.
 	Files []string `json:"files,omitempty"`
+	// GitOpsSource is where the reservation lived, GitOpsSourceCollections or
+	// GitOpsSourceExtras.
+	GitOpsSource string `json:"gitopsSource"`
 }
 
 func (r ReleaseRequest) validate() error {
@@ -92,6 +95,11 @@ func Release(req ReleaseRequest) (res ReleaseResult, err error) {
 	}
 	if err := checkPullRequestHolds(req, chart); err != nil {
 		return ReleaseResult{}, microerror.Mask(err)
+	}
+
+	if gitopsSourceOf(req.RepoDir, req.Cluster, chart) == GitOpsSourceExtras {
+		res, err := releaseExtras(req, chart)
+		return res, microerror.Mask(err)
 	}
 
 	collectionsPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, collectionsDir)
@@ -153,7 +161,7 @@ func Release(req ReleaseRequest) (res ReleaseResult, err error) {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
 
-	return ReleaseResult{App: chart, Commit: commit, Files: files}, nil
+	return ReleaseResult{App: chart, Commit: commit, Files: files, GitOpsSource: GitOpsSourceCollections}, nil
 }
 
 // checkReleaseComponent protects files the reservation does not own, including

@@ -65,36 +65,72 @@ func devSource(original object, sourceName string, req Request, semverFilter str
 		annotations = map[string]any{}
 		metadata["annotations"] = annotations
 	}
-	for key, value := range map[string]string{
-		annotationUser:  req.User,
-		"branch":        req.Branch,
-		"pr":            req.PullRequest,
-		"scope":         req.Scope,
-		annotationFrom:  from.Format(time.RFC3339),
-		annotationUntil: until.Format(time.RFC3339),
-	} {
-		annotations[AnnotationPrefix+key] = value
+	for key, value := range reservationAnnotations(req, from, until) {
+		annotations[key] = value
 	}
 
 	spec, _ := o["spec"].(map[string]any)
 	spec["interval"] = SourceInterval
-	spec["ref"] = map[string]any{
-		"semver":       devSemverRange,
-		"semverFilter": semverFilter,
-	}
+	spec["ref"] = devRef(semverFilter)
 
 	return o
 }
 
+// devRef is the OCIRepository spec.ref that follows the dev builds semverFilter
+// selects.
+func devRef(semverFilter string) map[string]any {
+	return map[string]any{"semver": devSemverRange, "semverFilter": semverFilter}
+}
+
+// hold is who holds a reservation and for which window: the part of the
+// annotations that extend moves as well as reserve.
+type hold struct {
+	User        string
+	From, Until time.Time
+}
+
+// annotations returns the hold's annotations, keyed without AnnotationPrefix.
+func (h hold) annotations() map[string]string {
+	return map[string]string{
+		annotationUser:  h.User,
+		annotationFrom:  h.From.Format(time.RFC3339),
+		annotationUntil: h.Until.Format(time.RFC3339),
+	}
+}
+
+// reservationAnnotations are the annotations a reserved source carries, so
+// `kubectl get` on the source alone shows who holds it and until when.
+func reservationAnnotations(req Request, from, until time.Time) map[string]string {
+	keys := hold{User: req.User, From: from, Until: until}.annotations()
+	keys["branch"] = req.Branch
+	keys["pr"] = req.PullRequest
+	keys["scope"] = req.Scope
+
+	annotations := map[string]string{}
+	for key, value := range keys {
+		annotations[AnnotationPrefix+key] = value
+	}
+
+	return annotations
+}
+
+// The GitOps sources a reservation can live in: a component directory in the
+// cluster's collections, or a block in its extras kustomization.
+const (
+	GitOpsSourceCollections = "collections"
+	GitOpsSourceExtras      = "extras"
+)
+
 // reservationEntry renders one reservation as the one-line YAML flow mapping the
 // reservations ConfigMap stores, so `kubectl get cm reservations -o yaml` stays
 // readable and a machine can still parse it.
-func reservationEntry(chart string, req Request, from, until time.Time) (string, error) {
+func reservationEntry(chart string, req Request, gitopsSource string, from, until time.Time) (string, error) {
 	fields := [][2]string{
 		{annotationUser, req.User},
 		{"branch", req.Branch},
 		{"pr", req.PullRequest},
 		{"scope", req.Scope},
+		{"gitops-source", gitopsSource},
 		{annotationFrom, from.Format(time.RFC3339)},
 		{annotationUntil, until.Format(time.RFC3339)},
 	}

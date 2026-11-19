@@ -88,8 +88,15 @@ type Result struct {
 	PullRequest string `json:"pullRequest,omitempty"`
 	// Commit is the hash of the commit Reserve made.
 	Commit string `json:"commit"`
-	// SourceName is the name of the new OCIRepository.
+	// GitOpsSource is where the reservation lives: GitOpsSourceCollections or
+	// GitOpsSourceExtras.
+	GitOpsSource string `json:"gitopsSource"`
+	// SourceName is the name of the new OCIRepository. For an app the extras
+	// serve, it is the patched sources instead, joined with ", ".
 	SourceName string `json:"sourceName"`
+	// HelmReleases are "<namespace>/<name>" of every release the reservation
+	// moves to the dev builds, sorted.
+	HelmReleases []string `json:"helmReleases,omitempty"`
 	// SemverFilter is the version selector the new OCIRepository carries.
 	SemverFilter string `json:"semverFilter"`
 	// Files are the repo-relative paths Reserve wrote, sorted.
@@ -101,6 +108,17 @@ type Result struct {
 	// or pull request, that Reserve took over. Its pull request still reads
 	// "reserved" until somebody tells it otherwise.
 	Replaced *Reservation `json:"replaced,omitempty"`
+}
+
+// namespaced prefixes the names of collection releases, which all live in
+// Namespace, the way Result.HelmReleases spells them.
+func namespaced(names []string) []string {
+	out := make([]string, 0, len(names))
+	for _, n := range names {
+		out = append(out, Namespace+"/"+n)
+	}
+
+	return out
 }
 
 func (r Request) validate() error {
@@ -234,11 +252,27 @@ func Reserve(req Request) (res Result, err error) {
 		until = promoted.Until
 	}
 
+	// An app the extras serve is reserved there, by patching its own sources.
+	extras, ok, err := resolveExtras(req, chart)
+	if err != nil {
+		return Result{}, microerror.Mask(err)
+	}
+	if ok {
+		if err := checkExtras(req, chart, extras); err != nil {
+			return Result{}, microerror.Mask(err)
+		}
+		res, err := reserveExtras(req, chart, extras, from, until, replaced)
+		return res, microerror.Mask(err)
+	}
+
 	collectionsPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, collectionsDir)
 
 	before, err := renderDir(collectionsPath)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
+	}
+	if len(extras.sources) > 0 && len(collectionSources(before, chart)) == 0 {
+		return Result{}, extras.movesNothingError(req, chart)
 	}
 	resolved, err := resolveApp(before, req, chart)
 	if err != nil {
@@ -271,7 +305,7 @@ func Reserve(req Request) (res Result, err error) {
 	if err := addComponent(filepath.Join(collectionsPath, "kustomization.yaml"), component); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
-	entry, err := reservationEntry(chart, req, from, until)
+	entry, err := reservationEntry(chart, req, GitOpsSourceCollections, from, until)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
@@ -306,7 +340,9 @@ func Reserve(req Request) (res Result, err error) {
 		App:          chart,
 		PullRequest:  req.PullRequest,
 		Commit:       commit,
+		GitOpsSource: GitOpsSourceCollections,
 		SourceName:   sourceName,
+		HelmReleases: namespaced(resolved.helmReleases),
 		SemverFilter: semverFilter,
 		Files:        files,
 		From:         from,
