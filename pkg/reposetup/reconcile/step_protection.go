@@ -218,6 +218,9 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 		if got := protection.GetRequiredPullRequestReviews().GetRequiredApprovingReviewCount(); got != b.RequiredReviews {
 			changes = append(changes, fmt.Sprintf("required reviews %d → %d", got, b.RequiredReviews))
 		}
+		if got := protection.GetRequiredPullRequestReviews().GetDismissStaleReviews(); got != s.fields.DismissStaleReviews {
+			changes = append(changes, fmt.Sprintf("dismiss stale reviews %t → %t", got, s.fields.DismissStaleReviews))
+		}
 		if got := protection.GetEnforceAdmins().GetEnabled(); got != b.EnforceAdmins {
 			changes = append(changes, fmt.Sprintf("enforce admins %t → %t", got, b.EnforceAdmins))
 		}
@@ -252,6 +255,7 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 		req := &github.ProtectionRequest{
 			RequiredPullRequestReviews: &github.PullRequestReviewsEnforcementRequest{
 				RequiredApprovingReviewCount: b.RequiredReviews,
+				DismissStaleReviews:          s.fields.DismissStaleReviews,
 			},
 			EnforceAdmins:    b.EnforceAdmins,
 			AllowForcePushes: new(false),
@@ -347,6 +351,7 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 	}
 	if !split {
 		desired.reviews = b.RequiredReviews
+		desired.dismissStale = s.fields.DismissStaleReviews
 	}
 
 	var changes []string
@@ -506,12 +511,13 @@ func (r *Runner) stepReviewRuleset(ctx context.Context, s *run, sr *StepResult, 
 		changes = []string{fmt.Sprintf("delete ruleset %q (the review rule is back in %q)", ReviewRulesetName, RulesetName)}
 	} else {
 		desired = rulesetState{
-			enforcement: github.RulesetEnforcementActive,
-			include:     []string{defaultBranchRef},
-			pullRequest: true,
-			reviews:     s.baseline.RequiredReviews,
-			bypass:      append(slices.Clone(bypass), appActor(r.AlignFilesAppID), appActor(renovateAppID)),
-			team:        s.team,
+			enforcement:  github.RulesetEnforcementActive,
+			include:      []string{defaultBranchRef},
+			pullRequest:  true,
+			reviews:      s.baseline.RequiredReviews,
+			dismissStale: s.fields.DismissStaleReviews,
+			bypass:       append(slices.Clone(bypass), appActor(r.AlignFilesAppID), appActor(renovateAppID)),
+			team:         s.team,
 		}
 		if r.ReleaseAppID != 0 {
 			desired.bypass = append(desired.bypass, appActor(r.ReleaseAppID))

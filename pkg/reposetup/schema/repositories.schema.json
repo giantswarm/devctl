@@ -32,6 +32,11 @@
         "default": true,
         "description": "The repository's opt-out from agent merges. With false no agent merges pull requests in this repository: devctl pr merge refuses with exit 5, naming this field, and the protection step writes the repository's ruleset without a bypass actor, so nothing merges past the required review. Plans and decision records merged by people after review are the case. With true (the default) agents merge through the ruleset's bypass actor, as everywhere else."
       },
+      "dismissStaleReviews": {
+        "type": "boolean",
+        "default": false,
+        "description": "Makes a push to a pull request dismiss its approvals, so only an approval of the latest head counts toward the required review. The protection step sets the review rule's dismissal of stale reviews from it, in 'devctl: review' or, without that ruleset, in 'devctl: default branch'. A repository whose approvals come from a workflow needs it: without it a push made after the approval merges on that approval. With false (the default) an approval stays after a push. Requires devctl v8.169.0+."
+      },
       "renovate": {
         "type": "boolean",
         "default": true,

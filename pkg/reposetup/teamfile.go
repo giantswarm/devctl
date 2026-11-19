@@ -182,6 +182,11 @@ type Fields struct {
 	// the default branch's ruleset has no bypass actor, so nothing merges
 	// past the required review. Nil is the default, true.
 	AgentMerge *bool `yaml:"agentMerge"`
+	// DismissStaleReviews makes a push to a pull request dismiss its
+	// approvals: only an approval of the latest head counts toward the
+	// required review. A repository whose approvals come from a workflow
+	// needs it, so that a push after the approval cannot merge on it.
+	DismissStaleReviews bool `yaml:"dismissStaleReviews"`
 	// Renovate is the repository's opt-out from Renovate: with false no
 	// renovate.json5 is generated and the renovate step accepts a
 	// repository without a Renovate configuration, or with one that
