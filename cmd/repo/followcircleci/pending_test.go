@@ -345,11 +345,25 @@ func TestPending_RunningOutOfTimeSkipsTheRest(t *testing.T) {
 }
 
 // TestEntrySaysTheProjectWasFollowed: a pass that created the project by
-// following it says so, and that the branch shows the follow's red OAuth
-// setup status until its next push.
+// following it says so, and what became of the follow's own OAuth build of
+// the default branch: cancelled before the App run, or why not, with the
+// red status that build can leave until the branch's next push.
 func TestEntrySaysTheProjectWasFollowed(t *testing.T) {
-	e := entry("giantswarm/new-service", &circleciapp.Report{Result: &circleciapp.Result{FollowedProject: true, CreatedDefinition: true, CreatedTrigger: true}})
+	followed := &circleciapp.Result{FollowedProject: true, CreatedDefinition: true, CreatedTrigger: true}
+
+	e := entry("giantswarm/new-service", &circleciapp.Report{Result: followed, CancelledFollowWorkflows: []string{"setup", "go-build"}})
 	require.Equal(t, OutcomeCreated, e.Outcome)
 	require.Contains(t, e.Reason, "followed it as you to create it")
-	require.Contains(t, e.Reason, "red OAuth setup status")
+	require.Contains(t, e.Reason, "cancelled the follow's OAuth build of the default branch (setup, go-build)")
+	require.NotContains(t, e.Reason, "red")
+
+	e = entry("giantswarm/new-service", &circleciapp.Report{Result: followed, FollowBuildUncancelled: "cancelling workflow go-build: 403"})
+	require.Contains(t, e.Reason, "followed it as you to create it")
+	require.Contains(t, e.Reason, "could not confirm the follow's OAuth build of the default branch was cancelled (cancelling workflow go-build: 403)")
+	require.Contains(t, e.Reason, "OAuth statuses, often red")
+
+	// Some workflows cancelled, one refused: the entry says both.
+	e = entry("giantswarm/new-service", &circleciapp.Report{Result: followed, CancelledFollowWorkflows: []string{"lint"}, FollowBuildUncancelled: "cancelling workflow go-build: 403"})
+	require.Contains(t, e.Reason, "cancelled the follow's OAuth build of the default branch (lint)")
+	require.Contains(t, e.Reason, "could not confirm the follow's OAuth build of the default branch was cancelled (cancelling workflow go-build: 403)")
 }

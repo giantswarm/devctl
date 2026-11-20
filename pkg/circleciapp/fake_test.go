@@ -42,7 +42,30 @@ type fakeCircleCI struct {
 	oauthWorkflows map[string]string
 	// workflowReads counts the reads of OAuth workflows, by id.
 	workflowReads map[string]int
+	// followBuild are the reads of the OAuth build of main a follow starts,
+	// listed as pipeline "follow-build" once Follow created the project, one
+	// listing per entry; the last repeats. None is one finished build.
+	// refuseCancel answers the cancel of those workflow ids with a 502
+	// that many times, forbidCancel with 403 always; refuseWorkflows
+	// answers the listing of their workflows with 403.
+	followBuild     []followRead
+	followReads     int
+	refuseCancel    map[string]int
+	forbidCancel    map[string]bool
+	refuseWorkflows bool
+	// branchNotFound answers that many listings of main with 404 first.
+	branchNotFound int
+	followed       bool
+	// followUnlisted keeps the follow's build out of the listing, as
+	// CircleCI may right after the follow.
+	followUnlisted bool
+	// branchPipelines are other pipelines of main, listed after the
+	// follow's; branchListings counts the listings of main.
+	branchPipelines []circleciclient.Pipeline
+	branchListings  int
 }
+
+type followRead = pipelineRead
 
 type pipelineRead struct {
 	state     string
@@ -79,6 +102,7 @@ func (f *fakeCircleCI) Follow(_ context.Context, org, repo string) error {
 		f.noProject = false
 		f.defs = append(f.defs, oauthDef())
 		f.triggers["oauth"] = append(f.triggers["oauth"], circleciclient.Trigger{ID: "followed"})
+		f.followed = true
 	}
 	return nil
 }
@@ -184,7 +208,60 @@ func (f *fakeCircleCI) GetWorkflow(_ context.Context, id string) (*circleciclien
 	return nil, fmt.Errorf("unexpected workflow attribution read")
 }
 
-func (f *fakeCircleCI) ListPipelineWorkflows(context.Context, string) ([]circleciclient.Workflow, error) {
+func (f *fakeCircleCI) ListBranchPipelines(_ context.Context, _, _, branch, _ string) (*circleciclient.PipelinePage, error) {
+	page := &circleciclient.PipelinePage{}
+	if branch != "main" {
+		return page, nil
+	}
+	f.branchListings++
+	if f.branchNotFound > 0 {
+		f.branchNotFound--
+		return nil, notFound()
+	}
+	if f.followed && !f.followUnlisted {
+		r := f.followRead()
+		f.followReads++
+		page.Items = append(page.Items, circleciclient.Pipeline{ID: "follow-build", Number: 1, State: r.state, Trigger: circleciclient.PipelineTrigger{Type: "webhook"}})
+	}
+	page.Items = append(page.Items, f.branchPipelines...)
+	return page, nil
+}
+
+// followRead is the follow's build as the current listing shows it.
+func (f *fakeCircleCI) followRead() pipelineRead {
+	switch {
+	case len(f.followBuild) == 0:
+		return pipelineRead{state: "created", workflows: []circleciclient.Workflow{{ID: "wf-setup", Name: "setup", Tag: circleciclient.WorkflowTagSetup, Status: "success"}, {ID: "wf-build", Name: "build", Status: "failed"}}}
+	case f.followReads > len(f.followBuild):
+		return f.followBuild[len(f.followBuild)-1]
+	}
+	return f.followBuild[max(f.followReads-1, 0)]
+}
+
+func (f *fakeCircleCI) CancelWorkflow(_ context.Context, id string) error {
+	f.writes = append(f.writes, "cancel workflow "+id)
+	if f.forbidCancel[id] {
+		return forbidden()
+	}
+	if f.refuseCancel[id] > 0 {
+		f.refuseCancel[id]--
+		return clientError(502)
+	}
+	return nil
+}
+
+func (f *fakeCircleCI) ListPipelineWorkflows(_ context.Context, id string) ([]circleciclient.Workflow, error) {
+	if id == "follow-build" {
+		if f.refuseWorkflows {
+			return nil, forbidden()
+		}
+		return f.followRead().workflows, nil
+	}
+	for _, p := range f.branchPipelines {
+		if p.ID == id {
+			return []circleciclient.Workflow{{ID: "wf-" + id, Name: "build", Status: "running"}}, nil
+		}
+	}
 	r := f.current()
 	f.read++
 	return r.workflows, nil

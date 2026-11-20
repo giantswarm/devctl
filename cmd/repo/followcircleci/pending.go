@@ -231,7 +231,13 @@ func entry(slug string, report *circleciapp.Report) Entry {
 		e.Outcome = OutcomeCreated
 		switch {
 		case r.FollowedProject:
-			e.Reason = "CircleCI knew no project, followed it as you to create it; the follow's own build of the default branch can leave a red OAuth setup status on it until its next push"
+			e.Reason = "CircleCI knew no project, followed it as you to create it"
+			if len(report.CancelledFollowWorkflows) > 0 {
+				e.Reason += fmt.Sprintf("; cancelled the follow's OAuth build of the default branch (%s) before the GitHub App pipeline's run", strings.Join(report.CancelledFollowWorkflows, ", "))
+			}
+			if report.FollowBuildUncancelled != "" {
+				e.Reason += fmt.Sprintf("; could not confirm the follow's OAuth build of the default branch was cancelled (%s): when it finishes after the GitHub App pipeline's run, its OAuth statuses, often red, show on the branch until its next push", report.FollowBuildUncancelled)
+			}
 		case !r.CreatedDefinition:
 			var did []string
 			if r.CreatedTrigger {

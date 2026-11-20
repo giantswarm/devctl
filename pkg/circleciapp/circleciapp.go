@@ -38,6 +38,8 @@ type CircleCI interface {
 	GetProjectSettings(ctx context.Context, org, repo string) (*circleciclient.ProjectSettings, error)
 	UpdateProjectSettings(ctx context.Context, org, repo string, settings circleciclient.ProjectSettings) (*circleciclient.ProjectSettings, error)
 	ListPipelineWorkflows(ctx context.Context, pipelineID string) ([]circleciclient.Workflow, error)
+	ListBranchPipelines(ctx context.Context, org, repo, branch, pageToken string) (*circleciclient.PipelinePage, error)
+	CancelWorkflow(ctx context.Context, workflowID string) error
 }
 
 // Repository is the GitHub repository to set up: its owner and name, and

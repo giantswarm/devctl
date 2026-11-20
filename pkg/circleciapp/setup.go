@@ -3,6 +3,7 @@ package circleciapp
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -117,6 +118,13 @@ type Run struct {
 type Report struct {
 	Result *Result
 	Runs   []Run
+	// CancelledFollowWorkflows names the workflows of the follow's OAuth
+	// build of the default branch that Setup cancelled, when Ensure followed
+	// the project.
+	CancelledFollowWorkflows []string
+	// FollowBuildUncancelled is why that build could not be cancelled,
+	// empty when it was or nothing of it ran: the branch run still follows.
+	FollowBuildUncancelled string
 }
 
 // Green says every run waited for succeeded.
@@ -186,7 +194,9 @@ func releasesToBuild(ctx context.Context, gh GitHub, owner, repo string, progres
 // image tag stops dispatch. A tag cut before the trigger existed reached no
 // pipeline, as the scaffold's v0.1.0 of a new repository does. Then the default branch, when
 // Ensure wrote anything or its head carries no App status, unless a tag run
-// builds the branch's head already. A repository without
+// builds the branch's head already. After a follow that created the project,
+// the running workflows of the follow's OAuth build of the default branch are
+// cancelled first (cancelFollowBuild). A repository without
 // .circleci/config.yml on its default branch is IsNoConfig, before any
 // write. With Wait set the runs are followed until they settle.
 func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts Options) (*Report, error) {
@@ -345,6 +355,18 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 		refs = append(refs, circleciclient.Ref{Branch: branch})
 	}
 
+	if result.FollowedProject && len(refs) > 0 {
+		// Right before the first run, so nothing after the cancel can stop
+		// the run that replaces the follow's build.
+		cancelFollowBuild(ctx, ci, opts.Waiter.Sleep, owner, repo, branch, report)
+		if len(report.CancelledFollowWorkflows) > 0 {
+			progress("%s: cancelled the follow's OAuth build of %s (%s): the GitHub App pipeline's run of it posts the newer statuses", slug, branch, strings.Join(report.CancelledFollowWorkflows, ", "))
+		}
+		if report.FollowBuildUncancelled != "" {
+			progress("%s: could not confirm the follow's OAuth build of %s was cancelled (%s): when it finishes after the GitHub App pipeline's run, its statuses show on %s until its next push", slug, branch, report.FollowBuildUncancelled, branch)
+		}
+	}
+
 	for _, ref := range refs {
 		p, err := ci.RunPipeline(ctx, owner, repo, def.ID, ref)
 		if err != nil {
@@ -373,4 +395,189 @@ func Setup(ctx context.Context, ci CircleCI, gh GitHub, owner, repo string, opts
 		}
 	}
 	return report, nil
+}
+
+// followBuildReads bounds the reads of the follow's build, followBuildWait
+// is the wait between them: the build is listed a moment after the follow,
+// and its setup workflow continues it a little later.
+const (
+	followBuildReads = 10
+	followBuildWait  = 3 * time.Second
+)
+
+// cancelFollowBuild cancels the running workflows of the OAuth build of
+// branch that the follow creating the project started, as the person. The
+// App pipeline's runs that follow use the same status contexts, and GitHub
+// shows the newest status of every context: a follow's build that finished
+// after them would leave its statuses, often red, on the branch's head until
+// its next push. Cancelled first, it ends well before the App runs do; a
+// cancelled job's status may still lag a little, which nothing here waits for.
+//
+// The build is read again, sleep apart, until a read cancels nothing new and
+// nothing more can continue it: CircleCI lists it, no setup workflow can
+// still continue it, and a listing of the setup workflow alone, or of none,
+// held for setupOnlyReads reads, as Wait takes it. A cancel that failed is
+// tried again on the next read, unless CircleCI refused it to the person
+// (403, 404), and forgotten once its workflow finished or is gone. CircleCI
+// refusing the person the reads of the build (403) ends them; a 404 may be
+// the moment before it knows the new project, and is read again. The project
+// is seconds old, so every pipeline of branch is the follow's, whatever
+// CircleCI types its trigger. A push in the moments since the follow builds
+// on the App pipeline alone and is cancelled with it: the branch run builds
+// the branch's newest head again. A failure is noted in report, not
+// returned: the branch run still follows, only the order of the statuses is
+// at stake. A nil sleep waits followBuildWait.
+func cancelFollowBuild(ctx context.Context, ci CircleCI, sleep func(context.Context, time.Duration) error, owner, repo, branch string, report *Report) {
+	if sleep == nil {
+		sleep = sleepFor
+	}
+	b := &followBuild{ci: ci, owner: owner, repo: repo, branch: branch, report: report, cancelled: map[string]bool{}, failed: map[string]string{}, refused: map[string]bool{}}
+	pending := ""
+	for read := 1; ; read++ {
+		var settled bool
+		if settled, pending = b.pass(ctx); settled || b.refusedRead || read >= followBuildReads {
+			break
+		}
+		if err := sleep(ctx, followBuildWait); err != nil {
+			wait := fmt.Sprintf("the wait for further reads of the build of %s ended: %v", branch, err)
+			if pending == "" {
+				pending = wait
+			} else {
+				pending += "; " + wait
+			}
+			break
+		}
+	}
+	problems := slices.Sorted(maps.Values(b.failed))
+	if pending != "" {
+		problems = append(problems, pending)
+	}
+	report.FollowBuildUncancelled = strings.Join(problems, "; ")
+}
+
+// followBuild is what the reads of the follow's build found: the workflows
+// cancelled, the cancels refused by workflow id, and how many reads in a row
+// listed the setup workflow alone, or none, on a settled pipeline. refused
+// are the failed cancels CircleCI refused to the person, not tried again;
+// refusedRead says it refused the person every read of the build (403), which
+// ends the reads.
+type followBuild struct {
+	ci                  CircleCI
+	owner, repo, branch string
+	report              *Report
+	cancelled           map[string]bool
+	failed              map[string]string
+	refused             map[string]bool
+	refusedRead         bool
+	quiet               int
+}
+
+// pass reads the follow's build once and cancels its running workflows. It
+// says whether the build is settled, and what keeps it from being so.
+func (b *followBuild) pass(ctx context.Context) (bool, string) {
+	page, err := b.ci.ListBranchPipelines(ctx, b.owner, b.repo, b.branch, "")
+	if err != nil {
+		b.quiet = 0
+		b.refusedRead = circleciclient.IsForbidden(err)
+		return false, fmt.Sprintf("listing the pipelines of %s: %v", b.branch, err)
+	}
+	found, newCancel, sparse := false, false, false
+	pending := ""
+	seen := map[string]bool{}
+	unread, read, forbidden := false, false, false
+	for _, p := range page.Items {
+		found = true
+		workflows, err := b.ci.ListPipelineWorkflows(ctx, p.ID)
+		if err != nil {
+			pending = fmt.Sprintf("listing the workflows of pipeline %d: %v", p.Number, err)
+			unread = true
+			forbidden = forbidden || circleciclient.IsForbidden(err)
+			continue
+		}
+		read = true
+		setupStopped := false
+		for _, wf := range workflows {
+			seen[wf.ID] = true
+			if !circleciclient.WorkflowRunning(wf.Status) {
+				// Finished on its own: a refused cancel no longer matters.
+				delete(b.failed, wf.ID)
+				if wf.Tag == circleciclient.WorkflowTagSetup && !circleciclient.WorkflowSucceeded(wf.Status) {
+					setupStopped = true
+				}
+				continue
+			}
+			if !b.cancelled[wf.ID] && !b.refused[wf.ID] {
+				if err := b.ci.CancelWorkflow(ctx, wf.ID); err != nil {
+					b.failed[wf.ID] = fmt.Sprintf("cancelling workflow %s: %v", wf.Name, err)
+					// The workflow was just listed: a 404 is no lag of a new
+					// project, it is gone.
+					b.refused[wf.ID] = circleciclient.IsForbidden(err) || circleciclient.IsNotFound(err)
+					continue
+				}
+				delete(b.failed, wf.ID)
+				b.cancelled[wf.ID] = true
+				newCancel = true
+				if !slices.Contains(b.report.CancelledFollowWorkflows, wf.Name) {
+					b.report.CancelledFollowWorkflows = append(b.report.CancelledFollowWorkflows, wf.Name)
+				}
+			}
+			if wf.Tag == circleciclient.WorkflowTagSetup {
+				setupStopped = true
+			}
+		}
+		switch {
+		case p.State == "errored":
+			// Its configuration did not compile: nothing runs.
+		case circleciclient.PipelineContinuing(p.State) && !setupStopped:
+			if pending == "" {
+				pending = fmt.Sprintf("the build of %s had not continued", b.branch)
+			}
+		case len(workflows) == 0 || circleciclient.SetupOnly(workflows):
+			// A continuation may still create workflows the listing lags
+			// behind, also one submitted as its setup workflow was cancelled.
+			sparse = true
+		}
+	}
+	// A refusal ends the reads only when nothing of the build could be read.
+	b.refusedRead = forbidden && !read
+	if !unread {
+		// A workflow the build no longer lists cannot be cancelled.
+		for id := range b.failed {
+			if !seen[id] {
+				delete(b.failed, id)
+			}
+		}
+	}
+	retry := false
+	for id := range b.failed {
+		retry = retry || !b.refused[id]
+	}
+	switch {
+	case !found:
+		b.quiet = 0
+		return false, fmt.Sprintf("CircleCI listed no build of %s", b.branch)
+	case pending != "" || newCancel || retry:
+		// A read that cancelled anything is followed by another: the
+		// cancelled setup workflow may have continued the build already.
+		// When the reads run out on it, what it cancelled is the report.
+		b.quiet = 0
+		return false, pending
+	case sparse:
+		if b.quiet++; b.quiet < setupOnlyReads {
+			return false, fmt.Sprintf("the build of %s had not continued", b.branch)
+		}
+	}
+	return true, ""
+}
+
+// sleepFor waits d, or until ctx ends.
+func sleepFor(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }

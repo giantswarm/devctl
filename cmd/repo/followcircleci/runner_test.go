@@ -88,6 +88,14 @@ func (f *fakeCircleCI) GetProjectJob(context.Context, string, string, int64) (*c
 	return nil, fmt.Errorf("unexpected OAuth job read")
 }
 
+func (f *fakeCircleCI) ListBranchPipelines(context.Context, string, string, string, string) (*circleciclient.PipelinePage, error) {
+	return &circleciclient.PipelinePage{}, nil
+}
+
+func (f *fakeCircleCI) CancelWorkflow(context.Context, string) error {
+	return fmt.Errorf("unexpected workflow cancel")
+}
+
 func (f *fakeCircleCI) ListPipelineWorkflows(context.Context, string) ([]circleciclient.Workflow, error) {
 	return []circleciclient.Workflow{{Name: "build", Status: f.workflowStatus}}, nil
 }

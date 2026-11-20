@@ -333,8 +333,18 @@ The command is idempotent:
 
 1. When CircleCI knows no project for the repository, it follows the repository as you, which creates
    the project; CircleCI creates none on its own for a new organization repository, although its GitHub
-   App is installed on all of them. The follow builds the default branch once on the OAuth pipeline, and
-   that build's red `setup` status shows on the branch until its next push. That build's statuses land
+   App is installed on all of them. The follow builds the default branch once on the OAuth pipeline, as
+   you, with the same `ci/circleci: …` status contexts the GitHub App pipeline posts. Right before its
+   first run on the GitHub App pipeline (step 5), the run that followed cancels that build's running
+   workflows, so the GitHub App pipeline's statuses are the newest on the branch's head. It reads the
+   build again for up to half a minute, until CircleCI lists it, its setup workflow can no longer
+   continue it and a read cancels nothing new; a failed cancel is tried again on the next read, unless
+   CircleCI refused it to you. Every pipeline of the branch counts as the follow's: a push in the
+   seconds since the follow is cancelled with it, and the branch run builds the newest head again. When
+   a cancel fails or the build does not settle in time, the run says so and goes on: if the follow's
+   build then finishes last, its statuses, often red, show on the branch until its next push. So they
+   do when the run that followed fails before its first run: a later run no longer knows the project
+   was just followed. The OAuth build's statuses land
    on a first release that shares the branch's commit, but are not taken for its build: an OAuth status
    links its job, and the job's pipeline names the ref it built. The run that followed deletes the OAuth
    trigger the follow created, as with `--migrate`, when CircleCI lists it already. A later run only

@@ -447,3 +447,293 @@ func TestWaitRetriesFailedReads(t *testing.T) {
 	_, err = Waiter{CircleCI: ci, Sleep: noSleep}.Wait(context.Background(), "pl1")
 	require.Error(t, err)
 }
+
+// following is a fake CircleCI that knows no project, whose follow creates
+// it and starts the OAuth build of main that build reads.
+func following(build ...pipelineRead) *fakeCircleCI {
+	ci := newFake()
+	ci.noProject = true
+	ci.followCreates = true
+	ci.followBuild = build
+	return ci
+}
+
+// running is a listing of the follow's build in state with workflows.
+func running(state string, workflows ...circleciclient.Workflow) pipelineRead {
+	return pipelineRead{state: state, workflows: workflows}
+}
+
+var (
+	setupDone    = circleciclient.Workflow{ID: "wf-setup", Name: "setup", Tag: circleciclient.WorkflowTagSetup, Status: "success"}
+	setupRunning = circleciclient.Workflow{ID: "wf-setup", Name: "setup", Tag: circleciclient.WorkflowTagSetup, Status: "running"}
+	goBuild      = circleciclient.Workflow{ID: "wf-go-build", Name: "go-build", Status: "running"}
+	goBuildDone  = circleciclient.Workflow{ID: "wf-go-build", Name: "go-build", Status: "failed"}
+	// setupCancelled is the setup workflow once its cancel took.
+	setupCancelled = circleciclient.Workflow{ID: "wf-setup", Name: "setup", Tag: circleciclient.WorkflowTagSetup, Status: "canceled"}
+	lint           = circleciclient.Workflow{ID: "wf-lint", Name: "lint", Status: "running"}
+)
+
+// noWait reads the follow's build again without waiting.
+var noWait = Options{Waiter: Waiter{Sleep: noSleep}}
+
+// TestSetupCancelsTheFollowsBuildBeforeTheBranchRun: the follow that created
+// the project builds the default branch at once on the OAuth pipeline, as
+// the person. Its running workflows are cancelled right before the App
+// pipeline runs the branch, so the App's statuses are the newest of every
+// context on the branch's head; a finished workflow is left alone.
+func TestSetupCancelsTheFollowsBuildBeforeTheBranchRun(t *testing.T) {
+	ci := following(running("created", setupDone, goBuild))
+	report, err := Setup(t.Context(), ci, &fakeGitHub{}, "giantswarm", "sample", noWait)
+	require.NoError(t, err)
+	require.Equal(t, []string{"go-build"}, report.CancelledFollowWorkflows)
+	require.Empty(t, report.FollowBuildUncancelled)
+	require.Equal(t, []string{
+		"follow giantswarm/sample",
+		"create definition sample-app repo 42 file .circleci/config.yml",
+		"create trigger all-pushes on created",
+		"delete trigger followed",
+		"cancel workflow wf-go-build",
+		"run created on branch main",
+	}, ci.writes)
+}
+
+// TestSetupWaitsForTheFollowsBuildToSettle: CircleCI may list the follow's
+// build a moment after the follow, and its setup workflow creates the
+// workflows that carry the build only when it finishes. The build is read
+// again until it is listed and continued, and then cancelled; a running
+// setup workflow is cancelled, so nothing continues it.
+func TestSetupWaitsForTheFollowsBuildToSettle(t *testing.T) {
+	for name, tc := range map[string]struct {
+		build     []pipelineRead
+		refused   map[string]int
+		cancelled []string
+	}{
+		"not listed yet": {
+			build:     []pipelineRead{running("setup-pending"), running("created", setupDone, goBuild)},
+			cancelled: []string{"go-build"},
+		},
+		"continuing": {
+			build:     []pipelineRead{running("setup", setupDone), running("created", setupDone, goBuild, lint)},
+			cancelled: []string{"go-build", "lint"},
+		},
+		"setup running": {
+			build:     []pipelineRead{running("setup", setupRunning)},
+			cancelled: []string{"setup"},
+		},
+		"listing lags the continuation": {
+			build:     []pipelineRead{running("created", setupDone), running("created", setupDone, goBuild)},
+			cancelled: []string{"go-build"},
+		},
+		"continued as setup was cancelled": {
+			build:     []pipelineRead{running("setup", setupRunning), running("created", setupCancelled, goBuild)},
+			cancelled: []string{"setup", "go-build"},
+		},
+		"refused once": {
+			build:     []pipelineRead{running("created", setupDone, goBuild)},
+			refused:   map[string]int{"wf-go-build": 1},
+			cancelled: []string{"go-build"},
+		},
+		"finished before the cancel": {
+			build:   []pipelineRead{running("created", setupDone, goBuild), running("created", setupDone, goBuildDone)},
+			refused: map[string]int{"wf-go-build": followBuildReads},
+		},
+		"errored": {
+			build: []pipelineRead{running("errored")},
+		},
+		"nothing to build": {
+			build: []pipelineRead{running("created")},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ci := following(tc.build...)
+			ci.refuseCancel = tc.refused
+			report, err := Setup(t.Context(), ci, &fakeGitHub{}, "giantswarm", "sample", noWait)
+			require.NoError(t, err)
+			require.Equal(t, tc.cancelled, report.CancelledFollowWorkflows)
+			require.Empty(t, report.FollowBuildUncancelled)
+			require.Less(t, ci.branchListings, followBuildReads, "settled before the reads ran out")
+		})
+	}
+}
+
+// TestSetupReportsAnUncancelledFollowBuild: a cancel CircleCI refuses, or a
+// follow's build CircleCI never lists, is noted in the report; the other
+// workflows are still cancelled, and the branch still runs on the App
+// pipeline.
+func TestSetupReportsAnUncancelledFollowBuild(t *testing.T) {
+	for name, tc := range map[string]struct {
+		ci        *fakeCircleCI
+		cancelled []string
+		reason    string
+	}{
+		"refused": {
+			ci: func() *fakeCircleCI {
+				ci := following(running("created", setupDone, goBuild, lint))
+				ci.forbidCancel = map[string]bool{"wf-go-build": true}
+				return ci
+			}(),
+			cancelled: []string{"lint"},
+			reason:    "cancelling workflow go-build: ",
+		},
+		"never listed": {
+			ci: func() *fakeCircleCI {
+				ci := following()
+				ci.followUnlisted = true
+				return ci
+			}(),
+			reason: "CircleCI listed no build of main",
+		},
+		"never continued": {
+			ci:     following(running("setup", setupDone)),
+			reason: "the build of main had not continued",
+		},
+		"workflows unread": {
+			ci: func() *fakeCircleCI {
+				ci := following(running("created", setupDone, goBuild))
+				ci.refuseWorkflows = true
+				return ci
+			}(),
+			reason: "listing the workflows of pipeline 1: ",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			report, err := Setup(t.Context(), tc.ci, &fakeGitHub{}, "giantswarm", "sample", noWait)
+			require.NoError(t, err)
+			require.Equal(t, tc.cancelled, report.CancelledFollowWorkflows)
+			require.Contains(t, report.FollowBuildUncancelled, tc.reason)
+			require.Len(t, report.Runs, 1)
+			require.Equal(t, circleciclient.Ref{Branch: "main"}, report.Runs[0].Ref)
+		})
+	}
+}
+
+// TestSetupStopsReadingTheFollowsBuildWithTheContext: a wait the context
+// ends stops the reads; that is noted, and the branch still runs.
+func TestSetupStopsReadingTheFollowsBuildWithTheContext(t *testing.T) {
+	ci := following(running("setup", setupDone))
+	opts := Options{Waiter: Waiter{Sleep: func(context.Context, time.Duration) error { return context.Canceled }}}
+	report, err := Setup(t.Context(), ci, &fakeGitHub{}, "giantswarm", "sample", opts)
+	require.NoError(t, err)
+	require.Equal(t, 1, ci.branchListings)
+	require.Contains(t, report.FollowBuildUncancelled, context.Canceled.Error())
+	require.Len(t, report.Runs, 1)
+}
+
+// TestSetupCancelsTheFollowsBuildWhateverItsTrigger: CircleCI may type the
+// follow's build as run through the API; on a project seconds old, every
+// build of the branch is the follow's.
+func TestSetupCancelsTheFollowsBuildWhateverItsTrigger(t *testing.T) {
+	ci := newFake()
+	ci.noProject = true
+	ci.followCreates = true
+	ci.followUnlisted = true
+	ci.branchPipelines = []circleciclient.Pipeline{{ID: "api", Number: 1, State: "created", Trigger: circleciclient.PipelineTrigger{Type: "api"}}}
+	report, err := Setup(t.Context(), ci, &fakeGitHub{}, "giantswarm", "sample", noWait)
+	require.NoError(t, err)
+	require.Equal(t, []string{"build"}, report.CancelledFollowWorkflows)
+	require.Contains(t, ci.writes, "cancel workflow wf-api")
+}
+
+// TestSetupGivesUpARefusedCancel: CircleCI refusing the person the cancel
+// (403) is no hiccup; it is noted at once, not tried for the rest of the
+// reads.
+func TestSetupGivesUpARefusedCancel(t *testing.T) {
+	ci := following(running("created", setupDone, goBuild))
+	ci.forbidCancel = map[string]bool{"wf-go-build": true}
+	report, err := Setup(t.Context(), ci, &fakeGitHub{}, "giantswarm", "sample", noWait)
+	require.NoError(t, err)
+	require.Contains(t, report.FollowBuildUncancelled, "cancelling workflow go-build: ")
+	require.Equal(t, 1, ci.branchListings)
+	require.Equal(t, 1, countOf(ci.writes, "cancel workflow wf-go-build"))
+}
+
+// TestSetupForgetsTheRefusalOfAWorkflowGone: a workflow whose cancel failed
+// and that the build no longer lists does not hold the build unsettled.
+func TestSetupForgetsTheRefusalOfAWorkflowGone(t *testing.T) {
+	lintDone := circleciclient.Workflow{ID: "wf-lint", Name: "lint", Status: "success"}
+	ci := following(running("created", setupDone, goBuild, lintDone), running("created", setupDone, lintDone))
+	ci.refuseCancel = map[string]int{"wf-go-build": followBuildReads}
+	report, err := Setup(t.Context(), ci, &fakeGitHub{}, "giantswarm", "sample", noWait)
+	require.NoError(t, err)
+	require.Empty(t, report.FollowBuildUncancelled)
+}
+
+// TestSetupLeavesTheBuildsOfAnExistingProject: without a follow the
+// branch's builds are not even read.
+func TestSetupLeavesTheBuildsOfAnExistingProject(t *testing.T) {
+	ci := newFake(oauthDef())
+	ci.followed = true
+	ci.followBuild = []pipelineRead{running("created", goBuild)}
+	report, err := Setup(t.Context(), ci, &fakeGitHub{}, "giantswarm", "sample", noWait)
+	require.NoError(t, err)
+	require.Empty(t, report.CancelledFollowWorkflows)
+	require.Empty(t, report.FollowBuildUncancelled)
+	require.Zero(t, ci.branchListings)
+}
+
+func countOf(writes []string, w string) int {
+	n := 0
+	for _, x := range writes {
+		if x == w {
+			n++
+		}
+	}
+	return n
+}
+
+// TestSetupStopsReadingARefusedListing: CircleCI refusing the person the
+// build's workflows (403) is noted at once, not read again.
+func TestSetupStopsReadingARefusedListing(t *testing.T) {
+	ci := following(running("created", setupDone, goBuild))
+	ci.refuseWorkflows = true
+	report, err := Setup(t.Context(), ci, &fakeGitHub{}, "giantswarm", "sample", noWait)
+	require.NoError(t, err)
+	require.Contains(t, report.FollowBuildUncancelled, "listing the workflows of pipeline 1: ")
+	require.Equal(t, 1, ci.branchListings)
+}
+
+// TestSetupNotesTheWaitEndingAfterACancel: a wait that ends after a read
+// that cancelled the build says so, after what it cancelled.
+func TestSetupNotesTheWaitEndingAfterACancel(t *testing.T) {
+	ci := following(running("created", setupDone, goBuild))
+	opts := Options{Waiter: Waiter{Sleep: func(context.Context, time.Duration) error { return context.Canceled }}}
+	report, err := Setup(t.Context(), ci, &fakeGitHub{}, "giantswarm", "sample", opts)
+	require.NoError(t, err)
+	require.Equal(t, []string{"go-build"}, report.CancelledFollowWorkflows)
+	require.Equal(t, "the wait for further reads of the build of main ended: context canceled", report.FollowBuildUncancelled)
+}
+
+// TestSetupNamesACancelledWorkflowOnce: workflows of one name in two
+// pipelines are named once.
+func TestSetupNamesACancelledWorkflowOnce(t *testing.T) {
+	ci := following(running("created", setupDone, circleciclient.Workflow{ID: "wf-build", Name: "build", Status: "running"}))
+	ci.branchPipelines = []circleciclient.Pipeline{{ID: "push", Number: 2, State: "created"}}
+	report, err := Setup(t.Context(), ci, &fakeGitHub{}, "giantswarm", "sample", noWait)
+	require.NoError(t, err)
+	require.Equal(t, []string{"build"}, report.CancelledFollowWorkflows)
+	require.Contains(t, ci.writes, "cancel workflow wf-push")
+}
+
+// TestSetupReadsAgainAfterAListingNotFound: right after the follow, CircleCI
+// may answer the branch's pipelines with 404 a moment; that is read again.
+func TestSetupReadsAgainAfterAListingNotFound(t *testing.T) {
+	ci := following(running("created", setupDone, goBuild))
+	ci.branchNotFound = 1
+	report, err := Setup(t.Context(), ci, &fakeGitHub{}, "giantswarm", "sample", noWait)
+	require.NoError(t, err)
+	require.Equal(t, []string{"go-build"}, report.CancelledFollowWorkflows)
+	require.Empty(t, report.FollowBuildUncancelled)
+}
+
+// TestSetupReadsOnPastOneRefusedPipeline: CircleCI refusing the workflows
+// of one pipeline while another is read does not end the reads.
+func TestSetupReadsOnPastOneRefusedPipeline(t *testing.T) {
+	ci := following(running("created", setupDone, goBuild))
+	ci.refuseWorkflows = true
+	ci.branchPipelines = []circleciclient.Pipeline{{ID: "push", Number: 2, State: "created"}}
+	report, err := Setup(t.Context(), ci, &fakeGitHub{}, "giantswarm", "sample", noWait)
+	require.NoError(t, err)
+	require.Equal(t, []string{"build"}, report.CancelledFollowWorkflows)
+	require.Contains(t, report.FollowBuildUncancelled, "listing the workflows of pipeline 1: ")
+	require.Equal(t, followBuildReads, ci.branchListings)
+}
