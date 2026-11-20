@@ -336,6 +336,21 @@ func (c *Client) GetProject(ctx context.Context, org, repo string) (*Project, er
 	return &p, nil
 }
 
+// Follow follows the GitHub repository org/repo as the token's user (v1.1),
+// which is how CircleCI creates the project of an organization repository it
+// does not know yet. CircleCI builds the default branch at once with whatever
+// .circleci/config.yml it carries and refuses an empty repository, so the
+// scaffold is pushed first. Its answer is not checked: the first follow of a
+// fresh project answers followed=false although the project is followed from
+// then on (seen live on a repository created minutes before), so the caller
+// reads the project afterwards, which is the truth.
+func (c *Client) Follow(ctx context.Context, org, repo string) error {
+	if err := c.do(ctx, http.MethodPost, c.v1Project(org, repo)+"/follow", nil, nil); err != nil {
+		return microerror.Mask(err)
+	}
+	return nil
+}
+
 // PipelinePage is one page of a project's pipelines, newest first, and the
 // token of the page after it — empty on the last page.
 type PipelinePage struct {

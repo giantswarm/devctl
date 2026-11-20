@@ -3,6 +3,7 @@ package circleciapp
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/go-github/v93/github"
@@ -14,9 +15,12 @@ import (
 // the writes.
 type fakeCircleCI struct {
 	noProject bool
-	forbidden bool
-	defs      []circleciclient.PipelineDefinition
-	triggers  map[string][]circleciclient.Trigger
+	// followCreates makes Follow create the project, as CircleCI does for
+	// an organization repository: an OAuth definition with its trigger.
+	followCreates bool
+	forbidden     bool
+	defs          []circleciclient.PipelineDefinition
+	triggers      map[string][]circleciclient.Trigger
 	// pipelines answers GetPipeline and ListPipelineWorkflows in turn, one
 	// read per entry; the last repeats.
 	reads  []pipelineRead
@@ -29,6 +33,15 @@ type fakeCircleCI struct {
 	settingsRefused bool
 	// failReads answers that many pipeline reads with a 502 first.
 	failReads int
+	// oauthJobs are the jobs an OAuth status links, by number, with the
+	// pipeline each ran in: its checkout tag, or the default branch for "".
+	oauthJobs map[int64]string
+	// oauthWorkflows are the workflows an OAuth status links, as a follow
+	// posts them, with the checkout tag of each one's pipeline ("" for the
+	// default branch).
+	oauthWorkflows map[string]string
+	// workflowReads counts the reads of OAuth workflows, by id.
+	workflowReads map[string]int
 }
 
 type pipelineRead struct {
@@ -55,6 +68,19 @@ func (f *fakeCircleCI) GetProject(_ context.Context, org, repo string) (*circlec
 		return nil, notFound()
 	}
 	return &circleciclient.Project{ID: "p1", Slug: "gh/" + org + "/" + repo}, nil
+}
+
+func (f *fakeCircleCI) Follow(_ context.Context, org, repo string) error {
+	f.writes = append(f.writes, "follow "+org+"/"+repo)
+	if f.forbidden {
+		return forbidden()
+	}
+	if f.followCreates && f.noProject {
+		f.noProject = false
+		f.defs = append(f.defs, oauthDef())
+		f.triggers["oauth"] = append(f.triggers["oauth"], circleciclient.Trigger{ID: "followed"})
+	}
+	return nil
 }
 
 func (f *fakeCircleCI) ListPipelineDefinitions(context.Context, string) ([]circleciclient.PipelineDefinition, error) {
@@ -110,7 +136,33 @@ func (f *fakeCircleCI) current() pipelineRead {
 	return f.reads[f.read]
 }
 
+func (f *fakeCircleCI) GetProjectJob(_ context.Context, _, _ string, number int64) (*circleciclient.ProjectJob, error) {
+	if _, ok := f.oauthJobs[number]; !ok {
+		return nil, notFound()
+	}
+	j := &circleciclient.ProjectJob{Number: number}
+	j.Pipeline.ID = fmt.Sprintf("oauth-%d", number)
+	return j, nil
+}
+
 func (f *fakeCircleCI) GetPipeline(_ context.Context, id string) (*circleciclient.PipelineDetail, error) {
+	tag, oauth := "", false
+	var number int64
+	if _, err := fmt.Sscanf(id, "oauth-%d", &number); err == nil {
+		tag, oauth = f.oauthJobs[number], true
+	}
+	if wf, found := strings.CutPrefix(id, "oauth-wf-"); found {
+		tag, oauth = f.oauthWorkflows[wf], true
+	}
+	if oauth {
+		p := &circleciclient.PipelineDetail{Pipeline: circleciclient.Pipeline{ID: id}, ProjectSlug: circleciclient.ProjectSlug("giantswarm", "sample")}
+		if tag != "" {
+			p.VCS.Tag = tag
+		} else {
+			p.VCS.Branch = "main"
+		}
+		return p, nil
+	}
 	if f.failReads > 0 {
 		f.failReads--
 		return nil, clientError(502)
@@ -118,7 +170,17 @@ func (f *fakeCircleCI) GetPipeline(_ context.Context, id string) (*circleciclien
 	return &circleciclient.PipelineDetail{Pipeline: circleciclient.Pipeline{ID: id, State: f.current().state}}, nil
 }
 
-func (f *fakeCircleCI) GetWorkflow(context.Context, string) (*circleciclient.WorkflowDetail, error) {
+func (f *fakeCircleCI) GetWorkflow(_ context.Context, id string) (*circleciclient.WorkflowDetail, error) {
+	if f.workflowReads == nil {
+		f.workflowReads = map[string]int{}
+	}
+	f.workflowReads[id]++
+	if _, ok := f.oauthWorkflows[id]; ok {
+		return &circleciclient.WorkflowDetail{PipelineID: "oauth-wf-" + id, ProjectSlug: circleciclient.ProjectSlug("giantswarm", "sample")}, nil
+	}
+	if f.oauthWorkflows != nil {
+		return nil, notFound()
+	}
 	return nil, fmt.Errorf("unexpected workflow attribution read")
 }
 
@@ -185,6 +247,26 @@ func (g *fakeGitHub) built() *fakeGitHub {
 
 func release(tag string, published time.Time) *github.RepositoryRelease {
 	return &github.RepositoryRelease{TagName: tag, PublishedAt: &github.Timestamp{Time: published}}
+}
+
+// oauthStatus is a status an OAuth follow posted as login, linking job
+// number of the project.
+func oauthStatus(context, state, login string, job int64, at time.Time) *github.RepoStatus {
+	return &github.RepoStatus{
+		Context:   new("ci/circleci: " + context),
+		State:     new(state),
+		TargetURL: new(fmt.Sprintf("https://circleci.com/gh/giantswarm/sample/%d", job)),
+		CreatedAt: &github.Timestamp{Time: at},
+		Creator:   &github.User{Login: new(login)},
+	}
+}
+
+// oauthWorkflowStatus is a status an OAuth follow posted as login in the
+// form a follow posts it, linking its job by workflow.
+func oauthWorkflowStatus(context, state, login, workflow string, at time.Time) *github.RepoStatus {
+	st := status(context, state, workflow, at)
+	st.Creator = &github.User{Login: new(login)}
+	return st
 }
 
 func status(context, state, workflow string, at time.Time) *github.RepoStatus {
