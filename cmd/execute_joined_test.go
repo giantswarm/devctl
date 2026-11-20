@@ -64,3 +64,24 @@ func TestExecuteJoinedAgentErrorStaysSilent(t *testing.T) {
 		t.Errorf("agent error printed a second diagnostic: %q", stderr.String())
 	}
 }
+
+// TestExecuteSingleJoinedError: a join that holds one error, as reservation
+// extend and release return for a refusal, prints like that error alone, so CI
+// reads the kind of the refusal.
+func TestExecuteSingleJoinedError(t *testing.T) {
+	root := &cobra.Command{Use: "devctl", SilenceErrors: true, SilenceUsage: true,
+		RunE: func(*cobra.Command, []string) error {
+			return microerror.Mask(errors.Join(microerror.Maskf(&microerror.Error{Kind: "nothingToExtendError"},
+				"pull request %q holds no reservation to extend", "giantswarm/hello-world#9")))
+		},
+	}
+	root.SetArgs(nil)
+	var stderr bytes.Buffer
+	if code := Execute(root, &stderr); code != exitError {
+		t.Errorf("exit %d, want %d", code, exitError)
+	}
+	want := "Error: Nothing to extend: pull request \"giantswarm/hello-world#9\" holds no reservation to extend\n"
+	if stderr.String() != want {
+		t.Errorf("stderr:\n%s\nwant:\n%s", stderr.String(), want)
+	}
+}
