@@ -312,7 +312,9 @@ devctl repo renovate-plan --team-file repositories/team-rocket.yaml --name my-ap
 `generate` runs `devctl gen renovate`, `patchReviewers` runs `devctl gen renovate reviewers` on the configuration
 the repository keeps. An entry that declares `renovate: false` gets neither. An entry with `gen.flavours` that is no
 fork line gets `renovate.json5` generated on generated CI, for the `customer` flavour, and when the checkout at
-`--dir` has no Renovate configuration; every other repository keeps its own, with the chore reviewers patched in.
+`--dir` has no Renovate configuration of its own: none, or only one `devctl gen renovate` wrote (its `DO NOT EDIT`
+header), which stays generated, so a `renovate-custom.json5` added later is extended on the next run. Every other
+repository keeps its own, with the chore reviewers patched in.
 The scaffold of `devctl repo create` takes the same decision (`reposetup.PlanRenovate`), so a created repository's
 first align run changes nothing.
 
