@@ -284,7 +284,11 @@ refused one of those reads, the line is `reported` with the finding `unchecked`,
 instead of `circleci-pipeline-missing`. A repository nothing builds carries the finding `circleci-pipeline-missing`, fixed by
 `devctl repo follow-circleci`. One built by an OAuth follow, alone or beside a GitHub App pipeline, carries
 the advisory `circleci-oauth-follow`, fixed by `devctl repo follow-circleci --migrate`: it builds today and
-stops when the follower leaves, and the run still converges.
+stops when the follower leaves, and the run still converges. A person's statuses beside the GitHub App
+pipeline's on the branch's first build, when none of its 5 commits before carries a CircleCI status, are no
+advisory: `devctl repo follow-circleci` follows a repository CircleCI knows no project of, and that follow
+builds the head once as you before the GitHub App pipeline runs it. The next push shows whether an OAuth
+trigger builds too.
 
 Under the steps: the verdict line, the last reconciler run with what it was for (created, added,
 transferred, archived, deprecated, changed, dispatched, nightly), the run the record expects after a
