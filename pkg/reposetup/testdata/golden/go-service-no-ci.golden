@@ -427,7 +427,7 @@ jobs:
 #
 #    devctl
 #
-#    https://github.com/giantswarm/devctl/blob//pkg/gen/input/workflows/internal/file/nested_go_modules.yaml.template
+#    https://github.com/giantswarm/devctl/blob/<commit>/pkg/gen/input/workflows/internal/file/nested_go_modules.yaml.template
 #
 
 name: Nested Go modules
