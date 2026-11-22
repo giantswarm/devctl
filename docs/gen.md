@@ -44,6 +44,23 @@ A fork line (`--flavour fork`) gets nothing generated on `legacy`. On `auto-rele
 devctl gen workflows --flavour app --language go --release-workflow=auto-release
 ```
 
+#### Nested Go modules
+
+With `--language go`, the generated `Nested Go modules` workflow discovers tracked
+nested `go.mod` files, excluding test fixtures, vendored dependencies and hidden
+directories. Each module runs independently with `GOWORK=off`, verifies that
+`go mod tidy` leaves its dependencies unchanged, and runs race tests and vet.
+The repository's existing root-module checks remain responsible for the root.
+
+After the module changes land, dispatch `zz_generated.nested_go_modules.yaml`
+on the configured release branch with `module=k8s` and `version=v0.1.0` to publish
+`k8s/v0.1.0`. Publication waits for all nested modules to pass and checks that the
+selected directory declares the expected repository module path and major version.
+An existing tag is accepted only when it points to that same commit. Module
+releases use directory-prefixed tags and never become the repository's latest
+release. These are source releases: `GITHUB_TOKEN` does not trigger a subsequent
+tag pipeline, so image or chart publication needs its existing release workflow.
+
 #### Release candidates and stable releases
 
 Every releasable push releases the version git-cliff computes from the conventional commits since the last stable release. A minor or major version is cut as the next release candidate, `vX.Y.0-rc.N`; a patch of the last stable release (for example, only fixes since it) is the fast path and is tagged `vX.Y.Z` stable on its push, so there is never a patch candidate:
