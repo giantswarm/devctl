@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -19,7 +20,11 @@ import (
 // patched values again when the block goes away.
 
 const (
-	patchesKey = "patches:"
+	patchesKey      = "patches:"
+	emptyPatchesKey = "patches: []"
+	// filledPatchesKey replaces emptyPatchesKey while blocks fill the list, so
+	// removeBlock can tell it from a key writeBlock added at the end of the file.
+	filledPatchesKey = "patches: # was [] before `devctl reservation reserve`"
 
 	blockBeginMarker = "# BEGIN reservation of %s, written by `devctl reservation reserve`. Do not edit."
 	blockEndMarker   = "# END reservation of %s, written by `devctl reservation reserve`"
@@ -124,17 +129,19 @@ func (r extrasResolution) movesNothingError(req Request, chart string) error {
 		req.Cluster, chart, ociRepositoryKind, strings.Join(r.sourceNames(), ", "), helmReleaseKind)
 }
 
-// reserveExtras writes the reservation block and the ConfigMap entry, checks
-// the render, and commits both.
-func reserveExtras(req Request, chart string, resolved extrasResolution, from, until time.Time, replaced *Reservation) (res Result, err error) {
-	path := extrasKustomizationPath(req.RepoDir, req.Cluster)
+// reserveInPlace writes the reservation block into the kustomization of the
+// GitOps source (extras or collections) and the ConfigMap entry, checks the
+// render, and commits both.
+func reserveInPlace(req Request, gitopsSource, chart string, resolved extrasResolution, from, until time.Time, replaced *Reservation) (res Result, err error) {
+	dir := gitopsSourceDir(gitopsSource)
+	path := filepath.Join(req.RepoDir, clustersDir, req.Cluster, dir, "kustomization.yaml")
 	configMapPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, ConfigMapFile)
 	semverFilter := devSemverFilter(req.Branch)
 	annotations := reservationAnnotations(req, from, until)
 
 	defer func() {
 		if err != nil {
-			discardExtrasWrites(req.RepoDir, req.Cluster)
+			discardBlockWrites(req.RepoDir, req.Cluster, dir)
 		}
 	}()
 
@@ -145,7 +152,7 @@ func reserveExtras(req Request, chart string, resolved extrasResolution, from, u
 	if err := writeBlock(path, chart, block); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
-	entry, err := reservationEntry(chart, req, GitOpsSourceExtras, from, until)
+	entry, err := reservationEntry(chart, req, gitopsSource, from, until)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
@@ -161,7 +168,7 @@ func reserveExtras(req Request, chart string, resolved extrasResolution, from, u
 		return Result{}, microerror.Mask(err)
 	}
 
-	files := []string{req.clusterPath(ConfigMapFile), req.clusterPath(extrasDir, "kustomization.yaml")}
+	files := []string{req.clusterPath(ConfigMapFile), req.clusterPath(dir, "kustomization.yaml")}
 	sort.Strings(files)
 
 	commit, err := commitAll(req.RepoDir, fmt.Sprintf(
@@ -175,7 +182,7 @@ func reserveExtras(req Request, chart string, resolved extrasResolution, from, u
 		App:          chart,
 		PullRequest:  req.PullRequest,
 		Commit:       commit,
-		GitOpsSource: GitOpsSourceExtras,
+		GitOpsSource: gitopsSource,
 		SourceName:   strings.Join(resolved.sourceNames(), ", "),
 		HelmReleases: resolved.helmReleases,
 		SemverFilter: semverFilter,
@@ -186,15 +193,16 @@ func reserveExtras(req Request, chart string, resolved extrasResolution, from, u
 	}, nil
 }
 
-// releaseExtras removes the chart's reservation block and its ConfigMap entry,
+// releaseInPlace removes the chart's reservation block and its ConfigMap entry,
 // checks the render, and commits both.
-func releaseExtras(req ReleaseRequest, chart string) (res ReleaseResult, err error) {
-	path := extrasKustomizationPath(req.RepoDir, req.Cluster)
+func releaseInPlace(req ReleaseRequest, gitopsSource, chart string) (res ReleaseResult, err error) {
+	dir := gitopsSourceDir(gitopsSource)
+	path := filepath.Join(req.RepoDir, clustersDir, req.Cluster, dir, "kustomization.yaml")
 	configMapPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, ConfigMapFile)
 
 	defer func() {
 		if err != nil {
-			discardExtrasWrites(req.RepoDir, req.Cluster)
+			discardBlockWrites(req.RepoDir, req.Cluster, dir)
 		}
 	}()
 
@@ -216,11 +224,11 @@ func releaseExtras(req ReleaseRequest, chart string) (res ReleaseResult, err err
 		url, _ := o.nested("spec", "url").(string)
 		if _, ok := o.nested("metadata", "annotations", AnnotationPrefix+annotationUser).(string); ok && chartFromURL(url) == chart {
 			return ReleaseResult{}, microerror.Maskf(renderAssertionError,
-				"the rendered extras still carry the reservation on %s %s/%s after release", ociRepositoryKind, o.namespace(), o.name())
+				"the rendered %s still carry the reservation on %s %s/%s after release", dir, ociRepositoryKind, o.namespace(), o.name())
 		}
 	}
 
-	files := []string{clusterPath(req.Cluster, ConfigMapFile), clusterPath(req.Cluster, extrasDir, "kustomization.yaml")}
+	files := []string{clusterPath(req.Cluster, ConfigMapFile), clusterPath(req.Cluster, dir, "kustomization.yaml")}
 	sort.Strings(files)
 
 	commit, err := commitAll(req.RepoDir, fmt.Sprintf("release %s on %s (by %s)", chart, req.Cluster, req.User), files)
@@ -228,13 +236,22 @@ func releaseExtras(req ReleaseRequest, chart string) (res ReleaseResult, err err
 		return ReleaseResult{}, microerror.Mask(err)
 	}
 
-	return ReleaseResult{App: chart, Commit: commit, Files: files, GitOpsSource: GitOpsSourceExtras}, nil
+	return ReleaseResult{App: chart, Commit: commit, Files: files, GitOpsSource: gitopsSource}, nil
 }
 
-// discardExtrasWrites restores the two files an extras reservation edits.
-func discardExtrasWrites(dir, cluster string) {
-	_ = runGit(context.Background(), dir, "checkout", "HEAD", "--",
-		clusterPath(cluster, ConfigMapFile), clusterPath(cluster, extrasDir, "kustomization.yaml"))
+// discardBlockWrites restores the two files a reservation block edits.
+func discardBlockWrites(repoDir, cluster, dir string) {
+	_ = runGit(context.Background(), repoDir, "checkout", "HEAD", "--",
+		clusterPath(cluster, ConfigMapFile), clusterPath(cluster, dir, "kustomization.yaml"))
+}
+
+// gitopsSourceDir is the cluster directory that holds a GitOps source.
+func gitopsSourceDir(gitopsSource string) string {
+	if gitopsSource == GitOpsSourceExtras {
+		return extrasDir
+	}
+
+	return collectionsDir
 }
 
 // extrasBlock renders the reservation block as list items at column 0, enclosed
@@ -306,8 +323,10 @@ func writeBlock(path, chart string, block []string) error {
 
 	start := -1
 	for i, l := range lines {
-		if l == patchesKey || l == "patches: []" {
-			lines[i] = patchesKey
+		if isPatchesKey(l) {
+			if l == emptyPatchesKey {
+				lines[i] = filledPatchesKey
+			}
 			start = i
 			break
 		}
@@ -334,6 +353,12 @@ func writeBlock(path, chart string, block []string) error {
 	lines = append(lines[:last+1], append(indented, lines[last+1:]...)...)
 
 	return microerror.Mask(writeLines(path, lines))
+}
+
+// isPatchesKey reports whether l is the root patches: key in any form a
+// reservation leaves or finds it in.
+func isPatchesKey(l string) bool {
+	return l == patchesKey || l == emptyPatchesKey || l == filledPatchesKey
 }
 
 // listEnd returns the index of the last line of the list under the key at
@@ -403,19 +428,15 @@ func removeBlock(path, chart string) error {
 	}
 	begin, end, ok := findBlock(lines, chart)
 	if !ok {
-		return microerror.Maskf(componentNotFoundError, "%s holds no reservation block of %q", path, chart)
+		return microerror.Maskf(blockNotFoundError, "%s holds no reservation block of %q", path, chart)
 	}
 	lines = append(lines[:begin], lines[end+1:]...)
 
-	start := -1
-	for i, l := range lines {
-		if l == patchesKey {
-			start = i
-			break
-		}
-	}
+	start := slices.IndexFunc(lines, isPatchesKey)
 	if start >= 0 && listEnd(lines, start) == start {
-		if len(trimTrailingBlank(lines[start+1:])) == 0 {
+		if lines[start] == filledPatchesKey {
+			lines[start] = emptyPatchesKey
+		} else if len(trimTrailingBlank(lines[start+1:])) == 0 {
 			lines = append(trimTrailingBlank(lines[:start]), "")
 		} else {
 			lines[start] = "patches: []"
@@ -434,7 +455,7 @@ func writeBlockAnnotations(path, chart string, h hold) error {
 	}
 	begin, end, ok := findBlock(lines, chart)
 	if !ok {
-		return microerror.Maskf(componentNotFoundError, "%s holds no reservation block of %q", path, chart)
+		return microerror.Maskf(blockNotFoundError, "%s holds no reservation block of %q", path, chart)
 	}
 	if found := setWindowAnnotations(lines[begin:end+1], h); found == 0 || found%len(h.annotations()) != 0 {
 		return microerror.Maskf(invalidConfigError, "the reservation block of %q in %s carries no %suser/%sfrom/%suntil annotations to update", chart, path, AnnotationPrefix, AnnotationPrefix, AnnotationPrefix)

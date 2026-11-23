@@ -76,19 +76,40 @@ func TestReserveWritesTheReservationInOneCommit(t *testing.T) {
 	dir := newGitOpsFixture(t, fixtureOptions{})
 	req := testRequest(dir)
 
+	before := readFixtureFile(t, dir, pathCollections)
+
 	res, err := reservation.Reserve(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	want := []string{pathCollections, pathSource, pathComponent, pathReservations}
+	// Like an extras reservation, a collections one adds no object and no file:
+	// one marked block at the end of the root patches: list, plus the entry.
+	want := []string{pathCollections, pathReservations}
 	sort.Strings(want)
 	if diff := cmp.Diff(want, res.Files); diff != "" {
 		t.Errorf("written files (-want +got):\n%s", diff)
 	}
+	if _, err := os.Stat(filepath.Join(dir, filepath.Dir(pathComponent))); !os.IsNotExist(err) {
+		t.Errorf("a collections reservation wrote a component directory: %v", err)
+	}
 
-	if res.SourceName != fixtureApp+"-dev-reservation" {
-		t.Errorf("source name: got %q", res.SourceName)
+	after := readFixtureFile(t, dir, pathCollections)
+	if !strings.HasPrefix(after, before) {
+		t.Fatalf("the reservation changed the existing lines of %s:\n%s", pathCollections, after)
+	}
+	// The fixture has no patches: list yet, so the reservation starts one.
+	added := strings.TrimPrefix(strings.TrimPrefix(after, before), "patches:\n")
+	block := strings.Split(strings.TrimSpace(added), "\n")
+	first, last := strings.TrimSpace(block[0]), strings.TrimSpace(block[len(block)-1])
+	for _, marker := range []string{first, last} {
+		if !strings.HasPrefix(marker, "#") || !strings.Contains(marker, fixtureApp) || !strings.Contains(marker, "devctl") {
+			t.Errorf("the block is not enclosed in markers that name the chart and devctl: %q", marker)
+		}
+	}
+
+	if res.SourceName != fixtureApp {
+		t.Errorf("source name: got %q, want the patched source %q", res.SourceName, fixtureApp)
 	}
 	if diff := cmp.Diff([]string{"giantswarm/hello-world"}, res.HelmReleases); diff != "" {
 		t.Errorf("moved releases (-want +got):\n%s", diff)
@@ -159,7 +180,7 @@ func deepCopyYAML(t *testing.T, o map[string]any) map[string]any {
 	return copied
 }
 
-func TestReserveSourceIsACopyOfTheOriginal(t *testing.T) {
+func TestReservePatchesTheSourceInPlace(t *testing.T) {
 	dir := newGitOpsFixture(t, fixtureOptions{})
 	req := testRequest(dir)
 
@@ -173,11 +194,10 @@ func TestReserveSourceIsACopyOfTheOriginal(t *testing.T) {
 
 	after := renderCluster(t, dir, fixtureCluster)
 
-	// Everything the original carries has to survive the copy. A lost secretRef
-	// is a registry authentication failure that reads exactly like a missing
-	// chart, so the test compares whole objects rather than a list of fields.
+	// Only the version selection, the interval and the annotations change. A
+	// lost secretRef is a registry authentication failure that reads exactly
+	// like a missing chart, so the test compares whole objects.
 	want := deepCopyYAML(t, original)
-	want["metadata"].(map[string]any)["name"] = res.SourceName
 	want["metadata"].(map[string]any)["annotations"] = map[string]any{
 		"reservation.giantswarm.io/user":   testUser,
 		"reservation.giantswarm.io/branch": testBranch,
@@ -192,29 +212,23 @@ func TestReserveSourceIsACopyOfTheOriginal(t *testing.T) {
 		"semver":       ">=0.0.0-0",
 		"semverFilter": res.SemverFilter,
 	}
-
-	if diff := cmp.Diff(want, mustObject(t, after, "OCIRepository/"+res.SourceName)); diff != "" {
-		t.Errorf("reservation source (-want +got):\n%s", diff)
+	if diff := cmp.Diff(want, mustObject(t, after, "OCIRepository/"+fixtureApp)); diff != "" {
+		t.Errorf("patched source (-want +got):\n%s", diff)
+	}
+	if _, ok := after["OCIRepository/"+fixtureApp+"-dev-reservation"]; ok {
+		t.Error("a collections reservation added a source object")
 	}
 
-	// The release and release-candidate version selection has to keep working:
-	// the app's own source object, and every other app on the cluster, come out
-	// of the render untouched.
+	// The release keeps its chartRef, and every other app on the cluster comes
+	// out of the render untouched.
 	for _, key := range []string{
-		"OCIRepository/" + fixtureApp,
+		"HelmRelease/" + fixtureApp,
 		"OCIRepository/other-app",
 		"HelmRelease/other-app",
 	} {
 		if diff := cmp.Diff(mustObject(t, before, key), mustObject(t, after, key)); diff != "" {
 			t.Errorf("%s changed (-before +after):\n%s", key, diff)
 		}
-	}
-
-	// The reservation only does something if the release follows it.
-	release := mustObject(t, after, "HelmRelease/"+fixtureApp)
-	chartRef, _ := release["spec"].(map[string]any)["chartRef"].(map[string]any)
-	if got := chartRef["name"]; got != res.SourceName {
-		t.Errorf("HelmRelease chartRef name: got %v, want %q", got, res.SourceName)
 	}
 }
 
@@ -275,53 +289,6 @@ func TestReserveFilterMatchesRealDevTags(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestReserveRefusesARenderWithoutTheReservation(t *testing.T) {
-	// A cluster-level patch that pins the chart source. Kustomize applies the
-	// cluster's own patches after its components, so the reservation component
-	// is silently overridden: the repo would look reserved and the cluster would
-	// keep running the release.
-	dir := newGitOpsFixture(t, fixtureOptions{collectionsKustomization: `apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - ../../../bases/collections/demo
-patches:
-  - patch: |
-      apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
-      metadata:
-        name: ` + fixtureApp + `
-        namespace: giantswarm
-      spec:
-        chartRef:
-          name: ` + fixtureApp + `
-`})
-
-	repo, err := git.PlainOpen(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	before, err := repo.Head()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = reservation.Reserve(testRequest(dir))
-	if err == nil {
-		t.Fatal("expected a refusal, got none")
-	}
-	if !reservation.IsRenderAssertion(err) {
-		t.Fatalf("expected a render assertion error, got %v", err)
-	}
-
-	after, err := repo.Head()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after.Hash() != before.Hash() {
-		t.Errorf("a reservation that does not survive the render was committed anyway: %s", after.Hash())
 	}
 }
 
@@ -403,12 +370,9 @@ func TestReserveHoldsTwoAppsOnOneCluster(t *testing.T) {
 	// Both reservations have to survive the same render.
 	objects := renderCluster(t, dir, fixtureCluster)
 	for _, app := range []string{fixtureApp, fixtureOtherApp} {
-		release := mustObject(t, objects, "HelmRelease/"+app)
-		chartRef, _ := release["spec"].(map[string]any)["chartRef"].(map[string]any)
-		if got, want := chartRef["name"], app+"-dev-reservation"; got != want {
-			t.Errorf("%s chartRef name: got %v, want %q", app, got, want)
+		if got := heldBy(t, objects, app); got != entries[app]["user"] {
+			t.Errorf("%s source holder: got %v, want %q", app, got, entries[app]["user"])
 		}
-		mustObject(t, objects, "OCIRepository/"+app+"-dev-reservation")
 	}
 }
 
@@ -429,7 +393,9 @@ func TestReserveHoldsOneAppOnTwoClusters(t *testing.T) {
 		if got := reservationEntries(t, dir, cluster)[fixtureApp]["user"]; got != testUser {
 			t.Errorf("%s holder on %s: got %q", fixtureApp, cluster, got)
 		}
-		mustObject(t, renderCluster(t, dir, cluster), "OCIRepository/"+fixtureApp+"-dev-reservation")
+		if got := heldBy(t, renderCluster(t, dir, cluster), fixtureApp); got != testUser {
+			t.Errorf("%s source holder on %s: got %v", fixtureApp, cluster, got)
+		}
 	}
 }
 

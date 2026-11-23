@@ -1,12 +1,7 @@
 package reservation
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-	"path"
 	"path/filepath"
-	"sort"
 
 	"github.com/giantswarm/microerror"
 )
@@ -67,9 +62,9 @@ func (r ReleaseRequest) validate() error {
 	return nil
 }
 
-// Release undoes exactly what Reserve wrote for one app on one cluster:
-// deleting the reservation's Kustomize component, the one line that references
-// it, and the reservation's entry in the cluster's ConfigMap. It restores the
+// Release undoes exactly what Reserve wrote for one app on one cluster: the
+// reservation block in the kustomization of its GitOps source, and the
+// reservation's entry in the cluster's ConfigMap. It restores the
 // working tree byte for byte to the state a matching Reserve found it in, and
 // commits the change. It works on a working tree only: like Reserve, it never
 // clones and never pushes.
@@ -97,132 +92,9 @@ func Release(req ReleaseRequest) (res ReleaseResult, err error) {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
 
-	if gitopsSourceOf(req.RepoDir, req.Cluster, chart) == GitOpsSourceExtras {
-		res, err := releaseExtras(req, chart)
-		return res, microerror.Mask(err)
-	}
+	res, err = releaseInPlace(req, gitopsSourceOf(req.RepoDir, req.Cluster, chart), chart)
 
-	collectionsPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, collectionsDir)
-	component := path.Join(reservationsDir, chart)
-	sourceName := chart + SourceNameSuffix
-
-	// Sync permits untracked files. Refuse before installing rollback, since
-	// both recursive removal and discardWrites would delete those user files.
-	if err := checkReleaseComponent(req.RepoDir, req.Cluster, chart); err != nil {
-		return ReleaseResult{}, microerror.Mask(err)
-	}
-
-	// A failure after the first removal must not leave the checkout half edited.
-	defer func() {
-		if err != nil {
-			discardWrites(req.RepoDir, req.Cluster, chart)
-		}
-	}()
-
-	// The reverse of Reserve's writes, in the same single working-tree commit:
-	// the line in collections' kustomization.yaml that references the
-	// component, the component directory Reserve created, and the ConfigMap
-	// entry. The reference is removed first: removeComponent now refuses when
-	// it cannot find what it is asked to remove, so a components list a human
-	// reformatted since Reserve wrote it fails here, before anything is
-	// deleted, rather than after the directory is already gone and the stale
-	// reference is the only thing left pointing at it.
-	if err := removeComponent(filepath.Join(collectionsPath, "kustomization.yaml"), component); err != nil {
-		return ReleaseResult{}, microerror.Mask(err)
-	}
-	if err := os.RemoveAll(filepath.Join(collectionsPath, reservationsDir, chart)); err != nil {
-		return ReleaseResult{}, microerror.Mask(err)
-	}
-	if err := removeReservationEntry(configMapPath, chart); err != nil {
-		return ReleaseResult{}, microerror.Mask(err)
-	}
-
-	// The only trustworthy check that the release actually took effect: render
-	// the collections the way kustomize-controller does and confirm the
-	// reservation's source, and every instance patched to it, are really gone.
-	after, err := renderDir(collectionsPath)
-	if err != nil {
-		return ReleaseResult{}, microerror.Mask(err)
-	}
-	if err := assertReleased(after, sourceName); err != nil {
-		return ReleaseResult{}, microerror.Mask(err)
-	}
-
-	files := []string{
-		clusterPath(req.Cluster, ConfigMapFile),
-		clusterPath(req.Cluster, collectionsDir, "kustomization.yaml"),
-		clusterPath(req.Cluster, collectionsDir, component, "kustomization.yaml"),
-		clusterPath(req.Cluster, collectionsDir, component, sourceName+".yaml"),
-	}
-	sort.Strings(files)
-
-	commit, err := commitAll(req.RepoDir, fmt.Sprintf("release %s on %s (by %s)", chart, req.Cluster, req.User), files)
-	if err != nil {
-		return ReleaseResult{}, microerror.Mask(err)
-	}
-
-	return ReleaseResult{App: chart, Commit: commit, Files: files, GitOpsSource: GitOpsSourceCollections}, nil
-}
-
-// checkReleaseComponent protects files the reservation does not own, including
-// ignored files. Directory symlinks must not redirect removal outside the
-// component that git inspected. This check precedes all writes and rollback.
-func checkReleaseComponent(dir, cluster, chart string) error {
-	component := clusterPath(cluster, collectionsDir, reservationsDir, chart)
-	for _, rel := range []string{
-		clustersDir,
-		clusterPath(cluster),
-		clusterPath(cluster, collectionsDir),
-		clusterPath(cluster, collectionsDir, reservationsDir),
-		component,
-	} {
-		info, err := os.Lstat(filepath.Join(dir, rel))
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			return microerror.Mask(err)
-		}
-		if !info.IsDir() {
-			return microerror.Maskf(invalidConfigError, "refusing to release through non-directory %q", rel)
-		}
-	}
-	// No --exclude-standard: ignored files are also untracked user data.
-	cmd := exec.Command("git", "-C", dir, "ls-files", "--others", "-z", "--", component) //nolint:gosec // fixed git arguments and repository-local path
-	files, err := cmd.Output()
-	if err != nil {
-		return microerror.Mask(err)
-	}
-	if len(files) != 0 {
-		return microerror.Maskf(invalidConfigError,
-			"refusing to release %q: its component contains untracked files; move them out before releasing", chart)
-	}
-	return nil
-}
-
-// assertReleased refuses a render that still carries the reservation after
-// the component reference, the component directory, and the ConfigMap entry
-// have all been removed: the last check before the commit, exactly as
-// Reserve's assertReserved is the last check before its own. A render that
-// only succeeds proves nothing on its own: it just means removeComponent's
-// matcher happened to find and remove a line, not that the release actually
-// took effect on the cluster.
-func assertReleased(objects []object, sourceName string) error {
-	if _, ok := findSource(objects, sourceName); ok {
-		return microerror.Maskf(renderAssertionError,
-			"the rendered collections still carry a %s named %q after release", ociRepositoryKind, sourceName)
-	}
-	for _, o := range objects {
-		if o.kind() != helmReleaseKind || o.namespace() != Namespace {
-			continue
-		}
-		if name, _ := o.nested("spec", "chartRef", "name").(string); name == sourceName {
-			return microerror.Maskf(renderAssertionError,
-				"%s %q still takes its chart from %q after release", helmReleaseKind, o.name(), sourceName)
-		}
-	}
-
-	return nil
+	return res, microerror.Mask(err)
 }
 
 // checkReserved refuses an app that holds no reservation on the cluster: there

@@ -23,14 +23,8 @@ const (
 type resolution struct {
 	// chart is the chart name. It keys the reservation and names its files.
 	chart string
-	// original is the source object the reservation's own object is copied from.
-	original object
-	// sourceNames names every matched OCIRepository, sorted. All of them have to
-	// come out of the render with their version selector untouched.
+	// sourceNames names every matched OCIRepository, sorted.
 	sourceNames []string
-	// originalRefs holds the `spec.ref` each matched source carried before the
-	// reservation, keyed by object name.
-	originalRefs map[string]any
 	// helmReleases names every release to patch, sorted. An app can run more
 	// than once on one cluster.
 	helmReleases []string
@@ -129,31 +123,22 @@ func resolveApp(objects []object, req Request, chart string) (resolution, error)
 			helmReleaseKind, strings.Join(inline, ", "), req.Cluster, chart)
 	}
 
-	res := resolution{chart: chart, originalRefs: map[string]any{}}
+	res := resolution{chart: chart}
 
 	sources := collectionSources(objects, chart)
 	if len(sources) == 0 {
 		return resolution{}, microerror.Mask(noMatchError(req, chart))
 	}
 
-	// One chart, one branch, so one source object however many instances run.
-	// The first by name is the template; instances of one app share a chart URL,
-	// and everything else the copy keeps is a property of that chart.
-	res.original = sources[0]
 	for _, s := range sources {
 		res.sourceNames = append(res.sourceNames, s.name())
-		res.originalRefs[s.name()] = s.nested("spec", "ref")
 	}
 
-	// A HelmRelease may already point at this chart's own reservation source, from
-	// an earlier reservation that expired but was never released: that is still
-	// the instance to patch, even though its source was excluded above.
-	reservationSourceName := chart + SourceNameSuffix
 	for _, o := range objects {
 		if o.kind() != helmReleaseKind || o.namespace() != Namespace {
 			continue
 		}
-		if name, _ := o.nested("spec", "chartRef", "name").(string); slices.Contains(res.sourceNames, name) || name == reservationSourceName {
+		if name, _ := o.nested("spec", "chartRef", "name").(string); slices.Contains(res.sourceNames, name) {
 			res.helmReleases = append(res.helmReleases, o.name())
 		}
 	}
@@ -168,18 +153,12 @@ func resolveApp(objects []object, req Request, chart string) (resolution, error)
 	return res, nil
 }
 
-// collectionSources returns the original sources of the chart in a render of
+// collectionSources returns the sources of the chart in a render of
 // the collections, sorted by name.
 func collectionSources(objects []object, chart string) []object {
 	var sources []object
 	for _, o := range objects {
 		if o.kind() != ociRepositoryKind || o.namespace() != Namespace {
-			continue
-		}
-		// A reservation's own source, from an earlier reservation of this chart
-		// that expired but was never released, is not an original: it is about to
-		// be overwritten, not preserved.
-		if strings.HasSuffix(o.name(), SourceNameSuffix) {
 			continue
 		}
 		if url, _ := o.nested("spec", "url").(string); chartFromURL(url) == chart {

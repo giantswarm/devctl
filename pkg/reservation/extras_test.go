@@ -297,8 +297,8 @@ func TestReserveFallsBackToCollectionsWhenTheExtrasSourceMovesNothing(t *testing
 	if err != nil {
 		t.Fatalf("reserve: %v", err)
 	}
-	if want := fixtureApp + reservation.SourceNameSuffix; res.SourceName != want {
-		t.Errorf("source name: got %q, want the collections copy %q", res.SourceName, want)
+	if res.GitOpsSource != reservation.GitOpsSourceCollections {
+		t.Errorf("gitops source: got %q, want %q", res.GitOpsSource, reservation.GitOpsSourceCollections)
 	}
 }
 

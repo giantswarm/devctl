@@ -118,7 +118,7 @@ func checkNoLaterTransforms(lines []string, name string) error {
 }
 
 func checkBlocksLast(lines []string, name string) error {
-	start := slices.Index(lines, patchesKey)
+	start := slices.IndexFunc(lines, isPatchesKey)
 	if start < 0 {
 		return nil
 	}
@@ -231,7 +231,7 @@ func checkOneTree(req Request, chart string) error {
 		return microerror.Mask(err)
 	}
 	for _, o := range objects {
-		if o.kind() != ociRepositoryKind || o.namespace() != Namespace || strings.HasSuffix(o.name(), SourceNameSuffix) {
+		if o.kind() != ociRepositoryKind || o.namespace() != Namespace {
 			continue
 		}
 		if url, _ := o.nested("spec", "url").(string); chartFromURL(url) == chart {

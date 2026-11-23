@@ -1,16 +1,13 @@
 // Package reservation implements the GitOps side of a management cluster
-// reservation: it points one management cluster's copy of one collection app at
+// reservation: it points one management cluster's instance of one app at
 // the dev builds of one branch, as a single commit in the GitOps repo that holds
 // that cluster.
 package reservation
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -43,9 +40,8 @@ const (
 	// management cluster.
 	DefaultGitOpsRepository = "giantswarm/giantswarm-management-clusters"
 
-	clustersDir     = "management-clusters"
-	collectionsDir  = "collections"
-	reservationsDir = "reservations"
+	clustersDir    = "management-clusters"
+	collectionsDir = "collections"
 )
 
 // Request is one reservation of one app on one management cluster.
@@ -199,7 +195,7 @@ func checkEnabled(repoDir, cluster string) error {
 	return nil
 }
 
-// Reserve points the cluster's copy of the app at the dev builds of the branch
+// Reserve points the cluster's instances of the app at the dev builds of the branch
 // and commits the change to the working tree at req.RepoDir. It renders the
 // cluster's collections and refuses to commit unless the rendered output really
 // carries the reservation.
@@ -261,7 +257,7 @@ func Reserve(req Request) (res Result, err error) {
 		if err := checkExtras(req, chart, extras); err != nil {
 			return Result{}, microerror.Mask(err)
 		}
-		res, err := reserveExtras(req, chart, extras, from, until, replaced)
+		res, err := reserveInPlace(req, GitOpsSourceExtras, chart, extras, from, until, replaced)
 		return res, microerror.Mask(err)
 	}
 
@@ -279,76 +275,11 @@ func Reserve(req Request) (res Result, err error) {
 		return Result{}, microerror.Mask(err)
 	}
 
-	semverFilter := devSemverFilter(req.Branch)
+	sources := collectionSources(before, chart)
+	res, err = reserveInPlace(req, GitOpsSourceCollections, chart,
+		extrasResolution{sources: sources, helmReleases: namespaced(resolved.helmReleases)}, from, until, replaced)
 
-	sourceName := chart + SourceNameSuffix
-	component := path.Join(reservationsDir, chart)
-
-	created, err := newComponentFiles(req.RepoDir, req.Cluster, chart)
-	if err != nil {
-		return Result{}, microerror.Mask(err)
-	}
-
-	// The entry and the component are one change. Everything below is staged in
-	// the working tree and lands in a single commit, or the run fails and the
-	// writes are discarded, so the user's checkout stays clean for the next run.
-	defer func() {
-		if err != nil {
-			discardWrites(req.RepoDir, req.Cluster, chart, created...)
-		}
-	}()
-	err = writeComponent(filepath.Join(collectionsPath, reservationsDir, chart),
-		sourceName, resolved.helmReleases, devSource(resolved.original, sourceName, req, semverFilter, from, until))
-	if err != nil {
-		return Result{}, microerror.Mask(err)
-	}
-	if err := addComponent(filepath.Join(collectionsPath, "kustomization.yaml"), component); err != nil {
-		return Result{}, microerror.Mask(err)
-	}
-	entry, err := reservationEntry(chart, req, GitOpsSourceCollections, from, until)
-	if err != nil {
-		return Result{}, microerror.Mask(err)
-	}
-	if err := writeReservationEntry(configMapPath, chart, entry); err != nil {
-		return Result{}, microerror.Mask(err)
-	}
-
-	after, err := renderDir(collectionsPath)
-	if err != nil {
-		return Result{}, microerror.Mask(err)
-	}
-	if err := assertReserved(after, resolved, sourceName, semverFilter); err != nil {
-		return Result{}, microerror.Mask(err)
-	}
-
-	files := []string{
-		req.clusterPath(ConfigMapFile),
-		req.clusterPath(collectionsDir, "kustomization.yaml"),
-		req.clusterPath(collectionsDir, component, "kustomization.yaml"),
-		req.clusterPath(collectionsDir, component, sourceName+".yaml"),
-	}
-	sort.Strings(files)
-
-	commit, err := commitAll(req.RepoDir, fmt.Sprintf(
-		"reserve %s on %s for %s (branch %s, until %s)",
-		chart, req.Cluster, req.User, req.Branch, until.Format(time.RFC3339)), files)
-	if err != nil {
-		return Result{}, microerror.Mask(err)
-	}
-
-	return Result{
-		App:          chart,
-		PullRequest:  req.PullRequest,
-		Commit:       commit,
-		GitOpsSource: GitOpsSourceCollections,
-		SourceName:   sourceName,
-		HelmReleases: namespaced(resolved.helmReleases),
-		SemverFilter: semverFilter,
-		Files:        files,
-		From:         from,
-		Until:        until,
-		Replaced:     replaced,
-	}, nil
+	return res, microerror.Mask(err)
 }
 
 // commitAll stages exactly files -- the repo-relative paths the caller's own

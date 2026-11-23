@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/giantswarm/devctl/v8/pkg/reservation"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -296,4 +297,28 @@ func readFixtureFile(t *testing.T, dir, name string) string {
 	}
 
 	return string(b)
+}
+
+// heldBy returns the reservation holder the rendered OCIRepository name
+// carries, after it checks that the source selects dev builds.
+func heldBy(t *testing.T, objects map[string]map[string]any, name string) any {
+	t.Helper()
+	src := mustObject(t, objects, "OCIRepository/"+name)
+	ref, _ := src["spec"].(map[string]any)["ref"].(map[string]any)
+	if got := ref["semver"]; got != ">=0.0.0-0" {
+		t.Errorf("%s ref semver: got %v, want a dev build selector", name, got)
+	}
+	annotations, _ := src["metadata"].(map[string]any)["annotations"].(map[string]any)
+	return annotations[reservation.AnnotationPrefix+"user"]
+}
+
+func writeLocalFixtureFile(t *testing.T, dir, name, content string) {
+	t.Helper()
+	target := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil { //nolint:gosec // a temporary test fixture
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte(content), 0o644); err != nil { //nolint:gosec // a temporary test fixture
+		t.Fatal(err)
+	}
 }
