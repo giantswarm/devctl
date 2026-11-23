@@ -194,6 +194,14 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 		return err
 	}
 
+	// An entry that omits dismissStaleReviews leaves the repository's own
+	// setting standing: the write replaces the whole protection, so it
+	// carries the setting it read, and the omission is no drift of its own.
+	dismissStale := protection.GetRequiredPullRequestReviews().GetDismissStaleReviews()
+	if s.fields.DismissStaleReviews != nil {
+		dismissStale = *s.fields.DismissStaleReviews
+	}
+
 	var current []string
 	if protection != nil && protection.RequiredStatusChecks != nil && protection.RequiredStatusChecks.Checks != nil {
 		for _, c := range *protection.RequiredStatusChecks.Checks {
@@ -218,8 +226,8 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 		if got := protection.GetRequiredPullRequestReviews().GetRequiredApprovingReviewCount(); got != b.RequiredReviews {
 			changes = append(changes, fmt.Sprintf("required reviews %d → %d", got, b.RequiredReviews))
 		}
-		if got := protection.GetRequiredPullRequestReviews().GetDismissStaleReviews(); got != s.fields.DismissStaleReviews {
-			changes = append(changes, fmt.Sprintf("dismiss stale reviews %t → %t", got, s.fields.DismissStaleReviews))
+		if got := protection.GetRequiredPullRequestReviews().GetDismissStaleReviews(); got != dismissStale {
+			changes = append(changes, fmt.Sprintf("dismiss stale reviews %t → %t", got, dismissStale))
 		}
 		if got := protection.GetEnforceAdmins().GetEnabled(); got != b.EnforceAdmins {
 			changes = append(changes, fmt.Sprintf("enforce admins %t → %t", got, b.EnforceAdmins))
@@ -255,7 +263,7 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 		req := &github.ProtectionRequest{
 			RequiredPullRequestReviews: &github.PullRequestReviewsEnforcementRequest{
 				RequiredApprovingReviewCount: b.RequiredReviews,
-				DismissStaleReviews:          s.fields.DismissStaleReviews,
+				DismissStaleReviews:          dismissStale,
 			},
 			EnforceAdmins:    b.EnforceAdmins,
 			AllowForcePushes: new(false),
@@ -351,7 +359,7 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 	}
 	if !split {
 		desired.reviews = b.RequiredReviews
-		desired.dismissStale = s.fields.DismissStaleReviews
+		desired.dismissStale = s.dismissStaleReviews()
 	}
 
 	var changes []string
@@ -515,7 +523,7 @@ func (r *Runner) stepReviewRuleset(ctx context.Context, s *run, sr *StepResult, 
 			include:      []string{defaultBranchRef},
 			pullRequest:  true,
 			reviews:      s.baseline.RequiredReviews,
-			dismissStale: s.fields.DismissStaleReviews,
+			dismissStale: s.dismissStaleReviews(),
 			bypass:       append(slices.Clone(bypass), appActor(r.AlignFilesAppID), appActor(renovateAppID)),
 			team:         s.team,
 		}

@@ -556,9 +556,10 @@ request. `--release-app-id`, the giantswarm-release GitHub App's numeric id, add
 generated release workflows authenticate as it, and the version bump pull request they open after a release arms
 auto-merge, so it lands once the required checks are green. Without it a repository on the generated release
 workflows needs a review for that pull request. An entry with `agentMerge: false` keeps the review in `devctl: default branch`
-without bypass. An entry with `dismissStaleReviews: true` has a push to a pull request dismiss its
-approvals, in whichever ruleset holds the review. A repository whose approvals come from a workflow needs it,
-so that a push made after the approval does not merge on it. Only a run with `--devctl-app-id` writes it; one without reports the difference as
+without bypass. An entry with `dismissStaleReviews: true` has a push that changes a pull request's diff
+dismiss its approvals, in whichever ruleset holds the review. A repository whose approvals come from a workflow
+needs it, so that a push made after the approval does not merge on it. An entry that leaves the field out keeps
+the setting a repository on classic protection already has. Only a run with `--devctl-app-id` writes it; one without reports the difference as
 `ruleset-pending`, and takes a review ruleset it finds for the writing run's layout, not a drift.
 
 `--devctl-app-id`, the devctl GitHub App's numeric id (the App's settings page; not the client id), is what

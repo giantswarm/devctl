@@ -35,7 +35,7 @@
       "dismissStaleReviews": {
         "type": "boolean",
         "default": false,
-        "description": "Makes a push to a pull request dismiss its approvals, so only an approval of the latest head counts toward the required review. The protection step sets the review rule's dismissal of stale reviews from it, in 'devctl: review' or, without that ruleset, in 'devctl: default branch'. A repository whose approvals come from a workflow needs it: without it a push made after the approval merges on that approval. With false (the default) an approval stays after a push. Requires devctl v8.169.0+."
+        "description": "Makes a push that changes a pull request's diff dismiss its approvals, so that the review has to be given again. The protection step sets the review rule's dismissal of stale reviews from it, in 'devctl: review' or, without that ruleset, in 'devctl: default branch'. A repository whose approvals come from a workflow needs it: without it a push made after the approval merges on that approval. With false an approval stays after a push; leaving the field out does the same, and keeps the setting a repository on classic protection already has. Requires devctl v8.169.0+."
       },
       "renovate": {
         "type": "boolean",
