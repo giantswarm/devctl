@@ -153,7 +153,7 @@ jobs:
                 core.info('CCR PR already merged — continuing.');
               } else {
                 await fail(
-                  `Could not merge CCR PR ${ccrURL}: ${err.message}. ` +
+                  `Could not merge CCR PR ${ccrURL} (it needs an approving review): ${err.message}. ` +
                   'Flux must read that config during the bootstrap, so the pipeline was not started.'
                 );
                 return;
