@@ -100,12 +100,23 @@ jobs:
               return null;
             }
 
+            // Report on the init PR too: a failed job alone is easy to miss.
+            async function fail(message) {
+              core.setFailed(message);
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: `### ❌ \`/create-mc\` stopped\n\n${message}`,
+              });
+            }
+
             // Installations PR is merged later; a missing one means config never ran.
             const ccrURL  = findLabelled('CCR PR');
             const instURL = findLabelled('Installations PR');
 
             if (!ccrURL || !instURL) {
-              core.setFailed(
+              await fail(
                 'Could not find CCR PR or Installations PR URLs in init PR comments. ' +
                 'Run /config on this PR before running /create-mc.'
               );
@@ -115,7 +126,7 @@ jobs:
             const ccrParts = ccrURL.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
             const instParts = instURL.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
             if (!ccrParts || !instParts) {
-              core.setFailed(`Could not parse PR URLs: CCR=${ccrURL} installations=${instURL}`);
+              await fail(`Could not parse PR URLs: CCR=${ccrURL} installations=${instURL}`);
               return;
             }
             const [, ccrOrg, ccrRepo, ccrNum] = ccrParts;
@@ -138,7 +149,7 @@ jobs:
               if (ccrPR.merged) {
                 core.info('CCR PR already merged — continuing.');
               } else {
-                core.setFailed(
+                await fail(
                   `Could not merge CCR PR ${ccrURL}: ${err.message}. ` +
                   'Flux must read that config during the bootstrap, so the pipeline was not started.'
                 );
