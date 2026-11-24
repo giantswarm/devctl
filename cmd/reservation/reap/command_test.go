@@ -137,7 +137,7 @@ func TestReapCommitsAndPushesWithNoToken(t *testing.T) {
 		t.Errorf("stdout fields: got %q", out)
 	}
 
-	if b, err := os.ReadFile(filepath.Join(dir, "management-clusters", cluster, "collections", "kustomization.yaml")); err != nil || strings.Contains(string(b), "reservation of") {
+	if b, err := os.ReadFile(filepath.Join(dir, "management-clusters", cluster, "collections", "kustomization.yaml")); err != nil || strings.Contains(string(b), "reservation of") { // #nosec G304 -- the fixture checkout in this test's temporary directory
 		t.Errorf("reservation block still exists: %v", err)
 	}
 

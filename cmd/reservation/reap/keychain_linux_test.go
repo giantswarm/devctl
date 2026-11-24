@@ -41,7 +41,7 @@ func TestReapReleasesExpiredReservationsWithoutASessionBus(t *testing.T) {
 	if got := gittest.GitOutput(t, origin, "rev-parse", "main"); got == before {
 		t.Error("the expired release was not pushed")
 	}
-	if b, err := os.ReadFile(filepath.Join(dir, "management-clusters", "graveler", "collections", "kustomization.yaml")); err != nil || strings.Contains(string(b), "reservation of") {
+	if b, err := os.ReadFile(filepath.Join(dir, "management-clusters", "graveler", "collections", "kustomization.yaml")); err != nil || strings.Contains(string(b), "reservation of") { // #nosec G304 -- the fixture checkout in this test's temporary directory
 		t.Errorf("reservation block still exists: %v", err)
 	}
 }

@@ -152,7 +152,7 @@ func TestReleaseCommitsAndPushesWithNoToken(t *testing.T) {
 		t.Errorf("stdout does not mention %q: %s", chart, stdout.String())
 	}
 
-	if b, err := os.ReadFile(filepath.Join(dir, "management-clusters", cluster, "collections", "kustomization.yaml")); err != nil || strings.Contains(string(b), "reservation of") {
+	if b, err := os.ReadFile(filepath.Join(dir, "management-clusters", cluster, "collections", "kustomization.yaml")); err != nil || strings.Contains(string(b), "reservation of") { // #nosec G304 -- the fixture checkout in this test's temporary directory
 		t.Errorf("reservation block still exists: %v", err)
 	}
 
