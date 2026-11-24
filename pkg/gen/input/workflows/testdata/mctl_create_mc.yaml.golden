@@ -80,9 +80,12 @@ jobs:
       # URLs come from the `**CCR PR:**` / `**Installations PR:**` lines the config workflow posts.
       - name: Merge CCR PR
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          INSTALLATION: ${{ steps.install.outputs.name }}
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
+            const installation = process.env.INSTALLATION;
             const comments = await github.paginate(
               github.rest.issues.listComments,
               {
@@ -92,10 +95,39 @@ jobs:
               }
             );
 
-            // Anchored on the labelled line, newest comment first.
+            // Anyone who can read the repo can comment, so markers only count from the workflows'
+            // bots and from people with write access (a local `mctl create mc` posts as its operator).
+            const MARKER_BOTS = ['github-actions[bot]', 'giantswarm-mctlbot[bot]'];
+            const canWrite = new Map();
+            async function trustedAuthor(c) {
+              const login = c.user?.login;
+              if (!login) return false;
+              if (MARKER_BOTS.includes(login)) return c.user.type === 'Bot';
+              if (c.user.type !== 'User') return false;
+              if (!canWrite.has(login)) {
+                let ok = false;
+                try {
+                  const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                    owner: context.repo.owner, repo: context.repo.repo, username: login,
+                  });
+                  // maintain is reported as write.
+                  ok = ['admin', 'write'].includes(data.permission);
+                } catch (err) {
+                  core.warning(`Could not read the permission of ${login}: ${err.message}`);
+                }
+                canWrite.set(login, ok);
+              }
+              return canWrite.get(login);
+            }
+            const trusted = [];
+            for (const c of comments) {
+              if (await trustedAuthor(c)) trusted.push(c);
+            }
+
+            // Anchored on the labelled line, newest trusted comment first.
             function findLabelled(label) {
-              for (let i = comments.length - 1; i >= 0; i--) {
-                const m = (comments[i].body || '').match(
+              for (let i = trusted.length - 1; i >= 0; i--) {
+                const m = (trusted[i].body || '').match(
                   new RegExp('\\*\\*' + label + ':\\*\\* (https://github\\.com/\\S+)')
                 );
                 if (m) return m[1];
@@ -133,25 +165,43 @@ jobs:
               return;
             }
             const [, ccrOrg, ccrRepo, ccrNum] = ccrParts;
-            const [, instOrg, , instNum] = instParts;
+            const [, instOrg, instRepo, instNum] = instParts;
 
-            core.info(`Merging CCR PR: ${ccrOrg}/${ccrRepo}#${ccrNum}`);
-            try {
-              await github.rest.pulls.merge({
-                owner: ccrOrg,
-                repo: ccrRepo,
-                pull_number: parseInt(ccrNum),
-                // Squash is the only method allowed on all CCR repos.
-                merge_method: 'squash',
-              });
-            } catch (err) {
-              // 405 is either already merged or refused; check which.
-              const { data: ccrPR } = await github.rest.pulls.get({
-                owner: ccrOrg, repo: ccrRepo, pull_number: parseInt(ccrNum),
-              });
-              if (ccrPR.merged) {
-                core.info('CCR PR already merged — continuing.');
-              } else {
+            // Only the PRs mctl opens for this installation (the App token reaches every repo of the org).
+            const ccrWant = context.repo.repo.replace(/-management-clusters$/, '') + '-configs';
+            if (ccrOrg !== context.repo.owner || ccrRepo !== ccrWant ||
+                instOrg !== context.repo.owner || instRepo !== 'installations') {
+              await fail(
+                `The reported PRs are not in ${context.repo.owner}/${ccrWant} and ` +
+                `${context.repo.owner}/installations: CCR=${ccrURL} installations=${instURL}`
+              );
+              return;
+            }
+
+            const { data: ccrPR } = await github.rest.pulls.get({
+              owner: ccrOrg, repo: ccrRepo, pull_number: parseInt(ccrNum),
+            });
+            const ccrHead = `${installation}-config`;
+            if (ccrPR.head.ref !== ccrHead || ccrPR.head.repo?.full_name !== ccrPR.base.repo.full_name) {
+              await fail(`CCR PR ${ccrURL} is not from the \`${ccrHead}\` branch of ${ccrOrg}/${ccrRepo}.`);
+              return;
+            }
+
+            if (ccrPR.merged) {
+              core.info('CCR PR already merged — continuing.');
+            } else {
+              core.info(`Merging CCR PR: ${ccrOrg}/${ccrRepo}#${ccrNum}`);
+              try {
+                await github.rest.pulls.merge({
+                  owner: ccrOrg,
+                  repo: ccrRepo,
+                  pull_number: parseInt(ccrNum),
+                  // Squash is the only method allowed on all CCR repos.
+                  merge_method: 'squash',
+                  // Merge exactly the commit checked above.
+                  sha: ccrPR.head.sha,
+                });
+              } catch (err) {
                 await fail(
                   `Could not merge CCR PR ${ccrURL} (it needs an approving review): ${err.message}. ` +
                   'Flux must read that config during the bootstrap, so the pipeline was not started.'

@@ -67,10 +67,39 @@ jobs:
               });
             }
 
+            // Anyone who can read the repo can comment, so markers and results only count from the
+            // workflows' bots and from people with write access (a local `mctl create mc` posts as its operator).
+            const MARKER_BOTS = ['github-actions[bot]', 'giantswarm-mctlbot[bot]'];
+            const canWrite = new Map();
+            async function trustedAuthor(c) {
+              const login = c.user?.login;
+              if (!login) return false;
+              if (MARKER_BOTS.includes(login)) return c.user.type === 'Bot';
+              if (c.user.type !== 'User') return false;
+              if (!canWrite.has(login)) {
+                let ok = false;
+                try {
+                  const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                    owner: context.repo.owner, repo: context.repo.repo, username: login,
+                  });
+                  // maintain is reported as write.
+                  ok = ['admin', 'write'].includes(data.permission);
+                } catch (err) {
+                  core.warning(`Could not read the permission of ${login}: ${err.message}`);
+                }
+                canWrite.set(login, ok);
+              }
+              return canWrite.get(login);
+            }
+            const trusted = [];
+            for (const c of comments) {
+              if (await trustedAuthor(c)) trusted.push(c);
+            }
+
             // Markers shared with merge_gate and the Tekton result comment.
             function findMarker(label) {
               const re = new RegExp(`\\*\\*${label}:\\*\\*\\s*(.+)`);
-              for (const c of [...comments].reverse()) {
+              for (const c of [...trusted].reverse()) {
                 const m = (c.body || '').match(re);
                 if (m) return m[1].trim();
               }
@@ -86,7 +115,7 @@ jobs:
 
             // Admins can merge past the gate; never land PRs for a failed bootstrap.
             const resultToken = `<!-- mctl-create-mc-result-${installation} -->`;
-            const results = comments.filter(c => (c.body || '').includes(resultToken));
+            const results = trusted.filter(c => (c.body || '').includes(resultToken));
             const latestResult = results.length ? results[results.length - 1].body : '';
             if (!latestResult.includes('created successfully')) {
               await comment([
@@ -205,6 +234,12 @@ jobs:
                 { id: nodeID });
             }
 
+            // The branch mctl opens in each target repo; the App token reaches every repo of the org.
+            const HEADS = {
+              'installations': `${installation}-init`,
+              'teleport-fleet': `bot-${installation}-token`,
+            };
+
             // waitForChecks=false merges now (admin bypass); true arms auto-merge.
             async function land(label, reported, waitForChecks) {
               if (!reported) {
@@ -214,6 +249,12 @@ jobs:
               if (!target) {
                 return { row: `| ${label} | ❌ not opened | ${reported} |` };
               }
+              if (target.owner !== context.repo.owner || target.repo !== label) {
+                return {
+                  row: `| ${label} | ❌ wrong repository | ${target.url} is not in ${context.repo.owner}/${label}. |`,
+                  failure: `${label} ${target.url} is not in ${context.repo.owner}/${label}`,
+                };
+              }
 
               let pr;
               try {
@@ -222,6 +263,12 @@ jobs:
                 return {
                   row: `| ${label} | ❌ unreadable | ${target.url} — ${err.status || err.message} |`,
                   failure: `${label} ${target.url} could not be read: ${err.status || err.message}`,
+                };
+              }
+              if (pr.head.ref !== HEADS[label] || pr.head.repo?.full_name !== pr.base.repo.full_name) {
+                return {
+                  row: `| ${label} | ❌ wrong branch | ${target.url} is not from \`${HEADS[label]}\`. |`,
+                  failure: `${label} ${target.url} is not from the ${HEADS[label]} branch`,
                 };
               }
               if (pr.merged) {
