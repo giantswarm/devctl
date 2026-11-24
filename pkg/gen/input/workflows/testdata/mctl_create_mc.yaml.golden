@@ -97,7 +97,7 @@ jobs:
 
             // Anyone who can read the repo can comment, so markers only count from the workflows'
             // bots and from people with write access (a local `mctl create mc` posts as its operator).
-            const MARKER_BOTS = ['github-actions[bot]', 'giantswarm-mctlbot[bot]'];
+            const MARKER_BOTS = ['github-actions[bot]', 'giantswarm-mctlbot[bot]', 'tinkerers-ci[bot]'];
             const canWrite = new Map();
             async function trustedAuthor(c) {
               const login = c.user?.login;
@@ -178,9 +178,15 @@ jobs:
               return;
             }
 
-            const { data: ccrPR } = await github.rest.pulls.get({
-              owner: ccrOrg, repo: ccrRepo, pull_number: parseInt(ccrNum),
-            });
+            let ccrPR;
+            try {
+              ({ data: ccrPR } = await github.rest.pulls.get({
+                owner: ccrOrg, repo: ccrRepo, pull_number: parseInt(ccrNum),
+              }));
+            } catch (err) {
+              await fail(`Could not read CCR PR ${ccrURL}: ${err.status || err.message}`);
+              return;
+            }
             const ccrHead = `${installation}-config`;
             if (ccrPR.head.ref !== ccrHead || ccrPR.head.repo?.full_name !== ccrPR.base.repo.full_name) {
               await fail(`CCR PR ${ccrURL} is not from the \`${ccrHead}\` branch of ${ccrOrg}/${ccrRepo}.`);
@@ -189,6 +195,9 @@ jobs:
 
             if (ccrPR.merged) {
               core.info('CCR PR already merged — continuing.');
+            } else if (ccrPR.state === 'closed') {
+              await fail(`CCR PR ${ccrURL} is closed without being merged, so the pipeline was not started.`);
+              return;
             } else {
               core.info(`Merging CCR PR: ${ccrOrg}/${ccrRepo}#${ccrNum}`);
               try {

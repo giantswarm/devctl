@@ -68,8 +68,8 @@ jobs:
             }
 
             // Anyone who can read the repo can comment, so markers and results only count from the
-            // workflows' bots and from people with write access (a local `mctl create mc` posts as its operator).
-            const MARKER_BOTS = ['github-actions[bot]', 'giantswarm-mctlbot[bot]'];
+            // workflows' bots and from people with write access (a local `mctl create mc` posts as its operator; Tekton falls back to tinkerers-ci).
+            const MARKER_BOTS = ['github-actions[bot]', 'giantswarm-mctlbot[bot]', 'tinkerers-ci[bot]'];
             const canWrite = new Map();
             async function trustedAuthor(c) {
               const login = c.user?.login;
@@ -326,7 +326,10 @@ jobs:
 
             const outcomes = [];
             const installationsPR = findMarker('Installations PR');
-            const contacts = await contactsProblem(github, installationsPR);
+            // A PR outside installations goes straight to land, which rejects it.
+            const instTarget = asPR(installationsPR);
+            const inInstallations = instTarget?.owner === context.repo.owner && instTarget?.repo === 'installations';
+            const contacts = inInstallations ? await contactsProblem(github, installationsPR) : null;
             if (contacts) {
               const url = asPR(installationsPR).url;
               outcomes.push({

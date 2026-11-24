@@ -43,8 +43,8 @@ jobs:
             );
 
             // Anyone who can read the repo can comment, so markers only count from the workflows'
-            // bots and from people with write access (a local `mctl create mc` posts as its operator).
-            const MARKER_BOTS = ['github-actions[bot]', 'giantswarm-mctlbot[bot]'];
+            // bots and from people with write access (a local `mctl create mc` posts as its operator; Tekton falls back to tinkerers-ci).
+            const MARKER_BOTS = ['github-actions[bot]', 'giantswarm-mctlbot[bot]', 'tinkerers-ci[bot]'];
             const canWrite = new Map();
             async function trustedAuthor(c) {
               const login = c.user?.login;
@@ -169,8 +169,11 @@ jobs:
             await closePR(process.env.INSTALLATIONS_PR_URL, 'installations', `${installation}-init`);
             await closePR(process.env.TELEPORT_FLEET_PR_URL, 'teleport-fleet', `bot-${installation}-token`);
 
-            const lines = ['### Related cluster PRs closed\n'];
-            for (const url of closed) lines.push(`- ${url}`);
+            const lines = ['### Related cluster PRs\n'];
+            if (closed.length) {
+              lines.push('**Closed:**');
+              for (const url of closed) lines.push(`- ${url}`);
+            }
             if (failed.length) {
               lines.push('\n**Failed to close (check the giantswarm-mctlbot app permissions):**');
               for (const url of failed) lines.push(`- ${url}`);

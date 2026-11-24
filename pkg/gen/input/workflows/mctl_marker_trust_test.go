@@ -222,7 +222,9 @@ func Test_MctlCreateMcMarkerTrust(t *testing.T) {
 	foreignKey, foreign := openPR("devctl", 3, trustInst+"-config")
 	forkKey, fork := openPR("antonia-configs", 4, trustInst+"-config")
 	fork["head"].(map[string]any)["repo"] = map[string]any{"full_name": "someone/antonia-configs"}
-	all := prs([]string{ccrKey, otherKey, foreignKey, forkKey}, ccr, other, foreign, fork)
+	closedKey, closed := openPR("antonia-configs", 5, trustInst+"-config")
+	closed["state"] = "closed"
+	all := prs([]string{ccrKey, otherKey, foreignKey, forkKey, closedKey}, ccr, other, foreign, fork, closed)
 	inst := url("installations", 9)
 
 	tests := []struct {
@@ -258,6 +260,14 @@ func Test_MctlCreateMcMarkerTrust(t *testing.T) {
 		{
 			name:     "installations marker outside installations",
 			comments: []markerComment{bot(configMarkers(url("antonia-configs", 1), url("devctl", 3)))},
+		},
+		{
+			name:     "CCR PR closed without merging",
+			comments: []markerComment{bot(configMarkers(url("antonia-configs", 5), inst))},
+		},
+		{
+			name:     "CCR PR that cannot be read",
+			comments: []markerComment{bot(configMarkers(url("antonia-configs", 6), inst))},
 		},
 		{
 			name:     "bot login typed by a user",
@@ -299,6 +309,15 @@ func Test_MctlMergeCascadeMarkerTrust(t *testing.T) {
 		wantMerge string
 		wantArmed string
 	}{
+		{
+			name:      "result posted by Tekton's fallback",
+			comments:  []markerComment{comment("tinkerers-ci[bot]", "Bot", resultMarkers(url("installations", 1), url("teleport-fleet", 2)))},
+			wantMerge: instKey + "," + fleetKey,
+		},
+		{
+			name:     "result from an unknown bot",
+			comments: []markerComment{comment("renovate[bot]", "Bot", resultMarkers(url("installations", 1), url("teleport-fleet", 2)))},
+		},
 		{
 			name:      "result from the mctl App",
 			comments:  []markerComment{mctl(resultMarkers(url("installations", 1), url("teleport-fleet", 2)))},
