@@ -44,11 +44,6 @@ const github = {
     reactions: { createForIssueComment: async () => ({ data: {} }) },
     repos: {
       createCommitStatus: async a => { calls.push({ op: 'status', target: a.state + ': ' + a.description }); return { data: {} }; },
-      getContent: async a => {
-        const f = (sc.files || {})[a.owner + '/' + a.repo + '#' + a.ref + ':' + a.path];
-        if (f === undefined) throw notFound();
-        return { data: { content: Buffer.from(f).toString('base64') } };
-      },
       getCollaboratorPermissionLevel: async a => {
         const p = (sc.permissions || {})[a.username];
         if (p === 'error') throw Object.assign(new Error('Bad Gateway'), { status: 502 });
@@ -101,6 +96,7 @@ const github = {
 };
 const core = {
   info() {}, warning() {},
+  error: m => calls.push({ op: 'error', target: m }),
   summary: { addHeading() { return this; }, addRaw() { return this; }, async write() {} },
   setFailed: m => calls.push({ op: 'failed', target: m }),
   setOutput: (k, v) => { outputs[k] = v; },
@@ -125,7 +121,6 @@ type markerScenario struct {
 	Env         map[string]string         `json:"env"`
 	Comments    []markerComment           `json:"comments"`
 	Permissions map[string]string         `json:"permissions"`
-	Files       map[string]string         `json:"files"`
 	PRs         map[string]map[string]any `json:"prs"`
 	// Updates maps a PR key to the head SHA updateBranch moves it to.
 	Updates map[string]string         `json:"updates,omitempty"`
