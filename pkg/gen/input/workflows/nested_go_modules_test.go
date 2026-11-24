@@ -3,6 +3,7 @@ package workflows
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -134,7 +135,11 @@ func TestUnit(t *testing.T) {
 			writeRepoFile(t, filepath.Join(directory, "tests/e2e/e2e_test.go"), tc.tests)
 			mustGit(t, directory, "add", "--", ".")
 
-			_, log, err := runStep(t, nestedModuleStep(t, "test", "verify"), filepath.Join(directory, "tests/e2e"), "GOWORK=off")
+			step := nestedModuleStep(t, "test", "verify")
+			require.Contains(t, step, "go test -short -race ./...")
+			// -race needs cgo, which CI builds without; this test covers -short only.
+			step = strings.Replace(step, "go test -short -race ./...", "go test -short ./...", 1)
+			_, log, err := runStep(t, step, filepath.Join(directory, "tests/e2e"), "GOWORK=off")
 			if tc.wantErr {
 				require.Error(t, err, log)
 				require.Contains(t, log, "unit test failure")
