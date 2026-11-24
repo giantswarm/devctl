@@ -424,3 +424,46 @@ func Test_MctlCloseCascadeMarkerTrust(t *testing.T) {
 		})
 	}
 }
+
+// Test_MctlCreateMcOnlyOnInitBranches runs the step that derives the installation:
+// /create-mc on any other PR stops before the App token is minted.
+func Test_MctlCreateMcOnlyOnInitBranches(t *testing.T) {
+	body := mctlRenders(t, false)["create_mc"]
+	if strings.Index(body, "- name: Derive installation name") > strings.Index(body, "- name: Generate app token") {
+		t.Fatal("create_mc must check the branch before it mints the App token")
+	}
+	script := mctlStepScript(t, "create_mc", "Derive installation name")
+
+	for branch, want := range map[string]string{
+		"jackal-init":         "jackal",
+		"jackal-init-capa":    "jackal",
+		"xatest3-init-capvcd": "xatest3",
+		"main-update":         "",
+		"fix-init-script":     "",
+		"jackal-init-foo":     "",
+		"-init":               "",
+	} {
+		t.Run(branch, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "output")
+			cmd := exec.CommandContext(t.Context(), "bash", "-eo", "pipefail", "-c", script) // #nosec G204 -- the script is the rendered template, test-only
+			cmd.Env = append(os.Environ(), "BRANCH="+branch, "GITHUB_OUTPUT="+out)
+			err := cmd.Run()
+			if want == "" {
+				if err == nil {
+					t.Errorf("branch %q passed, want the step to fail", branch)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("branch %q failed: %v", branch, err)
+			}
+			raw, err := os.ReadFile(out) // #nosec G304 -- a temp file of this test
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.TrimSpace(string(raw)); got != "name="+want {
+				t.Errorf("branch %q gave %q, want name=%s", branch, got, want)
+			}
+		})
+	}
+}
