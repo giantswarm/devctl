@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/giantswarm/microerror"
@@ -157,7 +156,7 @@ func extendCluster(ctx context.Context, req ExtendRequest, cluster string, now t
 // (which here also re-checks the cap), commit, then PushWithRetry rebases
 // and re-renders should another change land first.
 func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Reservation, now time.Time) (Extended, error) {
-	configMapPath := filepath.Join(req.RepoDir, clustersDir, cluster, ConfigMapFile)
+	configMapPath := configMapFilePath(req.RepoDir, cluster)
 
 	var result Extended
 	render := func() error {
@@ -208,15 +207,8 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 		// access to the GitOps repo reads /from and /until off the OCIRepository
 		// with kubectl, and the two must never disagree, in any commit.
 		h := hold{User: req.User, From: now, Until: until}
-		var annotated string
-		if current.GitOpsSource == GitOpsSourceExtras {
-			annotated = clusterPath(cluster, extrasDir, "kustomization.yaml")
-			err = writeBlockAnnotations(filepath.Join(req.RepoDir, annotated), current.App, h)
-		} else {
-			annotated = clusterPath(cluster, collectionsDir, reservationsDir, current.App, current.App+SourceNameSuffix+".yaml")
-			err = writeSourceAnnotations(filepath.Join(req.RepoDir, annotated), h)
-		}
-		if err != nil {
+		annotated := kustomizationFile(cluster, current.GitOpsSource)
+		if err := writeBlockAnnotations(kustomizationPath(req.RepoDir, cluster, current.GitOpsSource), current.App, h); err != nil {
 			return microerror.Mask(err)
 		}
 		commit, err := commitAll(req.RepoDir, fmt.Sprintf(

@@ -47,8 +47,8 @@ func newCommand(t *testing.T, stdout io.Writer) *cobra.Command {
 const testPullRequest = "giantswarm/hello-world#123"
 
 // newExtendableFixture builds the smallest checkout Extend needs: an enabled
-// cluster with one reservation, the ConfigMap entry and the reservation's own
-// source object -- Extend rewrites both, in the same commit, so a `kubectl`
+// cluster with one reservation, the ConfigMap entry and the reservation block
+// in the collections kustomization -- Extend rewrites both, in the same commit, so a `kubectl`
 // read of either one always shows the current window. It pushes to a local
 // bare "origin", so a plain `git push` after Extend succeeds with no network
 // or credentials, exactly as it would from a laptop.
@@ -81,23 +81,29 @@ func newExtendableFixture(t *testing.T, cluster, app, from, until string) (dir, 
 		t.Fatal(err)
 	}
 
-	sourceDir := filepath.Join(clusterDir, "collections", "reservations", app)
-	if err := os.MkdirAll(sourceDir, 0o750); err != nil {
+	collectionsDir := filepath.Join(clusterDir, "collections")
+	if err := os.MkdirAll(collectionsDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	source := "apiVersion: source.toolkit.fluxcd.io/v1\n" +
-		"kind: OCIRepository\n" +
-		"metadata:\n" +
-		"  annotations:\n" +
-		"    reservation.giantswarm.io/branch: fix/crash\n" +
-		"    reservation.giantswarm.io/from: \"" + from + "\"\n" +
-		"    reservation.giantswarm.io/pr: \"" + testPullRequest + "\"\n" +
-		"    reservation.giantswarm.io/scope: app\n" +
-		"    reservation.giantswarm.io/until: \"" + until + "\"\n" +
-		"    reservation.giantswarm.io/user: alice\n" +
-		"  name: " + app + "-dev-reservation\n" +
-		"  namespace: giantswarm\n"
-	if err := os.WriteFile(filepath.Join(sourceDir, app+"-dev-reservation.yaml"), []byte(source), 0o600); err != nil {
+	kustomization := "apiVersion: kustomize.config.k8s.io/v1beta1\n" +
+		"kind: Kustomization\n" +
+		"resources: []\n" +
+		"patches:\n" +
+		"  # BEGIN reservation of " + app + ", written by `devctl reservation reserve`. Do not edit.\n" +
+		"  - target:\n" +
+		"      kind: OCIRepository\n" +
+		"      name: " + app + "\n" +
+		"    patch: |-\n" +
+		"      apiVersion: source.toolkit.fluxcd.io/v1\n" +
+		"      kind: OCIRepository\n" +
+		"      metadata:\n" +
+		"        name: " + app + "\n" +
+		"        annotations:\n" +
+		"          reservation.giantswarm.io/user: alice\n" +
+		"          reservation.giantswarm.io/from: \"" + from + "\"\n" +
+		"          reservation.giantswarm.io/until: \"" + until + "\"\n" +
+		"  # END reservation of " + app + ", written by `devctl reservation reserve`\n"
+	if err := os.WriteFile(filepath.Join(collectionsDir, "kustomization.yaml"), []byte(kustomization), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

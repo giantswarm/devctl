@@ -34,9 +34,11 @@ func TestCheckExtras(t *testing.T) {
 		content string
 		ok      bool
 	}{
-		"no patches":          {"resources:\n  - ./app/\n", true},
-		"block last":          {"resources:\n  - ./app/\n" + block, true},
-		"patch after a block": {"resources:\n  - ./app/\n" + block + humanPatch, false},
+		// The collections kustomization holds blocks the same way.
+		"collections: patch after a block": {"resources:\n  - ../bases/demo\n" + block + humanPatch, false},
+		"no patches":                       {"resources:\n  - ./app/\n", true},
+		"block last":                       {"resources:\n  - ./app/\n" + block, true},
+		"patch after a block":              {"resources:\n  - ./app/\n" + block + humanPatch, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "kustomization.yaml")

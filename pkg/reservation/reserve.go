@@ -1,5 +1,5 @@
 // Package reservation implements the GitOps side of a management cluster
-// reservation: it points one management cluster's copy of one collection app at
+// reservation: it points one management cluster's app at
 // the dev builds of one branch, as a single commit in the GitOps repo that holds
 // that cluster.
 package reservation
@@ -8,9 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -43,9 +41,8 @@ const (
 	// management cluster.
 	DefaultGitOpsRepository = "giantswarm/giantswarm-management-clusters"
 
-	clustersDir     = "management-clusters"
-	collectionsDir  = "collections"
-	reservationsDir = "reservations"
+	clustersDir    = "management-clusters"
+	collectionsDir = "collections"
 )
 
 // Request is one reservation of one app on one management cluster.
@@ -54,7 +51,7 @@ type Request struct {
 	RepoDir string
 	// Cluster is the management cluster name, e.g. "graveler".
 	Cluster string
-	// App names the collection app to point at the dev builds. Empty means the
+	// App names the chart to point at the dev builds. Empty means the
 	// chart the app repository at AppDir builds. It is required when that
 	// repository holds several charts, and it overrides the chart name when a
 	// chart is named differently from the chart its URL serves.
@@ -91,34 +88,24 @@ type Result struct {
 	// GitOpsSource is where the reservation lives: GitOpsSourceCollections or
 	// GitOpsSourceExtras.
 	GitOpsSource string `json:"gitopsSource"`
-	// SourceName is the name of the new OCIRepository. For an app the extras
-	// serve, it is the patched sources instead, joined with ", ".
+	// SourceName is the name of every patched OCIRepository, joined with ", ".
 	SourceName string `json:"sourceName"`
 	// HelmReleases are "<namespace>/<name>" of every release the reservation
 	// moves to the dev builds, sorted.
 	HelmReleases []string `json:"helmReleases,omitempty"`
-	// SemverFilter is the version selector the new OCIRepository carries.
+	// SemverFilter is the version selector the patched OCIRepository objects carry.
 	SemverFilter string `json:"semverFilter"`
 	// Files are the repo-relative paths Reserve wrote, sorted.
 	Files []string `json:"files,omitempty"`
 	// From and Until bound the reservation, in UTC.
 	From  time.Time `json:"from"`
 	Until time.Time `json:"until"`
+	// Warnings are things the user should know that did not stop the reservation.
+	Warnings []string `json:"warnings,omitempty"`
 	// Replaced is the expired reservation of the same app, from another branch
 	// or pull request, that Reserve took over. Its pull request still reads
 	// "reserved" until somebody tells it otherwise.
 	Replaced *Reservation `json:"replaced,omitempty"`
-}
-
-// namespaced prefixes the names of collection releases, which all live in
-// Namespace, the way Result.HelmReleases spells them.
-func namespaced(names []string) []string {
-	out := make([]string, 0, len(names))
-	for _, n := range names {
-		out = append(out, Namespace+"/"+n)
-	}
-
-	return out
 }
 
 func (r Request) validate() error {
@@ -199,9 +186,9 @@ func checkEnabled(repoDir, cluster string) error {
 	return nil
 }
 
-// Reserve points the cluster's copy of the app at the dev builds of the branch
-// and commits the change to the working tree at req.RepoDir. It renders the
-// cluster's collections and refuses to commit unless the rendered output really
+// Reserve points the cluster's app at the dev builds of the branch and commits
+// the change to the working tree at req.RepoDir. It renders the cluster's
+// collections or extras and refuses to commit unless the rendered output really
 // carries the reservation.
 func Reserve(req Request) (res Result, err error) {
 	if err := req.validate(); err != nil {
@@ -223,7 +210,7 @@ func Reserve(req Request) (res Result, err error) {
 	}
 	from = from.UTC().Truncate(time.Second)
 
-	configMapPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, ConfigMapFile)
+	configMapPath := configMapFilePath(req.RepoDir, req.Cluster)
 
 	duration, err := clampedDuration(req, configMapPath)
 	if err != nil {
@@ -235,6 +222,9 @@ func Reserve(req Request) (res Result, err error) {
 	// what the reservation is keyed and matched on.
 	chart, err := resolveChart(req.App, req.AppDir)
 	if err != nil {
+		return Result{}, microerror.Mask(err)
+	}
+	if err := checkNoOldReservation(req.RepoDir, req.Cluster, chart); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
 
@@ -258,10 +248,10 @@ func Reserve(req Request) (res Result, err error) {
 		return Result{}, microerror.Mask(err)
 	}
 	if ok {
-		if err := checkExtras(req, chart, extras); err != nil {
+		if err := checkBlock(req, GitOpsSourceExtras, chart, extras); err != nil {
 			return Result{}, microerror.Mask(err)
 		}
-		res, err := reserveExtras(req, chart, extras, from, until, replaced)
+		res, err := reserveInPlace(req, GitOpsSourceExtras, chart, extras, from, until, replaced)
 		return res, microerror.Mask(err)
 	}
 
@@ -271,84 +261,26 @@ func Reserve(req Request) (res Result, err error) {
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
-	if len(extras.sources) > 0 && len(collectionSources(before, chart)) == 0 {
+	sources := collectionSources(before, chart)
+	if len(extras.sources) > 0 && len(sources) == 0 {
 		return Result{}, extras.movesNothingError(req, chart)
 	}
-	resolved, err := resolveApp(before, req, chart)
+	collections, err := resolveCollections(before, req, chart, sources)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
 
-	semverFilter := devSemverFilter(req.Branch)
-
-	sourceName := chart + SourceNameSuffix
-	component := path.Join(reservationsDir, chart)
-
-	created, err := newComponentFiles(req.RepoDir, req.Cluster, chart)
-	if err != nil {
+	if err := checkBlock(req, GitOpsSourceCollections, chart, collections); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
-
-	// The entry and the component are one change. Everything below is staged in
-	// the working tree and lands in a single commit, or the run fails and the
-	// writes are discarded, so the user's checkout stays clean for the next run.
-	defer func() {
-		if err != nil {
-			discardWrites(req.RepoDir, req.Cluster, chart, created...)
-		}
-	}()
-	err = writeComponent(filepath.Join(collectionsPath, reservationsDir, chart),
-		sourceName, resolved.helmReleases, devSource(resolved.original, sourceName, req, semverFilter, from, until))
-	if err != nil {
-		return Result{}, microerror.Mask(err)
-	}
-	if err := addComponent(filepath.Join(collectionsPath, "kustomization.yaml"), component); err != nil {
-		return Result{}, microerror.Mask(err)
-	}
-	entry, err := reservationEntry(chart, req, GitOpsSourceCollections, from, until)
-	if err != nil {
-		return Result{}, microerror.Mask(err)
-	}
-	if err := writeReservationEntry(configMapPath, chart, entry); err != nil {
-		return Result{}, microerror.Mask(err)
+	res, err = reserveInPlace(req, GitOpsSourceCollections, chart, collections, from, until, replaced)
+	if err == nil && len(extras.sources) > 0 {
+		res.Warnings = append(res.Warnings, fmt.Sprintf(
+			"chart %q is served from both %s and %s. Only the collections hold the reservation: the extras sources %s feed no %s",
+			chart, req.clusterPath(collectionsDir), req.clusterPath(extrasDir), strings.Join(extras.sourceNames(), ", "), helmReleaseKind))
 	}
 
-	after, err := renderDir(collectionsPath)
-	if err != nil {
-		return Result{}, microerror.Mask(err)
-	}
-	if err := assertReserved(after, resolved, sourceName, semverFilter); err != nil {
-		return Result{}, microerror.Mask(err)
-	}
-
-	files := []string{
-		req.clusterPath(ConfigMapFile),
-		req.clusterPath(collectionsDir, "kustomization.yaml"),
-		req.clusterPath(collectionsDir, component, "kustomization.yaml"),
-		req.clusterPath(collectionsDir, component, sourceName+".yaml"),
-	}
-	sort.Strings(files)
-
-	commit, err := commitAll(req.RepoDir, fmt.Sprintf(
-		"reserve %s on %s for %s (branch %s, until %s)",
-		chart, req.Cluster, req.User, req.Branch, until.Format(time.RFC3339)), files)
-	if err != nil {
-		return Result{}, microerror.Mask(err)
-	}
-
-	return Result{
-		App:          chart,
-		PullRequest:  req.PullRequest,
-		Commit:       commit,
-		GitOpsSource: GitOpsSourceCollections,
-		SourceName:   sourceName,
-		HelmReleases: namespaced(resolved.helmReleases),
-		SemverFilter: semverFilter,
-		Files:        files,
-		From:         from,
-		Until:        until,
-		Replaced:     replaced,
-	}, nil
+	return res, microerror.Mask(err)
 }
 
 // commitAll stages exactly files -- the repo-relative paths the caller's own

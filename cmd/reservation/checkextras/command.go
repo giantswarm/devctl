@@ -14,11 +14,12 @@ import (
 
 const (
 	name             = "check-extras"
-	shortDescription = "Check that reservation blocks are the last patches of extras kustomizations."
-	longDescription  = `Check that reservation blocks are the last patches of extras kustomizations.
+	shortDescription = "Check that reservation blocks are the last patches of extras and collections kustomizations."
+	longDescription  = `Check that reservation blocks are the last patches of extras and collections kustomizations.
 
-reserve writes each extras reservation as a marked block at the end of the root
-patches list of management-clusters/<cluster>/extras/kustomization.yaml. A patch
+reserve writes each reservation as a marked block at the end of the root
+patches list of management-clusters/<cluster>/extras/kustomization.yaml, or of
+the collections/kustomization.yaml next to it. A patch
 a human adds after such a block applies after the reservation and can change
 the source again, so no dev build matches. This command fails on any such
 patch, and on a patchesJson6902, replacements or transformers entry that can
@@ -27,7 +28,7 @@ It checks every file it is given and names every one that fails, so CI can
 refuse the change.
 
 It reads only the files it is given: no GitOps checkout, no cluster, no token.`
-	example = `  devctl reservation check-extras management-clusters/graveler/extras/kustomization.yaml`
+	example = `  devctl reservation check-extras management-clusters/graveler/extras/kustomization.yaml management-clusters/graveler/collections/kustomization.yaml`
 )
 
 type Config struct {
@@ -49,7 +50,7 @@ func New(config Config) (*cobra.Command, error) {
 			// Check every file, so one CI run names every bad one.
 			var errs []error
 			for _, path := range args {
-				if err := reservation.CheckExtrasPatches(path); err != nil {
+				if err := reservation.CheckBlockPatches(path); err != nil {
 					errs = append(errs, err)
 					continue
 				}

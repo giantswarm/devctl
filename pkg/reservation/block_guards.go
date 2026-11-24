@@ -12,18 +12,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// checkExtras runs the guards an extras reservation needs before it writes
-// anything. Guard 1, the render check, runs after the write.
-func checkExtras(req Request, chart string, resolved extrasResolution) error {
-	if err := checkOneTree(req, chart); err != nil {
-		return microerror.Mask(err)
+// checkBlock runs the guards a reservation block needs before it writes
+// anything, in the kustomization of gitopsSource. Guard 1, the render check,
+// runs after the write.
+func checkBlock(req Request, gitopsSource, chart string, resolved blockResolution) error {
+	if gitopsSource == GitOpsSourceExtras {
+		if err := checkOneTree(req, chart); err != nil {
+			return microerror.Mask(err)
+		}
 	}
-	path := extrasKustomizationPath(req.RepoDir, req.Cluster)
-	lines, err := readLines(path)
+	lines, err := readLines(kustomizationPath(req.RepoDir, req.Cluster, gitopsSource))
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	name := req.clusterPath(extrasDir, "kustomization.yaml")
+	name := kustomizationFile(req.Cluster, gitopsSource)
 	if err := checkBlocksLast(lines, name); err != nil {
 		return microerror.Mask(err)
 	}
@@ -31,14 +33,14 @@ func checkExtras(req Request, chart string, resolved extrasResolution) error {
 		return microerror.Mask(err)
 	}
 
-	return microerror.Mask(checkNoHiddenReleases(req, resolved))
+	return microerror.Mask(checkNoHiddenReleases(req, gitopsSource, resolved))
 }
 
-// CheckExtrasPatches is guard 2 for the extras kustomization at path: every
+// CheckBlockPatches is guard 2 for the extras or collections kustomization at path: every
 // reservation block comes after every other entry of the root patches: list. A
 // patch after a block can change the source again, under the dev semverFilter,
 // and then no dev build matches. The CI check of the GitOps repo runs it too.
-func CheckExtrasPatches(path string) error {
+func CheckBlockPatches(path string) error {
 	lines, err := readLines(path)
 	if err != nil {
 		return microerror.Mask(err)
@@ -118,7 +120,7 @@ func checkNoLaterTransforms(lines []string, name string) error {
 }
 
 func checkBlocksLast(lines []string, name string) error {
-	start := slices.Index(lines, patchesKey)
+	start := slices.IndexFunc(lines, isPatchesKey)
 	if start < 0 {
 		return nil
 	}
@@ -148,11 +150,11 @@ func checkBlocksLast(lines []string, name string) error {
 	return nil
 }
 
-// checkNoHiddenReleases is guard 3: a HelmRelease outside the extras render
+// checkNoHiddenReleases is guard 3: a HelmRelease outside the render of the tree
 // that takes its chart from a patched source moves too, and nobody sees it in
 // the render. It reads every manifest of the cluster, not a render, as Flux
 // Kustomization objects wire them up in ways no single overlay shows.
-func checkNoHiddenReleases(req Request, resolved extrasResolution) error {
+func checkNoHiddenReleases(req Request, gitopsSource string, resolved blockResolution) error {
 	patched, patchedNames := map[string]bool{}, map[string]bool{}
 	for _, s := range resolved.sources {
 		patched[s.namespace()+"/"+s.name()] = true
@@ -212,8 +214,8 @@ func checkNoHiddenReleases(req Request, resolved extrasResolution) error {
 	if len(hidden) > 0 {
 		sort.Strings(hidden)
 		return microerror.Maskf(appNotSupportedError,
-			"%s %s takes its chart from a source the reservation patches, but the extras render does not hold it, so it would move without anybody seeing it",
-			helmReleaseKind, strings.Join(hidden, ", "))
+			"%s %s takes its chart from a source the reservation patches, but the %s render does not hold it, so it would move without anybody seeing it",
+			helmReleaseKind, strings.Join(hidden, ", "), gitopsSource)
 	}
 
 	return nil
@@ -231,7 +233,7 @@ func checkOneTree(req Request, chart string) error {
 		return microerror.Mask(err)
 	}
 	for _, o := range objects {
-		if o.kind() != ociRepositoryKind || o.namespace() != Namespace || strings.HasSuffix(o.name(), SourceNameSuffix) {
+		if o.kind() != ociRepositoryKind || o.namespace() != Namespace {
 			continue
 		}
 		if url, _ := o.nested("spec", "url").(string); chartFromURL(url) == chart {
@@ -242,4 +244,19 @@ func checkOneTree(req Request, chart string) error {
 	}
 
 	return nil
+}
+
+// checkNoOldReservation refuses a chart that an older devctl reserved with a
+// component under collections/reservations/<chart>. This devctl writes and
+// removes blocks only, so it can neither release that reservation nor reserve
+// the chart beside it.
+func checkNoOldReservation(repoDir, cluster, chart string) error {
+	dir := clusterPath(cluster, collectionsDir, "reservations", chart)
+	if _, err := os.Stat(filepath.Join(repoDir, dir)); err != nil {
+		return nil //nolint:nilerr // no component, no old reservation
+	}
+
+	return microerror.Maskf(appNotSupportedError,
+		"%s holds a reservation of %q made by an older devctl. Release it with that older devctl first",
+		dir, chart)
 }

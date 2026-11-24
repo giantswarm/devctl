@@ -27,7 +27,7 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.App, flagApp, "", "Chart of the collection app to release. Empty takes the name from the app repository's helm/*/Chart.yaml, as --app-dir points at. Not with --app-dir.")
+	cmd.Flags().StringVar(&f.App, flagApp, "", "Chart of the app to release. Empty takes the name from the app repository's helm/*/Chart.yaml, as --app-dir points at. Not with --app-dir.")
 	cmd.Flags().StringVar(&f.AppDir, flagAppDir, "", "Checkout of the app repository, read only to take the chart name when --app is empty. Empty is the current directory.")
 	cmd.Flags().StringVar(&f.PullRequest, flagPullRequest, "", "Pull request whose reservations to release, as owner/repo#number. Without --cluster, it releases every reservation that pull request holds, on every enabled cluster: a merged or closed pull request knows neither cluster nor app. Required without --cluster.")
 	cmd.Flags().StringVar(&f.Cluster, flagCluster, "", "Name of the management cluster to release the app on. Empty releases by --pull-request on every enabled cluster.")
