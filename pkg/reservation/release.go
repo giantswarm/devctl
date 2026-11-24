@@ -93,6 +93,10 @@ func Release(req ReleaseRequest) (res ReleaseResult, err error) {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
 
+	if err := checkNoOldReservation(req.RepoDir, req.Cluster, chart); err != nil {
+		return ReleaseResult{}, microerror.Mask(err)
+	}
+
 	gitopsSource := gitopsSourceOf(req.RepoDir, req.Cluster, chart)
 	path := kustomizationPath(req.RepoDir, req.Cluster, gitopsSource)
 

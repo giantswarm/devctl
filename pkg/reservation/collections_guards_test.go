@@ -64,5 +64,5 @@ func TestReserveCollectionsRefusesAHiddenChartRef(t *testing.T) {
 	head, _ := headFiles(t, dir)
 
 	_, err := reservation.Reserve(testRequest(dir))
-	assertRefused(t, dir, head, err, reservation.IsAppNotSupported, hidden, "monitoring/hidden")
+	assertRefused(t, dir, head, err, reservation.IsAppNotSupported, hidden, "monitoring/hidden", "the collections render")
 }

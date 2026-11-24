@@ -36,11 +36,11 @@ func checkBlock(req Request, gitopsSource, chart string, resolved blockResolutio
 	return microerror.Mask(checkNoHiddenReleases(req, gitopsSource, resolved))
 }
 
-// CheckExtrasPatches is guard 2 for the extras or collections kustomization at path: every
+// CheckBlockPatches is guard 2 for the extras or collections kustomization at path: every
 // reservation block comes after every other entry of the root patches: list. A
 // patch after a block can change the source again, under the dev semverFilter,
 // and then no dev build matches. The CI check of the GitOps repo runs it too.
-func CheckExtrasPatches(path string) error {
+func CheckBlockPatches(path string) error {
 	lines, err := readLines(path)
 	if err != nil {
 		return microerror.Mask(err)
@@ -214,8 +214,8 @@ func checkNoHiddenReleases(req Request, gitopsSource string, resolved blockResol
 	if len(hidden) > 0 {
 		sort.Strings(hidden)
 		return microerror.Maskf(appNotSupportedError,
-			"%s %s takes its chart from a source the reservation patches, but the extras render does not hold it, so it would move without anybody seeing it",
-			helmReleaseKind, strings.Join(hidden, ", "))
+			"%s %s takes its chart from a source the reservation patches, but the %s render does not hold it, so it would move without anybody seeing it",
+			helmReleaseKind, strings.Join(hidden, ", "), gitopsSource)
 	}
 
 	return nil
@@ -244,4 +244,19 @@ func checkOneTree(req Request, chart string) error {
 	}
 
 	return nil
+}
+
+// checkNoOldReservation refuses a chart that an older devctl reserved with a
+// component under collections/reservations/<chart>. This devctl writes and
+// removes blocks only, so it can neither release that reservation nor reserve
+// the chart beside it.
+func checkNoOldReservation(repoDir, cluster, chart string) error {
+	dir := clusterPath(cluster, collectionsDir, "reservations", chart)
+	if _, err := os.Stat(filepath.Join(repoDir, dir)); err != nil {
+		return nil //nolint:nilerr // no component, no old reservation
+	}
+
+	return microerror.Maskf(appNotSupportedError,
+		"%s holds a reservation of %q made by an older devctl. Release it with that older devctl first",
+		dir, chart)
 }

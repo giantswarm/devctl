@@ -50,7 +50,7 @@ func New(config Config) (*cobra.Command, error) {
 			// Check every file, so one CI run names every bad one.
 			var errs []error
 			for _, path := range args {
-				if err := reservation.CheckExtrasPatches(path); err != nil {
+				if err := reservation.CheckBlockPatches(path); err != nil {
 					errs = append(errs, err)
 					continue
 				}

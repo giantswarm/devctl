@@ -224,6 +224,9 @@ func Reserve(req Request) (res Result, err error) {
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
+	if err := checkNoOldReservation(req.RepoDir, req.Cluster, chart); err != nil {
+		return Result{}, microerror.Mask(err)
+	}
 
 	promoted, replaced, err := checkCollision(req, chart, from)
 	if err != nil {

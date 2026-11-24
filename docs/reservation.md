@@ -70,7 +70,7 @@ Releases every expired reservation on every enabled cluster. With a GitHub token
 devctl reservation check-extras management-clusters/graveler/extras/kustomization.yaml management-clusters/graveler/collections/kustomization.yaml
 ```
 
-Fails when an extras or collections kustomization holds a patch after a reservation block, or a `patchesJson6902`, `replacements` or `transformers` entry that can change an `OCIRepository`. kustomize runs those after the reservation, so they can change the source again. It checks every file it is given and names each one that fails. The GitOps repository's CI runs it on every changed extras and collections kustomization. It reads only the files it is given.
+Fails when an extras or collections kustomization holds a patch after a reservation block, or a `patchesJson6902`, `replacements` or `transformers` entry that can change an `OCIRepository`. kustomize runs those after the reservation, so they can change the source again. It checks every file it is given and names each one that fails. The GitOps repository's CI runs it on every changed extras kustomization. It doesn't check the collections kustomization yet. It reads only the files it is given.
 
 ## Output
 
@@ -88,4 +88,4 @@ The `reserve` object carries `warnings` when the reservation worked but somethin
 
 A reservation adds no object. `reserve` appends one marked block to the end of the root `patches:` list of `collections/kustomization.yaml`, or of `extras/kustomization.yaml` when the extras serve the app. The block patches the `OCIRepository` objects that serve the chart, one pair of patches per source, to the dev builds and the reservation annotations. `reserve` refuses when a patch or a transformer follows the block, or when a release outside the render would move with the source. `release` removes the block and restores the `patches:` key as it was, and Flux drops the patched values again. `extend` rewrites the annotations in it.
 
-Reservations made by older devctl versions are a `collections/reservations/<chart>` component with a `<chart>-dev-reservation` source. This version doesn't know them: release them with the older devctl before you upgrade.
+Reservations made by older devctl versions are a `collections/reservations/<chart>` component with a `<chart>-dev-reservation` source. This version can't release them, and `reserve` and `release` refuse a chart that still has one: release them with the older devctl before you upgrade.
