@@ -60,11 +60,23 @@ func Test_MctlMergeGateMarkerTrust(t *testing.T) {
 			wantText: "No /create-mc run",
 		},
 		{
+			name:     "result from a user who is not a collaborator",
+			comments: []markerComment{human("ghost", good)},
+			want:     "failure",
+			wantText: "No /create-mc run",
+		},
+		{
 			name:      "result from a user whose permission cannot be read",
-			comments:  []markerComment{human("ghost", good)},
-			want:      "failure",
-			wantText:  "No /create-mc run",
-			wantError: "Could not read the permission of ghost",
+			comments:  []markerComment{bot(good), human("flaky", good)},
+			want:      "error",
+			wantText:  "rerun this check",
+			wantError: "Could not read the permission of flaky",
+		},
+		{
+			name:      "plain comment from a user whose permission cannot be read",
+			comments:  []markerComment{bot(good), human("flaky", "/create-mc please")},
+			want:      "success",
+			wantError: "Could not read the permission of flaky",
 		},
 		{
 			name:     "forged result from an unknown bot",
@@ -124,7 +136,7 @@ func Test_MctlMergeGateMarkerTrust(t *testing.T) {
 					"runId":     1,
 				},
 				Comments:    tc.comments,
-				Permissions: map[string]string{"reader": "read", "writer": "write"},
+				Permissions: map[string]string{"reader": "read", "writer": "write", "flaky": "unavailable"},
 				PRs:         all,
 			})
 			statuses := ops(res, "status")

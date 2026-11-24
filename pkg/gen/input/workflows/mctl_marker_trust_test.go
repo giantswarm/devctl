@@ -48,6 +48,7 @@ const github = {
         const p = (sc.permissions || {})[a.username];
         if (p === 'error') throw Object.assign(new Error('Bad Gateway'), { status: 502 });
         if (!p) throw notFound();
+        if (p === 'unavailable') throw Object.assign(new Error('Bad Gateway'), { status: 502 });
         return { data: { permission: p } };
       },
       // A behind branch updated by GitHub: sc.updates names the merge commit it becomes.

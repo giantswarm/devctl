@@ -190,6 +190,8 @@ jobs:
             // Any comment still reruns the gate: the failure texts ask people to comment.
             const MARKER_BOTS = ['github-actions[bot]', 'giantswarm-mctlbot[bot]', 'tinkerers-ci[bot]'];
             const canWrite = new Map();
+            // Logins whose permission could not be read for another reason than not being a collaborator.
+            const unchecked = new Set();
             async function trustedAuthor(c) {
               const login = c.user?.login;
               if (!login) return false;
@@ -204,8 +206,13 @@ jobs:
                   // maintain is reported as write.
                   ok = ['admin', 'write'].includes(data.permission);
                 } catch (err) {
-                  // Still not trusted, but say why the gate may fail.
-                  core.error(`Could not read the permission of ${login}: ${err.message}`);
+                  // Not trusted either way; 404 is the answer for anyone who is not a collaborator.
+                  if (err.status === 404) {
+                    core.warning(`${login} is not a collaborator of ${context.repo.repo}.`);
+                  } else {
+                    unchecked.add(login);
+                    core.error(`Could not read the permission of ${login}: ${err.message}`);
+                  }
                 }
                 canWrite.set(login, ok);
               }
@@ -214,6 +221,15 @@ jobs:
             const trusted = [];
             for (const c of comments) {
               if (await trustedAuthor(c)) trusted.push(c);
+            }
+
+            // A failed lookup must not ask for a new bootstrap: a local run posts its result as the operator.
+            const resultToken = `<!-- mctl-create-mc-result-${installation} -->`;
+            const skipped = comments.find(c => unchecked.has(c.user?.login) &&
+              /<!-- mctl-create-mc-result-|\*\*(Installations|Teleport fleet) PR:\*\*/.test(c.body || ''));
+            if (skipped) {
+              await publish('error', `Could not check who posted ${skipped.html_url || 'a /create-mc result'} — rerun this check.`);
+              return;
             }
 
             // Newest match first, so a link from an earlier run is kept.
@@ -236,7 +252,6 @@ jobs:
             }
 
             // The newest result comment governs, even if an earlier run succeeded.
-            const resultToken = `<!-- mctl-create-mc-result-${installation} -->`;
             const results = trusted.filter(c => (c.body || '').includes(resultToken));
             const latestResult = results.length ? results[results.length - 1].body : '';
 
