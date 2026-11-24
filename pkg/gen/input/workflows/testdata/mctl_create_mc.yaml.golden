@@ -53,6 +53,11 @@ jobs:
               repo: context.repo.repo,
               pull_number: context.issue.number,
             });
+            // Init branches live in this repository, never in a fork.
+            if (pr.data.head.repo?.full_name !== pr.data.base.repo.full_name) {
+              core.setFailed(`/create-mc only runs on a cluster init PR, not on a PR from ${pr.data.head.label}.`);
+              return;
+            }
             core.setOutput('branch', pr.data.head.ref);
 
       - name: Derive installation name
@@ -68,6 +73,20 @@ jobs:
             exit 1
           fi
           echo "name=$installation" >> "$GITHUB_OUTPUT"
+
+      # A failed job alone is easy to miss; the token is not minted for these PRs.
+      - name: Report not an init PR
+        if: failure() && (steps.pr.outcome == 'failure' || steps.install.outcome == 'failure')
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '### ❌ `/create-mc` stopped\n\n`/create-mc` only runs on a cluster init PR: ' +
+                'a branch of this repository named `<installation>-init` or `<installation>-init-<provider>`.',
+            });
 
       - name: Generate app token
         id: app-token

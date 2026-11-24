@@ -428,9 +428,20 @@ func Test_MctlCloseCascadeMarkerTrust(t *testing.T) {
 // Test_MctlCreateMcOnlyOnInitBranches runs the step that derives the installation:
 // /create-mc on any other PR stops before the App token is minted.
 func Test_MctlCreateMcOnlyOnInitBranches(t *testing.T) {
-	body := mctlRenders(t, false)["create_mc"]
-	if strings.Index(body, "- name: Derive installation name") > strings.Index(body, "- name: Generate app token") {
-		t.Fatal("create_mc must check the branch before it mints the App token")
+	wf := parseMctl(t, "create_mc", mctlRenders(t, false)["create_mc"])
+	check, mint := -1, -1
+	for _, job := range wf.Jobs {
+		for i, s := range job.Steps {
+			if s.Name == "Derive installation name" {
+				check = i
+			}
+			if strings.HasPrefix(s.Uses, "actions/create-github-app-token@") && mint < 0 {
+				mint = i
+			}
+		}
+	}
+	if check < 0 || mint < 0 || check > mint {
+		t.Fatalf("create_mc must check the branch (step %d) before it mints the App token (step %d)", check, mint)
 	}
 	script := mctlStepScript(t, "create_mc", "Derive installation name")
 
@@ -463,6 +474,33 @@ func Test_MctlCreateMcOnlyOnInitBranches(t *testing.T) {
 			}
 			if got := strings.TrimSpace(string(raw)); got != "name="+want {
 				t.Errorf("branch %q gave %q, want name=%s", branch, got, want)
+			}
+		})
+	}
+}
+
+// Test_MctlCreateMcRefusesForks runs "Get PR branch": an init-named branch in a fork is not an init PR.
+func Test_MctlCreateMcRefusesForks(t *testing.T) {
+	script := mctlScript(t, "create_mc", "Get PR branch")
+
+	for name, headRepo := range map[string]string{
+		"same repository": trustOrg + "/" + trustRepo,
+		"fork":            "someone/" + trustRepo,
+	} {
+		t.Run(name, func(t *testing.T) {
+			key, pr := openPR(trustRepo, 10, trustInst+"-init")
+			pr["head"].(map[string]any)["repo"] = map[string]any{"full_name": headRepo}
+			pr["head"].(map[string]any)["label"] = "someone:" + trustInst + "-init"
+			res := runMarkerScript(t, script, markerScenario{
+				Context: map[string]any{"issue": map[string]int{"number": 10}},
+				PRs:     prs([]string{key}, pr),
+			})
+			fork := name == "fork"
+			if failed := len(ops(res, "failed")) > 0; failed != fork {
+				t.Errorf("failed = %v, want %v (calls %+v)", failed, fork, res.Calls)
+			}
+			if got := res.Outputs["branch"]; (got == "") != fork {
+				t.Errorf("branch output = %q for %s", got, name)
 			}
 		})
 	}
