@@ -140,19 +140,30 @@ jobs:
               return missing;
             }
 
+            // The branch mctl opens in each target repo, as the merge cascade checks it.
+            const HEADS = {
+              'installations': `${installation}-init`,
+              'teleport-fleet': `bot-${installation}-token`,
+            };
+            function fromHead(pr, name) {
+              return pr.head.ref === HEADS[name] && pr.head.repo?.full_name === pr.base.repo.full_name;
+            }
+
             // Returns null when the installations PR's cluster.yaml has its contacts
             // filled in (or there is nothing to check yet), else { state, reason }.
             async function contactsProblem(client, reported) {
               const m = (reported || '').match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
               if (isTestCustomer || !m) return null;
               const [, owner, repo, number] = m;
+              // A PR outside installations is failed by the target check below.
+              if (owner !== context.repo.owner || repo !== 'installations') return null;
               const path = `${installation}/cluster.yaml`;
               let content;
               try {
                 const { data: instPR } = await client.rest.pulls.get({
                   owner, repo, pull_number: parseInt(number, 10),
                 });
-                if (instPR.merged) return null;
+                if (instPR.merged || !fromHead(instPR, 'installations')) return null;
                 const { data: file } = await client.rest.repos.getContent({
                   owner, repo, path, ref: instPR.head.sha,
                 });
@@ -172,10 +183,40 @@ jobs:
               issue_number: prNumber,
             });
 
+            // Anyone who can read the repo can comment, so markers and results only count from the
+            // workflows' bots and from people with write access (a local `mctl create mc` posts as its operator; Tekton falls back to tinkerers-ci).
+            // Any comment still reruns the gate: the failure texts ask people to comment.
+            const MARKER_BOTS = ['github-actions[bot]', 'giantswarm-mctlbot[bot]', 'tinkerers-ci[bot]'];
+            const canWrite = new Map();
+            async function trustedAuthor(c) {
+              const login = c.user?.login;
+              if (!login) return false;
+              if (MARKER_BOTS.includes(login)) return c.user.type === 'Bot';
+              if (c.user.type !== 'User') return false;
+              if (!canWrite.has(login)) {
+                let ok = false;
+                try {
+                  const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                    owner: context.repo.owner, repo: context.repo.repo, username: login,
+                  });
+                  // maintain is reported as write.
+                  ok = ['admin', 'write'].includes(data.permission);
+                } catch (err) {
+                  core.warning(`Could not read the permission of ${login}: ${err.message}`);
+                }
+                canWrite.set(login, ok);
+              }
+              return canWrite.get(login);
+            }
+            const trusted = [];
+            for (const c of comments) {
+              if (await trustedAuthor(c)) trusted.push(c);
+            }
+
             // Newest match first, so a link from an earlier run is kept.
             function findMarker(label) {
               const re = new RegExp(`\\*\\*${label}:\\*\\*\\s*(.+)`);
-              for (const comment of [...comments].reverse()) {
+              for (const comment of [...trusted].reverse()) {
                 const m = (comment.body || '').match(re);
                 if (m) return m[1].trim();
               }
@@ -193,7 +234,7 @@ jobs:
 
             // The newest result comment governs, even if an earlier run succeeded.
             const resultToken = `<!-- mctl-create-mc-result-${installation} -->`;
-            const results = comments.filter(c => (c.body || '').includes(resultToken));
+            const results = trusted.filter(c => (c.body || '').includes(resultToken));
             const latestResult = results.length ? results[results.length - 1].body : '';
 
             if (!latestResult) {
@@ -211,13 +252,13 @@ jobs:
               return m ? m[1] : '';
             }
 
-            async function stateOf(url) {
+            async function readPR(url) {
               const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
               const [, owner, repo, number] = m;
               const { data } = await crossRepo.rest.pulls.get({
                 owner, repo, pull_number: parseInt(number, 10),
               });
-              return data.merged ? 'merged' : data.state;
+              return data;
             }
 
             const targets = [
@@ -240,13 +281,25 @@ jobs:
                 return;
               }
 
-              let state;
+              // The merge cascade only lands PRs from these repos and branches.
+              const [, owner, repo] = url.match(/github\.com\/([^/]+)\/([^/]+)\//);
+              if (owner !== context.repo.owner || repo !== target.name) {
+                await publish('failure', `The ${target.name} PR is not in ${context.repo.owner}/${target.name}: ${url}`);
+                return;
+              }
+
+              let targetPR;
               try {
-                state = await stateOf(url);
+                targetPR = await readPR(url);
               } catch (err) {
                 await publish('error', `Could not read the ${target.name} PR (${err.status || err.message}).`);
                 return;
               }
+              if (!fromHead(targetPR, target.name)) {
+                await publish('failure', `The ${target.name} PR is not from the ${HEADS[target.name]} branch: ${url}`);
+                return;
+              }
+              const state = targetPR.merged ? 'merged' : targetPR.state;
 
               if (state !== 'open' && state !== 'merged') {
                 await publish('failure', `The ${target.name} PR is ${state} without being merged: ${url}`);
