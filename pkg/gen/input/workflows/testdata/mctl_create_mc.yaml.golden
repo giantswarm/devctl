@@ -208,8 +208,9 @@ jobs:
               return;
             }
             const ccrHead = `${installation}-config`;
-            if (ccrPR.head.ref !== ccrHead || ccrPR.head.repo?.full_name !== ccrPR.base.repo.full_name) {
-              await fail(`CCR PR ${ccrURL} is not from the \`${ccrHead}\` branch of ${ccrOrg}/${ccrRepo}.`);
+            if (ccrPR.head.ref !== ccrHead || ccrPR.head.repo?.full_name !== ccrPR.base.repo.full_name ||
+                ccrPR.base.ref !== ccrPR.base.repo.default_branch) {
+              await fail(`CCR PR ${ccrURL} is not from the \`${ccrHead}\` branch of ${ccrOrg}/${ccrRepo} into its default branch.`);
               return;
             }
 

@@ -118,7 +118,7 @@ func openPR(repo string, number int, head string) (string, map[string]any) {
 		"mergeable_state": "clean",
 		"node_id":         full + "#" + itoa(number),
 		"head":            map[string]any{"ref": head, "sha": "abc", "repo": map[string]any{"full_name": full}},
-		"base":            map[string]any{"repo": map[string]any{"full_name": full}},
+		"base":            map[string]any{"ref": "main", "repo": map[string]any{"full_name": full, "default_branch": "main"}},
 	}
 }
 
@@ -224,7 +224,9 @@ func Test_MctlCreateMcMarkerTrust(t *testing.T) {
 	fork["head"].(map[string]any)["repo"] = map[string]any{"full_name": "someone/antonia-configs"}
 	closedKey, closed := openPR("antonia-configs", 5, trustInst+"-config")
 	closed["state"] = "closed"
-	all := prs([]string{ccrKey, otherKey, foreignKey, forkKey, closedKey}, ccr, other, foreign, fork, closed)
+	sideKey, side := openPR("antonia-configs", 7, trustInst+"-config")
+	side["base"].(map[string]any)["ref"] = "release"
+	all := prs([]string{ccrKey, otherKey, foreignKey, forkKey, closedKey, sideKey}, ccr, other, foreign, fork, closed, side)
 	inst := url("installations", 9)
 
 	tests := []struct {
@@ -260,6 +262,10 @@ func Test_MctlCreateMcMarkerTrust(t *testing.T) {
 		{
 			name:     "installations marker outside installations",
 			comments: []markerComment{bot(configMarkers(url("antonia-configs", 1), url("devctl", 3)))},
+		},
+		{
+			name:     "CCR PR into another branch",
+			comments: []markerComment{bot(configMarkers(url("antonia-configs", 7), inst))},
 		},
 		{
 			name:     "CCR PR closed without merging",
@@ -301,7 +307,9 @@ func Test_MctlMergeCascadeMarkerTrust(t *testing.T) {
 	fleetKey, fleet := openPR("teleport-fleet", 2, "bot-"+trustInst+"-token")
 	foreignKey, foreign := openPR("devctl", 3, trustInst+"-init")
 	wrongKey, wrong := openPR("teleport-fleet", 4, "attacker")
-	all := prs([]string{instKey, fleetKey, foreignKey, wrongKey}, inst, fleet, foreign, wrong)
+	sideKey, side := openPR("installations", 5, trustInst+"-init")
+	side["base"].(map[string]any)["ref"] = "release"
+	all := prs([]string{instKey, fleetKey, foreignKey, wrongKey, sideKey}, inst, fleet, foreign, wrong, side)
 
 	tests := []struct {
 		name      string
@@ -317,6 +325,11 @@ func Test_MctlMergeCascadeMarkerTrust(t *testing.T) {
 		{
 			name:     "result from an unknown bot",
 			comments: []markerComment{comment("renovate[bot]", "Bot", resultMarkers(url("installations", 1), url("teleport-fleet", 2)))},
+		},
+		{
+			name:      "installations PR into another branch",
+			comments:  []markerComment{bot(resultMarkers(url("installations", 5), url("teleport-fleet", 2)))},
+			wantMerge: fleetKey,
 		},
 		{
 			name:      "result from the mctl App",

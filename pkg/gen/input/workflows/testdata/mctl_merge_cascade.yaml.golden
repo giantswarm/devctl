@@ -177,17 +177,19 @@ jobs:
 
             // Returns null when the installations PR's cluster.yaml has its contacts
             // filled in (or there is nothing to check yet), else { state, reason }.
+            // Any other PR is left to land, which rejects it.
             async function contactsProblem(client, reported) {
               const m = (reported || '').match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
               if (isTestCustomer || !m) return null;
               const [, owner, repo, number] = m;
+              if (owner !== context.repo.owner || repo !== 'installations') return null;
               const path = `${installation}/cluster.yaml`;
               let content;
               try {
                 const { data: instPR } = await client.rest.pulls.get({
                   owner, repo, pull_number: parseInt(number, 10),
                 });
-                if (instPR.merged) return null;
+                if (instPR.merged || !fromMctlBranch(instPR, `${installation}-init`)) return null;
                 const { data: file } = await client.rest.repos.getContent({
                   owner, repo, path, ref: instPR.head.sha,
                 });
@@ -199,6 +201,12 @@ jobs:
               return missing.length
                 ? { state: 'failure', reason: `${path} in the installations PR lacks ${missing.join(', ')}.` }
                 : null;
+            }
+
+            // mctl opens its PRs from a branch of the target repo into its default branch.
+            function fromMctlBranch(pr, head) {
+              return pr.head.ref === head && pr.head.repo?.full_name === pr.base.repo.full_name &&
+                pr.base.ref === pr.base.repo.default_branch;
             }
 
             // mergeable_state is "unknown" until GitHub has computed it.
@@ -265,10 +273,10 @@ jobs:
                   failure: `${label} ${target.url} could not be read: ${err.status || err.message}`,
                 };
               }
-              if (pr.head.ref !== HEADS[label] || pr.head.repo?.full_name !== pr.base.repo.full_name) {
+              if (!fromMctlBranch(pr, HEADS[label])) {
                 return {
-                  row: `| ${label} | ❌ wrong branch | ${target.url} is not from \`${HEADS[label]}\`. |`,
-                  failure: `${label} ${target.url} is not from the ${HEADS[label]} branch`,
+                  row: `| ${label} | ❌ wrong branch | ${target.url} is not from \`${HEADS[label]}\` into the default branch. |`,
+                  failure: `${label} ${target.url} is not from the ${HEADS[label]} branch into the default branch`,
                 };
               }
               if (pr.merged) {
@@ -326,10 +334,7 @@ jobs:
 
             const outcomes = [];
             const installationsPR = findMarker('Installations PR');
-            // A PR outside installations goes straight to land, which rejects it.
-            const instTarget = asPR(installationsPR);
-            const inInstallations = instTarget?.owner === context.repo.owner && instTarget?.repo === 'installations';
-            const contacts = inInstallations ? await contactsProblem(github, installationsPR) : null;
+            const contacts = await contactsProblem(github, installationsPR);
             if (contacts) {
               const url = asPR(installationsPR).url;
               outcomes.push({
