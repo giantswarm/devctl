@@ -224,11 +224,12 @@ jobs:
             }
 
             // A failed lookup must not ask for a new bootstrap: a local run posts its result as the operator.
+            // Matches whatever findMarker and the result lookup would have read from the comment.
             const resultToken = `<!-- mctl-create-mc-result-${installation} -->`;
             const skipped = comments.find(c => unchecked.has(c.user?.login) &&
-              /<!-- mctl-create-mc-result-|\*\*(Installations|Teleport fleet) PR:\*\*/.test(c.body || ''));
+              ((c.body || '').includes(resultToken) || /\*\*(Installations|Teleport fleet) PR:\*\*/.test(c.body || '')));
             if (skipped) {
-              await publish('error', `Could not check who posted ${skipped.html_url || 'a /create-mc result'} — rerun this check.`);
+              await publish('error', `Rerun this check: could not read the permission of ${skipped.user.login}, who posted a /create-mc result or PR link.`);
               return;
             }
 
@@ -302,7 +303,7 @@ jobs:
               // The merge cascade only lands PRs from these repos and branches.
               const [, owner, repo] = url.match(/github\.com\/([^/]+)\/([^/]+)\//);
               if (owner !== context.repo.owner || repo !== target.name) {
-                await publish('failure', `The ${target.name} PR is not in ${context.repo.owner}/${target.name}: ${url}`);
+                await publish('failure', `${target.name} PR not in ${context.repo.owner}/${target.name}: ${url}`);
                 return;
               }
 
@@ -314,7 +315,7 @@ jobs:
                 return;
               }
               if (!fromHead(targetPR, target.name)) {
-                await publish('failure', `The ${target.name} PR is not from the ${HEADS[target.name]} branch into the default branch: ${url}`);
+                await publish('failure', `${target.name} PR not from ${HEADS[target.name]} into the default branch: ${url}`);
                 return;
               }
               const state = targetPR.merged ? 'merged' : targetPR.state;

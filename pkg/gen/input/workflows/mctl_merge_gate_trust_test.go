@@ -69,7 +69,13 @@ func Test_MctlMergeGateMarkerTrust(t *testing.T) {
 			name:      "result from a user whose permission cannot be read",
 			comments:  []markerComment{bot(good), human("flaky", good)},
 			want:      "error",
-			wantText:  "rerun this check",
+			wantText:  "Rerun this check: could not read the permission of flaky",
+			wantError: "Could not read the permission of flaky",
+		},
+		{
+			name:      "quoted result from a user whose permission cannot be read",
+			comments:  []markerComment{bot(good), human("flaky", "> - **Installations PR:** "+url("installations", 1))},
+			want:      "error",
 			wantError: "Could not read the permission of flaky",
 		},
 		{
@@ -111,7 +117,7 @@ func Test_MctlMergeGateMarkerTrust(t *testing.T) {
 			name:     "trusted marker from another branch",
 			comments: []markerComment{bot(resultMarkers(url("installations", 1), url("teleport-fleet", 4)))},
 			want:     "failure",
-			wantText: "not from the bot-" + trustInst + "-token branch",
+			wantText: "not from bot-" + trustInst + "-token into",
 		},
 		{
 			name:     "trusted marker into another base branch",
@@ -123,7 +129,7 @@ func Test_MctlMergeGateMarkerTrust(t *testing.T) {
 			name:     "trusted marker from a fork",
 			comments: []markerComment{bot(resultMarkers(url("installations", 5), url("teleport-fleet", 2)))},
 			want:     "failure",
-			wantText: "not from the " + trustInst + "-init branch",
+			wantText: "not from " + trustInst + "-init into",
 		},
 	}
 	for _, tc := range tests {
@@ -184,8 +190,8 @@ func Test_MctlMergeGateCustomerContacts(t *testing.T) {
 		{name: "contacts filled in", inst: url("installations", 1), file: filled, want: "success"},
 		{name: "contacts missing", inst: url("installations", 1), file: unfilled, want: "failure", wantText: "lacks accountEngineer"},
 		{name: "installations marker outside installations", inst: url("devctl", 3), file: filled, want: "failure", wantText: "not in giantswarm/installations"},
-		{name: "installations PR from another branch", inst: url("installations", 4), file: filled, want: "failure", wantText: "not from the " + trustInst + "-init branch"},
-		{name: "installations PR from a fork", inst: url("installations", 5), file: filled, want: "failure", wantText: "not from the " + trustInst + "-init branch"},
+		{name: "installations PR from another branch", inst: url("installations", 4), file: filled, want: "failure", wantText: "not from " + trustInst + "-init into"},
+		{name: "installations PR from a fork", inst: url("installations", 5), file: filled, want: "failure", wantText: "not from " + trustInst + "-init into"},
 		{
 			name:     "newer installations marker from a read-only member is ignored",
 			inst:     url("installations", 1),
