@@ -504,13 +504,14 @@ jobs:
           go-version-file: ${{ matrix.module }}/go.mod
           cache-dependency-path: ${{ matrix.module }}/go.sum
       - name: Verify independent module
+        id: verify
         working-directory: ${{ matrix.module }}
         shell: bash
         run: |
           set -euo pipefail
           go mod tidy
           git diff --exit-code -- go.mod go.sum
-          go test -race ./...
+          go test -short -race ./...
           go vet ./...
 
   release:
