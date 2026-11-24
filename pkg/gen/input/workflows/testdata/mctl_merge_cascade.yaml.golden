@@ -67,10 +67,39 @@ jobs:
               });
             }
 
+            // Anyone who can read the repo can comment, so markers and results only count from the
+            // workflows' bots and from people with write access (a local `mctl create mc` posts as its operator; Tekton falls back to tinkerers-ci).
+            const MARKER_BOTS = ['github-actions[bot]', 'giantswarm-mctlbot[bot]', 'tinkerers-ci[bot]'];
+            const canWrite = new Map();
+            async function trustedAuthor(c) {
+              const login = c.user?.login;
+              if (!login) return false;
+              if (MARKER_BOTS.includes(login)) return c.user.type === 'Bot';
+              if (c.user.type !== 'User') return false;
+              if (!canWrite.has(login)) {
+                let ok = false;
+                try {
+                  const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                    owner: context.repo.owner, repo: context.repo.repo, username: login,
+                  });
+                  // maintain is reported as write.
+                  ok = ['admin', 'write'].includes(data.permission);
+                } catch (err) {
+                  core.warning(`Could not read the permission of ${login}: ${err.message}`);
+                }
+                canWrite.set(login, ok);
+              }
+              return canWrite.get(login);
+            }
+            const trusted = [];
+            for (const c of comments) {
+              if (await trustedAuthor(c)) trusted.push(c);
+            }
+
             // Markers shared with merge_gate and the Tekton result comment.
             function findMarker(label) {
               const re = new RegExp(`\\*\\*${label}:\\*\\*\\s*(.+)`);
-              for (const c of [...comments].reverse()) {
+              for (const c of [...trusted].reverse()) {
                 const m = (c.body || '').match(re);
                 if (m) return m[1].trim();
               }
@@ -86,7 +115,7 @@ jobs:
 
             // Admins can merge past the gate; never land PRs for a failed bootstrap.
             const resultToken = `<!-- mctl-create-mc-result-${installation} -->`;
-            const results = comments.filter(c => (c.body || '').includes(resultToken));
+            const results = trusted.filter(c => (c.body || '').includes(resultToken));
             const latestResult = results.length ? results[results.length - 1].body : '';
             if (!latestResult.includes('created successfully')) {
               await comment([
@@ -146,30 +175,49 @@ jobs:
               return missing;
             }
 
-            // Returns null when the installations PR's cluster.yaml has its contacts
-            // filled in (or there is nothing to check yet), else { state, reason }.
-            async function contactsProblem(client, reported) {
-              const m = (reported || '').match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
-              if (isTestCustomer || !m) return null;
-              const [, owner, repo, number] = m;
+            // Returns null when cluster.yaml at the commit about to be merged has its
+            // contacts filled in, else the reason it was not merged.
+            async function contactsProblem(pr) {
+              if (isTestCustomer) return null;
               const path = `${installation}/cluster.yaml`;
               let content;
               try {
-                const { data: instPR } = await client.rest.pulls.get({
-                  owner, repo, pull_number: parseInt(number, 10),
-                });
-                if (instPR.merged) return null;
-                const { data: file } = await client.rest.repos.getContent({
-                  owner, repo, path, ref: instPR.head.sha,
+                const { data: file } = await github.rest.repos.getContent({
+                  owner: context.repo.owner, repo: 'installations', path, ref: pr.head.sha,
                 });
                 content = Buffer.from(file.content, 'base64').toString('utf8');
               } catch (err) {
-                return { state: 'error', reason: `Could not read ${path} from the installations PR (${err.status || err.message}).` };
+                return `Could not read ${path} from the installations PR (${err.status || err.message}).`;
               }
               const missing = missingContacts(content);
-              return missing.length
-                ? { state: 'failure', reason: `${path} in the installations PR lacks ${missing.join(', ')}.` }
-                : null;
+              return missing.length ? `${path} in the installations PR lacks ${missing.join(', ')}.` : null;
+            }
+
+            // mctl opens its PRs from a branch of the target repo into its default branch.
+            function fromMctlBranch(pr, head) {
+              return pr.head.ref === head && pr.head.repo?.full_name === pr.base.repo.full_name &&
+                pr.base.ref === pr.base.repo.default_branch;
+            }
+
+            // The head GitHub's branch update makes: a merge commit of the checked commit and a
+            // commit already on the default branch. Anything else was pushed after the check.
+            async function isUpdateOf(target, pr, checked, head) {
+              if (pr.merged || pr.state !== 'open' || !fromMctlBranch(pr, head)) return false;
+              try {
+                const { data: commit } = await github.rest.repos.getCommit({
+                  owner: target.owner, repo: target.repo, ref: pr.head.sha,
+                });
+                const parents = commit.parents.map(p => p.sha);
+                const other = parents.filter(p => p !== checked);
+                if (parents.length !== 2 || other.length !== 1) return false;
+                const { data: cmp } = await github.rest.repos.compareCommits({
+                  owner: target.owner, repo: target.repo, base: other[0], head: pr.base.ref,
+                });
+                return ['identical', 'ahead'].includes(cmp.status);
+              } catch (err) {
+                core.warning(`Could not read ${pr.head.sha} of ${target.url}: ${err.message}`);
+                return false;
+              }
             }
 
             // mergeable_state is "unknown" until GitHub has computed it.
@@ -187,32 +235,46 @@ jobs:
               return data;
             }
 
-            // Squash is the only method allowed on the target repos.
-            async function mergeNow(target) {
+            // Squash is the only method allowed on the target repos. Both land exactly
+            // the commit checked here; a later push to the branch makes them fail.
+            async function mergeNow(target, sha) {
               await github.rest.pulls.merge({
                 owner: target.owner, repo: target.repo,
-                pull_number: target.number, merge_method: 'squash',
+                pull_number: target.number, merge_method: 'squash', sha,
               });
             }
 
-            async function armAutoMerge(target, nodeID) {
+            async function armAutoMerge(pr) {
               await github.graphql(
-                `mutation($id: ID!) {
-                   enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: SQUASH}) {
+                `mutation($id: ID!, $sha: GitObjectID!) {
+                   enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: SQUASH, expectedHeadOid: $sha}) {
                      pullRequest { number }
                    }
                  }`,
-                { id: nodeID });
+                { id: pr.node_id, sha: pr.head.sha });
             }
 
+            // The branch mctl opens in each target repo; the App token reaches every repo of the org.
+            const HEADS = {
+              'installations': `${installation}-init`,
+              'teleport-fleet': `bot-${installation}-token`,
+            };
+
             // waitForChecks=false merges now (admin bypass); true arms auto-merge.
-            async function land(label, reported, waitForChecks) {
+            // check(pr) returns why the commit about to be merged must not be, or null.
+            async function land(label, reported, waitForChecks, check) {
               if (!reported) {
                 return { row: `| ${label} | ❓ not found | No PR link was reported on this PR. |` };
               }
               const target = asPR(reported);
               if (!target) {
                 return { row: `| ${label} | ❌ not opened | ${reported} |` };
+              }
+              if (target.owner !== context.repo.owner || target.repo !== label) {
+                return {
+                  row: `| ${label} | ❌ wrong repository | ${target.url} is not in ${context.repo.owner}/${label}. |`,
+                  failure: `${label} ${target.url} is not in ${context.repo.owner}/${label}`,
+                };
               }
 
               let pr;
@@ -222,6 +284,12 @@ jobs:
                 return {
                   row: `| ${label} | ❌ unreadable | ${target.url} — ${err.status || err.message} |`,
                   failure: `${label} ${target.url} could not be read: ${err.status || err.message}`,
+                };
+              }
+              if (!fromMctlBranch(pr, HEADS[label])) {
+                return {
+                  row: `| ${label} | ❌ wrong branch | ${target.url} is not from \`${HEADS[label]}\` into the default branch. |`,
+                  failure: `${label} ${target.url} is not from the ${HEADS[label]} branch into the default branch`,
                 };
               }
               if (pr.merged) {
@@ -240,22 +308,52 @@ jobs:
                 };
               }
 
-              // Update a "behind" branch so auto-merge can proceed.
+              // Update a "behind" branch so auto-merge can proceed, then go on with the
+              // commit GitHub makes: a merge of the default branch into the commit read above.
               if (pr.mergeable_state === 'behind') {
+                const checked = pr.head.sha;
+                let updating = false;
                 try {
                   await github.rest.pulls.updateBranch({
                     owner: target.owner, repo: target.repo, pull_number: target.number,
+                    expected_head_sha: checked,
                   });
+                  updating = true;
                 } catch (err) {
                   core.warning(`Could not update ${target.url}: ${err.message}`);
                 }
+                // updateBranch only queues the update; wait for the head to move.
+                for (let attempt = 0; updating && attempt < 10; attempt++) {
+                  await new Promise(r => setTimeout(r, 3000));
+                  try {
+                    pr = await getPR(target);
+                  } catch (err) {
+                    core.warning(`Could not re-read ${target.url}: ${err.message}`);
+                    continue;
+                  }
+                  if (pr.head.sha !== checked) break;
+                }
+                if (pr.head.sha !== checked && !(await isUpdateOf(target, pr, checked, HEADS[label]))) {
+                  return {
+                    row: `| ${label} | ❌ branch moved | ${target.url} changed while it was being merged — check it and merge it by hand. |`,
+                    failure: `${label} ${target.url} changed while it was being merged`,
+                  };
+                }
+              }
+
+              const problem = check ? await check(pr) : null;
+              if (problem) {
+                return {
+                  row: `| ${label} | ❌ contacts missing | ${target.url} — ${problem} Fix it, then merge it by hand. |`,
+                  failure: `${label} ${target.url} not merged: ${problem}`,
+                };
               }
 
               const readyToMerge = pr.mergeable_state === 'clean';
               let mergeErr = '';
               if (!waitForChecks || readyToMerge) {
                 try {
-                  await mergeNow(target);
+                  await mergeNow(target, pr.head.sha);
                   return { row: `| ${label} | ✅ merged | ${target.url} |` };
                 } catch (err) {
                   mergeErr = err.message;
@@ -264,7 +362,7 @@ jobs:
               }
 
               try {
-                await armAutoMerge(target, pr.node_id);
+                await armAutoMerge(pr);
                 return {
                   row: `| ${label} | ⏳ auto-merge armed | ${target.url} — merges when its checks pass. |`,
                 };
@@ -278,17 +376,8 @@ jobs:
             }
 
             const outcomes = [];
-            const installationsPR = findMarker('Installations PR');
-            const contacts = await contactsProblem(github, installationsPR);
-            if (contacts) {
-              const url = asPR(installationsPR).url;
-              outcomes.push({
-                row: `| installations | ❌ contacts missing | ${url} — ${contacts.reason} Fix it, then merge it by hand. |`,
-                failure: `installations ${url} not merged: ${contacts.reason}`,
-              });
-            } else {
-              outcomes.push(await land('installations', installationsPR, false));
-            }
+            outcomes.push(await land(
+              'installations', findMarker('Installations PR'), false, contactsProblem));
             outcomes.push(await land(
               'teleport-fleet', findMarker('Teleport fleet PR'), true));
             const rows = outcomes.map(o => o.row);

@@ -517,9 +517,11 @@ func Test_MctlInstallationsContacts(t *testing.T) {
 	}
 
 	cascade := renders["merge_cascade"]
-	check = strings.Index(cascade, "await contactsProblem(github, installationsPR)")
-	land := strings.Index(cascade, "await land('installations', installationsPR, false)")
-	if check < 0 || land < 0 || check > land {
+	// The cascade checks the commit it then merges (Test_MctlMergeCascadeLandsTheCheckedCommit runs it).
+	check = strings.Index(cascade, "const problem = check ? await check(pr) : null;")
+	merge := strings.Index(cascade, "await mergeNow(target, pr.head.sha)")
+	if check < 0 || merge < 0 || check > merge ||
+		!strings.Contains(cascade, "'installations', findMarker('Installations PR'), false, contactsProblem)") {
 		t.Error("the merge cascade must check the installations contacts before landing the installations PR")
 	}
 
