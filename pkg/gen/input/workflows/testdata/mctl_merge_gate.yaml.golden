@@ -148,8 +148,10 @@ jobs:
               'installations': `${installation}-init`,
               'teleport-fleet': `bot-${installation}-token`,
             };
+            // Not from a fork, and into the default branch, as the merge cascade checks it.
             function fromHead(pr, name) {
-              return pr.head.ref === HEADS[name] && pr.head.repo?.full_name === pr.base.repo.full_name;
+              return pr.head.ref === HEADS[name] && pr.head.repo?.full_name === pr.base.repo.full_name &&
+                pr.base.ref === pr.base.repo.default_branch;
             }
 
             // Returns null when the installations PR's cluster.yaml has its contacts
@@ -299,7 +301,7 @@ jobs:
                 return;
               }
               if (!fromHead(targetPR, target.name)) {
-                await publish('failure', `The ${target.name} PR is not from the ${HEADS[target.name]} branch: ${url}`);
+                await publish('failure', `The ${target.name} PR is not from the ${HEADS[target.name]} branch into the default branch: ${url}`);
                 return;
               }
               const state = targetPR.merged ? 'merged' : targetPR.state;

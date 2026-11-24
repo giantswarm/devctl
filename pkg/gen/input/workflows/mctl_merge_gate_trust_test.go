@@ -18,7 +18,9 @@ func Test_MctlMergeGateMarkerTrust(t *testing.T) {
 	wrongKey, wrong := openPR("teleport-fleet", 4, "attacker")
 	forkKey, fork := openPR("installations", 5, trustInst+"-init")
 	fork["head"].(map[string]any)["repo"] = map[string]any{"full_name": "someone/installations"}
-	all := prs([]string{initKey, instKey, fleetKey, foreignKey, wrongKey, forkKey}, initPR, inst, fleet, foreign, wrong, fork)
+	sideKey, side := openPR("teleport-fleet", 6, "bot-"+trustInst+"-token")
+	side["base"].(map[string]any)["ref"] = "release"
+	all := prs([]string{initKey, instKey, fleetKey, foreignKey, wrongKey, forkKey, sideKey}, initPR, inst, fleet, foreign, wrong, fork, side)
 
 	good := resultMarkers(url("installations", 1), url("teleport-fleet", 2))
 	failed := "<!-- mctl-create-mc-result-" + trustInst + " -->\n### ❌ `" + trustInst + "` bootstrap failed"
@@ -89,6 +91,12 @@ func Test_MctlMergeGateMarkerTrust(t *testing.T) {
 			comments: []markerComment{bot(resultMarkers(url("installations", 1), url("teleport-fleet", 4)))},
 			want:     "failure",
 			wantText: "not from the bot-" + trustInst + "-token branch",
+		},
+		{
+			name:     "trusted marker into another base branch",
+			comments: []markerComment{bot(resultMarkers(url("installations", 1), url("teleport-fleet", 6)))},
+			want:     "failure",
+			wantText: "into the default branch",
 		},
 		{
 			name:     "trusted marker from a fork",
