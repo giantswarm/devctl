@@ -12,17 +12,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// checkExtras runs the guards an extras reservation needs before it writes
-// anything. Guard 1, the render check, runs after the write.
-func checkExtras(req Request, chart string, resolved blockResolution) error {
-	if err := checkOneTree(req, chart); err != nil {
-		return microerror.Mask(err)
+// checkBlock runs the guards a reservation block needs before it writes
+// anything, in the kustomization of gitopsSource. Guard 1, the render check,
+// runs after the write.
+func checkBlock(req Request, gitopsSource, chart string, resolved blockResolution) error {
+	if gitopsSource == GitOpsSourceExtras {
+		if err := checkOneTree(req, chart); err != nil {
+			return microerror.Mask(err)
+		}
 	}
-	lines, err := readLines(kustomizationPath(req.RepoDir, req.Cluster, GitOpsSourceExtras))
+	lines, err := readLines(kustomizationPath(req.RepoDir, req.Cluster, gitopsSource))
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	name := kustomizationFile(req.Cluster, GitOpsSourceExtras)
+	name := kustomizationFile(req.Cluster, gitopsSource)
 	if err := checkBlocksLast(lines, name); err != nil {
 		return microerror.Mask(err)
 	}
@@ -30,10 +33,10 @@ func checkExtras(req Request, chart string, resolved blockResolution) error {
 		return microerror.Mask(err)
 	}
 
-	return microerror.Mask(checkNoHiddenReleases(req, resolved))
+	return microerror.Mask(checkNoHiddenReleases(req, gitopsSource, resolved))
 }
 
-// CheckExtrasPatches is guard 2 for the extras kustomization at path: every
+// CheckExtrasPatches is guard 2 for the extras or collections kustomization at path: every
 // reservation block comes after every other entry of the root patches: list. A
 // patch after a block can change the source again, under the dev semverFilter,
 // and then no dev build matches. The CI check of the GitOps repo runs it too.
@@ -147,11 +150,11 @@ func checkBlocksLast(lines []string, name string) error {
 	return nil
 }
 
-// checkNoHiddenReleases is guard 3: a HelmRelease outside the extras render
+// checkNoHiddenReleases is guard 3: a HelmRelease outside the render of the tree
 // that takes its chart from a patched source moves too, and nobody sees it in
 // the render. It reads every manifest of the cluster, not a render, as Flux
 // Kustomization objects wire them up in ways no single overlay shows.
-func checkNoHiddenReleases(req Request, resolved blockResolution) error {
+func checkNoHiddenReleases(req Request, gitopsSource string, resolved blockResolution) error {
 	patched, patchedNames := map[string]bool{}, map[string]bool{}
 	for _, s := range resolved.sources {
 		patched[s.namespace()+"/"+s.name()] = true

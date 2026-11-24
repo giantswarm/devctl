@@ -21,9 +21,12 @@ import (
 const (
 	patchesKey      = "patches:"
 	emptyPatchesKey = "patches: []"
-	// filledPatchesKey replaces emptyPatchesKey while blocks fill the list, so
-	// removeBlock can tell it from a key writeBlock added at the end of the file.
-	filledPatchesKey = "patches: # was [] before `devctl reservation reserve`"
+	nullPatchesKey  = "patches: null"
+	// patchesWasPrefix starts the line inside a block that records how the
+	// patches: key looked before the first block, so removeBlock can restore it.
+	patchesWasPrefix = "# patches: was "
+	// patchesAbsent records a kustomization that had no patches: key at all.
+	patchesAbsent = "absent"
 
 	blockBeginMarker = "# BEGIN reservation of %s, written by `devctl reservation reserve`. Do not edit."
 	blockEndMarker   = "# END reservation of %s, written by `devctl reservation reserve`"
@@ -36,6 +39,13 @@ type blockResolution struct {
 	sources []object
 	// helmReleases are "<namespace>/<name>" of each moved release, sorted.
 	helmReleases []string
+	// chartRefs maps each moved release to its spec.chartRef before the block.
+	chartRefs map[string]string
+}
+
+// chartRefOf is the spec.chartRef of a HelmRelease, as one comparable string.
+func chartRefOf(o object) string {
+	return fmt.Sprint(o.nested("spec", "chartRef"))
 }
 
 func (r blockResolution) sourceNames() []string {
@@ -78,7 +88,7 @@ func resolveExtras(req Request, chart string) (blockResolution, bool, error) {
 			helmReleaseKind, strings.Join(inline, ", "), req.Cluster, chart)
 	}
 
-	var res blockResolution
+	res := blockResolution{chartRefs: map[string]string{}}
 	served := map[string]bool{}
 	for _, o := range objects {
 		if o.kind() != ociRepositoryKind {
@@ -108,6 +118,7 @@ func resolveExtras(req Request, chart string) (blockResolution, bool, error) {
 		}
 		if served[namespace+"/"+name] {
 			res.helmReleases = append(res.helmReleases, o.namespace()+"/"+o.name())
+			res.chartRefs[o.namespace()+"/"+o.name()] = chartRefOf(o)
 		}
 	}
 	sort.Strings(res.helmReleases)
@@ -292,15 +303,25 @@ func writeBlock(path, chart string, block []string) error {
 		return microerror.Mask(err)
 	}
 
-	start := -1
-	for i, l := range lines {
-		if isPatchesKey(l) {
-			if l == emptyPatchesKey {
-				lines[i] = filledPatchesKey
-			}
-			start = i
+	// The first block records how the patches: key looked; later ones copy it.
+	was := patchesAbsent
+	start := slices.IndexFunc(lines, isPatchesKey)
+	if start >= 0 {
+		was = lines[start]
+	}
+	for _, l := range lines {
+		if w, ok := strings.CutPrefix(strings.TrimSpace(l), patchesWasPrefix); ok {
+			was = w
 			break
 		}
+		// shortcut: a block from an older devctl records nothing, so the key
+		// stays unrecorded, until the last block goes.
+		if isBlockBegin(l) {
+			was = ""
+		}
+	}
+	if start >= 0 && (lines[start] == emptyPatchesKey || lines[start] == nullPatchesKey) {
+		lines[start] = patchesKey
 	}
 
 	indent := "  "
@@ -317,6 +338,9 @@ func writeBlock(path, chart string, block []string) error {
 		}
 	}
 
+	if was != "" {
+		block = append([]string{block[0], patchesWasPrefix + was}, block[1:]...)
+	}
 	indented := make([]string, 0, len(block))
 	for _, l := range block {
 		indented = append(indented, indent+l)
@@ -327,9 +351,9 @@ func writeBlock(path, chart string, block []string) error {
 }
 
 // isPatchesKey reports whether l is the root patches: key in any form a
-// reservation leaves or finds it in.
+// kustomization has it in.
 func isPatchesKey(l string) bool {
-	return l == patchesKey || l == emptyPatchesKey || l == filledPatchesKey
+	return l == patchesKey || l == emptyPatchesKey || l == nullPatchesKey
 }
 
 // listEnd returns the index of the last line of the list under the key at
@@ -390,8 +414,10 @@ func findBlock(lines []string, chart string) (begin, end int, ok bool) {
 }
 
 // removeBlock removes the chart's block, reversing writeBlock exactly. When the
-// block was the only entry, the patches: key goes too if writeBlock appended it
-// at the end of the file, or goes back to `patches: []` when content follows.
+// block was the only entry, the patches: key goes back to what the block
+// recorded: gone, `patches: []`, `patches: null` or bare. A block without such
+// a record, written by an older devctl, drops a key at the end of the file and
+// empties one that content follows.
 func removeBlock(path, chart string) error {
 	lines, err := readLines(path)
 	if err != nil {
@@ -401,16 +427,23 @@ func removeBlock(path, chart string) error {
 	if !ok {
 		return microerror.Maskf(blockNotFoundError, "%s holds no reservation block of %q", path, chart)
 	}
+	was := ""
+	for _, l := range lines[begin : end+1] {
+		if w, ok := strings.CutPrefix(strings.TrimSpace(l), patchesWasPrefix); ok {
+			was = w
+		}
+	}
 	lines = append(lines[:begin], lines[end+1:]...)
 
 	start := slices.IndexFunc(lines, isPatchesKey)
 	if start >= 0 && listEnd(lines, start) == start {
-		if lines[start] == filledPatchesKey {
-			lines[start] = emptyPatchesKey
-		} else if len(trimTrailingBlank(lines[start+1:])) == 0 {
+		switch {
+		case was == patchesAbsent, was == "" && len(trimTrailingBlank(lines[start+1:])) == 0:
 			lines = append(trimTrailingBlank(lines[:start]), "")
-		} else {
+		case was == "":
 			lines[start] = emptyPatchesKey
+		default:
+			lines[start] = was
 		}
 	}
 
@@ -436,7 +469,7 @@ func writeBlockAnnotations(path, chart string, h hold) error {
 }
 
 // assertBlockReserved is guard 1: every source of the chart comes out of the
-// render on the dev builds. kustomize skips a patch whose target matches
+// render on the dev builds, and every release moved keeps its chartRef. kustomize skips a patch whose target matches
 // nothing without an error, so a render that succeeds proves nothing.
 func assertBlockReserved(objects []object, resolved blockResolution, semverFilter string, annotations map[string]string) error {
 	wantRef := devRef(semverFilter)
@@ -463,6 +496,24 @@ func assertBlockReserved(objects []object, resolved blockResolution, semverFilte
 				return microerror.Maskf(renderAssertionError,
 					"the rendered %s %s/%s does not carry annotation %s=%q", ociRepositoryKind, s.namespace(), s.name(), k, v)
 			}
+		}
+	}
+
+	for _, release := range resolved.helmReleases {
+		var got object
+		for _, o := range objects {
+			if o.kind() == helmReleaseKind && o.namespace()+"/"+o.name() == release {
+				got = o
+				break
+			}
+		}
+		if got == nil {
+			return microerror.Maskf(renderAssertionError, "the render lost %s %s", helmReleaseKind, release)
+		}
+		if ref := chartRefOf(got); ref != resolved.chartRefs[release] {
+			return microerror.Maskf(renderAssertionError,
+				"the reservation block changed the chartRef of %s %s from %s to %s; a reservation must only change the source",
+				helmReleaseKind, release, resolved.chartRefs[release], ref)
 		}
 	}
 

@@ -116,7 +116,7 @@ func resolveCollections(objects []object, req Request, chart string, sources []o
 		return blockResolution{}, microerror.Mask(noMatchError(req, chart))
 	}
 
-	res := blockResolution{sources: sources}
+	res := blockResolution{sources: sources, chartRefs: map[string]string{}}
 	sourceNames := res.sourceNames()
 
 	for _, o := range objects {
@@ -125,6 +125,7 @@ func resolveCollections(objects []object, req Request, chart string, sources []o
 		}
 		if name, _ := o.nested("spec", "chartRef", "name").(string); slices.Contains(sourceNames, name) {
 			res.helmReleases = append(res.helmReleases, Namespace+"/"+o.name())
+			res.chartRefs[Namespace+"/"+o.name()] = chartRefOf(o)
 		}
 	}
 	sort.Strings(res.helmReleases)

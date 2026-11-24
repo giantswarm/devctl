@@ -5,6 +5,7 @@
 package reservation
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -99,6 +100,8 @@ type Result struct {
 	// From and Until bound the reservation, in UTC.
 	From  time.Time `json:"from"`
 	Until time.Time `json:"until"`
+	// Warnings are things the user should know that did not stop the reservation.
+	Warnings []string `json:"warnings,omitempty"`
 	// Replaced is the expired reservation of the same app, from another branch
 	// or pull request, that Reserve took over. Its pull request still reads
 	// "reserved" until somebody tells it otherwise.
@@ -242,7 +245,7 @@ func Reserve(req Request) (res Result, err error) {
 		return Result{}, microerror.Mask(err)
 	}
 	if ok {
-		if err := checkExtras(req, chart, extras); err != nil {
+		if err := checkBlock(req, GitOpsSourceExtras, chart, extras); err != nil {
 			return Result{}, microerror.Mask(err)
 		}
 		res, err := reserveInPlace(req, GitOpsSourceExtras, chart, extras, from, until, replaced)
@@ -264,7 +267,15 @@ func Reserve(req Request) (res Result, err error) {
 		return Result{}, microerror.Mask(err)
 	}
 
+	if err := checkBlock(req, GitOpsSourceCollections, chart, collections); err != nil {
+		return Result{}, microerror.Mask(err)
+	}
 	res, err = reserveInPlace(req, GitOpsSourceCollections, chart, collections, from, until, replaced)
+	if err == nil && len(extras.sources) > 0 {
+		res.Warnings = append(res.Warnings, fmt.Sprintf(
+			"chart %q is served from both %s and %s. Only the collections hold the reservation: the extras sources %s feed no %s",
+			chart, req.clusterPath(collectionsDir), req.clusterPath(extrasDir), strings.Join(extras.sourceNames(), ", "), helmReleaseKind))
+	}
 
 	return res, microerror.Mask(err)
 }
