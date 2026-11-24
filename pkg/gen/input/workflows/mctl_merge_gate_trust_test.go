@@ -134,7 +134,10 @@ func Test_MctlMergeGateCustomerContacts(t *testing.T) {
 	wrongKey, wrong := openPR("installations", 4, "attacker")
 	// Without the branch check its unreadable cluster.yaml would post error, not failure.
 	wrong["head"].(map[string]any)["sha"] = "other"
-	all := prs([]string{initKey, instKey, fleetKey, foreignKey, wrongKey}, initPR, inst, fleet, foreign, wrong)
+	forkKey, fork := openPR("installations", 5, trustInst+"-init")
+	fork["head"].(map[string]any)["repo"] = map[string]any{"full_name": "someone/installations"}
+	fork["head"].(map[string]any)["sha"] = "other"
+	all := prs([]string{initKey, instKey, fleetKey, foreignKey, wrongKey, forkKey}, initPR, inst, fleet, foreign, wrong, fork)
 
 	clusterYAML := trustOrg + "/installations#abc:" + trustInst + "/cluster.yaml"
 	filled := "slack:\n  support:\n    - '#support-acme'\naccountEngineer: jane\naccountEngineersHandle: '@jane'\n"
@@ -143,6 +146,7 @@ func Test_MctlMergeGateCustomerContacts(t *testing.T) {
 	tests := []struct {
 		name     string
 		inst     string
+		extra    []markerComment
 		file     string
 		want     string
 		wantText string
@@ -151,6 +155,15 @@ func Test_MctlMergeGateCustomerContacts(t *testing.T) {
 		{name: "contacts missing", inst: url("installations", 1), file: unfilled, want: "failure", wantText: "lacks accountEngineer"},
 		{name: "installations marker outside installations", inst: url("devctl", 3), file: filled, want: "failure", wantText: "not in giantswarm/installations"},
 		{name: "installations PR from another branch", inst: url("installations", 4), file: filled, want: "failure", wantText: "not from the " + trustInst + "-init branch"},
+		{name: "installations PR from a fork", inst: url("installations", 5), file: filled, want: "failure", wantText: "not from the " + trustInst + "-init branch"},
+		{
+			name:     "newer installations marker from a read-only member is ignored",
+			inst:     url("installations", 1),
+			extra:    []markerComment{human("reader", "- **Installations PR:** "+url("installations", 6))},
+			file:     unfilled,
+			want:     "failure",
+			wantText: "lacks accountEngineer",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -162,9 +175,10 @@ func Test_MctlMergeGateCustomerContacts(t *testing.T) {
 					"runId":     1,
 					"repo":      map[string]string{"owner": trustOrg, "repo": customerRepo},
 				},
-				Comments: []markerComment{bot(resultMarkers(tc.inst, url("teleport-fleet", 2)))},
-				PRs:      all,
-				Files:    map[string]string{clusterYAML: tc.file},
+				Comments:    append([]markerComment{bot(resultMarkers(tc.inst, url("teleport-fleet", 2)))}, tc.extra...),
+				Permissions: map[string]string{"reader": "read"},
+				PRs:         all,
+				Files:       map[string]string{clusterYAML: tc.file},
 			})
 			statuses := ops(res, "status")
 			if len(statuses) != 1 {
