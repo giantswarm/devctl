@@ -138,6 +138,7 @@ jobs:
                 '```',
                 '',
               ] : []),
+              'Approve the CCR PR before commenting `/create-mc`; the bot can\'t merge it without a review.',
               'Comment `/create-mc` on this PR when you are ready to start the bootstrap pipeline.',
             ].join('\n');
 
