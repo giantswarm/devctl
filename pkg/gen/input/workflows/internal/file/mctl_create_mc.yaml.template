@@ -54,7 +54,12 @@ jobs:
                   owner: context.repo.owner, repo: context.repo.repo, username: user.login,
                 }));
               } catch (err) {
-                core.warning(`Could not read the permission of ${user.login}: ${err.message}`);
+                if (err.status !== 404) {
+                  const reason = `Could not read the permission of ${user.login} (${err.status || err.message}); run \`/create-mc\` again.`;
+                  core.setOutput('reason', reason);
+                  core.setFailed(reason);
+                  return;
+                }
               }
             }
             // maintain is reported as write.
@@ -82,6 +87,10 @@ jobs:
               });
             } catch (err) {
               stop(`Could not read this PR (${err.status || err.message}); run \`/create-mc\` again.`);
+              return;
+            }
+            if (pr.data.state !== 'open') {
+              stop(`\`/create-mc\` only runs on an open cluster init PR; this one is ${pr.data.merged ? 'merged' : 'closed'}.`);
               return;
             }
             // Init branches live in this repository, never in a fork.
@@ -266,11 +275,24 @@ jobs:
                   sha: ccrPR.head.sha,
                 });
               } catch (err) {
-                await fail(
-                  `Could not merge CCR PR ${ccrURL} (it needs an approving review): ${err.message}. ` +
-                  'Flux must read that config during the bootstrap, so the pipeline was not started.'
-                );
-                return;
+                // Another run or a person may have merged it meanwhile.
+                let merged = false;
+                try {
+                  ({ data: { merged } } = await github.rest.pulls.get({
+                    owner: ccrOrg, repo: ccrRepo, pull_number: parseInt(ccrNum),
+                  }));
+                } catch (readErr) {
+                  core.warning(`Could not re-read ${ccrURL}: ${readErr.message}`);
+                }
+                if (merged) {
+                  core.info('CCR PR was merged meanwhile — continuing.');
+                } else {
+                  await fail(
+                    `Could not merge CCR PR ${ccrURL} (it needs an approving review): ${err.message}. ` +
+                    'Flux must read that config during the bootstrap, so the pipeline was not started.'
+                  );
+                  return;
+                }
               }
             }
 

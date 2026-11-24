@@ -130,6 +130,7 @@ jobs:
             const failed = [];
             const skipped = [];
             const done = [];
+            const unreadable = [];
             const installation = process.env.BRANCH.replace(/-init(-(capa|capz|capv|capvcd))?$/, '');
             const customer = context.repo.repo.replace(/-management-clusters$/, '');
 
@@ -145,6 +146,7 @@ jobs:
               const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
               if (!m) {
                 core.warning(`Cannot parse PR URL: ${url}`);
+                skipped.push(url);
                 return;
               }
               const [, owner, repo, pull_number] = m;
@@ -153,10 +155,17 @@ jobs:
                 skipped.push(url);
                 return;
               }
+              let pr;
               try {
-                const { data: pr } = await github.rest.pulls.get({
+                ({ data: pr } = await github.rest.pulls.get({
                   owner, repo, pull_number: parseInt(pull_number),
-                });
+                }));
+              } catch (e) {
+                core.warning(`Could not read ${url}: ${e.message}`);
+                unreadable.push(`${url} (${e.status || e.message})`);
+                return;
+              }
+              try {
                 if (!fromMctlBranch(pr, wantHead)) {
                   core.warning(`Not closing ${url}: it is not from the ${wantHead} branch into the default branch`);
                   skipped.push(url);
@@ -191,6 +200,10 @@ jobs:
             if (failed.length) {
               lines.push('\n**Failed to close (check the giantswarm-mctlbot app permissions):**');
               for (const url of failed) lines.push(`- ${url}`);
+            }
+            if (unreadable.length) {
+              lines.push('\n**Could not be read, left as they are:**');
+              for (const url of unreadable) lines.push(`- ${url}`);
             }
             if (done.length) {
               lines.push('\n**Already merged or closed:**');

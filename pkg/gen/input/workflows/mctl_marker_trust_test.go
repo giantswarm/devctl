@@ -24,6 +24,10 @@ const calls = [];
 const outputs = {};
 const key = a => a.owner + '/' + a.repo + '#' + a.pull_number;
 const notFound = () => Object.assign(new Error('Not Found'), { status: 404 });
+// No waiting in tests.
+global.setTimeout = fn => { fn(); return 0; };
+// A queued branch update lands after this many reads of the PR.
+const pending = {};
 const github = {
   paginate: async (fn, args) => (await fn(args)).data,
   graphql: async (q, v) => {
@@ -41,6 +45,7 @@ const github = {
     repos: {
       getCollaboratorPermissionLevel: async a => {
         const p = (sc.permissions || {})[a.username];
+        if (p === 'error') throw Object.assign(new Error('Bad Gateway'), { status: 502 });
         if (!p) throw notFound();
         return { data: { permission: p } };
       },
@@ -50,6 +55,9 @@ const github = {
         if (!c) throw notFound();
         return { data: c };
       },
+      compareCommits: async a => ({
+        data: { status: (sc.onDefault || []).includes(a.base) ? 'ahead' : 'diverged' },
+      }),
       getContent: async a => {
         calls.push({ op: 'read', target: a.owner + '/' + a.repo + ':' + a.path, sha: a.ref });
         const f = (sc.files || {})[a.ref + ':' + a.path];
@@ -61,15 +69,25 @@ const github = {
       get: async a => {
         const pr = sc.prs[key(a)];
         if (!pr) throw notFound();
-        return { data: pr };
+        if (pending[key(a)] !== undefined && pending[key(a)]-- === 0) {
+          pr.head.sha = sc.updates[key(a)];
+          pr.mergeable_state = 'clean';
+        }
+        return { data: JSON.parse(JSON.stringify(pr)) };
       },
-      merge: async a => { calls.push({ op: 'merge', target: key(a), sha: a.sha }); return { data: {} }; },
+      merge: async a => {
+        if ((sc.mergeRaces || []).includes(key(a))) {
+          sc.prs[key(a)].merged = true;
+          throw Object.assign(new Error('Pull Request is not mergeable'), { status: 405 });
+        }
+        calls.push({ op: 'merge', target: key(a), sha: a.sha });
+        return { data: {} };
+      },
       update: async a => { calls.push({ op: 'close', target: key(a) }); return { data: {} }; },
       updateBranch: async a => {
         calls.push({ op: 'update', target: key(a), sha: a.expected_head_sha });
         const pr = sc.prs[key(a)];
-        const to = (sc.updates || {})[key(a)];
-        if (to) { pr.head.sha = to; pr.mergeable_state = 'clean'; }
+        if ((sc.updates || {})[key(a)]) pending[key(a)] = sc.updateDelay || 0;
         return { data: {} };
       },
     },
@@ -106,6 +124,12 @@ type markerScenario struct {
 	Commits map[string]map[string]any `json:"commits,omitempty"`
 	// Files maps "<sha>:<path>" to the file content at that commit.
 	Files map[string]string `json:"files,omitempty"`
+	// UpdateDelay is how many reads of the PR pass before a branch update lands.
+	UpdateDelay int `json:"updateDelay,omitempty"`
+	// OnDefault lists the commits on the default branch.
+	OnDefault []string `json:"onDefault,omitempty"`
+	// MergeRaces lists the PRs merged by someone else just before this run merges them.
+	MergeRaces []string `json:"mergeRaces,omitempty"`
 }
 
 type markerCall struct {
@@ -450,7 +474,9 @@ func Test_MctlMergeCascadeLandsTheCheckedCommit(t *testing.T) {
 		// instState and fleetState are the mergeable_state of the two PRs.
 		instState, fleetState string
 		// updated is the commit updateBranch moves the installations PR to.
-		updated  string
+		updated string
+		// delay is how many reads of the PR pass before GitHub applies the update.
+		delay    int
 		commits  map[string]map[string]any
 		files    map[string]string
 		wantInst string
@@ -473,6 +499,33 @@ func Test_MctlMergeCascadeLandsTheCheckedCommit(t *testing.T) {
 			files:      map[string]string{"sha-update:" + path: contacts},
 			wantInst:   "sha-update",
 			wantRead:   "sha-update",
+		},
+		{
+			name:       "branch update GitHub applies a little later",
+			instState:  "behind",
+			fleetState: "blocked",
+			updated:    "sha-update",
+			delay:      3,
+			commits:    map[string]map[string]any{"sha-update": commit(headSHA("installations", 1), "sha-main")},
+			files:      map[string]string{"sha-update:" + path: contacts},
+			wantInst:   "sha-update",
+			wantRead:   "sha-update",
+		},
+		{
+			name:       "branch update that never lands merges the checked commit",
+			instState:  "behind",
+			fleetState: "blocked",
+			files:      map[string]string{headSHA("installations", 1) + ":" + path: contacts},
+			wantInst:   headSHA("installations", 1),
+			wantRead:   headSHA("installations", 1),
+		},
+		{
+			name:       "merge commit pushed with a parent not on the default branch",
+			instState:  "behind",
+			fleetState: "blocked",
+			updated:    "sha-evil-merge",
+			commits:    map[string]map[string]any{"sha-evil-merge": commit(headSHA("installations", 1), "sha-evil")},
+			files:      map[string]string{"sha-evil-merge:" + path: contacts},
 		},
 		{
 			name:       "behind branch pushed to after it was read",
@@ -506,11 +559,13 @@ func Test_MctlMergeCascadeLandsTheCheckedCommit(t *testing.T) {
 					"repo":    map[string]string{"owner": trustOrg, "repo": repo},
 					"payload": map[string]any{"pull_request": map[string]int{"number": 10}},
 				},
-				Env:      map[string]string{"BRANCH": trustInst + "-init"},
-				Comments: []markerComment{bot(resultMarkers(url("installations", 1), url("teleport-fleet", 2)))},
-				PRs:      prs([]string{instKey, fleetKey}, inst, fleet),
-				Commits:  tc.commits,
-				Files:    tc.files,
+				Env:         map[string]string{"BRANCH": trustInst + "-init"},
+				Comments:    []markerComment{bot(resultMarkers(url("installations", 1), url("teleport-fleet", 2)))},
+				PRs:         prs([]string{instKey, fleetKey}, inst, fleet),
+				Commits:     tc.commits,
+				Files:       tc.files,
+				UpdateDelay: tc.delay,
+				OnDefault:   []string{"sha-main"},
 			}
 			if tc.updated != "" {
 				sc.Updates = map[string]string{instKey: tc.updated}
@@ -535,7 +590,7 @@ func Test_MctlMergeCascadeLandsTheCheckedCommit(t *testing.T) {
 			if got := strings.Join(merged, ","); got != want {
 				t.Errorf("merged %q, want %q (calls %+v)", got, want, res.Calls)
 			}
-			if tc.updated != "" {
+			if tc.instState == "behind" {
 				if got, want := strings.Join(updated, ","), instKey+"@"+headSHA("installations", 1); got != want {
 					t.Errorf("updated %q, want %q expecting the checked head", got, want)
 				}
@@ -729,14 +784,18 @@ func Test_MctlCreateMcChecksCommenter(t *testing.T) {
 		"read-only member":   {"reader", "User", false},
 		"not a collaborator": {"stranger", "User", false},
 		"bot":                {"giantswarm-mctlbot[bot]", "Bot", false},
+		"unreadable":         {"flaky", "User", false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			res := runMarkerScript(t, script, markerScenario{
 				Context: map[string]any{"payload": map[string]any{"comment": map[string]any{
 					"user": map[string]string{"login": tc.login, "type": tc.typ},
 				}}},
-				Permissions: map[string]string{"writer": "write", "admin": "admin", "reader": "read", "giantswarm-mctlbot[bot]": "write"},
+				Permissions: map[string]string{"writer": "write", "admin": "admin", "reader": "read", "giantswarm-mctlbot[bot]": "write", "flaky": "error"},
 			})
+			if name == "unreadable" && !strings.Contains(res.Outputs["reason"], "Could not read the permission of flaky (502)") {
+				t.Errorf("reason = %q, want the read error", res.Outputs["reason"])
+			}
 			if failed := len(ops(res, "failed")) > 0; failed == tc.allowed {
 				t.Errorf("failed = %v for %s (calls %+v)", failed, name, res.Calls)
 			}
@@ -755,5 +814,47 @@ func Test_MctlCreateMcUnreadablePR(t *testing.T) {
 	})
 	if reason := res.Outputs["reason"]; !strings.Contains(reason, "Could not read this PR (404)") {
 		t.Errorf("reason = %q, want the read error", reason)
+	}
+}
+
+// Test_MctlCreateMcClosedInitPR: /create-mc on a merged or closed init PR does not start the pipeline again.
+func Test_MctlCreateMcClosedInitPR(t *testing.T) {
+	script := mctlScript(t, "create_mc", "Get PR branch")
+	key, pr := openPR(trustRepo, 10, trustInst+"-init")
+	pr["state"], pr["merged"] = "closed", true
+	res := runMarkerScript(t, script, markerScenario{
+		Context: map[string]any{"issue": map[string]int{"number": 10}},
+		PRs:     prs([]string{key}, pr),
+	})
+	if reason := res.Outputs["reason"]; !strings.Contains(reason, "this one is merged") || res.Outputs["branch"] != "" {
+		t.Errorf("reason = %q, branch = %q", reason, res.Outputs["branch"])
+	}
+}
+
+// Test_MctlCreateMcCCRMergedMeanwhile: a CCR PR merged by another run just before this one is not an error.
+func Test_MctlCreateMcCCRMergedMeanwhile(t *testing.T) {
+	ccrKey, ccr := openPR("antonia-configs", 1, trustInst+"-config")
+	res := runMarkerScript(t, mctlScript(t, "create_mc", "Merge CCR PR"), markerScenario{
+		Context:    map[string]any{"issue": map[string]int{"number": 10}},
+		Env:        map[string]string{"INSTALLATION": trustInst},
+		Comments:   []markerComment{bot(configMarkers(url("antonia-configs", 1), url("installations", 9)))},
+		PRs:        prs([]string{ccrKey}, ccr),
+		MergeRaces: []string{ccrKey},
+	})
+	if failed := ops(res, "failed"); len(failed) > 0 {
+		t.Errorf("failed %v, want the run to go on", failed)
+	}
+}
+
+// Test_MctlCloseCascadeUnreadablePR: a PR that cannot be read is reported as such, not as a failed close.
+func Test_MctlCloseCascadeUnreadablePR(t *testing.T) {
+	res := runMarkerScript(t, mctlScript(t, "close_cascade", "Close related PRs"), markerScenario{
+		Context: map[string]any{"payload": map[string]any{"pull_request": map[string]int{"number": 10}}},
+		Env:     map[string]string{"BRANCH": trustInst + "-init", "INSTALLATIONS_PR_URL": url("installations", 8)},
+		PRs:     map[string]map[string]any{},
+	})
+	body := strings.Join(ops(res, "comment"), "")
+	if !strings.Contains(body, "**Could not be read, left as they are:**") || strings.Contains(body, "Failed to close") {
+		t.Errorf("comment %q", body)
 	}
 }

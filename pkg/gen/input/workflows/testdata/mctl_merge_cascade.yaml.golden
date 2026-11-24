@@ -199,6 +199,27 @@ jobs:
                 pr.base.ref === pr.base.repo.default_branch;
             }
 
+            // The head GitHub's branch update makes: a merge commit of the checked commit and a
+            // commit already on the default branch. Anything else was pushed after the check.
+            async function isUpdateOf(target, pr, checked, head) {
+              if (pr.merged || pr.state !== 'open' || !fromMctlBranch(pr, head)) return false;
+              try {
+                const { data: commit } = await github.rest.repos.getCommit({
+                  owner: target.owner, repo: target.repo, ref: pr.head.sha,
+                });
+                const parents = commit.parents.map(p => p.sha);
+                const other = parents.filter(p => p !== checked);
+                if (parents.length !== 2 || other.length !== 1) return false;
+                const { data: cmp } = await github.rest.repos.compareCommits({
+                  owner: target.owner, repo: target.repo, base: other[0], head: pr.base.ref,
+                });
+                return ['identical', 'ahead'].includes(cmp.status);
+              } catch (err) {
+                core.warning(`Could not read ${pr.head.sha} of ${target.url}: ${err.message}`);
+                return false;
+              }
+            }
+
             // mergeable_state is "unknown" until GitHub has computed it.
             async function getPR(target) {
               for (let attempt = 0; attempt < 4; attempt++) {
@@ -288,35 +309,35 @@ jobs:
               }
 
               // Update a "behind" branch so auto-merge can proceed, then go on with the
-              // commit GitHub made: a merge of the base into the commit read above.
+              // commit GitHub makes: a merge of the default branch into the commit read above.
               if (pr.mergeable_state === 'behind') {
                 const checked = pr.head.sha;
+                let updating = false;
                 try {
                   await github.rest.pulls.updateBranch({
                     owner: target.owner, repo: target.repo, pull_number: target.number,
                     expected_head_sha: checked,
                   });
-                  pr = await getPR(target);
+                  updating = true;
                 } catch (err) {
                   core.warning(`Could not update ${target.url}: ${err.message}`);
                 }
-                if (pr.head.sha !== checked) {
-                  let parents = [];
+                // updateBranch only queues the update; wait for the head to move.
+                for (let attempt = 0; updating && attempt < 10; attempt++) {
+                  await new Promise(r => setTimeout(r, 3000));
                   try {
-                    const { data: commit } = await github.rest.repos.getCommit({
-                      owner: target.owner, repo: target.repo, ref: pr.head.sha,
-                    });
-                    parents = commit.parents.map(p => p.sha);
+                    pr = await getPR(target);
                   } catch (err) {
-                    core.warning(`Could not read ${pr.head.sha} of ${target.url}: ${err.message}`);
+                    core.warning(`Could not re-read ${target.url}: ${err.message}`);
+                    continue;
                   }
-                  if (pr.merged || pr.state !== 'open' || !fromMctlBranch(pr, HEADS[label]) ||
-                      parents.length !== 2 || !parents.includes(checked)) {
-                    return {
-                      row: `| ${label} | ❌ branch moved | ${target.url} changed while it was being merged — check it and merge it by hand. |`,
-                      failure: `${label} ${target.url} changed while it was being merged`,
-                    };
-                  }
+                  if (pr.head.sha !== checked) break;
+                }
+                if (pr.head.sha !== checked && !(await isUpdateOf(target, pr, checked, HEADS[label]))) {
+                  return {
+                    row: `| ${label} | ❌ branch moved | ${target.url} changed while it was being merged — check it and merge it by hand. |`,
+                    failure: `${label} ${target.url} changed while it was being merged`,
+                  };
                 }
               }
 
