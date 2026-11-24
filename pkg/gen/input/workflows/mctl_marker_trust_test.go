@@ -26,7 +26,11 @@ const key = a => a.owner + '/' + a.repo + '#' + a.pull_number;
 const notFound = () => Object.assign(new Error('Not Found'), { status: 404 });
 const github = {
   paginate: async (fn, args) => (await fn(args)).data,
-  graphql: async (q, v) => { calls.push({ op: 'automerge', target: v.id }); return {}; },
+  graphql: async (q, v) => {
+    if (!q.includes('expectedHeadOid: $sha')) throw new Error('auto-merge without expectedHeadOid');
+    calls.push({ op: 'automerge', target: v.id, sha: v.sha });
+    return {};
+  },
   rest: {
     issues: {
       listComments: async () => ({ data: sc.comments }),
@@ -40,6 +44,18 @@ const github = {
         if (!p) throw notFound();
         return { data: { permission: p } };
       },
+      // A behind branch updated by GitHub: sc.updates names the merge commit it becomes.
+      getCommit: async a => {
+        const c = (sc.commits || {})[a.ref];
+        if (!c) throw notFound();
+        return { data: c };
+      },
+      getContent: async a => {
+        calls.push({ op: 'read', target: a.owner + '/' + a.repo + ':' + a.path, sha: a.ref });
+        const f = (sc.files || {})[a.ref + ':' + a.path];
+        if (f === undefined) throw notFound();
+        return { data: { content: Buffer.from(f).toString('base64') } };
+      },
     },
     pulls: {
       get: async a => {
@@ -47,9 +63,15 @@ const github = {
         if (!pr) throw notFound();
         return { data: pr };
       },
-      merge: async a => { calls.push({ op: 'merge', target: key(a) }); return { data: {} }; },
+      merge: async a => { calls.push({ op: 'merge', target: key(a), sha: a.sha }); return { data: {} }; },
       update: async a => { calls.push({ op: 'close', target: key(a) }); return { data: {} }; },
-      updateBranch: async () => ({ data: {} }),
+      updateBranch: async a => {
+        calls.push({ op: 'update', target: key(a), sha: a.expected_head_sha });
+        const pr = sc.prs[key(a)];
+        const to = (sc.updates || {})[key(a)];
+        if (to) { pr.head.sha = to; pr.mergeable_state = 'clean'; }
+        return { data: {} };
+      },
     },
   },
 };
@@ -79,11 +101,17 @@ type markerScenario struct {
 	Comments    []markerComment           `json:"comments"`
 	Permissions map[string]string         `json:"permissions"`
 	PRs         map[string]map[string]any `json:"prs"`
+	// Updates maps a PR key to the head SHA updateBranch moves it to.
+	Updates map[string]string         `json:"updates,omitempty"`
+	Commits map[string]map[string]any `json:"commits,omitempty"`
+	// Files maps "<sha>:<path>" to the file content at that commit.
+	Files map[string]string `json:"files,omitempty"`
 }
 
 type markerCall struct {
 	Op     string `json:"op"`
 	Target string `json:"target"`
+	SHA    string `json:"sha"`
 }
 
 type markerResult struct {
@@ -117,8 +145,33 @@ func openPR(repo string, number int, head string) (string, map[string]any) {
 		"merged":          false,
 		"mergeable_state": "clean",
 		"node_id":         full + "#" + itoa(number),
-		"head":            map[string]any{"ref": head, "sha": "abc", "repo": map[string]any{"full_name": full}},
+		"head":            map[string]any{"ref": head, "sha": headSHA(repo, number), "repo": map[string]any{"full_name": full}},
 		"base":            map[string]any{"ref": "main", "repo": map[string]any{"full_name": full, "default_branch": "main"}},
+	}
+}
+
+func headSHA(repo string, number int) string { return "sha-" + repo + "-" + itoa(number) }
+
+// commit is a commit with the given parents, as repos.getCommit returns it.
+func commit(parents ...string) map[string]any {
+	ps := []map[string]string{}
+	for _, p := range parents {
+		ps = append(ps, map[string]string{"sha": p})
+	}
+	return map[string]any{"parents": ps}
+}
+
+// landedSHAs checks that every merge and auto-merge names the head commit the script read.
+func landedSHAs(t *testing.T, res markerResult, all map[string]map[string]any) {
+	t.Helper()
+	for _, c := range res.Calls {
+		if c.Op != "merge" && c.Op != "automerge" {
+			continue
+		}
+		want := all[c.Target]["head"].(map[string]any)["sha"]
+		if c.SHA != want {
+			t.Errorf("%s of %s pinned %q, want the checked head %q", c.Op, c.Target, c.SHA, want)
+		}
 	}
 }
 
@@ -175,7 +228,9 @@ func runMarkerScript(t *testing.T, script string, sc markerScenario) markerResul
 	if sc.Context == nil {
 		sc.Context = map[string]any{}
 	}
-	sc.Context["repo"] = map[string]string{"owner": trustOrg, "repo": trustRepo}
+	if _, ok := sc.Context["repo"]; !ok {
+		sc.Context["repo"] = map[string]string{"owner": trustOrg, "repo": trustRepo}
+	}
 
 	dir := t.TempDir()
 	scenario, err := json.Marshal(sc)
@@ -293,6 +348,7 @@ func Test_MctlCreateMcMarkerTrust(t *testing.T) {
 			if merged != tc.wantMerge {
 				t.Errorf("merged %q, want %q (calls %+v)", merged, tc.wantMerge, res.Calls)
 			}
+			landedSHAs(t, res, all)
 			if tc.wantMerge == "" && len(ops(res, "failed")) == 0 {
 				t.Errorf("a refused marker must fail the job (calls %+v)", res.Calls)
 			}
@@ -373,6 +429,131 @@ func Test_MctlMergeCascadeMarkerTrust(t *testing.T) {
 			}
 			if got := strings.Join(ops(res, "automerge"), ","); got != tc.wantArmed {
 				t.Errorf("armed auto-merge on %q, want %q (calls %+v)", got, tc.wantArmed, res.Calls)
+			}
+			landedSHAs(t, res, all)
+		})
+	}
+}
+
+// Test_MctlMergeCascadeLandsTheCheckedCommit pins the merge to the commit that was read
+// and checked: a push to the branch after that must not land unreviewed.
+func Test_MctlMergeCascadeLandsTheCheckedCommit(t *testing.T) {
+	script := mctlScript(t, "merge_cascade", "Merge installations and teleport-fleet PRs")
+	const (
+		repo     = "example-management-clusters"
+		contacts = "slack:\n  support:\n    - '#support-example'\naccountEngineer: someone\naccountEngineersHandle: '@someone'\n"
+		path     = trustInst + "/cluster.yaml"
+	)
+
+	tests := []struct {
+		name string
+		// instState and fleetState are the mergeable_state of the two PRs.
+		instState, fleetState string
+		// updated is the commit updateBranch moves the installations PR to.
+		updated  string
+		commits  map[string]map[string]any
+		files    map[string]string
+		wantInst string
+		wantRead string
+	}{
+		{
+			name:       "clean PRs",
+			instState:  "clean",
+			fleetState: "blocked",
+			files:      map[string]string{headSHA("installations", 1) + ":" + path: contacts},
+			wantInst:   headSHA("installations", 1),
+			wantRead:   headSHA("installations", 1),
+		},
+		{
+			name:       "behind branch updated by GitHub",
+			instState:  "behind",
+			fleetState: "blocked",
+			updated:    "sha-update",
+			commits:    map[string]map[string]any{"sha-update": commit(headSHA("installations", 1), "sha-main")},
+			files:      map[string]string{"sha-update:" + path: contacts},
+			wantInst:   "sha-update",
+			wantRead:   "sha-update",
+		},
+		{
+			name:       "behind branch pushed to after it was read",
+			instState:  "behind",
+			fleetState: "blocked",
+			updated:    "sha-pushed",
+			commits:    map[string]map[string]any{"sha-pushed": commit("sha-other")},
+			files:      map[string]string{"sha-pushed:" + path: contacts},
+		},
+		{
+			name:       "contacts missing at the commit that would be merged",
+			instState:  "behind",
+			fleetState: "blocked",
+			updated:    "sha-update",
+			commits:    map[string]map[string]any{"sha-update": commit(headSHA("installations", 1), "sha-main")},
+			files: map[string]string{
+				headSHA("installations", 1) + ":" + path: contacts,
+				"sha-update:" + path:                     "accountEngineer: FILL_IN_NAME\n",
+			},
+			wantRead: "sha-update",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			instKey, inst := openPR("installations", 1, trustInst+"-init")
+			inst["mergeable_state"] = tc.instState
+			fleetKey, fleet := openPR("teleport-fleet", 2, "bot-"+trustInst+"-token")
+			fleet["mergeable_state"] = tc.fleetState
+			sc := markerScenario{
+				Context: map[string]any{
+					"repo":    map[string]string{"owner": trustOrg, "repo": repo},
+					"payload": map[string]any{"pull_request": map[string]int{"number": 10}},
+				},
+				Env:      map[string]string{"BRANCH": trustInst + "-init"},
+				Comments: []markerComment{bot(resultMarkers(url("installations", 1), url("teleport-fleet", 2)))},
+				PRs:      prs([]string{instKey, fleetKey}, inst, fleet),
+				Commits:  tc.commits,
+				Files:    tc.files,
+			}
+			if tc.updated != "" {
+				sc.Updates = map[string]string{instKey: tc.updated}
+			}
+			res := runMarkerScript(t, script, sc)
+
+			var merged, updated, read []string
+			for _, c := range res.Calls {
+				switch c.Op {
+				case "merge":
+					merged = append(merged, c.Target+"@"+c.SHA)
+				case "update":
+					updated = append(updated, c.Target+"@"+c.SHA)
+				case "read":
+					read = append(read, c.SHA)
+				}
+			}
+			want := ""
+			if tc.wantInst != "" {
+				want = instKey + "@" + tc.wantInst
+			}
+			if got := strings.Join(merged, ","); got != want {
+				t.Errorf("merged %q, want %q (calls %+v)", got, want, res.Calls)
+			}
+			if tc.updated != "" {
+				if got, want := strings.Join(updated, ","), instKey+"@"+headSHA("installations", 1); got != want {
+					t.Errorf("updated %q, want %q expecting the checked head", got, want)
+				}
+			}
+			if tc.wantRead != "" && (len(read) != 1 || read[0] != tc.wantRead) {
+				t.Errorf("read cluster.yaml at %v, want %s", read, tc.wantRead)
+			}
+			if tc.wantInst == "" && len(ops(res, "failed")) == 0 {
+				t.Errorf("a PR left unmerged must fail the job (calls %+v)", res.Calls)
+			}
+			armed := ""
+			for _, c := range res.Calls {
+				if c.Op == "automerge" {
+					armed = c.Target + "@" + c.SHA
+				}
+			}
+			if want := fleetKey + "@" + headSHA("teleport-fleet", 2); armed != want {
+				t.Errorf("armed %q, want %q", armed, want)
 			}
 		})
 	}

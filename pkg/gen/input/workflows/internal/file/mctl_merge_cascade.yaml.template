@@ -172,32 +172,22 @@ jobs:
               return missing;
             }
 
-            // Returns null when the installations PR's cluster.yaml has its contacts
-            // filled in (or there is nothing to check yet), else { state, reason }.
-            // Any other PR is left to land, which rejects it.
-            async function contactsProblem(client, reported) {
-              const m = (reported || '').match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
-              if (isTestCustomer || !m) return null;
-              const [, owner, repo, number] = m;
-              if (owner !== context.repo.owner || repo !== 'installations') return null;
+            // Returns null when cluster.yaml at the commit about to be merged has its
+            // contacts filled in, else the reason it was not merged.
+            async function contactsProblem(pr) {
+              if (isTestCustomer) return null;
               const path = `${installation}/cluster.yaml`;
               let content;
               try {
-                const { data: instPR } = await client.rest.pulls.get({
-                  owner, repo, pull_number: parseInt(number, 10),
-                });
-                if (instPR.merged || !fromMctlBranch(instPR, `${installation}-init`)) return null;
-                const { data: file } = await client.rest.repos.getContent({
-                  owner, repo, path, ref: instPR.head.sha,
+                const { data: file } = await github.rest.repos.getContent({
+                  owner: context.repo.owner, repo: 'installations', path, ref: pr.head.sha,
                 });
                 content = Buffer.from(file.content, 'base64').toString('utf8');
               } catch (err) {
-                return { state: 'error', reason: `Could not read ${path} from the installations PR (${err.status || err.message}).` };
+                return `Could not read ${path} from the installations PR (${err.status || err.message}).`;
               }
               const missing = missingContacts(content);
-              return missing.length
-                ? { state: 'failure', reason: `${path} in the installations PR lacks ${missing.join(', ')}.` }
-                : null;
+              return missing.length ? `${path} in the installations PR lacks ${missing.join(', ')}.` : null;
             }
 
             // mctl opens its PRs from a branch of the target repo into its default branch.
@@ -221,22 +211,23 @@ jobs:
               return data;
             }
 
-            // Squash is the only method allowed on the target repos.
-            async function mergeNow(target) {
+            // Squash is the only method allowed on the target repos. Both land exactly
+            // the commit checked here; a later push to the branch makes them fail.
+            async function mergeNow(target, sha) {
               await github.rest.pulls.merge({
                 owner: target.owner, repo: target.repo,
-                pull_number: target.number, merge_method: 'squash',
+                pull_number: target.number, merge_method: 'squash', sha,
               });
             }
 
-            async function armAutoMerge(target, nodeID) {
+            async function armAutoMerge(pr) {
               await github.graphql(
-                `mutation($id: ID!) {
-                   enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: SQUASH}) {
+                `mutation($id: ID!, $sha: GitObjectID!) {
+                   enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: SQUASH, expectedHeadOid: $sha}) {
                      pullRequest { number }
                    }
                  }`,
-                { id: nodeID });
+                { id: pr.node_id, sha: pr.head.sha });
             }
 
             // The branch mctl opens in each target repo; the App token reaches every repo of the org.
@@ -246,7 +237,8 @@ jobs:
             };
 
             // waitForChecks=false merges now (admin bypass); true arms auto-merge.
-            async function land(label, reported, waitForChecks) {
+            // check(pr) returns why the commit about to be merged must not be, or null.
+            async function land(label, reported, waitForChecks, check) {
               if (!reported) {
                 return { row: `| ${label} | ❓ not found | No PR link was reported on this PR. |` };
               }
@@ -292,22 +284,52 @@ jobs:
                 };
               }
 
-              // Update a "behind" branch so auto-merge can proceed.
+              // Update a "behind" branch so auto-merge can proceed, then go on with the
+              // commit GitHub made: a merge of the base into the commit read above.
               if (pr.mergeable_state === 'behind') {
+                const checked = pr.head.sha;
                 try {
                   await github.rest.pulls.updateBranch({
                     owner: target.owner, repo: target.repo, pull_number: target.number,
+                    expected_head_sha: checked,
                   });
+                  pr = await getPR(target);
                 } catch (err) {
                   core.warning(`Could not update ${target.url}: ${err.message}`);
                 }
+                if (pr.head.sha !== checked) {
+                  let parents = [];
+                  try {
+                    const { data: commit } = await github.rest.repos.getCommit({
+                      owner: target.owner, repo: target.repo, ref: pr.head.sha,
+                    });
+                    parents = commit.parents.map(p => p.sha);
+                  } catch (err) {
+                    core.warning(`Could not read ${pr.head.sha} of ${target.url}: ${err.message}`);
+                  }
+                  if (pr.merged || pr.state !== 'open' || !fromMctlBranch(pr, HEADS[label]) ||
+                      parents.length !== 2 || !parents.includes(checked)) {
+                    return {
+                      row: `| ${label} | ❌ branch moved | ${target.url} changed while it was being merged — check it and merge it by hand. |`,
+                      failure: `${label} ${target.url} changed while it was being merged`,
+                    };
+                  }
+                }
+              }
+
+              const problem = check ? await check(pr) : null;
+              if (problem) {
+                return {
+                  row: `| ${label} | ❌ contacts missing | ${target.url} — ${problem} Fix it, then merge it by hand. |`,
+                  failure: `${label} ${target.url} not merged: ${problem}`,
+                };
               }
 
               const readyToMerge = pr.mergeable_state === 'clean';
               let mergeErr = '';
               if (!waitForChecks || readyToMerge) {
                 try {
-                  await mergeNow(target);
+                  await mergeNow(target, pr.head.sha);
                   return { row: `| ${label} | ✅ merged | ${target.url} |` };
                 } catch (err) {
                   mergeErr = err.message;
@@ -316,7 +338,7 @@ jobs:
               }
 
               try {
-                await armAutoMerge(target, pr.node_id);
+                await armAutoMerge(pr);
                 return {
                   row: `| ${label} | ⏳ auto-merge armed | ${target.url} — merges when its checks pass. |`,
                 };
@@ -330,17 +352,8 @@ jobs:
             }
 
             const outcomes = [];
-            const installationsPR = findMarker('Installations PR');
-            const contacts = await contactsProblem(github, installationsPR);
-            if (contacts) {
-              const url = asPR(installationsPR).url;
-              outcomes.push({
-                row: `| installations | ❌ contacts missing | ${url} — ${contacts.reason} Fix it, then merge it by hand. |`,
-                failure: `installations ${url} not merged: ${contacts.reason}`,
-              });
-            } else {
-              outcomes.push(await land('installations', installationsPR, false));
-            }
+            outcomes.push(await land(
+              'installations', findMarker('Installations PR'), false, contactsProblem));
             outcomes.push(await land(
               'teleport-fleet', findMarker('Teleport fleet PR'), true));
             const rows = outcomes.map(o => o.row);
