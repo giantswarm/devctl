@@ -43,19 +43,53 @@ jobs:
               content: 'eyes',
             });
 
+      # author_association lets read-only org members through; the pipeline is cluster-admin.
+      - name: Check commenter
+        id: author
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const user = context.payload.comment.user;
+            let permission = 'none';
+            if (user.type === 'User') {
+              try {
+                ({ data: { permission } } = await github.rest.repos.getCollaboratorPermissionLevel({
+                  owner: context.repo.owner, repo: context.repo.repo, username: user.login,
+                }));
+              } catch (err) {
+                core.warning(`Could not read the permission of ${user.login}: ${err.message}`);
+              }
+            }
+            // maintain is reported as write.
+            if (!['admin', 'write'].includes(permission)) {
+              const reason = `Only people with write access to this repository can run \`/create-mc\`; ${user.login} has ${permission}.`;
+              core.setOutput('reason', reason);
+              core.setFailed(reason);
+            }
+
       - name: Get PR branch
         id: pr
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
-            const pr = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number,
-            });
+            function stop(reason) {
+              core.setOutput('reason', reason);
+              core.setFailed(reason);
+            }
+            let pr;
+            try {
+              pr = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+              });
+            } catch (err) {
+              stop(`Could not read this PR (${err.status || err.message}); run \`/create-mc\` again.`);
+              return;
+            }
             // Init branches live in this repository, never in a fork.
             if (pr.data.head.repo?.full_name !== pr.data.base.repo.full_name) {
-              core.setFailed(`/create-mc only runs on a cluster init PR, not on a PR from ${pr.data.head.label}.`);
+              stop(`\`/create-mc\` only runs on a cluster init PR, not on a PR from ${pr.data.head.label}.`);
               return;
             }
             core.setOutput('branch', pr.data.head.ref);
@@ -70,22 +104,25 @@ jobs:
             installation="${BASH_REMATCH[1]}"
           else
             echo "::error::/create-mc only runs on a cluster init PR, not on branch $BRANCH."
+            echo "reason=\`/create-mc\` only runs on a cluster init PR: a branch of this repository named \`<installation>-init\` or \`<installation>-init-<provider>\`." >> "$GITHUB_OUTPUT"
             exit 1
           fi
           echo "name=$installation" >> "$GITHUB_OUTPUT"
 
-      # A failed job alone is easy to miss; the token is not minted for these PRs.
-      - name: Report not an init PR
-        if: failure() && (steps.pr.outcome == 'failure' || steps.install.outcome == 'failure')
+      # A failed job alone is easy to miss; the token is not minted after any of these checks fails.
+      - name: Report refused /create-mc
+        if: failure() && (steps.author.outcome == 'failure' || steps.pr.outcome == 'failure' || steps.install.outcome == 'failure')
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          REASON: ${{ steps.author.outputs.reason || steps.pr.outputs.reason || steps.install.outputs.reason }}
         with:
           script: |
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: '### ❌ `/create-mc` stopped\n\n`/create-mc` only runs on a cluster init PR: ' +
-                'a branch of this repository named `<installation>-init` or `<installation>-init-<provider>`.',
+              body: '### ❌ `/create-mc` stopped\n\n' +
+                (process.env.REASON || 'A check failed before the pipeline was started; see the workflow run.'),
             });
 
       - name: Generate app token

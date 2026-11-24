@@ -129,8 +129,15 @@ jobs:
             const closed = [];
             const failed = [];
             const skipped = [];
+            const done = [];
             const installation = process.env.BRANCH.replace(/-init(-(capa|capz|capv|capvcd))?$/, '');
             const customer = context.repo.repo.replace(/-management-clusters$/, '');
+
+            // mctl opens its PRs from a branch of the target repo into its default branch.
+            function fromMctlBranch(pr, head) {
+              return pr.head.ref === head && pr.head.repo?.full_name === pr.base.repo.full_name &&
+                pr.base.ref === pr.base.repo.default_branch;
+            }
 
             // Only the PRs mctl opens for this installation (the App token reaches every repo of the org).
             async function closePR(url, wantRepo, wantHead) {
@@ -150,9 +157,13 @@ jobs:
                 const { data: pr } = await github.rest.pulls.get({
                   owner, repo, pull_number: parseInt(pull_number),
                 });
-                if (pr.head.ref !== wantHead || pr.head.repo?.full_name !== pr.base.repo.full_name) {
-                  core.warning(`Not closing ${url}: it is not from the ${wantHead} branch`);
+                if (!fromMctlBranch(pr, wantHead)) {
+                  core.warning(`Not closing ${url}: it is not from the ${wantHead} branch into the default branch`);
                   skipped.push(url);
+                  return;
+                }
+                if (pr.merged || pr.state === 'closed') {
+                  done.push(`${url} (${pr.merged ? 'merged' : 'closed'})`);
                   return;
                 }
                 await github.rest.pulls.update({
@@ -180,6 +191,10 @@ jobs:
             if (failed.length) {
               lines.push('\n**Failed to close (check the giantswarm-mctlbot app permissions):**');
               for (const url of failed) lines.push(`- ${url}`);
+            }
+            if (done.length) {
+              lines.push('\n**Already merged or closed:**');
+              for (const url of done) lines.push(`- ${url}`);
             }
             if (skipped.length) {
               lines.push('\n**Left open, not a PR mctl opened for this cluster:**');

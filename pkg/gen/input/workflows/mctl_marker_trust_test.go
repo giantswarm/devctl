@@ -568,7 +568,11 @@ func Test_MctlCloseCascadeMarkerTrust(t *testing.T) {
 	fleetKey, fleet := openPR("teleport-fleet", 3, "bot-"+trustInst+"-token")
 	foreignKey, foreign := openPR("devctl", 4, trustInst+"-config")
 	wrongKey, wrong := openPR("installations", 5, "attacker")
-	all := prs([]string{ccrKey, instKey, fleetKey, foreignKey, wrongKey}, ccr, inst, fleet, foreign, wrong)
+	sideKey, side := openPR("installations", 6, trustInst+"-init")
+	side["base"].(map[string]any)["ref"] = "release"
+	mergedKey, merged := openPR("teleport-fleet", 7, "bot-"+trustInst+"-token")
+	merged["state"], merged["merged"] = "closed", true
+	all := prs([]string{ccrKey, instKey, fleetKey, foreignKey, wrongKey, sideKey, mergedKey}, ccr, inst, fleet, foreign, wrong, side, merged)
 
 	tests := []struct {
 		name      string
@@ -594,6 +598,14 @@ func Test_MctlCloseCascadeMarkerTrust(t *testing.T) {
 		{
 			name:     "trusted markers that name other repositories or branches",
 			comments: []markerComment{human("writer", configMarkers(url("devctl", 4), url("installations", 5)))},
+		},
+		{
+			name: "PR into another branch and an already merged PR",
+			comments: []markerComment{
+				bot(configMarkers(url("antonia-configs", 1), url("installations", 6))),
+				bot(resultMarkers(url("installations", 6), url("teleport-fleet", 7))),
+			},
+			wantClose: ccrKey,
 		},
 	}
 	for _, tc := range tests {
@@ -623,19 +635,22 @@ func Test_MctlCloseCascadeMarkerTrust(t *testing.T) {
 // /create-mc on any other PR stops before the App token is minted.
 func Test_MctlCreateMcOnlyOnInitBranches(t *testing.T) {
 	wf := parseMctl(t, "create_mc", mctlRenders(t, false)["create_mc"])
-	check, mint := -1, -1
+	check, author, mint := -1, -1, -1
 	for _, job := range wf.Jobs {
 		for i, s := range job.Steps {
 			if s.Name == "Derive installation name" {
 				check = i
+			}
+			if s.Name == "Check commenter" {
+				author = i
 			}
 			if strings.HasPrefix(s.Uses, "actions/create-github-app-token@") && mint < 0 {
 				mint = i
 			}
 		}
 	}
-	if check < 0 || mint < 0 || check > mint {
-		t.Fatalf("create_mc must check the branch (step %d) before it mints the App token (step %d)", check, mint)
+	if check < 0 || author < 0 || mint < 0 || check > mint || author > mint {
+		t.Fatalf("create_mc must check the commenter (step %d) and the branch (step %d) before it mints the App token (step %d)", author, check, mint)
 	}
 	script := mctlStepScript(t, "create_mc", "Derive installation name")
 
@@ -697,5 +712,48 @@ func Test_MctlCreateMcRefusesForks(t *testing.T) {
 				t.Errorf("branch output = %q for %s", got, name)
 			}
 		})
+	}
+}
+
+// Test_MctlCreateMcChecksCommenter runs "Check commenter": author_association lets
+// read-only org members through, so the permission on this repository decides.
+func Test_MctlCreateMcChecksCommenter(t *testing.T) {
+	script := mctlScript(t, "create_mc", "Check commenter")
+
+	for name, tc := range map[string]struct {
+		login, typ string
+		allowed    bool
+	}{
+		"writer":             {"writer", "User", true},
+		"admin":              {"admin", "User", true},
+		"read-only member":   {"reader", "User", false},
+		"not a collaborator": {"stranger", "User", false},
+		"bot":                {"giantswarm-mctlbot[bot]", "Bot", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			res := runMarkerScript(t, script, markerScenario{
+				Context: map[string]any{"payload": map[string]any{"comment": map[string]any{
+					"user": map[string]string{"login": tc.login, "type": tc.typ},
+				}}},
+				Permissions: map[string]string{"writer": "write", "admin": "admin", "reader": "read", "giantswarm-mctlbot[bot]": "write"},
+			})
+			if failed := len(ops(res, "failed")) > 0; failed == tc.allowed {
+				t.Errorf("failed = %v for %s (calls %+v)", failed, name, res.Calls)
+			}
+			if got := res.Outputs["reason"]; (got == "") != tc.allowed {
+				t.Errorf("reason = %q for %s", got, name)
+			}
+		})
+	}
+}
+
+// Test_MctlCreateMcUnreadablePR: a failed pulls.get is reported as such, not as "not an init PR".
+func Test_MctlCreateMcUnreadablePR(t *testing.T) {
+	res := runMarkerScript(t, mctlScript(t, "create_mc", "Get PR branch"), markerScenario{
+		Context: map[string]any{"issue": map[string]int{"number": 10}},
+		PRs:     map[string]map[string]any{},
+	})
+	if reason := res.Outputs["reason"]; !strings.Contains(reason, "Could not read this PR (404)") {
+		t.Errorf("reason = %q, want the read error", reason)
 	}
 }
