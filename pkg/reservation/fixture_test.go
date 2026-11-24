@@ -6,10 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/giantswarm/devctl/v8/pkg/reservation"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+
+	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
 
 // The fixture is a git working tree shaped like a `<customer>-management-clusters`
