@@ -25,6 +25,8 @@ devctl reservation reserve --cluster graveler --app hello-world --branch fix/cra
 - `--duration` is `30m`, `4h`, `4h30m` or `2d`: a whole number of minutes in Go duration form, or a whole number of days. Default is 10h, max is 7d or less, if the cluster sets its own `reservations.giantswarm.io/max-duration`.
 - `--exclusive` locks the whole cluster, not just the app. If you already hold the app there, it's promoted in place, retaining its branch, PR link and time window even when `--pull-request` is omitted. Successful JSON reports that retained link.
 
+A reservation patches the app's existing sources in place, for collections and extras alike. See [Advanced usage](#advanced-usage).
+
 Running the same `reserve` again (same app, user, branch, PR and scope) just refreshes it: a new window starting now. Anything else that collides is refused with who holds it, on which branch and until when.
 
 ## Check what's reserved
@@ -81,3 +83,9 @@ The `reserve` object carries `replaced` when it took over an expired reservation
 ## Dry run
 
 `--dry-run` works on `reserve`, `release`, `extend` and `reap`. devctl makes the commits in your checkout as usual, shows them on stderr (`git log -p`), then resets the checkout to `origin/main`. Nothing is pushed. The output on stdout is what a real run would print, except that the commits exist only in the dry run.
+
+## Advanced usage
+
+A reservation adds no object. `reserve` appends one marked block to the end of the root `patches:` list of `collections/kustomization.yaml`, or of `extras/kustomization.yaml` when the extras serve the app. The block patches the `OCIRepository` objects that serve the chart, one pair of patches per source, to the dev builds and the reservation annotations. `release` removes the block, and Flux drops the patched values again. `extend` rewrites the annotations in it.
+
+Reservations made by older devctl versions are a `collections/reservations/<chart>` component with a `<chart>-dev-reservation` source. This version doesn't know them: release them with the older devctl before you upgrade.

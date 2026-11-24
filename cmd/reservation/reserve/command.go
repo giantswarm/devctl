@@ -20,10 +20,11 @@ const (
 
 The command appends a reservation block to the root patches: list of the
 cluster's collections or extras kustomization. The block patches the app's
-existing source objects to the dev builds of the branch. The command records the reservation in the cluster's reservations
-ConfigMap, renders the result to check that the reservation really takes
-effect, and pushes one commit. With --user set, it needs no GitHub token. Flux
-applies the change to the cluster a few minutes after the push.
+existing source objects to the dev builds of the branch. The command records
+the reservation in the cluster's reservations ConfigMap, renders the result to
+check that the reservation really takes effect, and pushes one commit. With
+--user set, it needs no GitHub token. Flux applies the change to the cluster a
+few minutes after the push.
 
 The command finds the app by rendering the cluster's collections and matching
 the rendered source objects on the chart their OCI URL serves, never on the

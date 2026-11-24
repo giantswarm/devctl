@@ -1,5 +1,5 @@
 // Package reservation implements the GitOps side of a management cluster
-// reservation: it points one management cluster's instance of one app at
+// reservation: it points one management cluster's app at
 // the dev builds of one branch, as a single commit in the GitOps repo that holds
 // that cluster.
 package reservation
@@ -50,7 +50,7 @@ type Request struct {
 	RepoDir string
 	// Cluster is the management cluster name, e.g. "graveler".
 	Cluster string
-	// App names the collection app to point at the dev builds. Empty means the
+	// App names the chart to point at the dev builds. Empty means the
 	// chart the app repository at AppDir builds. It is required when that
 	// repository holds several charts, and it overrides the chart name when a
 	// chart is named differently from the chart its URL serves.
@@ -87,13 +87,12 @@ type Result struct {
 	// GitOpsSource is where the reservation lives: GitOpsSourceCollections or
 	// GitOpsSourceExtras.
 	GitOpsSource string `json:"gitopsSource"`
-	// SourceName is the name of the new OCIRepository. For an app the extras
-	// serve, it is the patched sources instead, joined with ", ".
+	// SourceName is the name of every patched OCIRepository, joined with ", ".
 	SourceName string `json:"sourceName"`
 	// HelmReleases are "<namespace>/<name>" of every release the reservation
 	// moves to the dev builds, sorted.
 	HelmReleases []string `json:"helmReleases,omitempty"`
-	// SemverFilter is the version selector the new OCIRepository carries.
+	// SemverFilter is the version selector the patched OCIRepository objects carry.
 	SemverFilter string `json:"semverFilter"`
 	// Files are the repo-relative paths Reserve wrote, sorted.
 	Files []string `json:"files,omitempty"`
@@ -104,17 +103,6 @@ type Result struct {
 	// or pull request, that Reserve took over. Its pull request still reads
 	// "reserved" until somebody tells it otherwise.
 	Replaced *Reservation `json:"replaced,omitempty"`
-}
-
-// namespaced prefixes the names of collection releases, which all live in
-// Namespace, the way Result.HelmReleases spells them.
-func namespaced(names []string) []string {
-	out := make([]string, 0, len(names))
-	for _, n := range names {
-		out = append(out, Namespace+"/"+n)
-	}
-
-	return out
 }
 
 func (r Request) validate() error {
@@ -195,9 +183,9 @@ func checkEnabled(repoDir, cluster string) error {
 	return nil
 }
 
-// Reserve points the cluster's instances of the app at the dev builds of the branch
-// and commits the change to the working tree at req.RepoDir. It renders the
-// cluster's collections and refuses to commit unless the rendered output really
+// Reserve points the cluster's app at the dev builds of the branch and commits
+// the change to the working tree at req.RepoDir. It renders the cluster's
+// collections or extras and refuses to commit unless the rendered output really
 // carries the reservation.
 func Reserve(req Request) (res Result, err error) {
 	if err := req.validate(); err != nil {
@@ -219,7 +207,7 @@ func Reserve(req Request) (res Result, err error) {
 	}
 	from = from.UTC().Truncate(time.Second)
 
-	configMapPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, ConfigMapFile)
+	configMapPath := configMapFilePath(req.RepoDir, req.Cluster)
 
 	duration, err := clampedDuration(req, configMapPath)
 	if err != nil {
@@ -267,17 +255,16 @@ func Reserve(req Request) (res Result, err error) {
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
-	if len(extras.sources) > 0 && len(collectionSources(before, chart)) == 0 {
+	sources := collectionSources(before, chart)
+	if len(extras.sources) > 0 && len(sources) == 0 {
 		return Result{}, extras.movesNothingError(req, chart)
 	}
-	resolved, err := resolveApp(before, req, chart)
+	collections, err := resolveCollections(before, req, chart, sources)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
 
-	sources := collectionSources(before, chart)
-	res, err = reserveInPlace(req, GitOpsSourceCollections, chart,
-		extrasResolution{sources: sources, helmReleases: namespaced(resolved.helmReleases)}, from, until, replaced)
+	res, err = reserveInPlace(req, GitOpsSourceCollections, chart, collections, from, until, replaced)
 
 	return res, microerror.Mask(err)
 }

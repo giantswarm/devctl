@@ -10,10 +10,11 @@ import (
 )
 
 const (
-	// AnnotationPrefix prefixes the reservation annotations stamped on the new
-	// source object, so `kubectl` can answer "why is this version running".
+	// AnnotationPrefix prefixes the reservation annotations a reservation patches
+	// onto the app's source objects, so `kubectl` can answer "why is this version
+	// running".
 	AnnotationPrefix = "reservation.giantswarm.io/"
-	// SourceInterval is how often Flux re-checks the reservation source. A dev
+	// SourceInterval is how often Flux re-checks a reserved source. A dev
 	// build has to land quickly, unlike a release.
 	SourceInterval = "1m"
 

@@ -2,7 +2,6 @@ package reservation
 
 import (
 	"os"
-	"path/filepath"
 	"sort"
 	"time"
 
@@ -82,7 +81,7 @@ func List(req ListRequest) ([]Reservation, error) {
 		return nil, microerror.Mask(err)
 	}
 
-	configMapPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, ConfigMapFile)
+	configMapPath := configMapFilePath(req.RepoDir, req.Cluster)
 	b, err := os.ReadFile(configMapPath) //nolint:gosec // the path is built from the repo checkout and the cluster name
 	if err != nil {
 		return nil, microerror.Mask(err)

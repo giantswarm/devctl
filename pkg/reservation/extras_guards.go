@@ -14,16 +14,15 @@ import (
 
 // checkExtras runs the guards an extras reservation needs before it writes
 // anything. Guard 1, the render check, runs after the write.
-func checkExtras(req Request, chart string, resolved extrasResolution) error {
+func checkExtras(req Request, chart string, resolved blockResolution) error {
 	if err := checkOneTree(req, chart); err != nil {
 		return microerror.Mask(err)
 	}
-	path := extrasKustomizationPath(req.RepoDir, req.Cluster)
-	lines, err := readLines(path)
+	lines, err := readLines(kustomizationPath(req.RepoDir, req.Cluster, GitOpsSourceExtras))
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	name := req.clusterPath(extrasDir, "kustomization.yaml")
+	name := kustomizationFile(req.Cluster, GitOpsSourceExtras)
 	if err := checkBlocksLast(lines, name); err != nil {
 		return microerror.Mask(err)
 	}
@@ -152,7 +151,7 @@ func checkBlocksLast(lines []string, name string) error {
 // that takes its chart from a patched source moves too, and nobody sees it in
 // the render. It reads every manifest of the cluster, not a render, as Flux
 // Kustomization objects wire them up in ways no single overlay shows.
-func checkNoHiddenReleases(req Request, resolved extrasResolution) error {
+func checkNoHiddenReleases(req Request, resolved blockResolution) error {
 	patched, patchedNames := map[string]bool{}, map[string]bool{}
 	for _, s := range resolved.sources {
 		patched[s.namespace()+"/"+s.name()] = true

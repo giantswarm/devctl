@@ -198,9 +198,8 @@ patches: []
 }
 
 // TestReleaseLeavesOtherReservationsIntact makes sure removing one app's
-// component and ConfigMap entry does not disturb its neighbor: the
-// components: list and the data: block both hold more than the one item
-// Release has to delete.
+// block and ConfigMap entry does not disturb its neighbor: the patches: list
+// and the data: block both hold more than the one item Release has to delete.
 func TestReleaseLeavesOtherReservationsIntact(t *testing.T) {
 	dir := newGitOpsFixture(t, fixtureOptions{})
 

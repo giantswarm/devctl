@@ -1,6 +1,7 @@
 package reservation
 
 import (
+	"fmt"
 	"path/filepath"
 
 	"github.com/giantswarm/microerror"
@@ -84,7 +85,7 @@ func Release(req ReleaseRequest) (res ReleaseResult, err error) {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
 
-	configMapPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, ConfigMapFile)
+	configMapPath := configMapFilePath(req.RepoDir, req.Cluster)
 	if err := checkReserved(configMapPath, chart); err != nil {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
@@ -92,9 +93,41 @@ func Release(req ReleaseRequest) (res ReleaseResult, err error) {
 		return ReleaseResult{}, microerror.Mask(err)
 	}
 
-	res, err = releaseInPlace(req, gitopsSourceOf(req.RepoDir, req.Cluster, chart), chart)
+	gitopsSource := gitopsSourceOf(req.RepoDir, req.Cluster, chart)
+	path := kustomizationPath(req.RepoDir, req.Cluster, gitopsSource)
 
-	return res, microerror.Mask(err)
+	defer discardOnError(req.RepoDir, req.Cluster, gitopsSource, &err)
+
+	if err := removeBlock(path, chart); err != nil {
+		return ReleaseResult{}, microerror.Mask(err)
+	}
+	if err := removeReservationEntry(configMapPath, chart); err != nil {
+		return ReleaseResult{}, microerror.Mask(err)
+	}
+
+	after, err := renderDir(filepath.Dir(path))
+	if err != nil {
+		return ReleaseResult{}, microerror.Mask(err)
+	}
+	for _, o := range after {
+		if o.kind() != ociRepositoryKind {
+			continue
+		}
+		url, _ := o.nested("spec", "url").(string)
+		if _, ok := o.nested("metadata", "annotations", AnnotationPrefix+annotationUser).(string); ok && chartFromURL(url) == chart {
+			return ReleaseResult{}, microerror.Maskf(renderAssertionError,
+				"the rendered %s still carry the reservation on %s %s/%s after release", gitopsSource, ociRepositoryKind, o.namespace(), o.name())
+		}
+	}
+
+	files := blockFiles(req.Cluster, gitopsSource)
+
+	commit, err := commitAll(req.RepoDir, fmt.Sprintf("release %s on %s (by %s)", chart, req.Cluster, req.User), files)
+	if err != nil {
+		return ReleaseResult{}, microerror.Mask(err)
+	}
+
+	return ReleaseResult{App: chart, Commit: commit, Files: files, GitOpsSource: gitopsSource}, nil
 }
 
 // checkReserved refuses an app that holds no reservation on the cluster: there

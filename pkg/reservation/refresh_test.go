@@ -12,7 +12,7 @@ import (
 )
 
 // A repeated reserve with the same arguments resets the expiry: one entry, one
-// component, the original source still the template.
+// block, the original source still the template.
 func TestReserveSameArgumentsRefreshesTheExpiry(t *testing.T) {
 	for _, scope := range []string{reservation.ScopeApp, reservation.ScopeExclusive} {
 		t.Run(scope, func(t *testing.T) {

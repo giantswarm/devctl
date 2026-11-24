@@ -152,8 +152,8 @@ func TestReleaseCommitsAndPushesWithNoToken(t *testing.T) {
 		t.Errorf("stdout does not mention %q: %s", chart, stdout.String())
 	}
 
-	if _, err := os.Stat(filepath.Join(dir, "management-clusters", cluster, "collections", "reservations", chart)); !os.IsNotExist(err) {
-		t.Errorf("component directory still exists: %v", err)
+	if b, err := os.ReadFile(filepath.Join(dir, "management-clusters", cluster, "collections", "kustomization.yaml")); err != nil || strings.Contains(string(b), "reservation of") {
+		t.Errorf("reservation block still exists: %v", err)
 	}
 
 	head := gittest.GitOutput(t, dir, "rev-parse", "HEAD")

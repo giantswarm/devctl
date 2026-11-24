@@ -18,18 +18,6 @@ const (
 	extrasDir = "extras"
 )
 
-// resolution is the app a reservation moves: the chart it ships, the source
-// objects serving that chart, and every release running it.
-type resolution struct {
-	// chart is the chart name. It keys the reservation and names its files.
-	chart string
-	// sourceNames names every matched OCIRepository, sorted.
-	sourceNames []string
-	// helmReleases names every release to patch, sorted. An app can run more
-	// than once on one cluster.
-	helmReleases []string
-}
-
 // chartFromURL returns the chart an OCI URL serves.
 func chartFromURL(url string) string {
 	url = strings.TrimSuffix(url, "/")
@@ -110,44 +98,41 @@ func chartFromRepo(dir string) (string, error) {
 	}
 }
 
-// resolveApp finds the app in a render of the cluster's collections, matching
-// the source objects on the chart their URL serves.
+// resolveCollections finds the app in a render of the cluster's collections,
+// given the sources collectionSources found there, which match the source
+// objects on the chart their URL serves.
 //
 // It never matches on the object name: 17 of 90 collection names repeat across
 // collections, and 5 clusters reference several collections at once, so a name
 // match is ambiguous by construction.
-func resolveApp(objects []object, req Request, chart string) (resolution, error) {
+func resolveCollections(objects []object, req Request, chart string, sources []object) (blockResolution, error) {
 	if inline := inlineChartReleases(objects, chart); len(inline) > 0 {
-		return resolution{}, microerror.Maskf(appNotSupportedError,
+		return blockResolution{}, microerror.Maskf(appNotSupportedError,
 			"%s %s on %s carries chart %q inline under spec.chart instead of referencing it with spec.chartRef. A reservation replaces a chart reference, so this version cannot move it",
 			helmReleaseKind, strings.Join(inline, ", "), req.Cluster, chart)
 	}
 
-	res := resolution{chart: chart}
-
-	sources := collectionSources(objects, chart)
 	if len(sources) == 0 {
-		return resolution{}, microerror.Mask(noMatchError(req, chart))
+		return blockResolution{}, microerror.Mask(noMatchError(req, chart))
 	}
 
-	for _, s := range sources {
-		res.sourceNames = append(res.sourceNames, s.name())
-	}
+	res := blockResolution{sources: sources}
+	sourceNames := res.sourceNames()
 
 	for _, o := range objects {
 		if o.kind() != helmReleaseKind || o.namespace() != Namespace {
 			continue
 		}
-		if name, _ := o.nested("spec", "chartRef", "name").(string); slices.Contains(res.sourceNames, name) {
-			res.helmReleases = append(res.helmReleases, o.name())
+		if name, _ := o.nested("spec", "chartRef", "name").(string); slices.Contains(sourceNames, name) {
+			res.helmReleases = append(res.helmReleases, Namespace+"/"+o.name())
 		}
 	}
 	sort.Strings(res.helmReleases)
 
 	if len(res.helmReleases) == 0 {
-		return resolution{}, microerror.Maskf(appNotFoundError,
+		return blockResolution{}, microerror.Maskf(appNotFoundError,
 			"the rendered collections of %s serve chart %q from %s %s, but no %s takes its chart from any of them, so a reservation would change nothing",
-			req.Cluster, chart, ociRepositoryKind, strings.Join(res.sourceNames, ", "), helmReleaseKind)
+			req.Cluster, chart, ociRepositoryKind, strings.Join(sourceNames, ", "), helmReleaseKind)
 	}
 
 	return res, nil

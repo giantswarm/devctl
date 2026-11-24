@@ -44,7 +44,6 @@ const (
 const (
 	pathCollections  = "management-clusters/" + fixtureCluster + "/collections/kustomization.yaml"
 	pathComponent    = "management-clusters/" + fixtureCluster + "/collections/reservations/" + fixtureApp + "/kustomization.yaml"
-	pathSource       = "management-clusters/" + fixtureCluster + "/collections/reservations/" + fixtureApp + "/" + fixtureApp + "-dev-reservation.yaml"
 	pathReservations = "management-clusters/" + fixtureCluster + "/configmap-reservations.yaml"
 )
 
@@ -118,8 +117,8 @@ func TestReserveWritesTheReservationInOneCommit(t *testing.T) {
 		t.Errorf("until: got %s, want %s", got, want)
 	}
 
-	// The entry and the component have to land together: a component without an
-	// entry is an unclaimed pin, an entry without a component is a lock over
+	// The entry and the block have to land together: a block without an
+	// entry is an unclaimed pin, an entry without a block is a lock over
 	// nothing.
 	repo, err := git.PlainOpen(dir)
 	if err != nil {
@@ -484,8 +483,8 @@ func reserveAt(t *testing.T, dir, user string, now time.Time) {
 }
 
 // TestReserveTakesOverAnExpiredEntryOfTheSameApp: an expired reservation is not
-// a lock. Another user's Reserve replaces entry and component in one commit,
-// and Release then restores the true original, not the old dev source.
+// a lock. Another user's Reserve replaces entry and block in one commit,
+// and Release then restores the true original, not the old reservation.
 func TestReserveTakesOverAnExpiredEntryOfTheSameApp(t *testing.T) {
 	dir := newGitOpsFixture(t, fixtureOptions{})
 	repo, err := git.PlainOpen(dir)

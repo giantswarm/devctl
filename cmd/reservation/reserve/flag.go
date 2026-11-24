@@ -33,7 +33,7 @@ type flag struct {
 }
 
 func (f *flag) Init(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&f.App, flagApp, "", "Chart of the collection app to reserve. Empty takes the name from the app repository's helm/*/Chart.yaml. Required when that repository holds several charts, and also the override when a chart is named differently from the chart its OCI URL serves. Not with --app-dir.")
+	cmd.Flags().StringVar(&f.App, flagApp, "", "Chart of the app to reserve. Empty takes the name from the app repository's helm/*/Chart.yaml. Required when that repository holds several charts, and also the override when a chart is named differently from the chart its OCI URL serves. Not with --app-dir.")
 	cmd.Flags().StringVar(&f.AppDir, flagAppDir, "", "Checkout of the app repository, read only to take the chart name when --app is empty. Empty is the current directory.")
 	cmd.Flags().StringVar(&f.Branch, flagBranch, "", "Branch of the app repository whose dev builds the cluster follows. Required.")
 	cmd.Flags().StringVar(&f.Cluster, flagCluster, "", "Name of the management cluster to reserve the app on. Required.")

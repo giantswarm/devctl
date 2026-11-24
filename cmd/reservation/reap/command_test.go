@@ -137,8 +137,8 @@ func TestReapCommitsAndPushesWithNoToken(t *testing.T) {
 		t.Errorf("stdout fields: got %q", out)
 	}
 
-	if _, err := os.Stat(filepath.Join(dir, "management-clusters", cluster, "collections", "reservations", app)); !os.IsNotExist(err) {
-		t.Errorf("component directory still exists: %v", err)
+	if b, err := os.ReadFile(filepath.Join(dir, "management-clusters", cluster, "collections", "kustomization.yaml")); err != nil || strings.Contains(string(b), "reservation of") {
+		t.Errorf("reservation block still exists: %v", err)
 	}
 
 	head := gittest.GitOutput(t, dir, "rev-parse", "HEAD")
