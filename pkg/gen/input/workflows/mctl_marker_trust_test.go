@@ -43,10 +43,12 @@ const github = {
     },
     reactions: { createForIssueComment: async () => ({ data: {} }) },
     repos: {
+      createCommitStatus: async a => { calls.push({ op: 'status', target: a.state + ': ' + a.description }); return { data: {} }; },
       getCollaboratorPermissionLevel: async a => {
         const p = (sc.permissions || {})[a.username];
         if (p === 'error') throw Object.assign(new Error('Bad Gateway'), { status: 502 });
         if (!p) throw notFound();
+        if (p === 'unavailable') throw Object.assign(new Error('Bad Gateway'), { status: 502 });
         return { data: { permission: p } };
       },
       // A behind branch updated by GitHub: sc.updates names the merge commit it becomes.
@@ -95,6 +97,8 @@ const github = {
 };
 const core = {
   info() {}, warning() {},
+  error: m => calls.push({ op: 'error', target: m }),
+  summary: { addHeading() { return this; }, addRaw() { return this; }, async write() {} },
   setFailed: m => calls.push({ op: 'failed', target: m }),
   setOutput: (k, v) => { outputs[k] = v; },
 };
