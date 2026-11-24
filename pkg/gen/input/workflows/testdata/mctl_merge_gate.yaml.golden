@@ -207,7 +207,8 @@ jobs:
                   // maintain is reported as write.
                   ok = ['admin', 'write'].includes(data.permission);
                 } catch (err) {
-                  core.warning(`Could not read the permission of ${login}: ${err.message}`);
+                  // Still not trusted, but say why the gate may fail.
+                  core.error(`Could not read the permission of ${login}: ${err.message}`);
                 }
                 canWrite.set(login, ok);
               }

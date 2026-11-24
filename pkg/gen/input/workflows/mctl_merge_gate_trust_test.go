@@ -30,6 +30,8 @@ func Test_MctlMergeGateMarkerTrust(t *testing.T) {
 		comments []markerComment
 		want     string
 		wantText string
+		// wantError is the error the workflow logs, if any.
+		wantError string
 	}{
 		{
 			name:     "result from the config and Tekton bot",
@@ -56,6 +58,13 @@ func Test_MctlMergeGateMarkerTrust(t *testing.T) {
 			comments: []markerComment{human("reader", good)},
 			want:     "failure",
 			wantText: "No /create-mc run",
+		},
+		{
+			name:      "result from a user whose permission cannot be read",
+			comments:  []markerComment{human("ghost", good)},
+			want:      "failure",
+			wantText:  "No /create-mc run",
+			wantError: "Could not read the permission of ghost",
 		},
 		{
 			name:     "forged result from an unknown bot",
@@ -125,6 +134,10 @@ func Test_MctlMergeGateMarkerTrust(t *testing.T) {
 			if !strings.HasPrefix(statuses[0], tc.want+":") || !strings.Contains(statuses[0], tc.wantText) {
 				t.Errorf("published %q, want %s with %q", statuses[0], tc.want, tc.wantText)
 			}
+			errors := ops(res, "error")
+			if tc.wantError == "" && len(errors) > 0 || tc.wantError != "" && (len(errors) != 1 || !strings.Contains(errors[0], tc.wantError)) {
+				t.Errorf("logged errors %q, want %q", errors, tc.wantError)
+			}
 		})
 	}
 }
@@ -140,14 +153,11 @@ func Test_MctlMergeGateCustomerContacts(t *testing.T) {
 	fleetKey, fleet := openPR("teleport-fleet", 2, "bot-"+trustInst+"-token")
 	foreignKey, foreign := openPR("devctl", 3, trustInst+"-init")
 	wrongKey, wrong := openPR("installations", 4, "attacker")
-	// Without the branch check its unreadable cluster.yaml would post error, not failure.
-	wrong["head"].(map[string]any)["sha"] = "other"
 	forkKey, fork := openPR("installations", 5, trustInst+"-init")
 	fork["head"].(map[string]any)["repo"] = map[string]any{"full_name": "someone/installations"}
-	fork["head"].(map[string]any)["sha"] = "other"
 	all := prs([]string{initKey, instKey, fleetKey, foreignKey, wrongKey, forkKey}, initPR, inst, fleet, foreign, wrong, fork)
 
-	clusterYAML := trustOrg + "/installations#abc:" + trustInst + "/cluster.yaml"
+	clusterYAML := headSHA("installations", 1) + ":" + trustInst + "/cluster.yaml"
 	filled := "slack:\n  support:\n    - '#support-acme'\naccountEngineer: jane\naccountEngineersHandle: '@jane'\n"
 	unfilled := "slack:\n  support:\n    - '#support-acme'\naccountEngineer: FILL_IN_AE\naccountEngineersHandle: '@jane'\n"
 
