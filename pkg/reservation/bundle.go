@@ -13,6 +13,10 @@ import (
 // selects on it, so every member of the chart moves together.
 const memberChartLabel = "bundle.giantswarm.io/member-chart"
 
+// ignoredName is the metadata.name of a post-renderer strategic merge patch.
+// kustomize requires one, and ignores it when the patch has a target selector.
+const ignoredName = "not-used"
+
 // memberSelector is the label selector of the members of a chart.
 func memberSelector(chart string) string {
 	return memberChartLabel + "=" + chart
@@ -23,9 +27,12 @@ func memberSelector(chart string) string {
 // spec.postRenderers, after any entry already there. The post-renderer patches
 // the member OCIRepository with the same patches as every other mode.
 func bundleBlock(chart string, before []object, resolved blockResolution, semverFilter string, annotations map[string]string) ([]string, error) {
+	if len(resolved.sources) == 0 {
+		return nil, microerror.Maskf(invalidConfigError, "the bundle %q resolved to no %s", chart, ociRepositoryKind)
+	}
 	// A member source is not in the GitOps repo, so the apiVersion comes from
 	// the bundle's own source, which the member shares.
-	ref, merge, err := sourcePatches("not-used", "", resolved.sources[0]["apiVersion"], semverFilter, annotations)
+	ref, merge, err := sourcePatches(ignoredName, "", resolved.sources[0]["apiVersion"], semverFilter, annotations)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
@@ -122,4 +129,82 @@ func assertBundleReserved(objects []object, resolved blockResolution, chart, sem
 	}
 
 	return nil
+}
+
+// postRendererOp is one bundle block patch on a HelmRelease's spec.postRenderers,
+// read back from the text of a kustomization.
+type postRendererOp struct {
+	release string // "<namespace>/<name>"
+	line    int    // index of the `path:` line
+	creates bool   // true: the patch creates the list, false: it appends to it
+}
+
+// postRendererOps lists the post-renderer patches of the reservation blocks in
+// lines, in file order.
+func postRendererOps(lines []string) []postRendererOp {
+	var ops []postRendererOp
+	inBlock, release := false, ""
+	for i, l := range lines {
+		t := strings.TrimSpace(l)
+		switch {
+		case isBlockBegin(t):
+			inBlock = true
+		case strings.HasPrefix(t, "# END reservation of "):
+			inBlock = false
+		case inBlock && t == "kind: "+helmReleaseKind && i+2 < len(lines):
+			name := strings.TrimPrefix(strings.TrimSpace(lines[i+1]), "name: ")
+			namespace := strings.TrimPrefix(strings.TrimSpace(lines[i+2]), "namespace: ")
+			release = namespace + "/" + name
+		case inBlock && (t == "path: /spec/postRenderers" || t == "path: /spec/postRenderers/-"):
+			ops = append(ops, postRendererOp{release: release, line: i, creates: t == "path: /spec/postRenderers"})
+		}
+	}
+
+	return ops
+}
+
+// promoteListCreators keeps the post-renderers of the blocks that remain valid
+// after removed, the lines of a removed block, went away. JSON patch can append
+// only to a list that exists, and the first block of a HelmRelease is the one
+// that creates it. When that block goes, the first remaining block of the same
+// HelmRelease takes over, with the same entry in it.
+func promoteListCreators(lines, removed []string) {
+	for _, gone := range postRendererOps(removed) {
+		if !gone.creates {
+			continue
+		}
+		for _, op := range postRendererOps(lines) {
+			if op.release != gone.release {
+				continue
+			}
+			if !op.creates {
+				promoteToListCreator(lines, op.line)
+			}
+
+			break
+		}
+	}
+}
+
+// promoteToListCreator rewrites the append patch whose path is at line into the
+// one that creates the list: the path loses `/-` and the entry becomes the one
+// item of a list.
+func promoteToListCreator(lines []string, line int) {
+	lines[line] = strings.TrimSuffix(lines[line], "/-")
+	value := line + 1
+	valueIndent := len(lines[value]) - len(strings.TrimLeft(lines[value], " "))
+	for i := value + 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+		indent := len(lines[i]) - len(strings.TrimLeft(lines[i], " "))
+		if indent <= valueIndent {
+			break
+		}
+		if i == value+1 {
+			lines[i] = lines[i][:indent] + "- " + lines[i][indent:]
+		} else {
+			lines[i] = "  " + lines[i]
+		}
+	}
 }

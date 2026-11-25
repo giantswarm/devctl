@@ -98,13 +98,14 @@ func reservationEntry(chart string, req Request, gitopsSource string, from, unti
 		{"pr", req.PullRequest},
 		{"scope", req.Scope},
 		{"gitops-source", gitopsSource},
+	}
+	if req.Bundle != "" {
+		fields = append(fields, [2]string{"bundle", req.Bundle})
+	}
+	fields = append(fields, [][2]string{
 		{annotationFrom, from.Format(time.RFC3339)},
 		{annotationUntil, until.Format(time.RFC3339)},
-	}
-
-	if req.Bundle != "" {
-		fields = append(fields[:5], append([][2]string{{"bundle", req.Bundle}}, fields[5:]...)...)
-	}
+	}...)
 
 	flow, err := flowMapping(fields)
 	if err != nil {

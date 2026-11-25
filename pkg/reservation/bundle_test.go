@@ -315,3 +315,99 @@ func TestExtendAndReapKeepTheBundleOfAMemberReservation(t *testing.T) {
 		t.Errorf("post-renderers after the reap (-want +got):\n%s", diff)
 	}
 }
+
+// reserveSecondMember reserves another chart of the same bundle.
+func reserveSecondMember(t *testing.T, dir string) {
+	t.Helper()
+
+	req := bundleRequest(dir)
+	req.App = "loki"
+	req.PullRequest = "giantswarm/loki#6"
+	if _, err := reservation.Reserve(req); err != nil {
+		t.Fatalf("reserving the second member: %v", err)
+	}
+}
+
+func releaseMember(t *testing.T, dir, chart string) {
+	t.Helper()
+
+	rel := testReleaseRequest(dir)
+	rel.App = chart
+	if _, err := reservation.Release(rel); err != nil {
+		t.Fatalf("releasing %s: %v", chart, err)
+	}
+}
+
+// TestReleaseOfOneBundleMemberKeepsTheOther: two members of one bundle, on a
+// HelmRelease with no post-renderers of its own, in either release order. The
+// files end up as if only the other one had been reserved.
+func TestReleaseOfOneBundleMemberKeepsTheOther(t *testing.T) {
+	for _, tc := range []struct{ name, first, second string }{
+		{"first reserved goes first", fixtureMemberChart, "loki"},
+		{"second reserved goes first", "loki", fixtureMemberChart},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := bundleFixture(t, reservation.GitOpsSourceCollections, "")
+			original := readFixtureFile(t, dir, pathCollections)
+			originalMap := readFixtureFile(t, dir, pathReservations)
+
+			// What reserving only tc.second looks like.
+			alone := bundleFixture(t, reservation.GitOpsSourceCollections, "")
+			req := bundleRequest(alone)
+			req.App, req.PullRequest = tc.second, "giantswarm/"+tc.second+"#"+map[string]string{"alloy": "5", "loki": "6"}[tc.second]
+			if _, err := reservation.Reserve(req); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, err := reservation.Reserve(bundleRequest(dir)); err != nil {
+				t.Fatal(err)
+			}
+			reserveSecondMember(t, dir)
+
+			releaseMember(t, dir, tc.first)
+			prs := renderedPostRenderers(t, dir, "collections")
+			if len(prs) != 1 {
+				t.Fatalf("want only the entry of %s, got %d", tc.second, len(prs))
+			}
+			if got, want := readFixtureFile(t, dir, pathCollections), readFixtureFile(t, alone, pathCollections); got != want {
+				t.Errorf("kustomization is not the one of a lone %s reservation:\n%s\nwant\n%s", tc.second, got, want)
+			}
+
+			releaseMember(t, dir, tc.second)
+			if got := readFixtureFile(t, dir, pathCollections); got != original {
+				t.Errorf("kustomization not restored:\n%s", got)
+			}
+			if got := readFixtureFile(t, dir, pathReservations); got != originalMap {
+				t.Errorf("ConfigMap not restored:\n%s", got)
+			}
+		})
+	}
+}
+
+// TestReapOfOneBundleMemberKeepsTheOther: the reaper removes an expired member
+// whose block created the post-renderer list, and the other member still renders.
+func TestReapOfOneBundleMemberKeepsTheOther(t *testing.T) {
+	dir, _ := newReapFixture(t, bundleOptions(reservation.GitOpsSourceCollections, ""))
+	short := bundleRequest(dir)
+	short.Duration = time.Hour
+	reserveAndPush(t, dir, short)
+	long := bundleRequest(dir)
+	long.App, long.PullRequest, long.Duration = "loki", "giantswarm/loki#6", 10*time.Hour
+	reserveAndPush(t, dir, long)
+
+	reaped, err := reservation.Reap(context.Background(), reservation.ReapRequest{
+		RepoDir: dir,
+		User:    testReaper,
+		Now:     time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC),
+	})
+	if err != nil || len(reaped) != 1 || reaped[0].App != fixtureMemberChart {
+		t.Fatalf("Reap: %v, reaped %+v", err, reaped)
+	}
+	prs := renderedPostRenderers(t, dir, "collections")
+	if len(prs) != 1 {
+		t.Fatalf("want the entry of loki only, got %d", len(prs))
+	}
+	if got := memberAfter(t, prs[0], "loki")["spec"].(map[string]any)["interval"]; got != "1m" {
+		t.Errorf("the remaining entry does not move loki: interval %v", got)
+	}
+}
