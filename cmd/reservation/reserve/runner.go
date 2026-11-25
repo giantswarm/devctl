@@ -84,6 +84,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (er
 			App:         r.flag.App,
 			AppDir:      appDir,
 			Branch:      r.flag.Branch,
+			Bundle:      r.flag.Bundle,
 			User:        user,
 			PullRequest: r.flag.PullRequest,
 			Duration:    duration,

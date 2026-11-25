@@ -146,7 +146,16 @@ func reserveInPlace(req Request, gitopsSource, chart string, resolved blockResol
 
 	defer discardOnError(req.RepoDir, req.Cluster, gitopsSource, &err)
 
-	block, err := reservationBlock(chart, resolved.sources, semverFilter, annotations)
+	var block []string
+	if req.Bundle != "" {
+		var before []object
+		if before, err = renderDir(filepath.Dir(path)); err != nil {
+			return Result{}, microerror.Mask(err)
+		}
+		block, err = bundleBlock(chart, before, resolved, semverFilter, annotations)
+	} else {
+		block, err = reservationBlock(chart, resolved.sources, semverFilter, annotations)
+	}
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
@@ -165,7 +174,12 @@ func reserveInPlace(req Request, gitopsSource, chart string, resolved blockResol
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
-	if err := assertBlockReserved(after, resolved, semverFilter, annotations); err != nil {
+	if req.Bundle != "" {
+		err = assertBundleReserved(after, resolved, chart, semverFilter)
+	} else {
+		err = assertBlockReserved(after, resolved, semverFilter, annotations)
+	}
+	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
 
@@ -251,28 +265,7 @@ func reservationBlock(chart string, sources []object, semverFilter string, annot
 			"  patch: |-",
 		}
 
-		ref, err := marshalYAML([]map[string]any{{
-			"op":    "add",
-			"path":  "/spec/ref",
-			"value": devRef(semverFilter),
-		}})
-		if err != nil {
-			return nil, microerror.Mask(err)
-		}
-		values := map[string]any{}
-		for k, v := range annotations {
-			values[k] = v
-		}
-		merge, err := marshalYAML(map[string]any{
-			"apiVersion": s["apiVersion"],
-			"kind":       ociRepositoryKind,
-			"metadata": map[string]any{
-				"name":        s.name(),
-				"namespace":   s.namespace(),
-				"annotations": values,
-			},
-			"spec": map[string]any{"interval": SourceInterval},
-		})
+		ref, merge, err := sourcePatches(s.name(), s.namespace(), s["apiVersion"], semverFilter, annotations)
 		if err != nil {
 			return nil, microerror.Mask(err)
 		}
@@ -286,6 +279,40 @@ func reservationBlock(chart string, sources []object, semverFilter string, annot
 	}
 
 	return append(block, fmt.Sprintf(blockEndMarker, chart)), nil
+}
+
+// sourcePatches are the two patch bodies that move a source to the dev builds:
+// a JSON patch that replaces spec.ref as a whole, so a stable tag or semver
+// cannot stay next to the filter, and a strategic merge patch that adds
+// spec.interval and the annotations, as a JSON patch add fails on a source
+// without any. Every reservation mode uses them, so a change is one change.
+// A post-renderer patch picks its source by selector, so it passes the
+// placeholder name that kustomize requires and ignores, with no namespace.
+func sourcePatches(name, namespace string, apiVersion any, semverFilter string, annotations map[string]string) (ref, merge []byte, err error) {
+	ref, err = marshalYAML([]map[string]any{{
+		"op":    "add",
+		"path":  "/spec/ref",
+		"value": devRef(semverFilter),
+	}})
+	if err != nil {
+		return nil, nil, microerror.Mask(err)
+	}
+	values := map[string]any{}
+	for k, v := range annotations {
+		values[k] = v
+	}
+	metadata := map[string]any{"name": name, "annotations": values}
+	if namespace != "" {
+		metadata["namespace"] = namespace
+	}
+	merge, err = marshalYAML(map[string]any{
+		"apiVersion": apiVersion,
+		"kind":       ociRepositoryKind,
+		"metadata":   metadata,
+		"spec":       map[string]any{"interval": SourceInterval},
+	})
+
+	return ref, merge, microerror.Mask(err)
 }
 
 // writeBlock appends block, a list at column 0, to the root patches: list of

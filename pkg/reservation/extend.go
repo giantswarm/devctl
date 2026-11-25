@@ -196,7 +196,7 @@ func extendAndPush(ctx context.Context, req ExtendRequest, cluster string, r Res
 		}
 
 		until := now.Add(duration)
-		entry, err := reservationEntry(current.App, Request{User: req.User, Branch: current.Branch, PullRequest: current.PullRequest, Scope: current.Scope}, current.GitOpsSource, now, until)
+		entry, err := reservationEntry(current.App, Request{User: req.User, Branch: current.Branch, PullRequest: current.PullRequest, Scope: current.Scope, Bundle: current.Bundle}, current.GitOpsSource, now, until)
 		if err != nil {
 			return microerror.Mask(err)
 		}

@@ -102,6 +102,10 @@ func reservationEntry(chart string, req Request, gitopsSource string, from, unti
 		{annotationUntil, until.Format(time.RFC3339)},
 	}
 
+	if req.Bundle != "" {
+		fields = append(fields[:5], append([][2]string{{"bundle", req.Bundle}}, fields[5:]...)...)
+	}
+
 	flow, err := flowMapping(fields)
 	if err != nil {
 		return "", microerror.Mask(err)
