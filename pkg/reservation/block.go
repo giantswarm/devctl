@@ -462,7 +462,9 @@ func removeBlock(path, chart string) error {
 	}
 	removed := slices.Clone(lines[begin : end+1])
 	lines = append(lines[:begin], lines[end+1:]...)
-	promoteListCreators(lines, removed)
+	if err := promoteListCreators(lines, removed); err != nil {
+		return microerror.Mask(err)
+	}
 
 	start := slices.IndexFunc(lines, isPatchesKey)
 	if start >= 0 && listEnd(lines, start) == start {

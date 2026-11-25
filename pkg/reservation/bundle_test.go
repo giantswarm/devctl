@@ -342,9 +342,9 @@ func releaseMember(t *testing.T, dir, chart string) {
 // HelmRelease with no post-renderers of its own, in either release order. The
 // files end up as if only the other one had been reserved.
 func TestReleaseOfOneBundleMemberKeepsTheOther(t *testing.T) {
-	for _, tc := range []struct{ name, first, second string }{
-		{"first reserved goes first", fixtureMemberChart, "loki"},
-		{"second reserved goes first", "loki", fixtureMemberChart},
+	for _, tc := range []struct{ name, first, second, secondPR string }{
+		{"first reserved goes first", fixtureMemberChart, "loki", "giantswarm/loki#6"},
+		{"second reserved goes first", "loki", fixtureMemberChart, "giantswarm/alloy#5"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := bundleFixture(t, reservation.GitOpsSourceCollections, "")
@@ -354,7 +354,7 @@ func TestReleaseOfOneBundleMemberKeepsTheOther(t *testing.T) {
 			// What reserving only tc.second looks like.
 			alone := bundleFixture(t, reservation.GitOpsSourceCollections, "")
 			req := bundleRequest(alone)
-			req.App, req.PullRequest = tc.second, "giantswarm/"+tc.second+"#"+map[string]string{"alloy": "5", "loki": "6"}[tc.second]
+			req.App, req.PullRequest = tc.second, tc.secondPR
 			if _, err := reservation.Reserve(req); err != nil {
 				t.Fatal(err)
 			}

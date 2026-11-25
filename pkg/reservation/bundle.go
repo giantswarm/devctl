@@ -149,7 +149,7 @@ func postRendererOps(lines []string) []postRendererOp {
 		switch {
 		case isBlockBegin(t):
 			inBlock = true
-		case strings.HasPrefix(t, "# END reservation of "):
+		case isBlockEnd(t):
 			inBlock = false
 		case inBlock && t == "kind: "+helmReleaseKind && i+2 < len(lines):
 			name := strings.TrimPrefix(strings.TrimSpace(lines[i+1]), "name: ")
@@ -168,7 +168,7 @@ func postRendererOps(lines []string) []postRendererOp {
 // only to a list that exists, and the first block of a HelmRelease is the one
 // that creates it. When that block goes, the first remaining block of the same
 // HelmRelease takes over, with the same entry in it.
-func promoteListCreators(lines, removed []string) {
+func promoteListCreators(lines, removed []string) error {
 	for _, gone := range postRendererOps(removed) {
 		if !gone.creates {
 			continue
@@ -178,20 +178,26 @@ func promoteListCreators(lines, removed []string) {
 				continue
 			}
 			if !op.creates {
-				promoteToListCreator(lines, op.line)
+				if err := promoteToListCreator(lines, op.line); err != nil {
+					return microerror.Mask(err)
+				}
 			}
 
 			break
 		}
 	}
+
+	return nil
 }
 
 // promoteToListCreator rewrites the append patch whose path is at line into the
 // one that creates the list: the path loses `/-` and the entry becomes the one
 // item of a list.
-func promoteToListCreator(lines []string, line int) {
-	lines[line] = strings.TrimSuffix(lines[line], "/-")
+func promoteToListCreator(lines []string, line int) error {
 	value := line + 1
+	if value+1 >= len(lines) || strings.TrimSpace(lines[value]) != "value:" {
+		return microerror.Maskf(invalidConfigError, "line %d of the kustomization is not the `value:` of a reservation post-renderer patch. Edit the block by hand or release it before the other one", value+1)
+	}
 	valueIndent := len(lines[value]) - len(strings.TrimLeft(lines[value], " "))
 	for i := value + 1; i < len(lines); i++ {
 		if strings.TrimSpace(lines[i]) == "" {
@@ -202,9 +208,15 @@ func promoteToListCreator(lines []string, line int) {
 			break
 		}
 		if i == value+1 {
+			if strings.HasPrefix(strings.TrimSpace(lines[i]), "- ") {
+				return microerror.Maskf(invalidConfigError, "line %d of the kustomization is a list, not the mapping a reservation post-renderer patch holds", i+1)
+			}
 			lines[i] = lines[i][:indent] + "- " + lines[i][indent:]
 		} else {
 			lines[i] = "  " + lines[i]
 		}
 	}
+	lines[line] = strings.TrimSuffix(lines[line], "/-")
+
+	return nil
 }

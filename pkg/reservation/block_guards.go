@@ -60,6 +60,10 @@ func isBlockBegin(line string) bool {
 	return strings.HasPrefix(strings.TrimLeft(line, " "), "# BEGIN reservation of ")
 }
 
+func isBlockEnd(line string) bool {
+	return strings.HasPrefix(strings.TrimLeft(line, " "), "# END reservation of ")
+}
+
 // transformTarget is the selector of a patchesJson6902 or replacements entry.
 type transformTarget struct {
 	Kind string `yaml:"kind"`
@@ -132,7 +136,7 @@ func checkBlocksLast(lines []string, name string) error {
 		switch {
 		case isBlockBegin(t):
 			inBlock = true
-		case strings.HasPrefix(t, "# END reservation of "):
+		case isBlockEnd(t):
 			inBlock, afterBlock = false, true
 		case strings.HasPrefix(t, "- "):
 			indent := lines[i][:len(lines[i])-len(t)]
