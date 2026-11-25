@@ -34,7 +34,7 @@ func renderConfig(t *testing.T, c Config) string {
 	return out.String()
 }
 
-// The upstream hook forwards these args to golangci-lint run. Without the
+// The golangci-lint hook passes these args to golangci-lint run. Without the
 // parallel-runner flag, another session holding its shared lock fails the hook.
 func Test_GolangciLintParallelRunners(t *testing.T) {
 	const parallelFlag = "--allow-parallel-runners"
