@@ -1,6 +1,8 @@
 package reservation_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
@@ -65,4 +67,31 @@ func TestReserveCollectionsRefusesAHiddenChartRef(t *testing.T) {
 
 	_, err := reservation.Reserve(testRequest(dir))
 	assertRefused(t, dir, head, err, reservation.IsAppNotSupported, hidden, "monitoring/hidden", "the collections render")
+}
+
+// TestCheckBlockPatchesOnACollectionsReservation: the CI check passes on the
+// collections file a reserve wrote, and fails on a human patch after the block.
+func TestCheckBlockPatchesOnACollectionsReservation(t *testing.T) {
+	reserved := reservedCollections(t)
+	for name, tc := range map[string]struct {
+		content string
+		ok      bool
+	}{
+		"block last":          {reserved, true},
+		"patch after a block": {reserved + "  - path: later.yaml\n", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "kustomization.yaml")
+			if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			err := reservation.CheckBlockPatches(path)
+			if tc.ok && err != nil {
+				t.Errorf("unexpected refusal: %v", err)
+			}
+			if !tc.ok && !reservation.IsAppNotSupported(err) {
+				t.Errorf("expected an app-not-supported error, got %v", err)
+			}
+		})
+	}
 }
