@@ -70,7 +70,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) err
 	hook := &github.Hook{
 		Name:   new("web"),
 		Active: new(true),
-		Events: []string{"issue_comment", "pull_request", "check_run"},
+		Events: []string{"issue_comment", "pull_request", "pull_request_review", "check_run"},
 		Config: &github.HookConfig{
 			URL:         &r.flag.WebhookURL,
 			ContentType: new("json"),
