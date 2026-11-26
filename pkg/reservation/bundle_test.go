@@ -184,6 +184,11 @@ func TestReserveBundleMemberAppendsOnePostRenderer(t *testing.T) {
 			if res.GitOpsSource != tc.tree {
 				t.Errorf("gitops source: got %q, want %q", res.GitOpsSource, tc.tree)
 			}
+			// The bundle's source is not the member's, so the dev builds of the
+			// member chart have no URL here.
+			if res.SourceURL != "" {
+				t.Errorf("source URL: got %q, want none", res.SourceURL)
+			}
 			head, changed := headFiles(t, dir)
 			if res.Commit != head {
 				t.Errorf("result commit %q is not HEAD %q", res.Commit, head)
