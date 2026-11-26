@@ -24,10 +24,14 @@ a human adds after such a block applies after the reservation and can change
 the source again, so no dev build matches. This command fails on any such
 patch, and on a patchesJson6902, replacements or transformers entry that can
 change an OCIRepository, as kustomize runs those after the patches list too.
+For bundle blocks it also renders the kustomization, and fails on a post-renderer
+after a reservation post-renderer on a bundle HelmRelease, and on a block that
+creates spec.postRenderers of a HelmRelease that has post-renderers of its own.
 It checks every file it is given and names every one that fails, so CI can
 refuse the change.
 
-It reads only the files it is given: no GitOps checkout, no cluster, no token.`
+It reads the files it is given and, for bundle blocks, what their kustomization
+renders: no cluster, no token.`
 	example = `  devctl reservation check-extras management-clusters/graveler/extras/kustomization.yaml management-clusters/graveler/collections/kustomization.yaml`
 )
 
