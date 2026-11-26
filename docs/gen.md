@@ -27,14 +27,15 @@ Ordinary PR CI remains unchanged until explicitly transitioned.
 
 ### Release workflow
 
-`--release-workflow` selects which release flow to generate. Two values:
+`--release-workflow` selects which release flow to generate. Three values:
 
 | Value | What's emitted | When to use |
 |-------|----------------|-------------|
 | `legacy` (default) | `.github/workflows/zz_generated.create_release.yaml`, `zz_generated.create_release_pr.yaml`, `zz_generated.validate_changelog.yaml`. Releases driven by manually-pushed `main#release#patch`-style branches that open a release PR for human approval. | The historical flow; in use by most giantswarm repos today. |
 | `auto-release` | `.github/workflows/zz_generated.auto_release.yaml` and `cliff.toml` (at repo root). Releases driven by conventional commits on `main` -- the workflow runs `git-cliff --unreleased --bump` on every push, computes the next semver, and creates the next release candidate tag + GitHub pre-release atomically. A stable release is a manual promotion of the latest candidate. `feat` bumps the minor version, a breaking change the major, every other type the patch; `ci`, `chore`, `docs`, `style` and `test` commits are skipped and release nothing, except that `test:` can advance an existing candidate. | Repos that want push-button releases from conventional commits. Requires `semantic_pull_request` enforcement on PR titles. |
+| `none` | No release workflow. The files of both flows above, `zz_generated.validate_changelog.yaml` and `cliff.toml` included, are deleted. | Repos that are never released, such as GitOps repositories (`componentType: configuration`), declared with `gen.ci.releaseWorkflow: none` in giantswarm/github. Refused on a fork line, which gets no release files but its auto-release flow. |
 
-Switching between values is bidirectional and self-cleaning: the chosen branch generates its own files and emits deletion inputs for the files of the other branch, so a flipped `--release-workflow` value over two consecutive gen runs leaves the repo with exactly one set of release files.
+Switching between values is bidirectional and self-cleaning: the chosen branch generates its own files and emits deletion inputs for the files of the other branch, so a flipped `--release-workflow` value over two consecutive gen runs leaves the repo with exactly one set of release files, or none with `none`.
 
 A repository's release workflow is its declaration in giantswarm/github (`gen.ci.releaseWorkflow` in its team-file entry), which align-files passes as `--release-workflow`. Auto Release files added to a repository whose declaration says `legacy` are deleted again by the next run, so both places name the declaration as the place to change instead: a `legacy` run that deletes `zz_generated.auto_release.yaml` or `cliff.toml` warns on stderr, and the generated `zz_generated.validate_changelog.yaml` fails a pull request whose head carries either file (job "Release workflow matches the declaration").
 

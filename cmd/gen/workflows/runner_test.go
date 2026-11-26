@@ -445,3 +445,68 @@ func Test_Run_ChangelogPointer(t *testing.T) {
 		require.Equal(t, kept, string(got))
 	})
 }
+
+// Test_Run_NoReleaseWorkflow pins what a repository that is never released
+// gets on --release-workflow=none: no release flow, and the files of both
+// flows an earlier run generated are deleted, while the flavour's other
+// workflows are still generated.
+func Test_Run_NoReleaseWorkflow(t *testing.T) {
+	for _, flavour := range []gen.Flavour{gen.FlavourManagementClustersFleet, gen.FlavourGeneric} {
+		t.Run(flavour.String(), func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			require.NoError(t, os.MkdirAll(".github/workflows", 0o750))
+
+			released := []string{
+				".github/workflows/auto-release.yaml",
+				".github/workflows/zz_generated.auto_release.yaml",
+				".github/workflows/zz_generated.changelog.yaml",
+				".github/workflows/zz_generated.create_release.yaml",
+				".github/workflows/zz_generated.create_release_pr.yaml",
+				".github/workflows/zz_generated.validate_changelog.yaml",
+				"cliff.toml",
+			}
+			for _, path := range released {
+				require.NoError(t, os.WriteFile(path, []byte("name: x\n"), 0o600))
+			}
+
+			r := &runner{flag: &flag{
+				Flavours:        gen.FlavourSlice{flavour},
+				Language:        "generic",
+				ReleaseWorkflow: releaseWorkflowNone,
+			}}
+			require.NoError(t, r.Run(&cobra.Command{}, nil))
+
+			for _, path := range released {
+				require.NoFileExists(t, path)
+			}
+			require.FileExists(t, ".github/workflows/zz_generated.semantic_pull_request.yaml")
+			if flavour == gen.FlavourManagementClustersFleet {
+				require.FileExists(t, ".github/workflows/zz_generated.validate_organization_kustomizations.yaml")
+			}
+
+			// A second run changes nothing and does not fail on the files
+			// that are gone already.
+			require.NoError(t, r.Run(&cobra.Command{}, nil))
+			for _, path := range released {
+				require.NoFileExists(t, path)
+			}
+		})
+	}
+}
+
+func Test_Flag_ReleaseWorkflowNone(t *testing.T) {
+	valid := &flag{Flavours: gen.FlavourSlice{gen.FlavourManagementClustersFleet}, Language: "generic", ReleaseWorkflow: releaseWorkflowNone}
+	require.NoError(t, valid.Validate())
+
+	candidates := &flag{Flavours: gen.FlavourSlice{gen.FlavourGeneric}, Language: "generic", ReleaseWorkflow: releaseWorkflowNone, PatchCandidates: true}
+	require.Error(t, candidates.Validate())
+
+	multiImage := &flag{Flavours: gen.FlavourSlice{gen.FlavourMultiImage}, Language: "generic", ReleaseWorkflow: releaseWorkflowNone}
+	require.Error(t, multiImage.Validate())
+
+	fork := &flag{Flavours: gen.FlavourSlice{gen.FlavourFork}, Language: "go", ReleaseWorkflow: releaseWorkflowNone}
+	require.Error(t, fork.Validate())
+
+	unknown := &flag{Flavours: gen.FlavourSlice{gen.FlavourGeneric}, Language: "generic", ReleaseWorkflow: "nope"}
+	require.ErrorContains(t, unknown.Validate(), releaseWorkflowNone)
+}

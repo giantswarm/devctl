@@ -222,9 +222,10 @@
                 "type": "string",
                 "enum": [
                   "legacy",
-                  "auto-release"
+                  "auto-release",
+                  "none"
                 ],
-                "description": "Release workflow to generate. 'auto-release' produces a single push-based auto-release.yaml + cliff.toml that tags + publishes a GitHub Release from conventional commits on every push to main (no release PR, no manual approval). 'legacy' produces the create-release-pr / create-release / validate-changelog trio (releases driven by manually-pushed `main#release#patch`-style branches). When omitted, the effective default depends on `gen.ci.generate`: `true` defaults to 'auto-release' (a devctl-managed CI surface implies a devctl-managed release surface), `false`/unset defaults to 'legacy'. Set `releaseWorkflow: legacy` explicitly to opt a `gen.ci.generate: true` repo back to the legacy trio. On a fork line (flavour `fork`) 'auto-release' generates the release flow alone, cut from `defaultBranch` and counted from the line's highest stable tag. Requires devctl v8.8.0+."
+                "description": "Release workflow to generate. 'none' generates no release workflow and deletes the files of both flows, for a repository that is never released, such as a GitOps repository (componentType: configuration); it needs a devctl with `gen workflows --release-workflow none` and is refused on a fork line. 'auto-release' produces a single push-based auto-release.yaml + cliff.toml that tags + publishes a GitHub Release from conventional commits on every push to main (no release PR, no manual approval). 'legacy' produces the create-release-pr / create-release / validate-changelog trio (releases driven by manually-pushed `main#release#patch`-style branches). When omitted, the effective default depends on `gen.ci.generate`: `true` defaults to 'auto-release' (a devctl-managed CI surface implies a devctl-managed release surface), `false`/unset defaults to 'legacy'. Set `releaseWorkflow: legacy` explicitly to opt a `gen.ci.generate: true` repo back to the legacy trio. On a fork line (flavour `fork`) 'auto-release' generates the release flow alone, cut from `defaultBranch` and counted from the line's highest stable tag. Requires devctl v8.8.0+."
               },
               "maintenanceBranches": {
                 "type": "boolean",

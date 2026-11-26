@@ -402,7 +402,7 @@ func (v Validator) creationRules(ctx context.Context, owner string, entry *Entry
 	// Patch candidates change what auto-release tags: the legacy flow cuts
 	// no candidate to promote.
 	if fields.Gen != nil && fields.Gen.CI != nil && fields.Gen.CI.PatchCandidates && effectiveReleaseWorkflow(fields.Gen.CI) != releaseWorkflowAutoRelease {
-		entry.refuse("gen.ci.patchCandidates", "needs gen.ci.releaseWorkflow auto-release: the legacy release flow cuts no release candidate")
+		entry.refuse("gen.ci.patchCandidates", "needs gen.ci.releaseWorkflow auto-release: only the auto-release flow cuts release candidates")
 	}
 
 	// The name: lowercase, the chart's name where a chart exists, free on

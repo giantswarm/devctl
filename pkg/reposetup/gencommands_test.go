@@ -40,6 +40,11 @@ func TestGenCommandsNothingForAForkLine(t *testing.T) {
 	predates = genContext{Knows: func(_, flag string) bool { return flag != "--patch-candidates" }}
 	require.NotContains(t, genCommands(released, predates)[0], "--patch-candidates")
 
+	// none on a fork line renders nothing either: gen workflows refuses it.
+	released.Gen.CI.PatchCandidates = false
+	released.Gen.CI.ReleaseWorkflow = "none"
+	require.Empty(t, genCommands(released, genContext{}))
+
 	service := Fields{Name: "service", Gen: &GenFields{Flavours: []string{"app"}, Language: "go"}}
 	require.NotEmpty(t, genCommands(service, genContext{}))
 	require.True(t, hasCIJob(service))
@@ -284,4 +289,19 @@ func circleCILine(commands [][]string) []string {
 		}
 	}
 	return nil
+}
+
+// A repository that is never released declares gen.ci.releaseWorkflow none,
+// which gen workflows receives as is.
+func TestGenCommandsReleaseWorkflowNone(t *testing.T) {
+	gitops := Fields{Name: "acme-management-clusters", Gen: &GenFields{Flavours: []string{"fleet"}, Language: "generic", CI: &CIFields{ReleaseWorkflow: "none"}}}
+
+	var workflows []string
+	for _, cmd := range genCommands(gitops, genContext{}) {
+		if len(cmd) > 2 && cmd[1] == "gen" && cmd[2] == "workflows" {
+			workflows = cmd
+		}
+	}
+	require.NotEmpty(t, workflows)
+	require.Contains(t, strings.Join(workflows, " "), "--release-workflow none")
 }
