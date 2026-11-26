@@ -15,6 +15,7 @@ import (
 	"github.com/giantswarm/microerror"
 	"github.com/go-git/go-git/v5"
 	gitobject "github.com/go-git/go-git/v5/plumbing/object"
+	chart "helm.sh/helm/v4/pkg/chart/v2"
 )
 
 const (
@@ -74,6 +75,11 @@ type Request struct {
 	// is deployed on its own. The bundle's HelmRelease is what the reservation
 	// patches, not App's source, which exists only on the cluster.
 	Bundle string
+	// BundleTags lists the versions of the bundle chart at an OCI reference
+	// without the scheme, and BundleChart loads one, to check that the bundle
+	// qualifies. Nil means the anonymous OCI registry of the bundle's source.
+	BundleTags  func(ref string) ([]string, error)
+	BundleChart func(ref, tag string) (*chart.Chart, error)
 	// Scope is the reservation's lock: ScopeApp locks only App, ScopeExclusive
 	// locks the whole cluster. Empty means ScopeApp.
 	Scope string
@@ -215,6 +221,12 @@ func Reserve(req Request) (res Result, err error) {
 	if req.Scope == "" {
 		req.Scope = ScopeApp
 	}
+	if req.BundleTags == nil {
+		req.BundleTags = bundleTags
+	}
+	if req.BundleChart == nil {
+		req.BundleChart = pullBundle
+	}
 
 	from := req.Now
 	if from.IsZero() {
@@ -267,6 +279,9 @@ func Reserve(req Request) (res Result, err error) {
 		return Result{}, microerror.Mask(err)
 	}
 	if ok {
+		if err := checkBundleChart(req, chart, extras); err != nil {
+			return Result{}, microerror.Mask(err)
+		}
 		if err := checkBlock(req, GitOpsSourceExtras, lookup, extras); err != nil {
 			return Result{}, microerror.Mask(err)
 		}
@@ -289,6 +304,9 @@ func Reserve(req Request) (res Result, err error) {
 		return Result{}, microerror.Mask(err)
 	}
 
+	if err := checkBundleChart(req, chart, collections); err != nil {
+		return Result{}, microerror.Mask(err)
+	}
 	if err := checkBlock(req, GitOpsSourceCollections, lookup, collections); err != nil {
 		return Result{}, microerror.Mask(err)
 	}

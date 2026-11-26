@@ -196,7 +196,9 @@ func reserveInPlace(req Request, gitopsSource, chart string, resolved blockResol
 		return Result{}, microerror.Mask(err)
 	}
 	if req.Bundle != "" {
-		err = assertBundleReserved(after, resolved, chart, semverFilter)
+		if err = checkPostRenderersLast(after, kustomizationFile(req.Cluster, gitopsSource)); err == nil {
+			err = assertBundleReserved(after, resolved, chart, semverFilter)
+		}
 	} else {
 		err = assertBlockReserved(after, resolved, semverFilter, annotations)
 	}

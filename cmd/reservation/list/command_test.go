@@ -260,8 +260,8 @@ func TestListShowsTheGitOpsSourceOfTheFiles(t *testing.T) {
 			if len(lines) != 2 {
 				t.Fatalf("stdout: got %d lines, want the header and one row:\n%s", len(lines), stdout.String())
 			}
-			if !strings.HasSuffix(lines[0], "STATUS  GITOPS SOURCE") {
-				t.Fatalf("header: got %q, want GITOPS SOURCE last, after STATUS", lines[0])
+			if !strings.HasSuffix(lines[0], "STATUS  GITOPS SOURCE  BUNDLE") {
+				t.Fatalf("header: got %q, want GITOPS SOURCE after STATUS, then BUNDLE", lines[0])
 			}
 			if row := strings.Fields(lines[1]); row[len(row)-1] != tc.want {
 				t.Errorf("gitops source: got %q, want %q:\n%s", row[len(row)-1], tc.want, stdout.String())
@@ -271,5 +271,47 @@ func TestListShowsTheGitOpsSourceOfTheFiles(t *testing.T) {
 				t.Errorf("stderr does not hold %q:\n%s", want, stderr.String())
 			}
 		})
+	}
+}
+
+// TestListShowsTheBundleOfAMemberReservation: the BUNDLE column comes last, and
+// the JSON carries the bundle field only for a member.
+func TestListShowsTheBundleOfAMemberReservation(t *testing.T) {
+	const cluster = "graveler"
+	until := time.Now().Add(10 * time.Hour).UTC().Format(time.RFC3339)
+	configMap := "data:\n" +
+		"  alloy: '{user: alice, branch: fix/crash, pr: giantswarm/alloy#5, scope: app, from: 2026-09-15T10:00:00Z, until: " + until + ", bundle: observability-bundle}'\n" +
+		"  hello-world: '{user: bob, branch: main, pr: \"\", scope: app, from: 2026-09-15T10:00:00Z, until: " + until + "}'\n"
+	dir := newCheckout(t, map[string]string{"management-clusters/" + cluster + "/configmap-reservations.yaml": configMap})
+
+	var table bytes.Buffer
+	cmd := newCommand(t, &table)
+	cmd.SetArgs([]string{repoDirFlag, dir, "--cluster", cluster})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(table.String()), "\n")
+	if !strings.HasSuffix(lines[0], "GITOPS SOURCE  BUNDLE") {
+		t.Errorf("header: got %q, want BUNDLE as the last column", lines[0])
+	}
+	if !strings.HasSuffix(lines[1], "observability-bundle") || strings.Contains(lines[2], "bundle") {
+		t.Errorf("rows: got\n%s", strings.Join(lines[1:], "\n"))
+	}
+
+	var js bytes.Buffer
+	cmd = newCommand(t, &js)
+	cmd.SetArgs([]string{repoDirFlag, dir, "--cluster", cluster, "--output", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	var got []map[string]any
+	if err := json.Unmarshal(js.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got[0]["bundle"] != "observability-bundle" {
+		t.Errorf("JSON bundle: got %v", got[0]["bundle"])
+	}
+	if _, ok := got[1]["bundle"]; ok {
+		t.Errorf("a chart on its own has no bundle field: %v", got[1])
 	}
 }

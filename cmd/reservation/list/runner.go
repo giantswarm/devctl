@@ -89,10 +89,10 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (er
 
 	w := tabwriter.NewWriter(r.stdout, 0, 0, 2, ' ', 0)
 	// The GitOps source comes last, so the older columns keep their place.
-	_, _ = fmt.Fprintln(w, "APP\tUSER\tBRANCH\tPULL REQUEST\tSCOPE\tEXPIRES\tSTATUS\tGITOPS SOURCE")
+	_, _ = fmt.Fprintln(w, "APP\tUSER\tBRANCH\tPULL REQUEST\tSCOPE\tEXPIRES\tSTATUS\tGITOPS SOURCE\tBUNDLE")
 	for _, res := range all {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			res.App, res.User, res.Branch, res.PullRequest, res.Scope, res.Until.Format("2006-01-02 15:04 MST"), status(res, now), res.GitOpsSource)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			res.App, res.User, res.Branch, res.PullRequest, res.Scope, res.Until.Format("2006-01-02 15:04 MST"), status(res, now), res.GitOpsSource, res.Bundle)
 	}
 
 	return microerror.Mask(w.Flush())

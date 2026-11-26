@@ -82,8 +82,12 @@ spec:
 	}}
 }
 
+// bundleRequest is the reservation of a member of the fixture's bundle, whose
+// chart the stand-in registry serves labelled. A test builds the pull itself
+// by serving the stand-in registry.
 func bundleRequest(dir string) reservation.Request {
 	req := testRequest(dir)
+	bundleAt(labelledBundle()).serve(&req)
 	req.App = fixtureMemberChart
 	req.Bundle = fixtureBundle
 	req.PullRequest = "giantswarm/alloy#5"
@@ -241,6 +245,24 @@ func TestReserveBundleMemberAppendsOnePostRenderer(t *testing.T) {
 				t.Errorf("a member of another chart moved: %v", other["spec"])
 			}
 		})
+	}
+}
+
+// TestReserveBundleMemberAppendsToAnEmptyPostRendererList: `postRenderers: []` is
+// a list that exists, so the block appends to it. The create form would replace
+// the list, and the check-extras rule that refuses a create form beside a
+// HelmRelease's own post-renderers relies on this being an append.
+func TestReserveBundleMemberAppendsToAnEmptyPostRendererList(t *testing.T) {
+	dir := bundleFixture(t, reservation.GitOpsSourceCollections, "  postRenderers: []\n")
+
+	if _, err := reservation.Reserve(bundleRequest(dir)); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(renderedPostRenderers(t, dir, "collections")); got != 1 {
+		t.Fatalf("want one reservation entry, got %d", got)
+	}
+	if text := readFixtureFile(t, dir, pathCollections); !strings.Contains(text, "path: /spec/postRenderers/-") {
+		t.Errorf("want the append form for an empty list, got:\n%s", text)
 	}
 }
 

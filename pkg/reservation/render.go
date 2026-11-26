@@ -61,7 +61,11 @@ func (o object) nested(path ...string) any {
 // does nothing on the cluster, so it is the only trustworthy check available
 // before the push.
 func renderDir(dir string) ([]object, error) {
-	m, err := krusty.MakeKustomizer(krusty.MakeDefaultOptions()).Run(filesys.MakeFsOnDisk(), dir)
+	return renderFS(filesys.MakeFsOnDisk(), dir)
+}
+
+func renderFS(fs filesys.FileSystem, dir string) ([]object, error) {
+	m, err := krusty.MakeKustomizer(krusty.MakeDefaultOptions()).Run(fs, dir)
 	if err != nil {
 		return nil, microerror.Maskf(renderError, "rendering %s: %v", dir, err)
 	}

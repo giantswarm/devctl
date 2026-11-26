@@ -10,6 +10,7 @@ import (
 
 	"github.com/giantswarm/microerror"
 	"gopkg.in/yaml.v3"
+	"sigs.k8s.io/kustomize/kyaml/filesys"
 )
 
 // checkBlock runs the guards a reservation block needs before it writes
@@ -53,7 +54,89 @@ func CheckBlockPatches(path string) error {
 		return nil
 	}
 
-	return microerror.Mask(checkNoLaterTransforms(lines, path))
+	if err := checkNoLaterTransforms(lines, path); err != nil {
+		return microerror.Mask(err)
+	}
+
+	return microerror.Mask(checkBundleBlocks(path, lines))
+}
+
+// overrideFS reads one file as content, whatever the disk holds.
+type overrideFS struct {
+	filesys.FileSystem
+	path    string
+	content []byte
+}
+
+func (f overrideFS) ReadFile(path string) ([]byte, error) {
+	if abs, err := filepath.Abs(path); err == nil && abs == f.path {
+		return f.content, nil
+	}
+
+	return f.FileSystem.ReadFile(path)
+}
+
+// checkBundleBlocks is the CI side of the bundle guards, for a kustomization
+// that holds bundle blocks. It renders the directory of path with the blocks, and
+// refuses a post-renderer after a reservation one. It renders it again without
+// the blocks, and refuses a block that creates the post-renderers of a
+// HelmRelease that has some of its own: the create block replaces them, and
+// the reserve that wrote it chose that form when the list was empty.
+func checkBundleBlocks(path string, lines []string) error {
+	ops := postRendererOps(lines)
+	if len(ops) == 0 {
+		return nil
+	}
+	dir := filepath.Dir(path)
+	with, err := renderDir(dir)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	if err := checkPostRenderersLast(with, path); err != nil {
+		return microerror.Mask(err)
+	}
+
+	var plain []string
+	for i, in := range blockMask(lines) {
+		if !in {
+			plain = append(plain, lines[i])
+		}
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	without, err := renderFS(overrideFS{filesys.MakeFsOnDisk(), abs, []byte(strings.Join(plain, "\n"))}, dir)
+	if err != nil {
+		return microerror.Mask(err)
+	}
+	for _, op := range ops {
+		if !op.creates {
+			continue
+		}
+		namespace, name, _ := strings.Cut(op.release, "/")
+		if hasPostRenderers(without, namespace, name) {
+			return microerror.Maskf(appNotSupportedError,
+				"%s: the reservation block of %s %s creates spec.postRenderers, but the %s has post-renderers of its own, which the block would replace. Run `devctl reservation reserve` again for the member (a refresh), which chooses the form again, or release the reservation",
+				path, helmReleaseKind, op.release, helmReleaseKind)
+		}
+	}
+
+	return nil
+}
+
+// blockMask marks the lines of the reservation blocks, from the begin marker to
+// the end marker, both included.
+func blockMask(lines []string) []bool {
+	in := make([]bool, len(lines))
+	open := false
+	for i, l := range lines {
+		open = open || isBlockBegin(l)
+		in[i] = open
+		open = open && !isBlockEnd(l)
+	}
+
+	return in
 }
 
 func isBlockBegin(line string) bool {
@@ -129,21 +212,20 @@ func checkBlocksLast(lines []string, name string) error {
 		return nil
 	}
 
-	inBlock, afterBlock := false, false
+	in := blockMask(lines)
+	afterBlock := false
 	itemIndent := ""
 	for i := start + 1; i <= listEnd(lines, start); i++ {
 		t := strings.TrimLeft(lines[i], " ")
 		switch {
-		case isBlockBegin(t):
-			inBlock = true
 		case isBlockEnd(t):
-			inBlock, afterBlock = false, true
+			afterBlock = true
 		case strings.HasPrefix(t, "- "):
 			indent := lines[i][:len(lines[i])-len(t)]
 			if itemIndent == "" {
 				itemIndent = indent
 			}
-			if indent == itemIndent && afterBlock && !inBlock {
+			if indent == itemIndent && afterBlock && !in[i] {
 				return microerror.Maskf(appNotSupportedError,
 					"%s holds a patch at line %d after a reservation block. Reservation blocks must stay last in patches:, so that no later patch changes the reserved sources. Move the patch above the blocks",
 					name, i+1)

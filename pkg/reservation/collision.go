@@ -32,6 +32,10 @@ func checkCollision(req Request, chart string, now time.Time) (promoted, replace
 		}
 	}
 
+	if err := checkBundleCollision(req, chart, active); err != nil {
+		return nil, nil, err
+	}
+
 	// The holder repeating the very same request refreshes it: it blocks nothing
 	// and Reserve rewrites the entry with a fresh window.
 	for _, r := range active {
@@ -85,4 +89,43 @@ func refusal(kind *microerror.Error, holder Reservation) error {
 		msg += "; it is an exclusive reservation, so it locks every app on the cluster"
 	}
 	return microerror.Maskf(kind, "%s", msg)
+}
+
+// checkBundleCollision refuses what a bundle and its members cannot do together:
+// reserving a member while its bundle is reserved, reserving a bundle while one
+// of its members is, and reserving a chart that is already reserved through
+// another bundle (or none). The chart of a member is moved by the bundle's
+// HelmRelease, and a reservation of the bundle chart moves that same HelmRelease.
+func checkBundleCollision(req Request, chart string, active []Reservation) error {
+	for _, r := range active {
+		switch {
+		case r.App == chart && r.Bundle != req.Bundle:
+			return microerror.Maskf(alreadyReservedError, "%s is reserved by %s on branch %s %s, but this request %s. Repeat it with %s, or release the reservation first",
+				chart, r.User, r.Branch, bundleOf(r.Bundle), bundleOf(req.Bundle), bundleFlag(r.Bundle))
+		case req.Bundle != "" && r.App == req.Bundle:
+			return microerror.Maskf(alreadyReservedError, "the bundle %s of member %s is itself reserved by %s on branch %s: release it first",
+				req.Bundle, chart, r.User, r.Branch)
+		case req.Bundle == "" && r.Bundle == chart:
+			return microerror.Maskf(alreadyReservedError, "member %s of the bundle %s is reserved by %s on branch %s: release it first, as a bundle and its members cannot be reserved together",
+				r.App, chart, r.User, r.Branch)
+		}
+	}
+
+	return nil
+}
+
+func bundleOf(bundle string) string {
+	if bundle == "" {
+		return "as a chart on its own"
+	}
+
+	return "through the bundle " + bundle
+}
+
+func bundleFlag(bundle string) string {
+	if bundle == "" {
+		return "no --bundle"
+	}
+
+	return "--bundle " + bundle
 }

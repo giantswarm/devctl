@@ -28,7 +28,7 @@ func memberSelector(chart string) string {
 // the member OCIRepository with the same patches as every other mode.
 func bundleBlock(chart string, before []object, resolved blockResolution, semverFilter string, annotations map[string]string) ([]string, error) {
 	if len(resolved.sources) == 0 {
-		return nil, microerror.Maskf(invalidConfigError, "the bundle %q resolved to no %s", chart, ociRepositoryKind)
+		return nil, microerror.Maskf(appNotFoundError, "the bundle %q resolved to no %s", chart, ociRepositoryKind)
 	}
 	// A member source is not in the GitOps repo, so the apiVersion comes from
 	// the bundle's own source, which the member shares.
@@ -143,19 +143,15 @@ type postRendererOp struct {
 // lines, in file order.
 func postRendererOps(lines []string) []postRendererOp {
 	var ops []postRendererOp
-	inBlock, release := false, ""
+	in, release := blockMask(lines), ""
 	for i, l := range lines {
 		t := strings.TrimSpace(l)
 		switch {
-		case isBlockBegin(t):
-			inBlock = true
-		case isBlockEnd(t):
-			inBlock = false
-		case inBlock && t == "kind: "+helmReleaseKind && i+2 < len(lines):
+		case in[i] && t == "kind: "+helmReleaseKind && i+2 < len(lines):
 			name := strings.TrimPrefix(strings.TrimSpace(lines[i+1]), "name: ")
 			namespace := strings.TrimPrefix(strings.TrimSpace(lines[i+2]), "namespace: ")
 			release = namespace + "/" + name
-		case inBlock && (t == "path: /spec/postRenderers" || t == "path: /spec/postRenderers/-"):
+		case in[i] && (t == "path: /spec/postRenderers" || t == "path: /spec/postRenderers/-"):
 			ops = append(ops, postRendererOp{release: release, line: i, creates: t == "path: /spec/postRenderers"})
 		}
 	}
@@ -217,6 +213,54 @@ func promoteToListCreator(lines []string, line int) error {
 		}
 	}
 	lines[line] = strings.TrimSuffix(lines[line], "/-")
+
+	return nil
+}
+
+// isReservationPostRenderer reports whether a post-renderer entry is one that a
+// bundle block wrote: it patches only the OCIRepository members of a chart.
+func isReservationPostRenderer(entry any) bool {
+	e, _ := entry.(map[string]any)
+	patches, _ := object(e).nested("kustomize", "patches").([]any)
+	if len(patches) == 0 {
+		return false
+	}
+	for _, p := range patches {
+		target, _ := p.(map[string]any)["target"].(map[string]any)
+		selector, _ := target["labelSelector"].(string)
+		if target["kind"] != ociRepositoryKind || !strings.HasPrefix(selector, memberChartLabel+"=") {
+			return false
+		}
+	}
+
+	return true
+}
+
+// checkPostRenderersLast is the post-renderer guard of a bundle: no entry that is
+// not a reservation one comes after a reservation one in the spec.postRenderers
+// of a rendered HelmRelease. A bundle block appends to the list, so such an
+// entry can come only from something that runs after the block, and it would
+// see the sources the reservation already moved.
+func checkPostRenderersLast(objects []object, name string) error {
+	for _, o := range objects {
+		if o.kind() != helmReleaseKind {
+			continue
+		}
+		entries, _ := o.nested("spec", "postRenderers").([]any)
+		reserved := -1
+		for i, e := range entries {
+			switch {
+			case isReservationPostRenderer(e):
+				if reserved < 0 {
+					reserved = i + 1
+				}
+			case reserved > 0:
+				return microerror.Maskf(appNotSupportedError,
+					"%s: %s %s/%s has post-renderer %d after a reservation post-renderer (%d). Reservation post-renderers must stay last in spec.postRenderers. Add the post-renderer to the %s itself, or to a patch that runs before the reservation blocks, not to a patchesJson6902 or a transformer, which run after them",
+					name, helmReleaseKind, o.namespace(), o.name(), i+1, reserved, helmReleaseKind)
+			}
+		}
+	}
 
 	return nil
 }
