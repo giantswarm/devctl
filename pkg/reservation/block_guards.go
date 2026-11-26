@@ -97,16 +97,9 @@ func checkBundleBlocks(path string, lines []string) error {
 	}
 
 	var plain []string
-	inBlock := false
-	for _, l := range lines {
-		if isBlockBegin(l) {
-			inBlock = true
-		}
-		if !inBlock {
-			plain = append(plain, l)
-		}
-		if isBlockEnd(l) {
-			inBlock = false
+	for i, in := range inBlock(lines) {
+		if !in {
+			plain = append(plain, lines[i])
 		}
 	}
 	abs, err := filepath.Abs(path)
@@ -130,6 +123,20 @@ func checkBundleBlocks(path string, lines []string) error {
 	}
 
 	return nil
+}
+
+// inBlock marks the lines of the reservation blocks, from the begin marker to
+// the end marker, both included.
+func inBlock(lines []string) []bool {
+	in := make([]bool, len(lines))
+	open := false
+	for i, l := range lines {
+		open = open || isBlockBegin(l)
+		in[i] = open
+		open = open && !isBlockEnd(l)
+	}
+
+	return in
 }
 
 func isBlockBegin(line string) bool {
@@ -205,21 +212,20 @@ func checkBlocksLast(lines []string, name string) error {
 		return nil
 	}
 
-	inBlock, afterBlock := false, false
+	in := inBlock(lines)
+	afterBlock := false
 	itemIndent := ""
 	for i := start + 1; i <= listEnd(lines, start); i++ {
 		t := strings.TrimLeft(lines[i], " ")
 		switch {
-		case isBlockBegin(t):
-			inBlock = true
 		case isBlockEnd(t):
-			inBlock, afterBlock = false, true
+			afterBlock = true
 		case strings.HasPrefix(t, "- "):
 			indent := lines[i][:len(lines[i])-len(t)]
 			if itemIndent == "" {
 				itemIndent = indent
 			}
-			if indent == itemIndent && afterBlock && !inBlock {
+			if indent == itemIndent && afterBlock && !in[i] {
 				return microerror.Maskf(appNotSupportedError,
 					"%s holds a patch at line %d after a reservation block. Reservation blocks must stay last in patches:, so that no later patch changes the reserved sources. Move the patch above the blocks",
 					name, i+1)

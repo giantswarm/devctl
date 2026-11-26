@@ -1,52 +1,69 @@
 package reservation
 
 import (
-	"bytes"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	"helm.sh/helm/v4/pkg/chart/common"
 	"helm.sh/helm/v4/pkg/chart/common/util"
 	chart "helm.sh/helm/v4/pkg/chart/v2"
 	"helm.sh/helm/v4/pkg/chart/v2/loader"
 	"helm.sh/helm/v4/pkg/engine"
-	"helm.sh/helm/v4/pkg/registry"
 )
 
-// BundleRegistry reads bundle charts from an OCI registry. ref is the chart's
-// path in the registry, without the oci:// scheme.
-type BundleRegistry interface {
-	// Tags lists the versions of the chart.
-	Tags(ref string) ([]string, error)
-	// Pull loads the chart at tag.
-	Pull(ref, tag string) (*chart.Chart, error)
-}
+// helmChartLayer is the media type of the layer that holds a chart in an OCI
+// registry.
+const helmChartLayer types.MediaType = "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
 
-// helmRegistry is the BundleRegistry of the real OCI registry.
-type helmRegistry struct{ client *registry.Client }
-
-func newHelmRegistry() (BundleRegistry, error) {
-	c, err := registry.NewClient()
+// bundleTags lists the versions of the chart at ref, the chart's path in the
+// registry without the oci:// scheme. Like the other engines it reads no
+// credential store: the registry is read anonymously.
+func bundleTags(ref string) ([]string, error) {
+	repo, err := name.NewRepository(ref)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
+	tags, err := remote.List(repo, remote.WithAuth(authn.Anonymous))
 
-	return helmRegistry{c}, nil
+	return tags, microerror.Mask(err)
 }
 
-func (h helmRegistry) Tags(ref string) ([]string, error) { return h.client.Tags(ref) }
-
-func (h helmRegistry) Pull(ref, tag string) (*chart.Chart, error) {
-	res, err := h.client.Pull(ref + ":" + tag)
+// pullBundle loads the chart at ref and tag, anonymously.
+func pullBundle(ref, tag string) (*chart.Chart, error) {
+	tagRef, err := name.NewTag(ref + ":" + tag)
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
-	c, err := loader.LoadArchive(bytes.NewReader(res.Chart.Data))
+	img, err := remote.Image(tagRef, remote.WithAuth(authn.Anonymous))
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	layers, err := img.Layers()
+	if err != nil {
+		return nil, microerror.Mask(err)
+	}
+	for _, l := range layers {
+		if mt, err := l.MediaType(); err != nil || mt != helmChartLayer {
+			continue
+		}
+		r, err := l.Compressed()
+		if err != nil {
+			return nil, microerror.Mask(err)
+		}
+		defer func() { _ = r.Close() }()
+		c, err := loader.LoadArchive(r)
 
-	return c, microerror.Mask(err)
+		return c, microerror.Mask(err)
+	}
+
+	return nil, microerror.Maskf(invalidConfigError, "%s:%s has no Helm chart layer", ref, tag)
 }
 
 // checkBundleChart is the bundle check: a kustomize patch whose target matches
@@ -69,18 +86,11 @@ func checkBundleChart(req Request, memberChart string, resolved blockResolution)
 	url, _ := source.nested("spec", "url").(string)
 	ref := strings.TrimPrefix(url, "oci://")
 
-	reg := req.BundleRegistry
-	if reg == nil {
-		var err error
-		if reg, err = newHelmRegistry(); err != nil {
-			return microerror.Mask(err)
-		}
-	}
-	tag, err := bundleTag(reg, ref, source)
+	tag, err := bundleTag(req.BundleTags, ref, source)
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	c, err := reg.Pull(ref, tag)
+	c, err := req.BundleChart(ref, tag)
 	if err != nil {
 		return microerror.Maskf(invalidConfigError, "pulling the bundle %s:%s: %v", ref, tag, err)
 	}
@@ -90,7 +100,7 @@ func checkBundleChart(req Request, memberChart string, resolved blockResolution)
 
 // bundleTag is the newest tag the ref of source allows: its tag, or the highest
 // version of its semver range.
-func bundleTag(reg BundleRegistry, ref string, source object) (string, error) {
+func bundleTag(list func(ref string) ([]string, error), ref string, source object) (string, error) {
 	if tag, _ := source.nested("spec", "ref", "tag").(string); tag != "" {
 		return tag, nil
 	}
@@ -102,7 +112,7 @@ func bundleTag(reg BundleRegistry, ref string, source object) (string, error) {
 	if err != nil {
 		return "", microerror.Maskf(appNotSupportedError, "spec.ref.semver %q of %s %s is not a semver range: %v", rng, ociRepositoryKind, source.name(), err)
 	}
-	tags, err := reg.Tags(ref)
+	tags, err := list(ref)
 	if err != nil {
 		return "", microerror.Maskf(invalidConfigError, "listing the versions of %s: %v", ref, err)
 	}
@@ -142,11 +152,11 @@ func checkBundleMember(c *chart.Chart, bundle, tag, memberChart string) error {
 		if !strings.HasSuffix(n, ".yaml") && !strings.HasSuffix(n, ".yml") {
 			continue
 		}
-		os, err := decodeObjects([]byte(files[n]))
+		decoded, err := decodeObjects([]byte(files[n]))
 		if err != nil {
 			return microerror.Maskf(invalidConfigError, "bundle %s: %s: %v", at, n, err)
 		}
-		objects = append(objects, os...)
+		objects = append(objects, decoded...)
 	}
 
 	for _, o := range objects {

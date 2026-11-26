@@ -6,9 +6,8 @@ import (
 	"testing"
 
 	"helm.sh/helm/v4/pkg/chart/loader/archive"
-	"helm.sh/helm/v4/pkg/chart/v2/loader"
-
 	chart "helm.sh/helm/v4/pkg/chart/v2"
+	"helm.sh/helm/v4/pkg/chart/v2/loader"
 
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
@@ -36,6 +35,11 @@ func (s standInRegistry) Pull(ref, tag string) (*chart.Chart, error) {
 	}
 
 	return c, nil
+}
+
+// serve makes req read its bundle charts from s.
+func (s standInRegistry) serve(req *reservation.Request) {
+	req.BundleTags, req.BundleChart = s.Tags, s.Pull
 }
 
 const bundleRef = "gsoci.azurecr.io/charts/giantswarm/" + fixtureBundle
@@ -85,8 +89,8 @@ spec:
 {{- end }}
 `
 
-// bundleChart panics on a bad chart, as it builds a constant. It builds a bundle chart of the stand-in registry from its values
-// and its one template.
+// bundleChart builds a bundle chart of the stand-in registry from its values and
+// its one template. It panics on a bad chart, as it builds a constant.
 func bundleChart(values, template string) *chart.Chart {
 	c, err := loader.LoadFiles([]*archive.BufferedFile{
 		{Name: "Chart.yaml", Data: []byte("apiVersion: v2\nname: " + fixtureBundle + "\nversion: 1.2.3\n")},
@@ -131,7 +135,7 @@ func TestReserveBundleRefusesABundleThatDoesNotQualify(t *testing.T) {
 			dir := bundleFixture(t, reservation.GitOpsSourceCollections, "")
 			head, _ := headFiles(t, dir)
 			req := bundleRequest(dir)
-			req.BundleRegistry = bundleAt(tc.bundle())
+			bundleAt(tc.bundle()).serve(&req)
 
 			_, err := reservation.Reserve(req)
 			assertRefused(t, dir, head, err, tc.is, tc.mentions...)
@@ -159,7 +163,7 @@ func TestReserveBundleChecksTheNewestVersionTheRefAllows(t *testing.T) {
 			dir := newGitOpsFixture(t, opts)
 			head, _ := headFiles(t, dir)
 			req := bundleRequest(dir)
-			req.BundleRegistry = standInRegistry{bundleRef: tc.tags}
+			standInRegistry{bundleRef: tc.tags}.serve(&req)
 
 			_, err := reservation.Reserve(req)
 			if tc.refused == "" {
@@ -183,7 +187,7 @@ func TestReserveBundleRefusesARangeNoVersionSatisfies(t *testing.T) {
 	dir := newGitOpsFixture(t, opts)
 	head, _ := headFiles(t, dir)
 	req := bundleRequest(dir)
-	req.BundleRegistry = bundleAt(labelledBundle())
+	bundleAt(labelledBundle()).serve(&req)
 
 	_, err := reservation.Reserve(req)
 	assertRefused(t, dir, head, err, reservation.IsInvalidConfig, ">=3.0.0", bundleRef)

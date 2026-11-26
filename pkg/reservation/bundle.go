@@ -27,9 +27,7 @@ func memberSelector(chart string) string {
 // spec.postRenderers, after any entry already there. The post-renderer patches
 // the member OCIRepository with the same patches as every other mode.
 func bundleBlock(chart string, before []object, resolved blockResolution, semverFilter string, annotations map[string]string) ([]string, error) {
-	if len(resolved.sources) == 0 {
-		return nil, microerror.Maskf(appNotFoundError, "the bundle %q resolved to no %s", chart, ociRepositoryKind)
-	}
+	// checkBundleChart has refused a bundle with no source by now.
 	// A member source is not in the GitOps repo, so the apiVersion comes from
 	// the bundle's own source, which the member shares.
 	ref, merge, err := sourcePatches(ignoredName, "", resolved.sources[0]["apiVersion"], semverFilter, annotations)
@@ -143,19 +141,15 @@ type postRendererOp struct {
 // lines, in file order.
 func postRendererOps(lines []string) []postRendererOp {
 	var ops []postRendererOp
-	inBlock, release := false, ""
+	in, release := inBlock(lines), ""
 	for i, l := range lines {
 		t := strings.TrimSpace(l)
 		switch {
-		case isBlockBegin(t):
-			inBlock = true
-		case isBlockEnd(t):
-			inBlock = false
-		case inBlock && t == "kind: "+helmReleaseKind && i+2 < len(lines):
+		case in[i] && t == "kind: "+helmReleaseKind && i+2 < len(lines):
 			name := strings.TrimPrefix(strings.TrimSpace(lines[i+1]), "name: ")
 			namespace := strings.TrimPrefix(strings.TrimSpace(lines[i+2]), "namespace: ")
 			release = namespace + "/" + name
-		case inBlock && (t == "path: /spec/postRenderers" || t == "path: /spec/postRenderers/-"):
+		case in[i] && (t == "path: /spec/postRenderers" || t == "path: /spec/postRenderers/-"):
 			ops = append(ops, postRendererOp{release: release, line: i, creates: t == "path: /spec/postRenderers"})
 		}
 	}
