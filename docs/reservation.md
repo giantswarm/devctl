@@ -25,6 +25,8 @@ devctl reservation reserve --cluster graveler --app hello-world --branch fix/cra
 - `--duration` is `30m`, `4h`, `4h30m` or `2d`: a whole number of minutes in Go duration form, or a whole number of days. Default is 10h, max is 7d or less, if the cluster sets its own `reservations.giantswarm.io/max-duration`.
 - `--exclusive` locks the whole cluster, not just the app. If you already hold the app there, it's promoted in place, retaining its branch, PR link and time window even when `--pull-request` is omitted. Successful JSON reports that retained link.
 
+- `--bundle` reserves a member of a Flux-style bundle, for example `--bundle observability-bundle --app alloy`. `--app` is the member's chart. The unit is the chart: every member of the bundle that serves it moves together. The bundle's `HelmRelease` must be in the collections or the extras of the cluster, and its member `OCIRepository` objects must carry the label `bundle.giantswarm.io/member-chart: <chart>`. devctl does not check the label yet.
+
 A reservation patches the app's existing sources in place, for collections and extras alike. See [Advanced usage](#advanced-usage).
 
 Running the same `reserve` again (same app, user, branch, PR and scope) just refreshes it: a new window starting now. Anything else that collides is refused with who holds it, on which branch and until when.
@@ -78,7 +80,7 @@ By default (`--output table`) `reserve` prints one line: what, where, for whom, 
 
 `--output json` prints the same data as JSON, for scripts. `reserve` and `release --cluster` print one object. `extend`, `reap`, `release --pull-request` and `list` print an array, `[]` when there is nothing.
 
-The `reserve` object carries `sourceURL`, the OCI URL of the patched sources (empty when they differ), because the collections' sources are not in the GitOps repository. It also carries `warnings` when the reservation worked but something deserves a look, for example a chart that the extras serve too (only the collections get the patch), and `replaced` when it took over an expired reservation of another branch or pull request, so a caller can tell that pull request. Each `extend` entry carries the reservation's `scope` and the `commit` it made. The JSON of every command carries `gitopsSource`. `check-extras` prints no JSON.
+The `reserve` object carries `sourceURL`, the OCI URL of the patched sources (empty when they differ, and for a bundle member, whose source is not in the repository), because the collections' sources are not in the GitOps repository. It also carries `warnings` when the reservation worked but something deserves a look, for example a chart that the extras serve too (only the collections get the patch), and `replaced` when it took over an expired reservation of another branch or pull request, so a caller can tell that pull request. Each `extend` entry carries the reservation's `scope` and the `commit` it made. The JSON of every command carries `gitopsSource`. `check-extras` prints no JSON.
 
 ## Dry run
 
@@ -87,5 +89,7 @@ The `reserve` object carries `sourceURL`, the OCI URL of the patched sources (em
 ## Advanced usage
 
 A reservation adds no object. `reserve` appends one marked block to the end of the root `patches:` list of `collections/kustomization.yaml`, or of `extras/kustomization.yaml` when the extras serve the app. The block patches the `OCIRepository` objects that serve the chart, one pair of patches per source, to the dev builds and the reservation annotations. `reserve` refuses when a patch or a transformer follows the block, or when a release outside the render would move with the source. `release` removes the block and restores the `patches:` key as it was, and Flux drops the patched values again. `extend` rewrites the annotations in it.
+
+A bundle member has no source in the GitOps repo, as helm-controller creates it when it renders the bundle. So the block patches the bundle's `HelmRelease` instead and appends one entry to its `spec.postRenderers`. That post-renderer applies the same patches to every `OCIRepository` that matches the label selector `bundle.giantswarm.io/member-chart=<chart>`. Each reservation is its own entry, after any entry that exists, and `release` removes only its own. The ConfigMap entry records the bundle as `bundle`, next to `gitops-source`, and the JSON of `reserve` and `list` shows it as `bundle`. `extend` keeps it.
 
 Reservations made by older devctl versions are a `collections/reservations/<chart>` component with a `<chart>-dev-reservation` source. This version can't release them, and `reserve` and `release` refuse a chart that still has one: release them with the older devctl before you upgrade.
