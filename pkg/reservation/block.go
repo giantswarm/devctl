@@ -57,6 +57,20 @@ func (r blockResolution) sourceNames() []string {
 	return names
 }
 
+// sourceURL is the spec.url all sources share, or "" when they differ.
+func (r blockResolution) sourceURL() string {
+	var url string
+	for i, s := range r.sources {
+		u, _ := s.nested("spec", "url").(string)
+		if i > 0 && u != url {
+			return ""
+		}
+		url = u
+	}
+
+	return url
+}
+
 // resolveExtras finds the chart in a render of the cluster's extras. It reports
 // false when the cluster has no extras, the extras serve no such chart, or no
 // HelmRelease takes its chart from the sources that serve it.
@@ -184,6 +198,7 @@ func reserveInPlace(req Request, gitopsSource, chart string, resolved blockResol
 		Commit:       commit,
 		GitOpsSource: gitopsSource,
 		SourceName:   strings.Join(resolved.sourceNames(), ", "),
+		SourceURL:    resolved.sourceURL(),
 		HelmReleases: resolved.helmReleases,
 		SemverFilter: semverFilter,
 		Files:        files,

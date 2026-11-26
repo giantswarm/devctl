@@ -560,3 +560,17 @@ func TestReserveLeavesAnExpiredEntryOfAnotherAppAlone(t *testing.T) {
 		t.Errorf("%s entry: %v", fixtureApp, entries[fixtureApp])
 	}
 }
+
+// TestReserveReportsTheCollectionsSourceURL: the OCIRepository comes from a
+// remote base, not from the GitOps repo, so only the result can tell its URL.
+func TestReserveReportsTheCollectionsSourceURL(t *testing.T) {
+	dir := newGitOpsFixture(t, fixtureOptions{})
+
+	res, err := reservation.Reserve(testRequest(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "oci://gsoci.azurecr.io/charts/giantswarm/hello-world"; res.SourceURL != want {
+		t.Errorf("source URL: got %q, want %q", res.SourceURL, want)
+	}
+}
