@@ -1,9 +1,11 @@
 package reservation
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/giantswarm/microerror"
@@ -22,6 +24,16 @@ import (
 // registry.
 const helmChartLayer types.MediaType = "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
 
+// bundleRegistryTimeout bounds each read of the bundle registry, so that a
+// registry that accepts the connection and stalls cannot hold a CI job. It is a
+// variable for the test.
+var bundleRegistryTimeout = 60 * time.Second
+
+// ociTag and fromOCITag map a version to its OCI tag and back: a tag cannot
+// hold `+`, so helm and Flux store it as `_`.
+func ociTag(version string) string { return strings.ReplaceAll(version, "+", "_") }
+func fromOCITag(tag string) string { return strings.ReplaceAll(tag, "_", "+") }
+
 // bundleTags lists the versions of the chart at ref, the chart's path in the
 // registry without the oci:// scheme. Like the other engines it reads no
 // credential store: the registry is read anonymously.
@@ -30,18 +42,26 @@ func bundleTags(ref string) ([]string, error) {
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
-	tags, err := remote.List(repo, remote.WithAuth(authn.Anonymous))
+	ctx, cancel := context.WithTimeout(context.Background(), bundleRegistryTimeout)
+	defer cancel()
+	tags, err := remote.List(repo, remote.WithAuth(authn.Anonymous), remote.WithContext(ctx))
+	for i, t := range tags {
+		tags[i] = fromOCITag(t)
+	}
 
 	return tags, microerror.Mask(err)
 }
 
 // pullBundle loads the chart at ref and tag, anonymously.
 func pullBundle(ref, tag string) (*chart.Chart, error) {
-	tagRef, err := name.NewTag(ref + ":" + tag)
+	tagRef, err := name.NewTag(ref + ":" + ociTag(tag))
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
-	img, err := remote.Image(tagRef, remote.WithAuth(authn.Anonymous))
+	// The context also bounds the layer read below.
+	ctx, cancel := context.WithTimeout(context.Background(), bundleRegistryTimeout)
+	defer cancel()
+	img, err := remote.Image(tagRef, remote.WithAuth(authn.Anonymous), remote.WithContext(ctx))
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}

@@ -193,6 +193,18 @@ func TestReserveBundleRefusesARangeNoVersionSatisfies(t *testing.T) {
 	assertRefused(t, dir, head, err, reservation.IsInvalidConfig, ">=3.0.0", bundleRef)
 }
 
+// TestReserveBundleRefusesAChartThatCannotBePulled: a registry that has no such
+// version is a configuration problem too.
+func TestReserveBundleRefusesAChartThatCannotBePulled(t *testing.T) {
+	dir := bundleFixture(t, reservation.GitOpsSourceCollections, "")
+	head, _ := headFiles(t, dir)
+	req := bundleRequest(dir)
+	standInRegistry{bundleRef: {"9.9.9": labelledBundle()}}.serve(&req)
+
+	_, err := reservation.Reserve(req)
+	assertRefused(t, dir, head, err, reservation.IsInvalidConfig, bundleRef, "1.2.3")
+}
+
 // laterPostRenderer is a kustomization whose patchesJson6902, which kustomize
 // runs after patches:, appends a post-renderer to the bundle's HelmRelease:
 // after the reservation block.

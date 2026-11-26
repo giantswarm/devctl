@@ -97,7 +97,7 @@ func checkBundleBlocks(path string, lines []string) error {
 	}
 
 	var plain []string
-	for i, in := range inBlock(lines) {
+	for i, in := range blockMask(lines) {
 		if !in {
 			plain = append(plain, lines[i])
 		}
@@ -125,9 +125,9 @@ func checkBundleBlocks(path string, lines []string) error {
 	return nil
 }
 
-// inBlock marks the lines of the reservation blocks, from the begin marker to
+// blockMask marks the lines of the reservation blocks, from the begin marker to
 // the end marker, both included.
-func inBlock(lines []string) []bool {
+func blockMask(lines []string) []bool {
 	in := make([]bool, len(lines))
 	open := false
 	for i, l := range lines {
@@ -212,7 +212,7 @@ func checkBlocksLast(lines []string, name string) error {
 		return nil
 	}
 
-	in := inBlock(lines)
+	in := blockMask(lines)
 	afterBlock := false
 	itemIndent := ""
 	for i := start + 1; i <= listEnd(lines, start); i++ {

@@ -27,7 +27,9 @@ func memberSelector(chart string) string {
 // spec.postRenderers, after any entry already there. The post-renderer patches
 // the member OCIRepository with the same patches as every other mode.
 func bundleBlock(chart string, before []object, resolved blockResolution, semverFilter string, annotations map[string]string) ([]string, error) {
-	// checkBundleChart has refused a bundle with no source by now.
+	if len(resolved.sources) == 0 {
+		return nil, microerror.Maskf(appNotFoundError, "the bundle %q resolved to no %s", chart, ociRepositoryKind)
+	}
 	// A member source is not in the GitOps repo, so the apiVersion comes from
 	// the bundle's own source, which the member shares.
 	ref, merge, err := sourcePatches(ignoredName, "", resolved.sources[0]["apiVersion"], semverFilter, annotations)
@@ -141,7 +143,7 @@ type postRendererOp struct {
 // lines, in file order.
 func postRendererOps(lines []string) []postRendererOp {
 	var ops []postRendererOp
-	in, release := inBlock(lines), ""
+	in, release := blockMask(lines), ""
 	for i, l := range lines {
 		t := strings.TrimSpace(l)
 		switch {
