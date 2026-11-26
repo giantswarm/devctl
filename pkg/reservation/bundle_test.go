@@ -3,6 +3,8 @@ package reservation_test
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -462,5 +464,40 @@ func TestReserveBundleMemberAgain(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// TestReserveBundleMemberAgainRestoresOnFailure: reserving a member again
+// removes its old block before it renders. When a later step fails, both files
+// come back with the old block, as they were.
+func TestReserveBundleMemberAgainRestoresOnFailure(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes a read-only file, so the ConfigMap write cannot fail")
+	}
+	dir := bundleFixture(t, reservation.GitOpsSourceCollections, "")
+	first := bundleRequest(dir)
+	if _, err := reservation.Reserve(first); err != nil {
+		t.Fatal(err)
+	}
+	kustomizationBefore := readFixtureFile(t, dir, pathCollections)
+	configMapBefore := readFixtureFile(t, dir, pathReservations)
+
+	// The ConfigMap write comes after the block is removed and written again.
+	configMap := filepath.Join(dir, pathReservations)
+	if err := os.Chmod(configMap, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(configMap, 0o644) })
+
+	again := first
+	again.Now = again.Now.Add(time.Hour)
+	if _, err := reservation.Reserve(again); err == nil {
+		t.Fatal("want an error from the read-only ConfigMap, got none")
+	}
+	if got := readFixtureFile(t, dir, pathCollections); got != kustomizationBefore {
+		t.Errorf("kustomization not restored:\n%s", got)
+	}
+	if got := readFixtureFile(t, dir, pathReservations); got != configMapBefore {
+		t.Errorf("ConfigMap not restored:\n%s", got)
 	}
 }
