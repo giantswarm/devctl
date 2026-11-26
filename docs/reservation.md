@@ -80,7 +80,7 @@ By default (`--output table`) `reserve` prints one line: what, where, for whom, 
 
 `--output json` prints the same data as JSON, for scripts. `reserve` and `release --cluster` print one object. `extend`, `reap`, `release --pull-request` and `list` print an array, `[]` when there is nothing.
 
-The `reserve` object carries `sourceURL`, the OCI URL of the patched sources (empty when they differ), because the collections' sources are not in the GitOps repository. It also carries `warnings` when the reservation worked but something deserves a look, for example a chart that the extras serve too (only the collections get the patch), and `replaced` when it took over an expired reservation of another branch or pull request, so a caller can tell that pull request. Each `extend` entry carries the reservation's `scope` and the `commit` it made. The JSON of every command carries `gitopsSource`. `check-extras` prints no JSON.
+The `reserve` object carries `sourceURL`, the OCI URL of the patched sources (empty when they differ, and for a bundle member, whose source is not in the repository), because the collections' sources are not in the GitOps repository. It also carries `warnings` when the reservation worked but something deserves a look, for example a chart that the extras serve too (only the collections get the patch), and `replaced` when it took over an expired reservation of another branch or pull request, so a caller can tell that pull request. Each `extend` entry carries the reservation's `scope` and the `commit` it made. The JSON of every command carries `gitopsSource`. `check-extras` prints no JSON.
 
 ## Dry run
 

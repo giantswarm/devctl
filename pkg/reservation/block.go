@@ -205,6 +205,11 @@ func reserveInPlace(req Request, gitopsSource, chart string, resolved blockResol
 	}
 
 	files := blockFiles(req.Cluster, gitopsSource)
+	sourceURL := resolved.sourceURL()
+	if req.Bundle != "" {
+		// resolved holds the bundle's source, not the member's.
+		sourceURL = ""
+	}
 
 	commit, err := commitAll(req.RepoDir, fmt.Sprintf(
 		"reserve %s on %s for %s (branch %s, until %s)",
@@ -220,7 +225,7 @@ func reserveInPlace(req Request, gitopsSource, chart string, resolved blockResol
 		GitOpsSource: gitopsSource,
 		Bundle:       req.Bundle,
 		SourceName:   strings.Join(resolved.sourceNames(), ", "),
-		SourceURL:    resolved.sourceURL(),
+		SourceURL:    sourceURL,
 		HelmReleases: resolved.helmReleases,
 		SemverFilter: semverFilter,
 		Files:        files,
