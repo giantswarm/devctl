@@ -411,3 +411,47 @@ func TestReapOfOneBundleMemberKeepsTheOther(t *testing.T) {
 		t.Errorf("the remaining entry does not move loki: interval %v", got)
 	}
 }
+
+// TestReserveBundleMemberAgain: a refresh, and a takeover of an expired
+// reservation from another branch, rewrite the member's block on a HelmRelease
+// with no post-renderers of its own. Alone, the block creates the list; next to
+// a second member, the block of that member does.
+func TestReserveBundleMemberAgain(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		withOther    bool
+		change       func(*reservation.Request, reservation.Result)
+		wantRenderer int
+	}{
+		{"refresh", false, func(r *reservation.Request, _ reservation.Result) { r.Now = r.Now.Add(time.Hour) }, 1},
+		{"refresh next to another member", true, func(r *reservation.Request, _ reservation.Result) { r.Now = r.Now.Add(time.Hour) }, 2},
+		{"takeover after expiry", false, func(r *reservation.Request, res reservation.Result) {
+			r.Now, r.Branch, r.PullRequest = res.Until.Add(time.Minute), testOtherBranch, "giantswarm/alloy#7"
+		}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := bundleFixture(t, reservation.GitOpsSourceCollections, "")
+			first := bundleRequest(dir)
+			res, err := reservation.Reserve(first)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.withOther {
+				reserveSecondMember(t, dir)
+			}
+
+			again := first
+			tc.change(&again, res)
+			res, err = reservation.Reserve(again)
+			if err != nil {
+				t.Fatalf("reserving %s again: %v", fixtureMemberChart, err)
+			}
+			if res.Bundle != fixtureBundle {
+				t.Errorf("result bundle: got %q, want %q", res.Bundle, fixtureBundle)
+			}
+			if prs := renderedPostRenderers(t, dir, "collections"); len(prs) != tc.wantRenderer {
+				t.Fatalf("want %d post-renderers, got %d: %v", tc.wantRenderer, len(prs), prs)
+			}
+		})
+	}
+}

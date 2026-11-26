@@ -92,6 +92,9 @@ type Result struct {
 	// GitOpsSource is where the reservation lives: GitOpsSourceCollections or
 	// GitOpsSourceExtras.
 	GitOpsSource string `json:"gitopsSource"`
+	// Bundle is the bundle whose HelmRelease carries the reservation, empty for
+	// a chart deployed on its own. SourceName is then the source of the bundle.
+	Bundle string `json:"bundle,omitempty"`
 	// SourceName is the name of every patched OCIRepository, joined with ", ".
 	SourceName string `json:"sourceName"`
 	// HelmReleases are "<namespace>/<name>" of every release the reservation

@@ -148,6 +148,13 @@ func reserveInPlace(req Request, gitopsSource, chart string, resolved blockResol
 
 	var block []string
 	if req.Bundle != "" {
+		// The create or append choice must not count the chart's own old block,
+		// which writeBlock replaces. discardOnError restores it on a failure.
+		if hasBlock(path, chart) {
+			if err = removeBlock(path, chart); err != nil {
+				return Result{}, microerror.Mask(err)
+			}
+		}
 		var before []object
 		if before, err = renderDir(filepath.Dir(path)); err != nil {
 			return Result{}, microerror.Mask(err)
@@ -197,6 +204,7 @@ func reserveInPlace(req Request, gitopsSource, chart string, resolved blockResol
 		PullRequest:  req.PullRequest,
 		Commit:       commit,
 		GitOpsSource: gitopsSource,
+		Bundle:       req.Bundle,
 		SourceName:   strings.Join(resolved.sourceNames(), ", "),
 		HelmReleases: resolved.helmReleases,
 		SemverFilter: semverFilter,
