@@ -114,7 +114,7 @@ func bundleTag(reg BundleRegistry, ref string, source object) (string, error) {
 		}
 	}
 	if best == nil {
-		return "", microerror.Maskf(appNotFoundError, "no version of %s satisfies the semver range %q of %s %s", ref, rng, ociRepositoryKind, source.name())
+		return "", microerror.Maskf(invalidConfigError, "no version of %s satisfies the semver range %q of %s %s", ref, rng, ociRepositoryKind, source.name())
 	}
 
 	return bestTag, nil

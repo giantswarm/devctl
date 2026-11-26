@@ -173,6 +173,22 @@ func TestReserveBundleChecksTheNewestVersionTheRefAllows(t *testing.T) {
 	}
 }
 
+// TestReserveBundleRefusesARangeNoVersionSatisfies: a registry with no version in
+// the ref's range is a registry or cluster configuration problem, not a wrong
+// --app or --bundle, so it is an invalid configuration.
+func TestReserveBundleRefusesARangeNoVersionSatisfies(t *testing.T) {
+	opts := bundleOptions(reservation.GitOpsSourceCollections, "")
+	const path = "bases/collections/demo/bundle.yaml"
+	opts.extraFiles[path] = strings.Replace(opts.extraFiles[path], "tag: 1.2.3", `semver: ">=3.0.0"`, 1)
+	dir := newGitOpsFixture(t, opts)
+	head, _ := headFiles(t, dir)
+	req := bundleRequest(dir)
+	req.BundleRegistry = bundleAt(labelledBundle())
+
+	_, err := reservation.Reserve(req)
+	assertRefused(t, dir, head, err, reservation.IsInvalidConfig, ">=3.0.0", bundleRef)
+}
+
 // laterPostRenderer is a kustomization whose patchesJson6902, which kustomize
 // runs after patches:, appends a post-renderer to the bundle's HelmRelease:
 // after the reservation block.

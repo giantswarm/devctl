@@ -248,6 +248,24 @@ func TestReserveBundleMemberAppendsOnePostRenderer(t *testing.T) {
 	}
 }
 
+// TestReserveBundleMemberAppendsToAnEmptyPostRendererList: `postRenderers: []` is
+// a list that exists, so the block appends to it. The create form would replace
+// the list, and the check-extras rule that refuses a create form beside a
+// HelmRelease's own post-renderers relies on this being an append.
+func TestReserveBundleMemberAppendsToAnEmptyPostRendererList(t *testing.T) {
+	dir := bundleFixture(t, reservation.GitOpsSourceCollections, "  postRenderers: []\n")
+
+	if _, err := reservation.Reserve(bundleRequest(dir)); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(renderedPostRenderers(t, dir, "collections")); got != 1 {
+		t.Fatalf("want one reservation entry, got %d", got)
+	}
+	if text := readFixtureFile(t, dir, pathCollections); !strings.Contains(text, "path: /spec/postRenderers/-") {
+		t.Errorf("want the append form for an empty list, got:\n%s", text)
+	}
+}
+
 // TestReserveBundleMemberKeepsExistingPostRenderers: the reservation entry comes
 // after any entry a person wrote, and a release removes only its own.
 func TestReserveBundleMemberKeepsExistingPostRenderers(t *testing.T) {
