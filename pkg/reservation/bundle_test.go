@@ -489,10 +489,10 @@ func TestReserveBundleMemberAgainRestoresOnFailure(t *testing.T) {
 
 	// The ConfigMap write comes after the block is removed and written again.
 	configMap := filepath.Join(dir, pathReservations)
-	if err := os.Chmod(configMap, 0o444); err != nil {
+	if err := os.Chmod(configMap, 0o400); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(configMap, 0o644) })
+	t.Cleanup(func() { _ = os.Chmod(configMap, 0o600) })
 
 	again := first
 	again.Now = again.Now.Add(time.Hour)
