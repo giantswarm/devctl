@@ -97,6 +97,10 @@ type Result struct {
 	Bundle string `json:"bundle,omitempty"`
 	// SourceName is the name of every patched OCIRepository, joined with ", ".
 	SourceName string `json:"sourceName"`
+	// SourceURL is the OCI URL of the patched sources, empty when they do not
+	// all share one. The collections' sources are not in the GitOps repo, so
+	// callers cannot read it from the files.
+	SourceURL string `json:"sourceURL"`
 	// HelmReleases are "<namespace>/<name>" of every release the reservation
 	// moves to the dev builds, sorted.
 	HelmReleases []string `json:"helmReleases,omitempty"`
