@@ -82,8 +82,12 @@ spec:
 	}}
 }
 
+// bundleRequest is the reservation of a member of the fixture's bundle, whose
+// chart the stand-in registry serves labelled. A test builds the pull itself
+// by setting BundleRegistry.
 func bundleRequest(dir string) reservation.Request {
 	req := testRequest(dir)
+	req.BundleRegistry = bundleAt(labelledBundle())
 	req.App = fixtureMemberChart
 	req.Bundle = fixtureBundle
 	req.PullRequest = "giantswarm/alloy#5"

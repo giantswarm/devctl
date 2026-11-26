@@ -74,6 +74,9 @@ type Request struct {
 	// is deployed on its own. The bundle's HelmRelease is what the reservation
 	// patches, not App's source, which exists only on the cluster.
 	Bundle string
+	// BundleRegistry is where the bundle chart is pulled from, to check that
+	// the bundle qualifies. Nil means the OCI registry of the bundle's source.
+	BundleRegistry BundleRegistry
 	// Scope is the reservation's lock: ScopeApp locks only App, ScopeExclusive
 	// locks the whole cluster. Empty means ScopeApp.
 	Scope string
@@ -267,6 +270,9 @@ func Reserve(req Request) (res Result, err error) {
 		return Result{}, microerror.Mask(err)
 	}
 	if ok {
+		if err := checkBundleChart(req, chart, extras); err != nil {
+			return Result{}, microerror.Mask(err)
+		}
 		if err := checkBlock(req, GitOpsSourceExtras, lookup, extras); err != nil {
 			return Result{}, microerror.Mask(err)
 		}
@@ -289,6 +295,9 @@ func Reserve(req Request) (res Result, err error) {
 		return Result{}, microerror.Mask(err)
 	}
 
+	if err := checkBundleChart(req, chart, collections); err != nil {
+		return Result{}, microerror.Mask(err)
+	}
 	if err := checkBlock(req, GitOpsSourceCollections, lookup, collections); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
