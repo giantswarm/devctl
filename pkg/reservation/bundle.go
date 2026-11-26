@@ -28,7 +28,7 @@ func memberSelector(chart string) string {
 // the member OCIRepository with the same patches as every other mode.
 func bundleBlock(chart string, before []object, resolved blockResolution, semverFilter string, annotations map[string]string) ([]string, error) {
 	if len(resolved.sources) == 0 {
-		return nil, microerror.Maskf(invalidConfigError, "the bundle %q resolved to no %s", chart, ociRepositoryKind)
+		return nil, microerror.Maskf(appNotFoundError, "the bundle %q resolved to no %s", chart, ociRepositoryKind)
 	}
 	// A member source is not in the GitOps repo, so the apiVersion comes from
 	// the bundle's own source, which the member shares.

@@ -63,7 +63,7 @@ func checkBundleChart(req Request, memberChart string, resolved blockResolution)
 		return nil
 	}
 	if len(resolved.sources) == 0 {
-		return microerror.Maskf(invalidConfigError, "the bundle %q resolved to no %s", req.Bundle, ociRepositoryKind)
+		return microerror.Maskf(appNotFoundError, "the bundle %q resolved to no %s", req.Bundle, ociRepositoryKind)
 	}
 	source := resolved.sources[0]
 	url, _ := source.nested("spec", "url").(string)
