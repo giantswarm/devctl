@@ -172,3 +172,38 @@ func TestReserveBundleChecksTheNewestVersionTheRefAllows(t *testing.T) {
 		})
 	}
 }
+
+// laterPostRenderer is a kustomization whose patchesJson6902, which kustomize
+// runs after patches:, appends a post-renderer to the bundle's HelmRelease:
+// after the reservation block.
+const laterPostRenderer = `apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../bases/collections/demo
+patchesJson6902:
+  - target:
+      kind: HelmRelease
+      name: ` + fixtureBundle + `
+    patch: |-
+      - op: add
+        path: /spec/postRenderers/-
+        value:
+          kustomize:
+            patches:
+              - target:
+                  kind: Deployment
+                patch: |-
+                  - op: add
+                    path: /metadata/labels/late
+                    value: "true"
+`
+
+func TestReserveBundleRefusesAPostRendererAfterTheReservationOne(t *testing.T) {
+	opts := bundleOptions(reservation.GitOpsSourceCollections, existingPostRenderer)
+	opts.extraFiles[pathCollections] = laterPostRenderer
+	dir := newGitOpsFixture(t, opts)
+	head, _ := headFiles(t, dir)
+
+	_, err := reservation.Reserve(bundleRequest(dir))
+	assertRefused(t, dir, head, err, reservation.IsAppNotSupported, fixtureBundle, "after a reservation post-renderer", "patchesJson6902")
+}
