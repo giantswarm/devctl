@@ -109,7 +109,7 @@ expires, so the cluster answers by the person's access:
   "dex": {
     "tokenEndpoint": "https://dex.graveler.gaws2.gigantic.io/token",
     "issuer": "https://dex.graveler.gaws2.gigantic.io",
-    "connectorId": "giantswarm-simple-oidc",
+    "connectorId": "giantswarm-gazelle-oidc",
     "audience": "dex-k8s-authenticator",
     "clientIdFile": "/etc/devctl/installations/graveler/client-id",
     "clientSecretFile": "/etc/devctl/installations/graveler/client-secret"
