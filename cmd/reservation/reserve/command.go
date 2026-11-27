@@ -18,18 +18,20 @@ const (
 
 ` + gitops.CheckoutHelp + `
 
-The command adds a Kustomize component that serves the app from the dev
-builds of the branch, records the reservation in the cluster's reservations
-ConfigMap, renders the result to check that the reservation really takes
-effect, and pushes one commit. With --user set, it needs no GitHub token. Flux
-applies the change to the cluster a few minutes after the push.
+The command appends a reservation block to the root patches: list of the
+cluster's collections or extras kustomization. The block patches the app's
+existing source objects to the dev builds of the branch. The command records
+the reservation in the cluster's reservations ConfigMap, renders the result to
+check that the reservation really takes effect, and pushes one commit. With
+--user set, it needs no GitHub token. Flux applies the change to the cluster a
+few minutes after the push.
 
 The command finds the app by rendering the cluster's collections and matching
 the rendered source objects on the chart their OCI URL serves, never on the
 object name: collection names repeat across collections, so a name match is
 ambiguous. The chart name comes from the app repository's helm/*/Chart.yaml
 unless --app gives it. The command patches every instance of the app on the
-cluster, and all of them share one source object.
+cluster: the block patches the source object of each one.
 
 The reservation lasts 10 hours unless --duration says otherwise. Accepted
 durations are 30m, 4h, 4h30m or 2d. The longest is 7d, or less when the

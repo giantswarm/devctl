@@ -75,8 +75,7 @@ func newReapableFixture(t *testing.T, cluster, app, until string) (dir, origin s
 
 	clusterDir := filepath.Join(dir, "management-clusters", cluster)
 	collectionsDir := filepath.Join(clusterDir, "collections")
-	componentDir := filepath.Join(collectionsDir, "reservations", app)
-	if err := os.MkdirAll(componentDir, 0o750); err != nil {
+	if err := os.MkdirAll(collectionsDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
 
@@ -91,10 +90,9 @@ func newReapableFixture(t *testing.T, cluster, app, until string) (dir, origin s
 		filepath.Join(collectionsDir, "kustomization.yaml"): "apiVersion: kustomize.config.k8s.io/v1beta1\n" +
 			"kind: Kustomization\n" +
 			"resources: []\n" +
-			"components:\n" +
-			"  - reservations/" + app + "\n",
-		filepath.Join(componentDir, "kustomization.yaml"):        "apiVersion: kustomize.config.k8s.io/v1alpha1\nkind: Component\nresources:\n  - " + app + "-dev-reservation.yaml\n",
-		filepath.Join(componentDir, app+"-dev-reservation.yaml"): "apiVersion: source.toolkit.fluxcd.io/v1\nkind: OCIRepository\n",
+			"patches:\n" +
+			"  # BEGIN reservation of " + app + ", written by `devctl reservation reserve`. Do not edit.\n" +
+			"  # END reservation of " + app + ", written by `devctl reservation reserve`\n",
 	}
 	for path, content := range files {
 		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
@@ -139,8 +137,8 @@ func TestReapCommitsAndPushesWithNoToken(t *testing.T) {
 		t.Errorf("stdout fields: got %q", out)
 	}
 
-	if _, err := os.Stat(filepath.Join(dir, "management-clusters", cluster, "collections", "reservations", app)); !os.IsNotExist(err) {
-		t.Errorf("component directory still exists: %v", err)
+	if b, err := os.ReadFile(filepath.Join(dir, "management-clusters", cluster, "collections", "kustomization.yaml")); err != nil || strings.Contains(string(b), "reservation of") { // #nosec G304 -- the fixture checkout in this test's temporary directory
+		t.Errorf("reservation block still exists: %v", err)
 	}
 
 	head := gittest.GitOutput(t, dir, "rev-parse", "HEAD")
@@ -242,8 +240,8 @@ func TestReapDryRunPushesNothing(t *testing.T) {
 	if got := gittest.GitOutput(t, dir, "rev-parse", "HEAD"); got != before {
 		t.Errorf("dry run kept its commit: HEAD %s, want %s", got, before)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "management-clusters", cluster, "collections", "reservations", app)); err != nil {
-		t.Errorf("dry run left the component directory removed: %v", err)
+	if diff := gittest.GitOutput(t, dir, "status", "--porcelain"); diff != "" {
+		t.Errorf("dry run left the reservation block removed: %s", diff)
 	}
 }
 

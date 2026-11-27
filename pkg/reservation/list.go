@@ -2,7 +2,6 @@ package reservation
 
 import (
 	"os"
-	"path/filepath"
 	"sort"
 	"time"
 
@@ -31,6 +30,9 @@ type Reservation struct {
 	PullRequest string `json:"pullRequest,omitempty"`
 	// Scope is the reservation's scope, e.g. ScopeApp.
 	Scope string `json:"scope"`
+	// Bundle is the bundle whose HelmRelease carries the reservation, empty for a
+	// reservation of an app deployed on its own.
+	Bundle string `json:"bundle,omitempty"`
 	// GitOpsSource is where the reservation lives, GitOpsSourceCollections or
 	// GitOpsSourceExtras. It comes from the files: release, extend and reap
 	// follow them, so the files win over the entry.
@@ -82,7 +84,7 @@ func List(req ListRequest) ([]Reservation, error) {
 		return nil, microerror.Mask(err)
 	}
 
-	configMapPath := filepath.Join(req.RepoDir, clustersDir, req.Cluster, ConfigMapFile)
+	configMapPath := configMapFilePath(req.RepoDir, req.Cluster)
 	b, err := os.ReadFile(configMapPath) //nolint:gosec // the path is built from the repo checkout and the cluster name
 	if err != nil {
 		return nil, microerror.Mask(err)
@@ -115,6 +117,7 @@ func parseReservationEntry(app, entry string) (Reservation, error) {
 	var fields struct {
 		User, Branch, PR, Scope, From, Until string
 		GitOpsSource                         string `yaml:"gitops-source"`
+		Bundle                               string
 	}
 	if err := yaml.Unmarshal([]byte(entry), &fields); err != nil {
 		return Reservation{}, microerror.Mask(err)
@@ -135,6 +138,7 @@ func parseReservationEntry(app, entry string) (Reservation, error) {
 		Branch:      fields.Branch,
 		PullRequest: fields.PR,
 		Scope:       fields.Scope,
+		Bundle:      fields.Bundle,
 		From:        from,
 		Until:       until,
 

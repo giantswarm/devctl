@@ -18,11 +18,11 @@ const (
 
 ` + gitops.CheckoutHelp + `
 
-It deletes the reservation's Kustomize component, the line that references
-it, and the entry in the cluster's reservations ConfigMap, commits the result,
-and pushes. With --user set, it needs no GitHub token, so it also runs from a
-laptop to free a stuck reservation by hand. Flux applies the change to the
-cluster a few minutes after the push.
+It deletes the reservation block from the cluster's collections or extras
+kustomization, and the entry in the cluster's reservations ConfigMap, commits
+the result, and pushes. With --user set, it needs no GitHub token, so it also
+runs from a laptop to free a stuck reservation by hand. Flux applies the change
+to the cluster a few minutes after the push.
 
 With --cluster, it releases one app, keyed on the chart name as reserve
 resolves it: pass the same --app or --app-dir as the reserve call. It refuses,

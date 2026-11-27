@@ -207,6 +207,22 @@ func TestReleaseExtrasRestoresTheRepoByteForByte(t *testing.T) {
 resources:
 - ./extras-app/
 `,
+		"empty patches at the end": `resources:
+- ./extras-app/
+patches: []
+`,
+		"bare patches key at the end": `resources:
+- ./extras-app/
+patches:
+`,
+		"bare patches key before other content": `patches:
+resources:
+- ./extras-app/
+`,
+		"null patches": `resources:
+- ./extras-app/
+patches: null
+`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			opts := fixtureOptions{}
@@ -297,8 +313,17 @@ func TestReserveFallsBackToCollectionsWhenTheExtrasSourceMovesNothing(t *testing
 	if err != nil {
 		t.Fatalf("reserve: %v", err)
 	}
-	if want := fixtureApp + reservation.SourceNameSuffix; res.SourceName != want {
-		t.Errorf("source name: got %q, want the collections copy %q", res.SourceName, want)
+	if res.GitOpsSource != reservation.GitOpsSourceCollections {
+		t.Errorf("gitops source: got %q, want %q", res.GitOpsSource, reservation.GitOpsSourceCollections)
+	}
+	// Only the collections get the patch, so the user hears about the other place.
+	if len(res.Warnings) != 1 {
+		t.Fatalf("warnings: got %q, want one", res.Warnings)
+	}
+	for _, want := range []string{fixtureApp, "management-clusters/" + fixtureCluster + "/collections", "management-clusters/" + fixtureCluster + "/extras"} {
+		if !strings.Contains(res.Warnings[0], want) {
+			t.Errorf("warning does not mention %q: %s", want, res.Warnings[0])
+		}
 	}
 }
 
@@ -314,4 +339,21 @@ func TestReserveRefusesAnExtrasSourceThatMovesNothing(t *testing.T) {
 		t.Fatalf("expected the extras refusal that names the unused source, got %v", err)
 	}
 	assertClean(t, dir)
+}
+
+// TestReserveLeavesNoNoteOnThePatchesKey: the patches: key stays as clean as
+// people wrote it, apart from the list the block fills.
+func TestReserveLeavesNoNoteOnThePatchesKey(t *testing.T) {
+	dir := newGitOpsFixture(t, fixtureOptions{extraFiles: map[string]string{
+		pathExtras: "resources:\n- ./extras-app/\npatches: []\n",
+	}})
+	if _, err := reservation.Reserve(extrasRequest(dir)); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, l := range strings.Split(readFixtureFile(t, dir, pathExtras), "\n") {
+		if strings.HasPrefix(l, "patches:") && strings.TrimSpace(strings.TrimPrefix(l, "patches:")) != "" {
+			t.Errorf("the patches: key carries more than the key: %q", l)
+		}
+	}
 }

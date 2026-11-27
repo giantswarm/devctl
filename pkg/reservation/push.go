@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/giantswarm/microerror"
@@ -199,20 +197,4 @@ func gitStatusPorcelain(ctx context.Context, dir string) (string, error) {
 	}
 
 	return strings.TrimSpace(stdout.String()), nil
-}
-
-// discardWrites restores tracked reservation files after a failed operation.
-// Only paths established as absent before Reserve's first write may be removed;
-// an unrelated untracked file in the component directory belongs to the user.
-// Cleanup is best effort so the original error remains the one reported.
-func discardWrites(dir, cluster, chart string, created ...string) {
-	ctx := context.Background()
-	_ = runGit(ctx, dir, "checkout", "HEAD", "--", clusterPath(cluster, ConfigMapFile), clusterPath(cluster, collectionsDir))
-	for _, name := range created {
-		_ = os.Remove(filepath.Join(dir, name))
-	}
-	if len(created) > 0 {
-		// Remove an empty generated directory, never its pre-existing contents.
-		_ = os.Remove(filepath.Join(dir, clusterPath(cluster, collectionsDir, reservationsDir, chart)))
-	}
 }

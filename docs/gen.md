@@ -49,7 +49,10 @@ devctl gen workflows --flavour app --language go --release-workflow=auto-release
 With `--language go`, the generated `Nested Go modules` workflow discovers tracked
 nested `go.mod` files, excluding test fixtures, vendored dependencies and hidden
 directories. Each module runs independently with `GOWORK=off`, verifies that
-`go mod tidy` leaves its dependencies unchanged, and runs race tests and vet.
+`go mod tidy` leaves its dependencies unchanged, and runs race tests in short
+mode and vet. Short mode compiles every test but lets tests that need external
+resources skip themselves through `testing.Short()`, as apptest-framework suites
+do: they need a live management cluster and run through `/run app-test-suites`.
 The repository's existing root-module checks remain responsible for the root.
 
 After the module changes land, dispatch `zz_generated.nested_go_modules.yaml`

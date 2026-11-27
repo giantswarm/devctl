@@ -2,6 +2,7 @@ package reservation_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -138,5 +139,42 @@ func TestReserveExtrasPatchesEverySourceOfAChart(t *testing.T) {
 	}
 	if diff := cmp.Diff(original, renderExtras(t, dir, fixtureCluster)); diff != "" {
 		t.Errorf("render after release (-before +after):\n%s", diff)
+	}
+}
+
+func TestReserveReportsTheSourceURL(t *testing.T) {
+	const url = "oci://gsoci.azurecr.io/charts/giantswarm/agent"
+
+	res, err := reservation.Reserve(func() reservation.Request {
+		req := extrasRequest(extrasWith(t, extrasSource("agent", "flux-giantswarm", "agent")+
+			extrasRelease("agent", "flux-giantswarm", "agent", "")))
+		req.App = "agent"
+		return req
+	}())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.SourceURL != url {
+		t.Errorf("extras source URL: got %q, want %q", res.SourceURL, url)
+	}
+}
+
+// TestReserveLeavesTheSourceURLEmptyWhenSourcesDiffer: one URL is all the
+// result can hold, so devctl does not pick one of two.
+func TestReserveLeavesTheSourceURLEmptyWhenSourcesDiffer(t *testing.T) {
+	other := strings.Replace(extrasSource("agent-b", "flux-giantswarm", "agent"),
+		"gsoci.azurecr.io/charts/giantswarm", "example.com/charts", 1)
+	dir := extrasWith(t, extrasSource("agent-a", "flux-giantswarm", "agent")+other+
+		extrasRelease("agent-a", "flux-giantswarm", "agent-a", "")+
+		extrasRelease("agent-b", "flux-giantswarm", "agent-b", ""))
+	req := extrasRequest(dir)
+	req.App = "agent"
+
+	res, err := reservation.Reserve(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.SourceURL != "" {
+		t.Errorf("source URL: got %q, want none for differing URLs", res.SourceURL)
 	}
 }
