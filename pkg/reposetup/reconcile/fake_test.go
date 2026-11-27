@@ -140,7 +140,7 @@ func (r *fakeRepo) headSubject(branch string) string {
 type fakeProtection struct {
 	reviews                             int
 	enforceAdmins, allowForce, allowDel bool
-	strict                              bool
+	strict, dismissStale                bool
 	checks                              []string
 }
 
@@ -647,12 +647,17 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		delete(f.repos, repo.owner+"/"+repo.name)
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	mux.HandleFunc("GET /repos/{owner}/{repo}/commits", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+	mux.HandleFunc("GET /repos/{owner}/{repo}/commits", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		if repo.empty {
 			writeJSON(w, http.StatusConflict, map[string]string{"message": "Git Repository is empty."})
 			return
 		}
-		writeJSON(w, 200, append([]*github.RepositoryCommit{{SHA: new("head")}}, repo.history...))
+		commits := append([]*github.RepositoryCommit{{SHA: new("head")}}, repo.history...)
+		// One page, as GitHub answers per_page.
+		if n, err := strconv.Atoi(r.URL.Query().Get("per_page")); err == nil && n < len(commits) {
+			commits = commits[:n]
+		}
+		writeJSON(w, 200, commits)
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{ref}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		if ref := r.PathValue("ref"); ref != repo.release || repo.releaseSubject == "" {
@@ -1105,7 +1110,7 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]any{
 			"required_status_checks":        map[string]any{"strict": p.strict, "contexts": p.checks, "checks": checks},
 			"enforce_admins":                map[string]bool{"enabled": p.enforceAdmins},
-			"required_pull_request_reviews": map[string]int{"required_approving_review_count": p.reviews},
+			"required_pull_request_reviews": map[string]any{"required_approving_review_count": p.reviews, "dismiss_stale_reviews": p.dismissStale},
 			"allow_force_pushes":            map[string]bool{"enabled": p.allowForce},
 			"allow_deletions":               map[string]bool{"enabled": p.allowDel},
 		})
@@ -1116,6 +1121,7 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		p := &fakeProtection{enforceAdmins: in.EnforceAdmins}
 		if in.RequiredPullRequestReviews != nil {
 			p.reviews = in.RequiredPullRequestReviews.RequiredApprovingReviewCount
+			p.dismissStale = in.RequiredPullRequestReviews.DismissStaleReviews
 		}
 		if in.AllowForcePushes != nil {
 			p.allowForce = *in.AllowForcePushes

@@ -229,7 +229,10 @@ func entry(slug string, report *circleciapp.Report) Entry {
 	if r := report.Result; r != nil && r.Changed() {
 		// Any write is the pass's: a definition, a trigger or a setting.
 		e.Outcome = OutcomeCreated
-		if !r.CreatedDefinition {
+		switch {
+		case r.FollowedProject:
+			e.Reason = "CircleCI knew no project, followed it as you to create it; the follow's own build of the default branch can leave a red OAuth setup status on it until its next push"
+		case !r.CreatedDefinition:
 			var did []string
 			if r.CreatedTrigger {
 				did = append(did, "added its all-pushes trigger")

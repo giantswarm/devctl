@@ -12,7 +12,7 @@ import (
 )
 
 // A repeated reserve with the same arguments resets the expiry: one entry, one
-// component, the original source still the template.
+// block, the original source still the template.
 func TestReserveSameArgumentsRefreshesTheExpiry(t *testing.T) {
 	for _, scope := range []string{reservation.ScopeApp, reservation.ScopeExclusive} {
 		t.Run(scope, func(t *testing.T) {
@@ -44,14 +44,14 @@ func TestReserveSameArgumentsRefreshesTheExpiry(t *testing.T) {
 				t.Fatalf("want one refreshed reservation, got %+v", got)
 			}
 
-			if n := strings.Count(readFixtureFile(t, dir, pathCollections), "reservations/"+fixtureApp); n != 1 {
-				t.Errorf("component listed %d times, want 1", n)
+			collections := readFixtureFile(t, dir, pathCollections)
+			if n := strings.Count(collections, "# BEGIN reservation of "+fixtureApp); n != 1 {
+				t.Errorf("reservation block written %d times, want 1:\n%s", n, collections)
 			}
-			// The dev source is still a copy of the original, not of itself.
-			src := readFixtureFile(t, dir, pathSource)
-			if !strings.Contains(src, "oci://gsoci.azurecr.io/charts/giantswarm/"+fixtureApp) ||
-				!strings.Contains(src, "secretRef") {
-				t.Errorf("dev source lost the original source's fields:\n%s", src)
+			src := mustObject(t, renderCluster(t, dir, fixtureCluster), "OCIRepository/"+fixtureApp)
+			annotations, _ := src["metadata"].(map[string]any)["annotations"].(map[string]any)
+			if got, want := annotations[reservation.AnnotationPrefix+"until"], res.Until.Format(time.RFC3339); got != want {
+				t.Errorf("source until annotation: got %v, want %q", got, want)
 			}
 		})
 	}

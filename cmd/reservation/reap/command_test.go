@@ -75,8 +75,7 @@ func newReapableFixture(t *testing.T, cluster, app, until string) (dir, origin s
 
 	clusterDir := filepath.Join(dir, "management-clusters", cluster)
 	collectionsDir := filepath.Join(clusterDir, "collections")
-	componentDir := filepath.Join(collectionsDir, "reservations", app)
-	if err := os.MkdirAll(componentDir, 0o750); err != nil {
+	if err := os.MkdirAll(collectionsDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
 
@@ -91,10 +90,9 @@ func newReapableFixture(t *testing.T, cluster, app, until string) (dir, origin s
 		filepath.Join(collectionsDir, "kustomization.yaml"): "apiVersion: kustomize.config.k8s.io/v1beta1\n" +
 			"kind: Kustomization\n" +
 			"resources: []\n" +
-			"components:\n" +
-			"  - reservations/" + app + "\n",
-		filepath.Join(componentDir, "kustomization.yaml"):        "apiVersion: kustomize.config.k8s.io/v1alpha1\nkind: Component\nresources:\n  - " + app + "-dev-reservation.yaml\n",
-		filepath.Join(componentDir, app+"-dev-reservation.yaml"): "apiVersion: source.toolkit.fluxcd.io/v1\nkind: OCIRepository\n",
+			"patches:\n" +
+			"  # BEGIN reservation of " + app + ", written by `devctl reservation reserve`. Do not edit.\n" +
+			"  # END reservation of " + app + ", written by `devctl reservation reserve`\n",
 	}
 	for path, content := range files {
 		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
@@ -131,16 +129,16 @@ func TestReapCommitsAndPushesWithNoToken(t *testing.T) {
 
 	out := strings.TrimSpace(stdout.String())
 	fields := strings.Split(out, "\t")
-	if len(fields) != 8 {
-		t.Fatalf("stdout: got %d tab-separated fields, want 8: %q", len(fields), out)
+	if len(fields) != 9 {
+		t.Fatalf("stdout: got %d tab-separated fields, want 9: %q", len(fields), out)
 	}
 	wantCluster, wantApp, wantUser, wantReason := cluster, app, "alice", "expired"
-	if fields[0] != wantCluster || fields[1] != wantApp || fields[2] != wantUser || fields[5] != wantReason {
+	if fields[0] != wantCluster || fields[1] != wantApp || fields[2] != wantUser || fields[5] != wantReason || fields[8] != "collections" {
 		t.Errorf("stdout fields: got %q", out)
 	}
 
-	if _, err := os.Stat(filepath.Join(dir, "management-clusters", cluster, "collections", "reservations", app)); !os.IsNotExist(err) {
-		t.Errorf("component directory still exists: %v", err)
+	if b, err := os.ReadFile(filepath.Join(dir, "management-clusters", cluster, "collections", "kustomization.yaml")); err != nil || strings.Contains(string(b), "reservation of") { // #nosec G304 -- the fixture checkout in this test's temporary directory
+		t.Errorf("reservation block still exists: %v", err)
 	}
 
 	head := gittest.GitOutput(t, dir, "rev-parse", "HEAD")
@@ -227,14 +225,13 @@ func TestReapDryRunPushesNothing(t *testing.T) {
 		t.Fatalf("reap: %v", err)
 	}
 
-	var reaped []struct {
-		Cluster, App, Reason string
-	}
+	// A map, not a struct: the keys are what callers parse.
+	var reaped []map[string]any
 	if err := json.Unmarshal(stdout.Bytes(), &reaped); err != nil {
 		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
 	}
-	if len(reaped) != 1 || reaped[0].Cluster != cluster || reaped[0].App != app || reaped[0].Reason != "expired" {
-		t.Errorf("stdout: got %+v", reaped)
+	if len(reaped) != 1 || reaped[0]["cluster"] != cluster || reaped[0]["app"] != app || reaped[0]["reason"] != "expired" || reaped[0]["gitopsSource"] != "collections" {
+		t.Errorf("stdout: got %s", stdout.String())
 	}
 
 	if got := gittest.GitOutput(t, origin, "rev-parse", "main"); got != before {
@@ -243,8 +240,8 @@ func TestReapDryRunPushesNothing(t *testing.T) {
 	if got := gittest.GitOutput(t, dir, "rev-parse", "HEAD"); got != before {
 		t.Errorf("dry run kept its commit: HEAD %s, want %s", got, before)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "management-clusters", cluster, "collections", "reservations", app)); err != nil {
-		t.Errorf("dry run left the component directory removed: %v", err)
+	if diff := gittest.GitOutput(t, dir, "status", "--porcelain"); diff != "" {
+		t.Errorf("dry run left the reservation block removed: %s", diff)
 	}
 }
 

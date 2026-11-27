@@ -2,6 +2,7 @@ package file
 
 import (
 	"bytes"
+	"reflect"
 	"strings"
 	"testing"
 	"text/template"
@@ -202,6 +203,39 @@ func Test_PreCommitActionHooks(t *testing.T) {
 			}
 			if !cached || !ran {
 				t.Errorf("cache step found: %v, hooks step found: %v\n%s", cached, ran, got)
+			}
+		})
+	}
+}
+
+// Test_PreCommitActionPermissions verifies the GITHUB_TOKEN gets no permission
+// by default and the job only reads the repository it checks out.
+func Test_PreCommitActionPermissions(t *testing.T) {
+	for name, p := range map[string]params.Params{
+		"go":          {Language: "go"},
+		"go generate": {Language: "go", GoGenerate: true},
+		"generic":     {Language: "generic"},
+		"helmchart":   {Language: "generic", Flavors: []string{helmchartFlavor}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := renderAction(t, p)
+
+			var wf struct {
+				Permissions *map[string]string `yaml:"permissions"`
+				Jobs        map[string]struct {
+					Permissions map[string]string `yaml:"permissions"`
+				} `yaml:"jobs"`
+			}
+			if err := yaml.Unmarshal([]byte(got), &wf); err != nil {
+				t.Fatalf("rendered workflow is not valid YAML: %v\n%s", err, got)
+			}
+
+			if wf.Permissions == nil || len(*wf.Permissions) != 0 {
+				t.Errorf("workflow permissions = %v, want {}", wf.Permissions)
+			}
+			want := map[string]string{"contents": "read"}
+			if job := wf.Jobs["pre-commit"].Permissions; !reflect.DeepEqual(job, want) {
+				t.Errorf("pre-commit job permissions = %v, want %v", job, want)
 			}
 		})
 	}

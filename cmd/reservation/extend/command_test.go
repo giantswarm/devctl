@@ -2,6 +2,7 @@ package extend_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -46,8 +47,8 @@ func newCommand(t *testing.T, stdout io.Writer) *cobra.Command {
 const testPullRequest = "giantswarm/hello-world#123"
 
 // newExtendableFixture builds the smallest checkout Extend needs: an enabled
-// cluster with one reservation, the ConfigMap entry and the reservation's own
-// source object -- Extend rewrites both, in the same commit, so a `kubectl`
+// cluster with one reservation, the ConfigMap entry and the reservation block
+// in the collections kustomization -- Extend rewrites both, in the same commit, so a `kubectl`
 // read of either one always shows the current window. It pushes to a local
 // bare "origin", so a plain `git push` after Extend succeeds with no network
 // or credentials, exactly as it would from a laptop.
@@ -80,23 +81,29 @@ func newExtendableFixture(t *testing.T, cluster, app, from, until string) (dir, 
 		t.Fatal(err)
 	}
 
-	sourceDir := filepath.Join(clusterDir, "collections", "reservations", app)
-	if err := os.MkdirAll(sourceDir, 0o750); err != nil {
+	collectionsDir := filepath.Join(clusterDir, "collections")
+	if err := os.MkdirAll(collectionsDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	source := "apiVersion: source.toolkit.fluxcd.io/v1\n" +
-		"kind: OCIRepository\n" +
-		"metadata:\n" +
-		"  annotations:\n" +
-		"    reservation.giantswarm.io/branch: fix/crash\n" +
-		"    reservation.giantswarm.io/from: \"" + from + "\"\n" +
-		"    reservation.giantswarm.io/pr: \"" + testPullRequest + "\"\n" +
-		"    reservation.giantswarm.io/scope: app\n" +
-		"    reservation.giantswarm.io/until: \"" + until + "\"\n" +
-		"    reservation.giantswarm.io/user: alice\n" +
-		"  name: " + app + "-dev-reservation\n" +
-		"  namespace: giantswarm\n"
-	if err := os.WriteFile(filepath.Join(sourceDir, app+"-dev-reservation.yaml"), []byte(source), 0o600); err != nil {
+	kustomization := "apiVersion: kustomize.config.k8s.io/v1beta1\n" +
+		"kind: Kustomization\n" +
+		"resources: []\n" +
+		"patches:\n" +
+		"  # BEGIN reservation of " + app + ", written by `devctl reservation reserve`. Do not edit.\n" +
+		"  - target:\n" +
+		"      kind: OCIRepository\n" +
+		"      name: " + app + "\n" +
+		"    patch: |-\n" +
+		"      apiVersion: source.toolkit.fluxcd.io/v1\n" +
+		"      kind: OCIRepository\n" +
+		"      metadata:\n" +
+		"        name: " + app + "\n" +
+		"        annotations:\n" +
+		"          reservation.giantswarm.io/user: alice\n" +
+		"          reservation.giantswarm.io/from: \"" + from + "\"\n" +
+		"          reservation.giantswarm.io/until: \"" + until + "\"\n" +
+		"  # END reservation of " + app + ", written by `devctl reservation reserve`\n"
+	if err := os.WriteFile(filepath.Join(collectionsDir, "kustomization.yaml"), []byte(kustomization), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -131,10 +138,11 @@ func TestExtendCommitsAndPushesWithNoToken(t *testing.T) {
 
 	out := strings.TrimSpace(stdout.String())
 	fields := strings.Split(out, "\t")
-	if len(fields) != 3 {
-		t.Fatalf("stdout: got %d tab-separated fields, want 3: %q", len(fields), out)
+	// The GitOps source comes last, so the older columns keep their place.
+	if len(fields) != 4 {
+		t.Fatalf("stdout: got %d tab-separated fields, want 4: %q", len(fields), out)
 	}
-	if fields[0] != cluster || fields[1] != app {
+	if fields[0] != cluster || fields[1] != app || fields[3] != "collections" {
 		t.Errorf("stdout fields: got %q", out)
 	}
 
@@ -171,5 +179,33 @@ func TestExtendRefusalNamesDeploy(t *testing.T) {
 	}
 	if stdout.String() != "" {
 		t.Errorf("stdout: got %q, want empty", stdout.String())
+	}
+}
+
+// TestExtendJSONNamesTheGitOpsSource pins the JSON key that callers parse.
+func TestExtendJSONNamesTheGitOpsSource(t *testing.T) {
+	const cluster, app = "graveler", "hello-world"
+	from := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	until := time.Now().Add(3 * time.Hour).UTC().Format(time.RFC3339)
+	dir, _ := newExtendableFixture(t, cluster, app, from, until)
+
+	var stdout bytes.Buffer
+	cmd := newCommand(t, &stdout)
+	cmd.SetArgs([]string{
+		flagRepoDir, dir,
+		flagPullRequest, testPullRequest,
+		flagUser, "reservation-extend",
+		"--output", "json",
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("extend: %v", err)
+	}
+
+	var extended []map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &extended); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
+	}
+	if len(extended) != 1 || extended[0]["gitopsSource"] != "collections" {
+		t.Errorf("stdout: got %s, want one entry with gitopsSource collections", stdout.String())
 	}
 }

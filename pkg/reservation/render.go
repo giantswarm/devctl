@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"reflect"
 
 	"github.com/giantswarm/microerror"
 	"gopkg.in/yaml.v3"
@@ -78,71 +77,6 @@ func renderDir(dir string) ([]object, error) {
 	}
 
 	return objects, nil
-}
-
-// findSource returns the OCIRepository with the given name. It is a lookup of a
-// name the reservation itself chose, never the way an app is located: an app is
-// resolved on the chart its URL serves, in resolveApp.
-func findSource(objects []object, name string) (object, bool) {
-	for _, o := range objects {
-		if o.kind() == ociRepositoryKind && o.namespace() == Namespace && o.name() == name {
-			return o, true
-		}
-	}
-
-	return nil, false
-}
-
-// assertReserved refuses a render that does not carry the reservation. A render
-// that only succeeds proves nothing: a component merged in the wrong order
-// leaves the cluster on its release version with no error anywhere.
-func assertReserved(objects []object, resolved resolution, sourceName, semverFilter string) error {
-	source, ok := findSource(objects, sourceName)
-	if !ok {
-		return microerror.Maskf(renderAssertionError,
-			"the rendered collections carry no %s named %q", ociRepositoryKind, sourceName)
-	}
-	wantRef := map[string]any{"semver": devSemverRange, "semverFilter": semverFilter}
-	if got := source.nested("spec", "ref"); !reflect.DeepEqual(got, wantRef) {
-		return microerror.Maskf(renderAssertionError,
-			"the rendered %s %q selects %v, want %v", ociRepositoryKind, sourceName, got, wantRef)
-	}
-
-	// Every instance has to follow the reservation. One instance left behind is
-	// a cluster running two versions of one app with no error anywhere.
-	patched := map[string]bool{}
-	for _, o := range objects {
-		if o.kind() != helmReleaseKind || o.namespace() != Namespace {
-			continue
-		}
-		if name, _ := o.nested("spec", "chartRef", "name").(string); name == sourceName {
-			patched[o.name()] = true
-		}
-	}
-	for _, name := range resolved.helmReleases {
-		if !patched[name] {
-			return microerror.Maskf(renderAssertionError,
-				"%s %q does not take its chart from %q in the rendered collections, so the reservation would change nothing for that instance",
-				helmReleaseKind, name, sourceName)
-		}
-	}
-
-	// The release and release-candidate version selection has to keep working
-	// untouched, so every source object the app is served from must come out of
-	// the render exactly as it went in.
-	for _, name := range resolved.sourceNames {
-		original, ok := findSource(objects, name)
-		if !ok {
-			return microerror.Maskf(renderAssertionError,
-				"the reservation removed the app's own %s %q from the render", ociRepositoryKind, name)
-		}
-		if got := original.nested("spec", "ref"); !reflect.DeepEqual(got, resolved.originalRefs[name]) {
-			return microerror.Maskf(renderAssertionError,
-				"the reservation changed the version selector of %q from %v to %v", name, resolved.originalRefs[name], got)
-		}
-	}
-
-	return nil
 }
 
 // decodeObjects splits a multi-document YAML stream into objects.

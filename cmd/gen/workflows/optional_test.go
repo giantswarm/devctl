@@ -20,6 +20,7 @@ func Test_Run_DisableOptionalWorkflows(t *testing.T) {
 		off  []string
 		gone []string
 	}{
+		{"Go modules", []string{"--language=go"}, nil, []string{"nested_go_modules", "fix_vulnerabilities"}},
 		{"chart tests", nil, []string{"--chart-tests=false"}, []string{"chart_tests"}},
 		{"readme links", nil, []string{"--check-readme-links=false"}, []string{"check_readme_links"}},
 		{"reservations", []string{"--reservation-support"}, nil, []string{"reservation_command"}},

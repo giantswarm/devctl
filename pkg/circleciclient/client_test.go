@@ -243,3 +243,46 @@ func TestPullRequestBranch(t *testing.T) {
 		t.Errorf("fork: got %q, want pull/7", got)
 	}
 }
+
+// TestFollowPostsAndLeavesTheAnswerToTheProject: Follow POSTs to the v1.1
+// follow endpoint and accepts followed=false, which CircleCI answers on the
+// first follow of a fresh project although it follows it; whether the
+// project exists is read by the caller. A refused follow is an error.
+func TestFollowPostsAndLeavesTheAnswerToTheProject(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		status  int
+		body    string
+		wantErr func(error) bool
+	}{
+		{name: "followed", status: http.StatusOK, body: `{"following": true, "followed": true}`},
+		{name: "followed=false", status: http.StatusOK, body: `{"following": true, "followed": false}`},
+		{name: "unknown repository", status: http.StatusNotFound, body: `{"message": "Project not found"}`, wantErr: IsNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var requests []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests = append(requests, r.Method+" "+r.URL.Path)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+
+			c, err := New(Config{Token: "cci_test", BaseURL: srv.URL})
+			if err != nil {
+				t.Fatalf("client: %v", err)
+			}
+			err = c.Follow(context.Background(), "giantswarm", "sample-service")
+			switch {
+			case tc.wantErr == nil && err != nil:
+				t.Fatalf("follow: %v", err)
+			case tc.wantErr != nil && !tc.wantErr(err):
+				t.Fatalf("follow: err=%v, want the matching error", err)
+			}
+			if len(requests) != 1 || requests[0] != "POST /api/v1.1/project/github/giantswarm/sample-service/follow" {
+				t.Errorf("requests: %v, want the follow POST alone", requests)
+			}
+		})
+	}
+}
