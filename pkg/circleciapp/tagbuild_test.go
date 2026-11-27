@@ -148,7 +148,10 @@ func TestSetupRefusesUncertainImageTagBuilds(t *testing.T) {
 		{"pipeline in another project", func(ci *imageTagCircleCI, _ *fakeGitHub) { ci.pipelines["a"].ProjectSlug = "gh/other/sample" }, "does not identify its checkout ref"},
 		{"pipeline has no checkout ref", func(ci *imageTagCircleCI, _ *fakeGitHub) { ci.pipelines["a"].VCS = circleciclient.PipelineVCS{} }, "does not identify its checkout ref"},
 		{"status has no workflow URL", func(_ *imageTagCircleCI, gh *fakeGitHub) { gh.statuses[0].TargetURL = nil }, "has no workflow URL"},
-		{"OAuth status has no tag evidence", func(_ *imageTagCircleCI, gh *fakeGitHub) { gh.statuses[0].Creator.Login = new("alice") }, "cannot identify which image tag the OAuth statuses built"},
+		{"OAuth status has no tag evidence", func(ci *imageTagCircleCI, gh *fakeGitHub) {
+			gh.statuses[0].Creator.Login = new("alice")
+			ci.workflowErr = notFound()
+		}, "cannot identify which image tag the OAuth statuses built"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ci, gh, opts := imageTagFixture()
@@ -164,6 +167,35 @@ func TestSetupRefusesUncertainImageTagBuilds(t *testing.T) {
 	}
 }
 
+// TestSetupAttributesOAuthImageTagBuilds: an OAuth status links its job, and
+// the job's pipeline names the image tag it built: that tag reads built and
+// the other runs. A job of the default branch's pipeline, as the follow that
+// created the project builds, builds neither.
+func TestSetupAttributesOAuthImageTagBuilds(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		vcs  circleciclient.PipelineVCS
+		want []circleciclient.Ref
+	}{
+		{"the job built a", circleciclient.PipelineVCS{Tag: "a/v1.0.0"}, []circleciclient.Ref{{Tag: "b/v1.0.0"}}},
+		{"the job built the branch", circleciclient.PipelineVCS{Branch: "main"}, []circleciclient.Ref{{Tag: "a/v1.0.0"}, {Tag: "b/v1.0.0"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ci, gh, opts := imageTagFixture()
+			ci.oauthJobs = map[int64]string{7: ""}
+			ci.pipelines["oauth-7"] = &circleciclient.PipelineDetail{Pipeline: circleciclient.Pipeline{ID: "oauth-7", VCS: tc.vcs}, ProjectSlug: circleciclient.ProjectSlug("giantswarm", "sample")}
+			gh.statuses = []*github.RepoStatus{oauthStatus("setup", "success", "alice", 7, gh.release.GetPublishedAt().Add(time.Minute))}
+			report, err := Setup(context.Background(), ci, gh, "giantswarm", "sample", opts)
+			require.NoError(t, err)
+			var refs []circleciclient.Ref
+			for _, r := range report.Runs {
+				refs = append(refs, r.Ref)
+			}
+			require.Equal(t, tc.want, refs)
+		})
+	}
+}
+
 func TestImageTagBuildReaderSharesPipelineReads(t *testing.T) {
 	ci, gh, opts := imageTagFixture()
 	ci.addBuild(gh, "a/v1.0.0", "a", "success")
@@ -175,4 +207,71 @@ func TestImageTagBuildReaderSharesPipelineReads(t *testing.T) {
 	require.Len(t, report.Runs, 1)
 	require.Equal(t, "b/v1.0.0", report.Runs[0].Ref.Tag)
 	require.Equal(t, []string{"workflow continued", "pipeline a", "workflow a"}, ci.reads)
+}
+
+// TestOAuthBuilt: an OAuth status reads the tag's build only when its job's
+// pipeline checked out the tag, by workflow or by job number; a status that
+// leads to no readable pipeline of the project is built but unidentified,
+// unless another status identifies the tag.
+func TestOAuthBuilt(t *testing.T) {
+	published := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	at := published.Add(time.Minute)
+	tagWF := oauthWorkflowStatus("go-build", "success", "alice", "wf-tag", at)
+	branchWF := oauthWorkflowStatus("go-build", "success", "alice", "wf-branch", at)
+	unseenWF := oauthWorkflowStatus("go-build", "success", "alice", "wf-unseen", at)
+	tagJob := oauthStatus("go-build", "success", "alice", 7, at)
+	branchJob := oauthStatus("go-build", "success", "alice", 8, at)
+	otherRepoJob := oauthStatus("go-build", "success", "alice", 7, at)
+	otherRepoJob.TargetURL = new("https://circleci.com/gh/giantswarm/other/7")
+	oldTagJob := oauthStatus("go-build", "success", "alice", 7, published.Add(-time.Hour))
+	app := status("go-build", "success", "wf-tag", at)
+	for _, tc := range []struct {
+		name              string
+		statuses          []*github.RepoStatus
+		built, identified bool
+	}{
+		{"none", nil, false, true},
+		{"App status only", []*github.RepoStatus{app}, false, true},
+		{"before the release", []*github.RepoStatus{oldTagJob}, false, true},
+		{"tag by workflow", []*github.RepoStatus{tagWF}, true, true},
+		{"tag by job", []*github.RepoStatus{tagJob}, true, true},
+		{"branch by workflow", []*github.RepoStatus{branchWF}, false, true},
+		{"branch by job", []*github.RepoStatus{branchJob}, false, true},
+		{"branch, then tag", []*github.RepoStatus{branchWF, tagJob}, true, true},
+		{"unseen workflow", []*github.RepoStatus{unseenWF}, true, false},
+		{"unseen, then branch", []*github.RepoStatus{unseenWF, branchJob}, true, false},
+		{"unseen, then tag", []*github.RepoStatus{unseenWF, tagWF}, true, true},
+		{"job of another repository", []*github.RepoStatus{otherRepoJob}, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ci := newFake()
+			ci.oauthJobs = map[int64]string{7: "v1.0.0", 8: ""}
+			ci.oauthWorkflows = map[string]string{"wf-tag": "v1.0.0", "wf-branch": ""}
+			r := tagBuildReader{ci: ci, project: circleciclient.ProjectSlug("giantswarm", "sample"), workflows: map[string]string{}, pipelines: map[string]string{}}
+			built, identified, err := r.oauthBuilt(context.Background(), "giantswarm", "sample", "v1.0.0", tc.statuses, published)
+			require.NoError(t, err)
+			require.Equal(t, tc.built, built, "built")
+			require.Equal(t, tc.identified, identified, "identified")
+		})
+	}
+}
+
+// TestOAuthBuiltCachesOnlyIdentifiedReads: a workflow read once is not read
+// again for the next release on the commit; an unseen one is not cached.
+func TestOAuthBuiltCachesOnlyIdentifiedReads(t *testing.T) {
+	published := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
+	ci := newFake()
+	ci.oauthWorkflows = map[string]string{"wf-branch": ""}
+	r := tagBuildReader{ci: ci, project: circleciclient.ProjectSlug("giantswarm", "sample"), workflows: map[string]string{}, pipelines: map[string]string{}}
+	statuses := []*github.RepoStatus{
+		oauthWorkflowStatus("setup", "failure", "alice", "wf-branch", published.Add(time.Minute)),
+		oauthWorkflowStatus("setup", "failure", "alice", "wf-unseen", published.Add(time.Minute)),
+	}
+	for _, tag := range []string{"v1.0.0", "v1.0.1"} {
+		_, _, err := r.oauthBuilt(context.Background(), "giantswarm", "sample", tag, statuses, published)
+		require.NoError(t, err)
+	}
+	require.Equal(t, map[string]int{"wf-branch": 1, "wf-unseen": 2}, ci.workflowReads)
+	require.Equal(t, map[string]string{"wf-branch": ""}, r.workflows)
+	require.Equal(t, map[string]string{"oauth-wf-wf-branch": ""}, r.pipelines)
 }

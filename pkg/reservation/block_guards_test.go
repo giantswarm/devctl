@@ -66,8 +66,8 @@ func TestReserveExtrasRefusesAPatchAfterABlock(t *testing.T) {
 	assertRefused(t, dir, head, err, reservation.IsAppNotSupported, pathExtras, "after")
 }
 
-// TestCheckExtrasPatches is guard 2 as the CI check of the GitOps repo uses it.
-func TestCheckExtrasPatches(t *testing.T) {
+// TestCheckBlockPatches is guard 2 as the CI check of the GitOps repo uses it.
+func TestCheckBlockPatches(t *testing.T) {
 	reserved := reservedExtras(t)
 	for name, tc := range map[string]struct {
 		content string
@@ -92,7 +92,7 @@ func TestCheckExtrasPatches(t *testing.T) {
 			if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			err := reservation.CheckExtrasPatches(path)
+			err := reservation.CheckBlockPatches(path)
 			if tc.ok && err != nil {
 				t.Errorf("unexpected refusal: %v", err)
 			}

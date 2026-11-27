@@ -84,6 +84,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (er
 			App:         r.flag.App,
 			AppDir:      appDir,
 			Branch:      r.flag.Branch,
+			Bundle:      r.flag.Bundle,
 			User:        user,
 			PullRequest: r.flag.PullRequest,
 			Duration:    duration,
@@ -97,6 +98,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (er
 	}
 	checkout.Wrote(r.stderr)
 
+	for _, w := range result.Warnings {
+		_, _ = fmt.Fprintf(r.stderr, "%s: %s\n", termout.Warning(r.stderr), w)
+	}
 	if result.PullRequest == "" {
 		_, _ = fmt.Fprintf(r.stderr, "%s: no pull request linked (--%s). devctl does not check that a pull request exists for branch %s; you are responsible for builds of that branch to exist. extend --%s, release --%s and the reap rename check do not find this reservation.\n",
 			termout.Warning(r.stderr), flagPullRequest, r.flag.Branch, flagPullRequest, flagPullRequest)

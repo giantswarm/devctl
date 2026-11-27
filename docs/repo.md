@@ -284,7 +284,11 @@ refused one of those reads, the line is `reported` with the finding `unchecked`,
 instead of `circleci-pipeline-missing`. A repository nothing builds carries the finding `circleci-pipeline-missing`, fixed by
 `devctl repo follow-circleci`. One built by an OAuth follow, alone or beside a GitHub App pipeline, carries
 the advisory `circleci-oauth-follow`, fixed by `devctl repo follow-circleci --migrate`: it builds today and
-stops when the follower leaves, and the run still converges.
+stops when the follower leaves, and the run still converges. A person's statuses beside the GitHub App
+pipeline's on the branch's first build, when none of its 5 commits before carries a CircleCI status, are no
+advisory: `devctl repo follow-circleci` follows a repository CircleCI knows no project of, and that follow
+builds the head once as you before the GitHub App pipeline runs it. The next push shows whether an OAuth
+trigger builds too.
 
 Under the steps: the verdict line, the last reconciler run with what it was for (created, added,
 transferred, archived, deprecated, changed, dispatched, nightly), the run the record expects after a
@@ -308,7 +312,9 @@ devctl repo renovate-plan --team-file repositories/team-rocket.yaml --name my-ap
 `generate` runs `devctl gen renovate`, `patchReviewers` runs `devctl gen renovate reviewers` on the configuration
 the repository keeps. An entry that declares `renovate: false` gets neither. An entry with `gen.flavours` that is no
 fork line gets `renovate.json5` generated on generated CI, for the `customer` flavour, and when the checkout at
-`--dir` has no Renovate configuration; every other repository keeps its own, with the chore reviewers patched in.
+`--dir` has no Renovate configuration of its own: none, or only one `devctl gen renovate` wrote (its `DO NOT EDIT`
+header), which stays generated, so a `renovate-custom.json5` added later is extended on the next run. Every other
+repository keeps its own, with the chore reviewers patched in.
 The scaffold of `devctl repo create` takes the same decision (`reposetup.PlanRenovate`), so a created repository's
 first align run changes nothing.
 
@@ -331,18 +337,28 @@ stops when they leave.
 
 The command is idempotent:
 
-1. It finds the project's GitHub App pipeline, or creates `<repository>-app` (config and checkout
+1. When CircleCI knows no project for the repository, it follows the repository as you, which creates
+   the project; CircleCI creates none on its own for a new organization repository, although its GitHub
+   App is installed on all of them. The follow builds the default branch once on the OAuth pipeline, and
+   that build's red `setup` status shows on the branch until its next push. That build's statuses land
+   on a first release that shares the branch's commit, but are not taken for its build: an OAuth status
+   links its job, and the job's pipeline names the ref it built. The run that followed deletes the OAuth
+   trigger the follow created, as with `--migrate`, when CircleCI lists it already. A later run only
+   reports it: when the run that followed fails before deleting it, or CircleCI lists it only later,
+   delete it with `--migrate`.
+2. It finds the project's GitHub App pipeline, or creates `<repository>-app` (config and checkout
    through the GitHub App, `.circleci/config.yml`).
-2. It gives the pipeline an `all-pushes` trigger (branches and tags) unless it has an enabled one, and
+3. It gives the pipeline an `all-pushes` trigger (branches and tags) unless it has an enabled one, and
    switches the project's setup workflows on when they are off: the generated dynamic configuration needs
    them. CircleCI refusing the setting to you is a warning, not an error.
-3. With `--migrate` it deletes the OAuth pipeline's triggers, so a push builds once. Without it, a
+4. With `--migrate` it deletes the OAuth pipeline's triggers, so a push builds once. Without it, a
    remaining OAuth trigger is reported: every push builds twice.
-4. It runs every release that carries no CircleCI status of its own build (the latest `vX.Y.Z` release,
+5. It runs every release that carries no CircleCI status of its own build (the latest `vX.Y.Z` release,
    or the newest release of every line on a multi-image repository): a tag cut before the trigger
-   existed reached no pipeline. A tag an OAuth follow built is never run again. Then it runs the default
-   branch, when anything changed or the branch carries no status of the GitHub App pipeline.
-5. It waits for those runs (`--wait=false` returns at once, `--timeout` bounds the wait). The exit is 0
+   existed reached no pipeline. A tag an OAuth pipeline built (its status's job ran in the tag's
+   pipeline) is never run again, nor one whose OAuth job CircleCI does not show you. Then it runs the
+   default branch, when anything changed or the branch carries no status of the GitHub App pipeline.
+6. It waits for those runs (`--wait=false` returns at once, `--timeout` bounds the wait). The exit is 0
    when every run is green.
 
 The login is `devctl auth login --circleci-only`, granted **Write** on the consent page; a Read-only

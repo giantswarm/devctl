@@ -29,8 +29,9 @@ The decision is the one the scaffold of devctl repo create takes, so a
 created repository and its align runs agree: nothing for an entry that
 declares renovate: false; renovate.json5 generated for an entry with
 gen.flavours that is no fork line on generated CI, for the customer flavour,
-and when the checkout at --dir has no Renovate configuration; the chore
-reviewers patched into the configuration every other repository keeps.
+and when the checkout at --dir has no Renovate configuration of its own (none,
+or only one devctl generated); the chore reviewers patched into the
+configuration every other repository keeps.
 
 Examples:
   devctl repo renovate-plan --team-file repositories/team-rocket.yaml --name my-app --dir my-app`
@@ -77,12 +78,12 @@ func run(out io.Writer, teamFile, repo, dir string) error {
 	if err != nil {
 		return microerror.Mask(err)
 	}
-	hasConfig, err := renovate.HasConfig(dir)
+	ownConfig, err := renovate.OwnConfig(dir)
 	if err != nil {
 		return microerror.Mask(err)
 	}
 
-	doc, err := json.Marshal(reposetup.PlanRenovate(fields, hasConfig))
+	doc, err := json.Marshal(reposetup.PlanRenovate(fields, ownConfig))
 	if err != nil {
 		return microerror.Mask(err)
 	}

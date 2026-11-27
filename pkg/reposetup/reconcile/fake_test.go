@@ -647,12 +647,17 @@ func (f *fakeGitHub) routes(mux *http.ServeMux) {
 		delete(f.repos, repo.owner+"/"+repo.name)
 		w.WriteHeader(http.StatusNoContent)
 	}))
-	mux.HandleFunc("GET /repos/{owner}/{repo}/commits", f.withRepo(func(w http.ResponseWriter, _ *http.Request, repo *fakeRepo) {
+	mux.HandleFunc("GET /repos/{owner}/{repo}/commits", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		if repo.empty {
 			writeJSON(w, http.StatusConflict, map[string]string{"message": "Git Repository is empty."})
 			return
 		}
-		writeJSON(w, 200, append([]*github.RepositoryCommit{{SHA: new("head")}}, repo.history...))
+		commits := append([]*github.RepositoryCommit{{SHA: new("head")}}, repo.history...)
+		// One page, as GitHub answers per_page.
+		if n, err := strconv.Atoi(r.URL.Query().Get("per_page")); err == nil && n < len(commits) {
+			commits = commits[:n]
+		}
+		writeJSON(w, 200, commits)
 	}))
 	mux.HandleFunc("GET /repos/{owner}/{repo}/commits/{ref}", f.withRepo(func(w http.ResponseWriter, r *http.Request, repo *fakeRepo) {
 		if ref := r.PathValue("ref"); ref != repo.release || repo.releaseSubject == "" {

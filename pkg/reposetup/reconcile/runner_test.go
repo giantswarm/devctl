@@ -1686,13 +1686,16 @@ func TestSteps(t *testing.T) {
 			},
 		},
 		{
-			// The App and a person both post on the head: two pipelines build
-			// every push. The advisory finding names the migration.
+			// The App and a person both post on the head, and did on the
+			// push before it: two pipelines build every push. The advisory
+			// finding names the migration.
 			name: "circleci: without a client, statuses from the App and a person are an advisory double build", step: StepCircleCI,
 			seed: func(h *harness) {
 				r := h.gh.addRepo(owner, name)
+				r.history = []*github.RepositoryCommit{{SHA: new("older")}}
 				r.addStatus("main", "go-build", "success", "wf-1", "alice", time.Now().Add(-time.Hour))
 				r.addStatus("main", "go-build", "success", "wf-2", CircleCIAppLogin, time.Now().Add(-time.Hour))
+				r.addStatus("older", "go-build", "success", "wf-0", "alice", time.Now().Add(-2*time.Hour))
 				h.runner.CircleCI = nil
 			},
 			wantCheck: VerdictReported, wantFinding: FindingCircleCIOAuthFollow, wantAfter: VerdictReported,
@@ -1701,6 +1704,79 @@ func TestSteps(t *testing.T) {
 				require.Contains(t, sr.Findings[0].Message, "every push builds twice")
 				require.Contains(t, sr.Findings[0].Fix, "--migrate")
 				require.True(t, sr.Converges())
+			},
+		},
+		{
+			// devctl repo follow-circleci follows a repository CircleCI knows
+			// no project of (the scaffold of a new one): the follow builds the
+			// head once as the person, then the App pipeline runs it. No
+			// commit before it was built: a person's statuses on the
+			// branch's first build say nothing of a trigger, the next push
+			// does. Not a double build.
+			name: "circleci: without a client, a follow's first build beside the App's is no double build", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.history = []*github.RepositoryCommit{{SHA: new("older")}}
+				r.addStatus("main", "setup", "failure", "wf-1", "alice", time.Now().Add(-time.Hour))
+				r.addStatus("main", "setup", "success", "wf-2", CircleCIAppLogin, time.Now().Add(-time.Hour))
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				sr := res.Step(StepCircleCI)
+				require.Empty(t, res.Findings())
+				require.Equal(t, "CircleCI statuses on main from "+CircleCIAppLogin+": GitHub App pipeline; those of alice beside them are of the branch's first build, a follow's, and the next push shows whether an OAuth trigger builds too", sr.Summary)
+			},
+		},
+		{
+			// A new repository's scaffold is the branch's one commit: the
+			// follow's build and the App's beside it are its first build.
+			name: "circleci: without a client, a follow's build of a repository's only commit is no double build", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.addStatus("main", "setup", "failure", "wf-1", "alice", time.Now().Add(-time.Hour))
+				r.addStatus("main", "setup", "success", "wf-2", CircleCIAppLogin, time.Now().Add(-time.Hour))
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, res.Findings())
+				require.Contains(t, res.Step(StepCircleCI).Summary, "the branch's first build")
+			},
+		},
+		{
+			// The window is the 5 commits before the built one: a double
+			// build whose last status sits on the 5th is still one.
+			name: "circleci: without a client, a person's status on the 5th commit before is a double build", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				for _, sha := range []string{"c1", "c2", "c3", "c4", "c5", "c6"} {
+					r.history = append(r.history, &github.RepositoryCommit{SHA: new(sha)})
+				}
+				r.addStatus("main", "go-build", "success", "wf-1", "alice", time.Now().Add(-time.Hour))
+				r.addStatus("main", "go-build", "success", "wf-2", CircleCIAppLogin, time.Now().Add(-time.Hour))
+				r.addStatus("c5", "go-build", "success", "wf-0", "alice", time.Now().Add(-6*time.Hour))
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictReported, wantFinding: FindingCircleCIOAuthFollow, wantAfter: VerdictReported,
+		},
+		{
+			// A status on the 6th commit before is outside the window: the
+			// built one reads as the branch's first build.
+			name: "circleci: without a client, a status past the 5 commits before leaves a first build", step: StepCircleCI,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				for _, sha := range []string{"c1", "c2", "c3", "c4", "c5", "c6"} {
+					r.history = append(r.history, &github.RepositoryCommit{SHA: new(sha)})
+				}
+				r.addStatus("main", "go-build", "success", "wf-1", "alice", time.Now().Add(-time.Hour))
+				r.addStatus("main", "go-build", "success", "wf-2", CircleCIAppLogin, time.Now().Add(-time.Hour))
+				r.addStatus("c6", "go-build", "success", "wf-0", "alice", time.Now().Add(-7*time.Hour))
+				h.runner.CircleCI = nil
+			},
+			wantCheck: VerdictOK,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Contains(t, res.Step(StepCircleCI).Summary, "the branch's first build")
 			},
 		},
 		{

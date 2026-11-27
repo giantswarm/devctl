@@ -147,6 +147,11 @@ func (w *Workflows) FixVulnerabilities() input.Input {
 	return file.NewFixVulnerabilitiesInput(w.params)
 }
 
+// NestedGoModules tests independent modules and publishes directory-prefixed tags.
+func (w *Workflows) NestedGoModules() input.Input {
+	return file.NewNestedGoModulesInput(w.params)
+}
+
 func (w *Workflows) Gitleaks() input.Input {
 	return file.NewGitleaksInput(w.params)
 }
