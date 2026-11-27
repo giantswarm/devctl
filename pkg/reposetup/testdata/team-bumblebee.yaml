@@ -283,6 +283,25 @@
       generate: true
       releaseWorkflow: legacy
       patchCandidates: true
+- name: release-none-multi-image
+  componentType: unspecified
+  gen:
+    flavours:
+      - multi-image
+    language: generic
+    ci:
+      generate: true
+      releaseWorkflow: none
+- name: release-none-fork
+  componentType: service
+  defaultBranch: giantswarm
+  gen:
+    flavours:
+      - fork
+    language: go
+    ci:
+      generate: false
+      releaseWorkflow: none
 - name: maintenance-branches-no-fork
   componentType: service
   gen:

@@ -110,7 +110,7 @@ A fork line: a repository that carries an upstream release plus the carried patc
 
 ### `multi-image`
 
-A repository of images alone, several of them, each with its own release line: one image per `toolchains/<name>/` directory holding a `Dockerfile`, named `giantswarm/<repo>/<name>` and released as `<name>/vX.Y.Z` (giantswarm/agent-toolchains). Declared on its own with `language: generic`, on generated CI with `gen.ci.releaseWorkflow: auto-release` (the default there; `legacy` is refused). `devctl gen circleci` renders its per-image pipeline and `devctl gen workflows` its per-image Auto Release ([details](gen.md#multi-image-repositories)).
+A repository of images alone, several of them, each with its own release line: one image per `toolchains/<name>/` directory holding a `Dockerfile`, named `giantswarm/<repo>/<name>` and released as `<name>/vX.Y.Z` (giantswarm/agent-toolchains). Declared on its own with `language: generic`, on generated CI with `gen.ci.releaseWorkflow: auto-release` (the default there; `legacy` and `none` are refused). `devctl gen circleci` renders its per-image pipeline and `devctl gen workflows` its per-image Auto Release ([details](gen.md#multi-image-repositories)).
 
 | Command | Result |
 |---------|--------|

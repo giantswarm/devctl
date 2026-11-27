@@ -112,6 +112,7 @@ func Test_Command_RejectsReleaseOptionsBeforeWrites(t *testing.T) {
 		{"case 4: candidates on legacy", []string{"--flavour=generic", "--patch-candidates"}, "--patch-candidates is only valid"},
 		{"case 5: multi-image on legacy", []string{"--flavour=multi-image"}, "requires --release-workflow=auto-release"},
 		{"case 6: multi-image candidates", []string{"--flavour=multi-image", "--release-workflow=auto-release", "--patch-candidates"}, "--patch-candidates does not apply"},
+		{"case 7: candidates on none", []string{"--flavour=generic", "--release-workflow=none", "--patch-candidates"}, "no release workflow is generated"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, initial := range []string{"empty", "existing"} {

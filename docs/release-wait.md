@@ -93,7 +93,7 @@ preserved but are not included in this list.
 
 ### The release model
 
-`releaseModel` is `auto-release` or `legacy`. Two sources say which:
+`releaseModel` is `auto-release`, `legacy` or `none`. Two sources say which:
 
 1. The team-file entry of the repository in `repositories/<team>.yaml` of giantswarm/github:
    `gen.ci.releaseWorkflow` when set, else `auto-release` when `gen.ci.generate` is true and
@@ -401,7 +401,7 @@ stderr.
 |---|---|
 | `command`, `schemaVersion`, `exitCode`, `verdict`, `reason`, `warnings`, `startedAt`, `finishedAt` | The envelope every agent-facing command prints. `verdict` is `available`, `ci_failed`, `timeout`, `not_applicable`, `no_release`, `ambiguous_release`, `status_failed`, `tag_pipeline_empty`, `transient`, `usage`, `remote_error` or `auth_required`. `warnings` carries the CircleCI token's seven-day expiry notice and a team-file declaration that disagrees with the tag's workflows about the release model. |
 | `repository`, `tag`, `sha` | What was waited for. `tag` is empty when it never appeared; `sha` is the tag's commit (with `--pr` the merge commit). |
-| `releaseModel` | `auto-release` or `legacy`. |
+| `releaseModel` | `auto-release`, `legacy` or `none` (an entry that declares `gen.ci.releaseWorkflow: none` once align-files has removed its release workflows). |
 | `ciModel` | `generated`, `hand-written`, `actions` or `none`. |
 | `artifacts[]` | `kind` (`image`, `chart`, `release-asset`), `reference` (the pullable reference, or the asset's download URL), `digest` (empty while missing), `state` (`available`, `missing`), optional `lastProbeError` (the last unresolved probe error). Empty until the artifacts are known (hand-written CI before its pipeline exists). |
 | `releaseAssetCount` | Present after reading a published GitHub release in a release-assets wait. Zero keeps the wait pending when its tag pipeline has an upload job. |

@@ -232,9 +232,9 @@ func declarationMismatch(fromEntry, fromFiles string, content TagContent) string
 	files, remedy := auto, "align the team-file entry in giantswarm/github (gen.ci.generate: true, or gen.ci.releaseWorkflow: auto-release)"
 	if fromFiles == ReleaseModelLegacy {
 		files, remedy = legacy, "let align-files render the auto-release workflow the entry declares, or declare gen.ci.releaseWorkflow: legacy"
-		if fromEntry == "none" {
-			remedy = "let align-files remove the release workflows the entry no longer declares"
-		}
+	}
+	if fromEntry == ReleaseModelNone {
+		remedy = "let align-files remove the release workflows the entry no longer declares"
 	}
 	return fmt.Sprintf("declaration says %s, repository runs %s: the team-file entry resolves gen.ci.releaseWorkflow to %s while the workflows at %s are the %s ones (%s); the repository's workflows decide, %s",
 		fromEntry, fromFiles, fromEntry, short(content.SHA), fromFiles, strings.Join(files, ", "), remedy)

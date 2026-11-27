@@ -84,6 +84,25 @@ func TestResolveModels(t *testing.T) {
 			wantWarning: "declaration says legacy, repository runs auto-release: the team-file entry resolves gen.ci.releaseWorkflow to legacy while the workflows at 01234567 are the auto-release ones (zz_generated.auto_release.yaml); the repository's workflows decide, align the team-file entry in giantswarm/github (gen.ci.generate: true, or gen.ci.releaseWorkflow: auto-release)",
 		},
 		{
+			// A repository declared never released whose legacy workflows
+			// align-files has not removed yet: the tag is theirs.
+			name: "entry says none, files say legacy: the workflows decide", entry: entryWith(boolPtr(false), ReleaseModelNone),
+			workflows: legacy, circleci: handWritten,
+			want:        Models{Release: ReleaseModelLegacy, CI: CIModelHandWritten},
+			wantWarning: "declaration says none, repository runs legacy: the team-file entry resolves gen.ci.releaseWorkflow to none while the workflows at 01234567 are the legacy ones (zz_generated.create_release.yaml, zz_generated.create_release_pr.yaml); the repository's workflows decide, let align-files remove the release workflows the entry no longer declares",
+		},
+		{
+			name: "entry says none, files say auto-release: the workflows decide", entry: entryWith(boolPtr(true), ReleaseModelNone),
+			workflows: autoRelease, circleci: generated,
+			want:        Models{Release: ReleaseModelAutoRelease, CI: CIModelGenerated},
+			wantWarning: "declaration says none, repository runs auto-release: the team-file entry resolves gen.ci.releaseWorkflow to none while the workflows at 01234567 are the auto-release ones (zz_generated.auto_release.yaml); the repository's workflows decide, let align-files remove the release workflows the entry no longer declares",
+		},
+		{
+			name: "entry says none, release workflows removed", entry: entryWith(boolPtr(false), ReleaseModelNone),
+			workflows: []string{"ci.yaml"}, circleci: handWritten,
+			want: Models{Release: ReleaseModelNone, CI: CIModelHandWritten},
+		},
+		{
 			name: "files carry both release workflows", entry: nil,
 			workflows: append(append([]string{}, autoRelease...), legacy...), circleci: handWritten,
 			wantErr: "both the auto-release workflow",

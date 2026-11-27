@@ -175,7 +175,7 @@ func (r *runner) entry(ctx context.Context, gh *githubclient.Client, name string
 		return "", reposetup.Entry{}, microerror.Mask(err)
 	}
 	// The entry of a repository that exists is validated in existing mode,
-	// the schema alone; --added creates the repository, so the creation
+	// the schema plus the release-workflow none refusal; --added creates the repository, so the creation
 	// rules apply. No name check either way: the repository exists, or the
 	// creation PR checked the name.
 	mode := reposetup.ModeExisting

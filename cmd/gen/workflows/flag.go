@@ -111,6 +111,9 @@ func (f *flag) Validate() error {
 		}
 	}
 
+	if f.PatchCandidates && f.ReleaseWorkflow == releaseWorkflowNone {
+		return microerror.Maskf(invalidFlagError, "--%s is only valid with --%s=%s: with --%s=%s no release workflow is generated", flagPatchCandidates, flagReleaseWorkflow, releaseWorkflowAutoRelease, flagReleaseWorkflow, releaseWorkflowNone)
+	}
 	if f.PatchCandidates && f.ReleaseWorkflow != releaseWorkflowAutoRelease {
 		return microerror.Maskf(invalidFlagError, "--%s is only valid with --%s=%s: the %s release workflow cuts no candidates", flagPatchCandidates, flagReleaseWorkflow, releaseWorkflowAutoRelease, f.ReleaseWorkflow)
 	}

@@ -40,7 +40,8 @@ func TestGenCommandsNothingForAForkLine(t *testing.T) {
 	predates = genContext{Knows: func(_, flag string) bool { return flag != "--patch-candidates" }}
 	require.NotContains(t, genCommands(released, predates)[0], "--patch-candidates")
 
-	// none on a fork line renders nothing either: gen workflows refuses it.
+	// none on a fork line renders nothing either: only the auto-release flow
+	// is ever rendered for a fork line.
 	released.Gen.CI.PatchCandidates = false
 	released.Gen.CI.ReleaseWorkflow = "none"
 	require.Empty(t, genCommands(released, genContext{}))
