@@ -340,7 +340,7 @@ func CreateRelease(githubToken, name, base, releases, provider string, component
 		}
 		major := releaseVersionForK8s.Major
 
-		components, apps, err = BumpAll(githubToken, effectiveBaseRelease, components, apps, releaseType, appsToDropForThisRelease, requests, yes, output, changesOnly, requestedOnly, major)
+		components, apps, err = BumpAll(githubToken, effectiveBaseRelease, components, apps, releaseType, appsToDropForThisRelease, requests, yes, output, changesOnly, requestedOnly, major, provider)
 		if err != nil {
 			return microerror.Mask(err)
 		}
