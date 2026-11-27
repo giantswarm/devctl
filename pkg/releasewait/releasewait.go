@@ -1059,9 +1059,13 @@ func (w *Waiter) readModels(ctx context.Context, sha string, result *Result) (*T
 		entry = nil
 		w.progress.Printf("no team-file entry declares %s/%s: the models come from the tag's files", w.config.Owner, w.config.Repo)
 	}
-	if w.config.PR != 0 && EntryReleaseModel(entry) == "" {
+	if model := EntryReleaseModel(entry); w.config.PR != 0 && (model == "" || model == ReleaseModelNone) {
 		if files, err := content.ReleaseModel(); err == nil && files == "" {
 			result.CIModel = content.CIModel()
+			if model == ReleaseModelNone {
+				result.ReleaseModel = model
+				return nil, nil, noReleaseErr("nothing tags the merge commit of %s/%s#%d: the team-file entry declares gen.ci.releaseWorkflow: none and %s at %s holds no release workflow", w.config.Owner, w.config.Repo, w.config.PR, workflowsDir, short(sha))
+			}
 			return nil, nil, noReleaseErr("nothing tags the merge commit of %s/%s#%d: no team-file entry declares a release model and %s at %s holds no release workflow", w.config.Owner, w.config.Repo, w.config.PR, workflowsDir, short(sha))
 		}
 	}

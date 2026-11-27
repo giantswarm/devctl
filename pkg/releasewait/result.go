@@ -16,6 +16,9 @@ const (
 	// ReleaseModelLegacy tags from a release branch and a release pull
 	// request; the tag is not on the merge commit of a feature pull request.
 	ReleaseModelLegacy = "legacy"
+	// ReleaseModelNone is an entry that declares no release workflow: the
+	// repository is never released.
+	ReleaseModelNone = "none"
 )
 
 // The CI models: where the names of the artifacts come from.

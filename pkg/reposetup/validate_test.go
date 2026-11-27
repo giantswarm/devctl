@@ -89,6 +89,8 @@ func TestValidateEntries(t *testing.T) {
 		{name: "maintenance-branches-no-fork", template: TemplateGo, verdict: VerdictFree, fields: []string{"gen.ci.maintenanceBranches"}},
 		{name: "patch-candidates", template: TemplateGo, verdict: VerdictFree},
 		{name: "patch-candidates-legacy", template: TemplateGo, verdict: VerdictFree, fields: []string{"gen.ci.patchCandidates"}},
+		{name: "release-none-multi-image", template: TemplateMinimal, verdict: VerdictFree, fields: []string{"gen.ci.releaseWorkflow"}},
+		{name: "release-none-fork", template: TemplateMinimal, verdict: VerdictFree, fields: []string{"gen.ci.releaseWorkflow"}},
 	}
 
 	for _, tc := range tests {
@@ -130,7 +132,7 @@ func problemFields(problems []Problem) []string {
 func TestValidateMessagesNameTheReason(t *testing.T) {
 	v, tf := fixtureValidator(t)
 	result, err := v.Validate(context.Background(), Request{TeamFile: tf, Names: []string{
-		"node-ui", "plans-wrong-language", "hello-world-app", "chart-name-mismatch", "internal-visibility", "unknown-field", "unknown-flavour", "taken-name", "renamed-name", "twice", "no-gen", "template-content-generated", "maintenance-branches-no-fork", "patch-candidates-legacy",
+		"node-ui", "plans-wrong-language", "hello-world-app", "chart-name-mismatch", "internal-visibility", "unknown-field", "unknown-flavour", "taken-name", "renamed-name", "twice", "no-gen", "template-content-generated", "maintenance-branches-no-fork", "patch-candidates-legacy", "release-none-multi-image",
 	}})
 	require.NoError(t, err)
 
@@ -148,6 +150,7 @@ func TestValidateMessagesNameTheReason(t *testing.T) {
 	require.Contains(t, messages["template-content-generated/gen.ci.templateContent"], "contradicts gen.ci.generate: true")
 	require.Contains(t, messages["maintenance-branches-no-fork/gen.ci.maintenanceBranches"], "needs gen.flavours fork")
 	require.Contains(t, messages["patch-candidates-legacy/gen.ci.patchCandidates"], "needs gen.ci.releaseWorkflow auto-release")
+	require.Contains(t, messages["release-none-multi-image/gen.ci.releaseWorkflow"], "none does not apply to the fork and multi-image flavours")
 	require.Contains(t, messages["internal-visibility/visibility"], "public")
 	require.Contains(t, messages["internal-visibility/lifecycle"], "archived")
 	require.Equal(t, "not a field of the repositories schema", messages["unknown-field/template"])
@@ -206,6 +209,16 @@ func TestRenderedEntryCarriesTheDefaults(t *testing.T) {
       - app
     language: generic
 `, existing.Entries[0].Rendered)
+
+	// A release workflow none that cannot apply is refused for a repository
+	// that exists too: that is where none is declared most.
+	for _, name := range []string{"release-none-multi-image", "release-none-fork"} {
+		refused, err := v.Validate(context.Background(), Request{TeamFile: tf, Names: []string{name}, Mode: ModeExisting})
+		require.NoError(t, err)
+		require.False(t, refused.Accepted, name)
+		require.Len(t, refused.Entries[0].Problems, 1, name)
+		require.Equal(t, "gen.ci.releaseWorkflow", refused.Entries[0].Problems[0].Field, name)
+	}
 
 	// The team file itself is untouched: a second rendering of the source is unchanged.
 	d, ok := tf.Entry("good-chart")
@@ -385,7 +398,7 @@ func TestValidateExistingMode(t *testing.T) {
 		})
 	}
 
-	t.Run("the whole file: only the schema and the duplicate refuse", func(t *testing.T) {
+	t.Run("the whole file: only the schema, the duplicate and release workflow none refuse", func(t *testing.T) {
 		result, err := v.Validate(context.Background(), Request{TeamFile: tf, Mode: ModeExisting})
 		require.NoError(t, err)
 		require.Len(t, result.Entries, len(tf.Entries))
@@ -395,7 +408,7 @@ func TestValidateExistingMode(t *testing.T) {
 				refused = append(refused, entry.Name)
 			}
 		}
-		require.Equal(t, []string{"empty-gen", "internal-visibility", "unknown-field", "unknown-flavour", "twice", "twice", "align-not-bool", "agent-merge-not-bool", "renovate-not-bool", "ci-without-generate"}, refused)
+		require.Equal(t, []string{"empty-gen", "internal-visibility", "unknown-field", "unknown-flavour", "twice", "twice", "align-not-bool", "agent-merge-not-bool", "renovate-not-bool", "ci-without-generate", "release-none-multi-image", "release-none-fork"}, refused)
 		require.False(t, result.Accepted)
 	})
 

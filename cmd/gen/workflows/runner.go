@@ -103,15 +103,29 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 		return microerror.Mask(gen.Execute(ctx, inputs...))
 	}
 
-	// Two mutually-exclusive release flows. Each branch emits the workflow
-	// files it owns AND deletion inputs for the OTHER flow's files, so
-	// flipping `--release-workflow` (or the matching `releaseWorkflow:` in
-	// giantswarm/github) in either direction leaves the repo with exactly
-	// one set of release files. The un-prefixed `auto-release.yaml` left
+	// Two mutually-exclusive release flows, or none. Each flow's branch emits
+	// the workflow files it owns AND deletion inputs for the OTHER flow's
+	// files, and none emits the deletions of both, so flipping
+	// `--release-workflow` (or the matching `releaseWorkflow:` in
+	// giantswarm/github) in any direction leaves the repo with exactly one
+	// set of release files, or none. The un-prefixed `auto-release.yaml` left
 	// over from manual migrations predating the `zz_generated.` rename is
 	// deleted in BOTH branches via AutoReleaseLegacyDeletion, and so is the
 	// retired zz_generated.changelog.yaml via ChangelogDeletion.
-	if multiImage {
+	if r.flag.ReleaseWorkflow == releaseWorkflowNone {
+		// A repository that is never released, such as a GitOps repository,
+		// gets no release flow: the files of both flows are deleted, so a
+		// repository that had one generated before loses it on its next run.
+		inputs = append(inputs,
+			workflowsInput.AutoReleaseDeletion(),
+			workflowsInput.AutoReleaseLegacyDeletion(),
+			workflowsInput.ChangelogDeletion(),
+			workflowsInput.CliffTomlDeletion(),
+			workflowsInput.CreateReleaseDeletion(),
+			workflowsInput.CreateReleasePRDeletion(),
+			workflowsInput.ValidateChangelogDeletion(),
+		)
+	} else if multiImage {
 		// Validate admits a multi-image repository on auto-release alone. Its
 		// workflow takes the auto-release path, so a switch from either flow
 		// to it, or back, leaves one set of release files.

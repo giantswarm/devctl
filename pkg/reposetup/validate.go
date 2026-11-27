@@ -33,7 +33,8 @@ const (
 	// their repositories — the schema, the creation rules and a free name.
 	ModeCreate Mode = "create"
 	// ModeExisting: the entries declare repositories that exist — the schema
-	// alone; the creation rules are for a repository the reconciler creates,
+	// and the refusal of a release workflow none that cannot apply; the
+	// creation rules are for a repository the reconciler creates,
 	// and so is the creation default: the entry is rendered as declared, and
 	// gen.ci.generate left unset says the repository keeps its own CircleCI
 	// configuration (the reconciler reads the branch for one). The name is
@@ -64,7 +65,7 @@ type Request struct {
 	// Names of the entries to validate. Nil means every entry of the file.
 	Names []string
 	// Mode says what the entries are validated for: [ModeCreate] applies the
-	// creation rules to entries being added, [ModeExisting] the schema alone
+	// creation rules to entries being added, [ModeExisting] the schema and the release-workflow none refusal
 	// to entries whose repositories exist. Empty means ModeCreate.
 	Mode Mode
 	// Author is the GitHub login of the person opening the change; empty
@@ -402,8 +403,10 @@ func (v Validator) creationRules(ctx context.Context, owner string, entry *Entry
 	// Patch candidates change what auto-release tags: the legacy flow cuts
 	// no candidate to promote.
 	if fields.Gen != nil && fields.Gen.CI != nil && fields.Gen.CI.PatchCandidates && effectiveReleaseWorkflow(fields.Gen.CI) != releaseWorkflowAutoRelease {
-		entry.refuse("gen.ci.patchCandidates", "needs gen.ci.releaseWorkflow auto-release: the legacy release flow cuts no release candidate")
+		entry.refuse("gen.ci.patchCandidates", "needs gen.ci.releaseWorkflow auto-release: only the auto-release flow cuts release candidates")
 	}
+
+	refuseReleaseNone(entry, fields)
 
 	// The name: lowercase, the chart's name where a chart exists, free on
 	// GitHub. A name the schema already refused is not checked on GitHub.
@@ -445,6 +448,7 @@ func (v Validator) creationRules(ctx context.Context, owner string, entry *Entry
 // name check, which never refuses — the repository is expected to exist,
 // and one that is missing is the reconciler's finding.
 func (v Validator) existingRules(ctx context.Context, owner string, entry *Entry, fields Fields) error {
+	refuseReleaseNone(entry, fields)
 	if derivesTemplate(fields) {
 		if err := derive(entry, fields); err != nil && !IsTemplateUnavailable(err) {
 			return microerror.Mask(err)
@@ -454,6 +458,21 @@ func (v Validator) existingRules(ctx context.Context, owner string, entry *Entry
 		return nil
 	}
 	return microerror.Mask(v.checkName(ctx, owner, entry))
+}
+
+// refuseReleaseNone refuses gen.ci.releaseWorkflow none on the fork and
+// multi-image flavours, for an entry being created and for one whose
+// repository exists alike: none is declared on existing repositories most.
+func refuseReleaseNone(entry *Entry, fields Fields) {
+	// None generates no release workflow. On a multi-image entry `devctl gen
+	// workflows` refuses it, so align-files would fail on every run. On a fork
+	// line nothing but the auto-release flow is ever rendered, so none would
+	// render nothing and leave the line's auto-release workflow tagging
+	// silently.
+	if fields.Gen != nil && fields.Gen.CI != nil && fields.Gen.CI.ReleaseWorkflow == releaseWorkflowNone &&
+		(slices.Contains(fields.Gen.Flavours, gen.FlavourFork.String()) || slices.Contains(fields.Gen.Flavours, gen.FlavourMultiImage.String())) {
+		entry.refuse("gen.ci.releaseWorkflow", "none does not apply to the fork and multi-image flavours: a fork line releases through auto-release alone, and each image of a multi-image repository is its own release line")
+	}
 }
 
 // unknownGen returns a problem for each flavour and the language devctl has

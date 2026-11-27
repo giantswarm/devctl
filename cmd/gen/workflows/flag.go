@@ -32,6 +32,10 @@ const (
 
 	releaseWorkflowLegacy      = "legacy"
 	releaseWorkflowAutoRelease = "auto-release"
+	// releaseWorkflowNone is for a repository that is never released, such
+	// as a GitOps repository: it gets no release workflow, and the files of
+	// either flow are deleted.
+	releaseWorkflowNone = "none"
 )
 
 type flag struct {
@@ -69,7 +73,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.PublishTechdocs, flagPublishTechdocs, false, "If true, also generate the Publish Techdocs workflow. Possible values: false (default), true.")
 	cmd.Flags().BoolVar(&f.UpstreamSyncAutomation, flagUpstreamSyncAutomation, false, "If true, also generate a workflow to dispatch update events for charts. Only valid for app flavor.")
 	cmd.Flags().StringVar(&f.DispatchUpdateChartEventsRepo, flagDispatchUpdateChartEventsRepo, "", "The repository to dispatch update chart events to. Only valid if --upstream-sync-automation is true.")
-	cmd.Flags().StringVar(&f.ReleaseWorkflow, flagReleaseWorkflow, releaseWorkflowLegacy, fmt.Sprintf("Release workflow to generate. Possible values: %s (default), %s. %s generates the create-release-pr / create-release / validate-changelog trio; %s generates a single push-based zz_generated.auto_release.yaml + cliff.toml that tags + publishes a GitHub Release from conventional commits; with --%s=%s, the only value it takes, that workflow tags each changed image directory <name>/vX.Y.Z instead, without cliff.toml.", releaseWorkflowLegacy, releaseWorkflowAutoRelease, releaseWorkflowLegacy, releaseWorkflowAutoRelease, flagFlavour, gen.FlavourMultiImage))
+	cmd.Flags().StringVar(&f.ReleaseWorkflow, flagReleaseWorkflow, releaseWorkflowLegacy, fmt.Sprintf("Release workflow to generate. Possible values: %s (default), %s, %s. %s generates no release workflow and deletes the files of both flows, for a repository that is never released. %s generates the create-release-pr / create-release / validate-changelog trio; %s generates a single push-based zz_generated.auto_release.yaml + cliff.toml that tags + publishes a GitHub Release from conventional commits; with --%s=%s, the only value it takes, that workflow tags each changed image directory <name>/vX.Y.Z instead, without cliff.toml.", releaseWorkflowLegacy, releaseWorkflowAutoRelease, releaseWorkflowNone, releaseWorkflowNone, releaseWorkflowLegacy, releaseWorkflowAutoRelease, flagFlavour, gen.FlavourMultiImage))
 	cmd.Flags().StringVar(&f.ReleaseBranch, flagReleaseBranch, "main", fmt.Sprintf("Branch whose pushes cut releases, needed only with --%s=%s: the repository's default branch, `giantswarm` on a fork line.", flagReleaseWorkflow, releaseWorkflowAutoRelease))
 	cmd.Flags().BoolVar(&f.MaintenanceBranches, flagMaintenanceBranches, false, fmt.Sprintf("If true, a fork line's maintenance branches release-X.Y cut releases too, each the patches of its own X.Y series counted from the series' highest stable tag. Only valid with --%s=%s and --%s=%s.", flagFlavour, gen.FlavourFork, flagReleaseWorkflow, releaseWorkflowAutoRelease))
 	cmd.Flags().BoolVar(&f.PatchCandidates, flagPatchCandidates, false, fmt.Sprintf("If true, a patch of the last stable release is cut as a release candidate vX.Y.Z-rc.N too, never tagged stable on its push: every stable release is a promotion of a candidate, for a repository whose consumers take its next patch on their own. Only valid with --%s=%s.", flagReleaseWorkflow, releaseWorkflowAutoRelease))
@@ -82,10 +86,16 @@ func (f *flag) Validate() error {
 	}
 
 	switch f.ReleaseWorkflow {
-	case releaseWorkflowLegacy, releaseWorkflowAutoRelease:
+	case releaseWorkflowLegacy, releaseWorkflowAutoRelease, releaseWorkflowNone:
 		// valid
 	default:
-		return microerror.Maskf(invalidFlagError, "--%s must be one of: %s, %s", flagReleaseWorkflow, releaseWorkflowLegacy, releaseWorkflowAutoRelease)
+		return microerror.Maskf(invalidFlagError, "--%s must be one of: %s, %s, %s", flagReleaseWorkflow, releaseWorkflowLegacy, releaseWorkflowAutoRelease, releaseWorkflowNone)
+	}
+
+	// A fork line carries its upstream's files: nothing but its auto-release
+	// flow is ever generated for it, so none would silently delete nothing.
+	if f.ReleaseWorkflow == releaseWorkflowNone && f.Flavours.Contains(gen.FlavourFork) {
+		return microerror.Maskf(invalidFlagError, "--%s=%s does not apply to --%s=%s: nothing is generated for a fork line but its %s flow, and a run without that flow touches none of its files", flagReleaseWorkflow, releaseWorkflowNone, flagFlavour, gen.FlavourFork, releaseWorkflowAutoRelease)
 	}
 
 	if f.MaintenanceBranches && (!f.Flavours.Contains(gen.FlavourFork) || f.ReleaseWorkflow != releaseWorkflowAutoRelease) {
@@ -101,8 +111,11 @@ func (f *flag) Validate() error {
 		}
 	}
 
+	if f.PatchCandidates && f.ReleaseWorkflow == releaseWorkflowNone {
+		return microerror.Maskf(invalidFlagError, "--%s is only valid with --%s=%s: with --%s=%s no release workflow is generated", flagPatchCandidates, flagReleaseWorkflow, releaseWorkflowAutoRelease, flagReleaseWorkflow, releaseWorkflowNone)
+	}
 	if f.PatchCandidates && f.ReleaseWorkflow != releaseWorkflowAutoRelease {
-		return microerror.Maskf(invalidFlagError, "--%s is only valid with --%s=%s: the %s release workflow cuts no candidates", flagPatchCandidates, flagReleaseWorkflow, releaseWorkflowAutoRelease, releaseWorkflowLegacy)
+		return microerror.Maskf(invalidFlagError, "--%s is only valid with --%s=%s: the %s release workflow cuts no candidates", flagPatchCandidates, flagReleaseWorkflow, releaseWorkflowAutoRelease, f.ReleaseWorkflow)
 	}
 
 	return nil

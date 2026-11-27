@@ -30,6 +30,7 @@ const (
 
 	releaseWorkflowLegacy      = "legacy"
 	releaseWorkflowAutoRelease = "auto-release"
+	releaseWorkflowNone        = "none"
 
 	lifecycleDeprecated = "deprecated"
 	precommitHelmchart  = "helmchart"
