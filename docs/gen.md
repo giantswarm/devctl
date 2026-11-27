@@ -50,8 +50,12 @@ With `--language go`, the generated `Nested Go modules` workflow discovers track
 nested `go.mod` files, excluding test fixtures, vendored dependencies and hidden
 directories. Each module runs independently with `GOWORK=off`, verifies that
 `go mod tidy` leaves its dependencies unchanged, and runs race tests in short
-mode and vet. Short mode compiles every test but lets tests that need external
-resources skip themselves through `testing.Short()`, as apptest-framework suites
+mode and vet. A tools-only module has no packages to test, so it skips both
+and emits a notice: either its Go files all sit behind the `tools` build tag, or
+it declares `tool` directives in `go.mod` and has no Go files in the build.
+Other modules without packages still fail, though code behind a build tag in a
+separate directory goes unnoticed. Short mode
+compiles every test but lets tests that need external resources skip themselves through `testing.Short()`, as apptest-framework suites
 do: they need a live management cluster and run through `/run app-test-suites`.
 The repository's existing root-module checks remain responsible for the root.
 

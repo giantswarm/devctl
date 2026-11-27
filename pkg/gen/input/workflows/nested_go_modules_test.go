@@ -149,3 +149,50 @@ func TestUnit(t *testing.T) {
 		})
 	}
 }
+
+func TestNestedModuleVerifyWithoutPackages(t *testing.T) {
+	testCases := []struct {
+		name      string
+		source    string
+		wantErr   bool
+		wantLog   string
+		extra     string
+		extraPath string
+	}{
+		{name: "a tools-only module is skipped", source: "//go:build tools\n\npackage tools\n"},
+		{name: "a tools module with a testdata file is skipped", source: "//go:build tools\n\npackage tools\n", extra: "package fixture\n"},
+		{name: "e2e tests next to a tools file still fail", source: "//go:build tools\n\npackage tools\n", extra: "//go:build e2e\n\npackage tools\n", extraPath: "hack/tools/e2e_test.go", wantErr: true, wantLog: "no packages to test"},
+		{name: "a tools file that does not parse still fails", source: "//go:build tools\n\npackag tools\n", wantErr: true, wantLog: "expected 'package'"},
+		{name: "a module that does not parse still fails", source: "packag tools\n", wantErr: true, wantLog: "expected 'package'"},
+		{name: "a module behind another build tag still fails", source: "//go:build e2e\n\npackage tools\n", wantErr: true, wantLog: "no packages to test"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			directory := t.TempDir()
+			mustGit(t, directory, "init", "-q", "--initial-branch=main")
+			writeRepoFile(t, filepath.Join(directory, "hack/tools/go.mod"), "module tools\n\ngo 1.21\n")
+			writeRepoFile(t, filepath.Join(directory, "hack/tools/tools.go"), tc.source)
+			if tc.extra != "" {
+				extraPath := "hack/tools/testdata/fixture.go"
+				if tc.extraPath != "" {
+					extraPath = tc.extraPath
+				}
+				writeRepoFile(t, filepath.Join(directory, extraPath), tc.extra)
+			}
+			mustGit(t, directory, "add", "--", ".")
+
+			step := nestedModuleStep(t, "test", "verify")
+			// -race needs cgo, which CI builds without.
+			require.Contains(t, step, "go test -short -race ./...")
+			step = strings.Replace(step, "go test -short -race ./...", "go test -short ./...", 1)
+			_, log, err := runStep(t, step, filepath.Join(directory, "hack/tools"), "GOWORK=off")
+			if tc.wantErr {
+				require.Error(t, err, log)
+				require.Contains(t, log, tc.wantLog)
+				return
+			}
+			require.NoError(t, err, log)
+			require.Contains(t, log, "skipping go test and go vet")
+		})
+	}
+}
