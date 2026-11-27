@@ -31,6 +31,7 @@ type declarationAPI struct {
 	lookupFails   bool
 	branchExists  bool
 	pullExists    bool
+	draft         bool
 	lookupCount   int
 	writeAttempts []string
 	committed     []byte
@@ -125,7 +126,7 @@ func (a *declarationAPI) RoundTrip(r *http.Request) (*http.Response, error) {
 		a.committed = body.Content
 		return a.reply(r, http.StatusOK, map[string]any{})
 	case "POST /repos/giantswarm/github/pulls":
-		var body map[string]string
+		var body map[string]any
 		require.NoError(a.t, json.NewDecoder(r.Body).Decode(&body))
 		require.NotEmpty(a.t, a.committed)
 		require.Equal(a.t, "main", body["base"])
@@ -133,6 +134,7 @@ func (a *declarationAPI) RoundTrip(r *http.Request) (*http.Response, error) {
 		require.Equal(a.t, "feat(fixture): declare fixture-repo", body["title"])
 		require.Contains(a.t, body["body"], "giantswarm/fixture-repo")
 		require.Contains(a.t, body["body"], "reconciler creates")
+		a.draft, _ = body["draft"].(bool)
 		a.pullExists = true
 		return a.reply(r, http.StatusCreated, a.pull())
 	case "GET /repos/giantswarm/github/pulls":
@@ -151,6 +153,14 @@ func (a *declarationAPI) RoundTrip(r *http.Request) (*http.Response, error) {
 		a.t.Errorf("unexpected offline request: %s", key)
 		return nil, fmt.Errorf("unexpected offline request: %s", key)
 	}
+}
+
+func TestCommandDraftDeclaration(t *testing.T) {
+	api := newDeclarationAPI(t)
+	_, err := api.execute(outputJSON, "--draft")
+	require.NoError(t, err)
+	require.True(t, api.draft)
+	require.Equal(t, []string{"branch", "commit", "pull request"}, api.writeAttempts)
 }
 
 func (a *declarationAPI) pull() map[string]any {

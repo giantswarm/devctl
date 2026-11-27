@@ -53,6 +53,7 @@ type PullRequest struct {
 	// CommitMessage, Title and Body are the commit's and the pull
 	// request's.
 	CommitMessage, Title, Body string
+	Draft                      bool
 }
 
 func (r Remote) owner() string {
@@ -199,12 +200,20 @@ func (r Remote) OpenPullRequest(ctx context.Context, pr PullRequest) (*github.Pu
 		Head:  pr.Branch,
 		Base:  r.ref(),
 		Body:  &pr.Body,
+		Draft: draftFlag(pr.Draft),
 	})
 	if err != nil {
 		return nil, microerror.Mask(err)
 	}
 
 	return created, nil
+}
+
+func draftFlag(draft bool) *bool {
+	if draft {
+		return &draft
+	}
+	return nil
 }
 
 // FindPullRequest returns the open pull request whose head is branch, or

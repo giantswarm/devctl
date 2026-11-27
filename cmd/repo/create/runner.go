@@ -158,6 +158,7 @@ func (r *runner) run(ctx context.Context) error {
 	}
 
 	spec := reposetup.CreationPullRequest(teamFile, content, dryRun, reposetup.CreatedRepository{})
+	spec.Draft = r.flag.Draft
 	pr, err := remote.OpenPullRequest(ctx, spec)
 	state := "opened"
 	if reposetup.IsBranchExists(err) {
