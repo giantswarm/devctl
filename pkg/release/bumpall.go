@@ -98,6 +98,10 @@ func BumpAll(githubToken string, input v1alpha1.Release, manuallyRequestedCompon
 						version.Version, err = getLatestAKSK8sVersion(githubToken, k8sMajorVersion)
 					} else { // major or minor
 						version.Version, err = getLatestK8sVersion(githubToken, k8sMajorVersion)
+						if err == nil && provider == providerEKS {
+							// EKS adds a new minor version later than upstream.
+							err = checkEKSKubernetesMinor(githubToken, k8sMajorVersion)
+						}
 					}
 				case "flatcar":
 					if releaseType == releaseTypePatch {
