@@ -46,7 +46,7 @@ func checkEKSOffersKubernetesMinor(minors []uint64, minor uint64) error {
 		return microerror.Maskf(releaseNotFoundError, "found no kubernetes versions in the EKS user guide of %s/%s, its format may have changed", eksDocsGitHubOwner, eksDocsGitHubRepo)
 	}
 	if !slices.Contains(minors, minor) {
-		return microerror.Maskf(releaseNotFoundError, "the EKS user guide of %s/%s lists no kubernetes v1.%d, EKS may not offer it yet", eksDocsGitHubOwner, eksDocsGitHubRepo, minor)
+		return microerror.Maskf(kubernetesVersionNotOfferedError, "the EKS user guide of %s/%s lists no kubernetes v1.%d, EKS may not offer it yet", eksDocsGitHubOwner, eksDocsGitHubRepo, minor)
 	}
 	return nil
 }

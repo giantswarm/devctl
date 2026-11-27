@@ -56,7 +56,7 @@ func latestAKSKubernetesVersion(versions []semver.Version, minor uint64) (string
 		}
 	}
 	if latest.Equals(semver.Version{}) {
-		return "", microerror.Maskf(releaseNotFoundError, "the release notes of %s/%s announce no kubernetes v1.%d patch version, pass one with --component kubernetes@<version>", aksGitHubOwner, aksGitHubRepo, minor)
+		return "", microerror.Maskf(kubernetesVersionNotOfferedError, "the release notes of %s/%s announce no kubernetes v1.%d patch version, AKS may not offer it yet", aksGitHubOwner, aksGitHubRepo, minor)
 	}
 
 	return latest.String(), nil

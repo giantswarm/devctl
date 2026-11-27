@@ -35,18 +35,24 @@ func TestCheckEKSOffersKubernetesMinor(t *testing.T) {
 		name    string
 		minors  []uint64
 		minor   uint64
-		wantErr bool
+		wantErr func(error) bool
 	}{
 		{name: "offered", minors: minors, minor: 37},
-		{name: "not offered yet", minors: minors, minor: 38, wantErr: true},
-		{name: "nothing parsed", minors: nil, minor: 37, wantErr: true},
+		{name: "not offered yet", minors: minors, minor: 38, wantErr: IsKubernetesVersionNotOffered},
+		{name: "nothing parsed", minors: nil, minor: 37, wantErr: IsReleaseNotFound},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			err := checkEKSOffersKubernetesMinor(tc.minors, tc.minor)
-			if tc.wantErr != IsReleaseNotFound(err) {
-				t.Errorf("got error %v, want error: %t", err, tc.wantErr)
+			if tc.wantErr == nil {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if !tc.wantErr(err) {
+				t.Errorf("unexpected error %v", err)
 			}
 		})
 	}

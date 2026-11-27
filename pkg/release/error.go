@@ -15,6 +15,18 @@ func IsReleaseNotFound(err error) bool {
 	return microerror.Cause(err) == releaseNotFoundError
 }
 
+// Indicates that the provider does not offer the Kubernetes version the release
+// is for. The releases repository matches on the text of this error to leave the
+// provider out of a release, so keep the kind stable.
+var kubernetesVersionNotOfferedError = &microerror.Error{
+	Kind: "kubernetesVersionNotOfferedError",
+}
+
+// IsKubernetesVersionNotOffered asserts kubernetesVersionNotOfferedError.
+func IsKubernetesVersionNotOffered(err error) bool {
+	return microerror.Cause(err) == kubernetesVersionNotOfferedError
+}
+
 // Indicates that the component or app is incorrectly formatted.
 var badFormatError = &microerror.Error{
 	Kind: "badFormatError",

@@ -44,20 +44,20 @@ func TestLatestAKSKubernetesVersion(t *testing.T) {
 		versions []semver.Version
 		minor    uint64
 		want     string
-		wantErr  bool
+		wantErr  func(error) bool
 	}{
 		{name: "highest patch across release notes", versions: versions, minor: 36, want: "1.36.5"},
 		{name: "older release notes list lower patches", versions: versions, minor: 35, want: "1.35.7"},
-		{name: "minor not offered yet", versions: versions, minor: 38, wantErr: true},
-		{name: "nothing parsed", versions: nil, minor: 36, wantErr: true},
+		{name: "minor not offered yet", versions: versions, minor: 38, wantErr: IsKubernetesVersionNotOffered},
+		{name: "nothing parsed", versions: nil, minor: 36, wantErr: IsReleaseNotFound},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := latestAKSKubernetesVersion(tc.versions, tc.minor)
-			if tc.wantErr {
-				if !IsReleaseNotFound(err) {
-					t.Fatalf("got %q and error %v, want releaseNotFoundError", got, err)
+			if tc.wantErr != nil {
+				if !tc.wantErr(err) {
+					t.Fatalf("got %q and unexpected error %v", got, err)
 				}
 				return
 			}
