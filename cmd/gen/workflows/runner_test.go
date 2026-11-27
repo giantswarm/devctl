@@ -426,7 +426,9 @@ func Test_Run_ChangelogPointer(t *testing.T) {
 
 		got, err := os.ReadFile(path)
 		require.NoError(t, err)
-		require.Contains(t, string(got), "https://github.com/giantswarm/x/releases\n")
+		require.Contains(t, string(got), "<https://github.com/giantswarm/x/releases>\n")
+		// markdownlint MD034 refuses a bare URL in every repository that runs it.
+		require.NotRegexp(t, `(?m)^https?://`, string(got))
 		require.NotContains(t, string(got), "## [")
 	})
 
