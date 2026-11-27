@@ -81,7 +81,7 @@ mounted from its credentials Secret.
   "dex" (dict
     "tokenEndpoint" ($dex.tokenEndpoint | default (printf "https://dex.%s/token" $i.baseDomain))
     "issuer" ($dex.issuer | default (ternary (printf "https://dex.%s" $i.baseDomain) "" (not (empty $i.baseDomain))))
-    "connectorId" ($dex.connectorId | default "giantswarm-simple-oidc")
+    "connectorId" ($dex.connectorId | default "giantswarm-gazelle-oidc")
     "audience" ($dex.audience | default "dex-k8s-authenticator")
     "clientIdFile" (printf "%s/client-id" $dir)
     "clientSecretFile" (printf "%s/client-secret" $dir)) }}

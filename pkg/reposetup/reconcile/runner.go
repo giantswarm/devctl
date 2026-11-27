@@ -596,6 +596,13 @@ func (s *run) agentMerge() bool {
 	return s.fields.AgentMerge == nil || *s.fields.AgentMerge
 }
 
+// dismissStaleReviews says whether a push that changes a pull request's diff
+// dismisses its approvals: the entry's dismissStaleReviews, and false where
+// the entry omits it.
+func (s *run) dismissStaleReviews() bool {
+	return s.fields.DismissStaleReviews != nil && *s.fields.DismissStaleReviews
+}
+
 // keepsDefaultBranch says the repository's default branch is its own and the
 // settings step never renames it ([reposetup.Fields.KeepsDefaultBranch]).
 func (s *run) keepsDefaultBranch() bool {

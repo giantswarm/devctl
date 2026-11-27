@@ -70,6 +70,10 @@ type Request struct {
 	// Duration is how long the reservation lasts. Zero means DefaultDuration, or
 	// the cluster's maximum when that is lower.
 	Duration time.Duration
+	// Bundle names the bundle chart that deploys App as a member. Empty means App
+	// is deployed on its own. The bundle's HelmRelease is what the reservation
+	// patches, not App's source, which exists only on the cluster.
+	Bundle string
 	// Scope is the reservation's lock: ScopeApp locks only App, ScopeExclusive
 	// locks the whole cluster. Empty means ScopeApp.
 	Scope string
@@ -88,8 +92,16 @@ type Result struct {
 	// GitOpsSource is where the reservation lives: GitOpsSourceCollections or
 	// GitOpsSourceExtras.
 	GitOpsSource string `json:"gitopsSource"`
+	// Bundle is the bundle whose HelmRelease carries the reservation, empty for
+	// a chart deployed on its own. SourceName is then the source of the bundle.
+	Bundle string `json:"bundle,omitempty"`
 	// SourceName is the name of every patched OCIRepository, joined with ", ".
 	SourceName string `json:"sourceName"`
+	// SourceURL is the OCI URL of the patched sources, empty when they do not
+	// all share one, and for a bundle member, whose own source exists only on
+	// the cluster. The collections' sources are not in the GitOps repo, so
+	// callers cannot read it from the files.
+	SourceURL string `json:"sourceURL"`
 	// HelmReleases are "<namespace>/<name>" of every release the reservation
 	// moves to the dev builds, sorted.
 	HelmReleases []string `json:"helmReleases,omitempty"`
@@ -242,13 +254,20 @@ func Reserve(req Request) (res Result, err error) {
 		until = promoted.Until
 	}
 
+	// A bundle member has no source in the GitOps repo, so what the block patches
+	// is the bundle's own source and HelmRelease, looked up like an app's.
+	lookup := chart
+	if req.Bundle != "" {
+		lookup = req.Bundle
+	}
+
 	// An app the extras serve is reserved there, by patching its own sources.
-	extras, ok, err := resolveExtras(req, chart)
+	extras, ok, err := resolveExtras(req, lookup)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
 	if ok {
-		if err := checkBlock(req, GitOpsSourceExtras, chart, extras); err != nil {
+		if err := checkBlock(req, GitOpsSourceExtras, lookup, extras); err != nil {
 			return Result{}, microerror.Mask(err)
 		}
 		res, err := reserveInPlace(req, GitOpsSourceExtras, chart, extras, from, until, replaced)
@@ -261,23 +280,23 @@ func Reserve(req Request) (res Result, err error) {
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
-	sources := collectionSources(before, chart)
+	sources := collectionSources(before, lookup)
 	if len(extras.sources) > 0 && len(sources) == 0 {
-		return Result{}, extras.movesNothingError(req, chart)
+		return Result{}, extras.movesNothingError(req, lookup)
 	}
-	collections, err := resolveCollections(before, req, chart, sources)
+	collections, err := resolveCollections(before, req, lookup, sources)
 	if err != nil {
 		return Result{}, microerror.Mask(err)
 	}
 
-	if err := checkBlock(req, GitOpsSourceCollections, chart, collections); err != nil {
+	if err := checkBlock(req, GitOpsSourceCollections, lookup, collections); err != nil {
 		return Result{}, microerror.Mask(err)
 	}
 	res, err = reserveInPlace(req, GitOpsSourceCollections, chart, collections, from, until, replaced)
 	if err == nil && len(extras.sources) > 0 {
 		res.Warnings = append(res.Warnings, fmt.Sprintf(
 			"chart %q is served from both %s and %s. Only the collections hold the reservation: the extras sources %s feed no %s",
-			chart, req.clusterPath(collectionsDir), req.clusterPath(extrasDir), strings.Join(extras.sourceNames(), ", "), helmReleaseKind))
+			lookup, req.clusterPath(collectionsDir), req.clusterPath(extrasDir), strings.Join(extras.sourceNames(), ", "), helmReleaseKind))
 	}
 
 	return res, microerror.Mask(err)

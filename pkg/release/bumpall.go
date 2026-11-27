@@ -41,7 +41,7 @@ type appVersion struct {
 
 // BumpAll takes all apps and components in the `input` release and looks up on github for the latest version of each.
 // If the version is not specified in the `manuallyRequestedComponents` or `manuallyRequestedApps` it will be bumped to the latest version.
-func BumpAll(githubToken string, input v1alpha1.Release, manuallyRequestedComponents []string, manuallyRequestedApps []string, releaseType string, appsToDrop map[string]bool, requests []Request, yes bool, output string, changesOnly bool, requestedOnly bool, k8sMajorVersion uint64) ([]string, []string, error) {
+func BumpAll(githubToken string, input v1alpha1.Release, manuallyRequestedComponents []string, manuallyRequestedApps []string, releaseType string, appsToDrop map[string]bool, requests []Request, yes bool, output string, changesOnly bool, requestedOnly bool, k8sMajorVersion uint64, provider string) ([]string, []string, error) {
 	requestedComponents := map[string]componentVersion{}
 	requestedApps := map[string]appVersion{}
 
@@ -93,8 +93,15 @@ func BumpAll(githubToken string, input v1alpha1.Release, manuallyRequestedCompon
 						// For a patch release, we don't want to automatically bump anything.
 						// The user must manually request a bump for a component.
 						version.Version = comp.Version
+					} else if provider == providerAKS {
+						// AKS offers its own, older set of patch versions.
+						version.Version, err = getLatestAKSK8sVersion(githubToken, k8sMajorVersion)
 					} else { // major or minor
 						version.Version, err = getLatestK8sVersion(githubToken, k8sMajorVersion)
+						if err == nil && provider == providerEKS {
+							// EKS adds a new minor version later than upstream.
+							err = checkEKSKubernetesMinor(githubToken, k8sMajorVersion)
+						}
 					}
 				case "flatcar":
 					if releaseType == releaseTypePatch {
