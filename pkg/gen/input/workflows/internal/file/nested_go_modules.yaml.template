@@ -81,8 +81,26 @@ jobs:
           set -euo pipefail
           go mod tidy
           git diff --exit-code -- go.mod go.sum
-          go test -short -race ./...
-          go vet ./...
+          # A tools-only module has no packages, and `go test` exits 1 with "no
+          # packages to test". Skip only that case, in either form: Go files behind
+          # the `tools` build tag with nothing else ignored, or `tool` directives in
+          # go.mod with no Go files in the build. Any other module, such as one whose code sits
+          # behind another build tag, still reaches go test and fails there.
+          skip=false
+          packages=$(go list ./...)
+          if [[ -z "$packages" ]]; then
+            tool_packages=$(go list -tags tools ./...)
+            ignored=$(go list -tags tools -f '{{.IgnoredGoFiles}}' ./... | tr -d '[] \n')
+            tool_directives=$(go mod edit -json | jq '(.Tool // []) | length')
+            if [[ -n "$tool_packages" && -z "$ignored" ]]; then skip=true; fi
+            if [[ "$tool_directives" != 0 && -z "$tool_packages" ]]; then skip=true; fi
+          fi
+          if [[ "$skip" == true ]]; then
+            echo "::notice::Tools-only module without packages, skipping go test and go vet."
+          else
+            go test -short -race ./...
+            go vet ./...
+          fi
 
   release:
     needs: [modules, test]
