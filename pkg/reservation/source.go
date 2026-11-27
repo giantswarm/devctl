@@ -7,17 +7,14 @@ import (
 
 	"github.com/giantswarm/gitsemver/v3/pkg/gitsemver"
 	"github.com/giantswarm/microerror"
-	"github.com/mohae/deepcopy"
 )
 
 const (
-	// SourceNameSuffix is appended to the app name to name the reservation's own
-	// source object. The app's own source object is never touched.
-	SourceNameSuffix = "-dev-reservation"
-	// AnnotationPrefix prefixes the reservation annotations stamped on the new
-	// source object, so `kubectl` can answer "why is this version running".
+	// AnnotationPrefix prefixes the reservation annotations a reservation patches
+	// onto the app's source objects, so `kubectl` can answer "why is this version
+	// running".
 	AnnotationPrefix = "reservation.giantswarm.io/"
-	// SourceInterval is how often Flux re-checks the reservation source. A dev
+	// SourceInterval is how often Flux re-checks a reserved source. A dev
 	// build has to land quickly, unlike a release.
 	SourceInterval = "1m"
 
@@ -44,36 +41,6 @@ const (
 // one that follows nothing, because it looks like it works.
 func devSemverFilter(branch string) string {
 	return `^[0-9]+\.[0-9]+\.[0-9]+-r` + gitsemver.BranchHash(branch) + `t[0-9]{14}h[0-9a-f]{7}$`
-}
-
-// devSource builds the reservation's source object as a copy of the app's
-// resolved one, changing only the name, the annotations and the version
-// selector, plus the interval.
-//
-// A hand-built object silently loses secretRef, provider, verify, insecure and
-// layerSelector. A lost secretRef is a registry authentication failure that
-// looks exactly like a missing chart.
-func devSource(original object, sourceName string, req Request, semverFilter string, from, until time.Time) object {
-	source, _ := deepcopy.Copy(map[string]any(original)).(map[string]any)
-	o := object(source)
-
-	metadata := o.metadata()
-	metadata["name"] = sourceName
-
-	annotations, _ := metadata["annotations"].(map[string]any)
-	if annotations == nil {
-		annotations = map[string]any{}
-		metadata["annotations"] = annotations
-	}
-	for key, value := range reservationAnnotations(req, from, until) {
-		annotations[key] = value
-	}
-
-	spec, _ := o["spec"].(map[string]any)
-	spec["interval"] = SourceInterval
-	spec["ref"] = devRef(semverFilter)
-
-	return o
 }
 
 // devRef is the OCIRepository spec.ref that follows the dev builds semverFilter
@@ -114,8 +81,8 @@ func reservationAnnotations(req Request, from, until time.Time) map[string]strin
 	return annotations
 }
 
-// The GitOps sources a reservation can live in: a component directory in the
-// cluster's collections, or a block in its extras kustomization.
+// The GitOps sources a reservation can live in: a block in the cluster's
+// collections kustomization, or one in its extras kustomization.
 const (
 	GitOpsSourceCollections = "collections"
 	GitOpsSourceExtras      = "extras"
@@ -131,9 +98,14 @@ func reservationEntry(chart string, req Request, gitopsSource string, from, unti
 		{"pr", req.PullRequest},
 		{"scope", req.Scope},
 		{"gitops-source", gitopsSource},
+	}
+	if req.Bundle != "" {
+		fields = append(fields, [2]string{"bundle", req.Bundle})
+	}
+	fields = append(fields, [][2]string{
 		{annotationFrom, from.Format(time.RFC3339)},
 		{annotationUntil, until.Format(time.RFC3339)},
-	}
+	}...)
 
 	flow, err := flowMapping(fields)
 	if err != nil {

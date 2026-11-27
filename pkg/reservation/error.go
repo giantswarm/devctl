@@ -151,20 +151,17 @@ func IsNotReserved(err error) bool {
 	return microerror.Cause(err) == notReservedError
 }
 
-// componentNotFoundError indicates that removeComponent could not find, in a
-// kustomization file's components list, the entry it was asked to remove: the
-// file was edited by hand since the reservation wrote it (a re-indent, a
-// quoting change, a comment moved) in a way the matcher does not recognise.
-// Reporting success here would delete the component directory while leaving
-// the stale reference behind, breaking `kustomize build` for the whole
-// cluster, not just the released app.
-var componentNotFoundError = &microerror.Error{
-	Kind: "componentNotFoundError",
+// blockNotFoundError indicates that a kustomization file holds no reservation
+// block of the chart, or one whose markers were edited by hand since the
+// reservation wrote it. Reporting success here would leave the reservation's
+// patches behind.
+var blockNotFoundError = &microerror.Error{
+	Kind: "blockNotFoundError",
 }
 
-// IsComponentNotFound asserts componentNotFoundError.
-func IsComponentNotFound(err error) bool {
-	return microerror.Cause(err) == componentNotFoundError
+// IsBlockNotFound asserts blockNotFoundError.
+func IsBlockNotFound(err error) bool {
+	return microerror.Cause(err) == blockNotFoundError
 }
 
 // nothingToExtendError indicates that a pull request holds no unexpired

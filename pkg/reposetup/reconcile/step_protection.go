@@ -194,6 +194,14 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 		return err
 	}
 
+	// An entry that omits dismissStaleReviews leaves the repository's own
+	// setting standing: the write replaces the whole protection, so it
+	// carries the setting it read, and the omission is no drift of its own.
+	dismissStale := protection.GetRequiredPullRequestReviews().GetDismissStaleReviews()
+	if s.fields.DismissStaleReviews != nil {
+		dismissStale = *s.fields.DismissStaleReviews
+	}
+
 	var current []string
 	if protection != nil && protection.RequiredStatusChecks != nil && protection.RequiredStatusChecks.Checks != nil {
 		for _, c := range *protection.RequiredStatusChecks.Checks {
@@ -217,6 +225,9 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 	} else if r.WriteClassicChecks == nil {
 		if got := protection.GetRequiredPullRequestReviews().GetRequiredApprovingReviewCount(); got != b.RequiredReviews {
 			changes = append(changes, fmt.Sprintf("required reviews %d → %d", got, b.RequiredReviews))
+		}
+		if got := protection.GetRequiredPullRequestReviews().GetDismissStaleReviews(); got != dismissStale {
+			changes = append(changes, fmt.Sprintf("dismiss stale reviews %t → %t", got, dismissStale))
 		}
 		if got := protection.GetEnforceAdmins().GetEnabled(); got != b.EnforceAdmins {
 			changes = append(changes, fmt.Sprintf("enforce admins %t → %t", got, b.EnforceAdmins))
@@ -252,6 +263,7 @@ func (r *Runner) stepClassicProtection(ctx context.Context, s *run, sr *StepResu
 		req := &github.ProtectionRequest{
 			RequiredPullRequestReviews: &github.PullRequestReviewsEnforcementRequest{
 				RequiredApprovingReviewCount: b.RequiredReviews,
+				DismissStaleReviews:          dismissStale,
 			},
 			EnforceAdmins:    b.EnforceAdmins,
 			AllowForcePushes: new(false),
@@ -347,6 +359,7 @@ func (r *Runner) stepRulesetProtection(ctx context.Context, s *run, sr *StepResu
 	}
 	if !split {
 		desired.reviews = b.RequiredReviews
+		desired.dismissStale = s.dismissStaleReviews()
 	}
 
 	var changes []string
@@ -506,12 +519,13 @@ func (r *Runner) stepReviewRuleset(ctx context.Context, s *run, sr *StepResult, 
 		changes = []string{fmt.Sprintf("delete ruleset %q (the review rule is back in %q)", ReviewRulesetName, RulesetName)}
 	} else {
 		desired = rulesetState{
-			enforcement: github.RulesetEnforcementActive,
-			include:     []string{defaultBranchRef},
-			pullRequest: true,
-			reviews:     s.baseline.RequiredReviews,
-			bypass:      append(slices.Clone(bypass), appActor(r.AlignFilesAppID), appActor(renovateAppID)),
-			team:        s.team,
+			enforcement:  github.RulesetEnforcementActive,
+			include:      []string{defaultBranchRef},
+			pullRequest:  true,
+			reviews:      s.baseline.RequiredReviews,
+			dismissStale: s.dismissStaleReviews(),
+			bypass:       append(slices.Clone(bypass), appActor(r.AlignFilesAppID), appActor(renovateAppID)),
+			team:         s.team,
 		}
 		if r.ReleaseAppID != 0 {
 			desired.bypass = append(desired.bypass, appActor(r.ReleaseAppID))

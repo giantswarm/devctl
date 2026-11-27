@@ -3,6 +3,7 @@ package workflows
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -99,4 +100,52 @@ func TestNestedModuleWorkflowPermissions(t *testing.T) {
 	require.Equal(t, "read", workflow.Jobs["test"].Permissions["contents"])
 	require.Equal(t, "write", workflow.Jobs["release"].Permissions["contents"])
 	require.Equal(t, "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'", workflow.Jobs["release"].If)
+}
+
+func TestNestedModuleVerifySkipsClusterTestsOnly(t *testing.T) {
+	const clusterTest = `package e2e
+
+import "testing"
+
+func TestNeedsCluster(t *testing.T) {
+	if testing.Short() {
+		t.Skip("needs a live management cluster")
+	}
+	t.Fatal("ran without a management cluster")
+}
+`
+	const failingTest = `
+func TestUnit(t *testing.T) {
+	t.Fatal("unit test failure")
+}
+`
+	testCases := []struct {
+		name    string
+		tests   string
+		wantErr bool
+	}{
+		{name: "a test that needs a cluster skips in short mode", tests: clusterTest},
+		{name: "other tests still run", tests: clusterTest + failingTest, wantErr: true},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			directory := t.TempDir()
+			mustGit(t, directory, "init", "-q", "--initial-branch=main")
+			writeRepoFile(t, filepath.Join(directory, "tests/e2e/go.mod"), "module e2e\n\ngo 1.21\n")
+			writeRepoFile(t, filepath.Join(directory, "tests/e2e/e2e_test.go"), tc.tests)
+			mustGit(t, directory, "add", "--", ".")
+
+			step := nestedModuleStep(t, "test", "verify")
+			require.Contains(t, step, "go test -short -race ./...")
+			// -race needs cgo, which CI builds without; this test covers -short only.
+			step = strings.Replace(step, "go test -short -race ./...", "go test -short ./...", 1)
+			_, log, err := runStep(t, step, filepath.Join(directory, "tests/e2e"), "GOWORK=off")
+			if tc.wantErr {
+				require.Error(t, err, log)
+				require.Contains(t, log, "unit test failure")
+				return
+			}
+			require.NoError(t, err, log)
+		})
+	}
 }

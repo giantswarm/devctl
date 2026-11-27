@@ -43,6 +43,9 @@ const (
 	// agentMergeFalseEntryYAML opts the repository out of agent merges: the
 	// ruleset has no bypass actor.
 	agentMergeFalseEntryYAML = entryYAML + "  agentMerge: false\n"
+	// dismissStaleEntryYAML has a push to a pull request dismiss its
+	// approvals.
+	dismissStaleEntryYAML = entryYAML + "  dismissStaleReviews: true\n"
 	// renovateFalseEntryYAML switches Renovate off for the repository.
 	renovateFalseEntryYAML = entryYAML + "  renovate: false\n"
 	// declaredRulesetEntryYAML declares a ruleset of the repository's own the
@@ -1273,6 +1276,79 @@ func TestSteps(t *testing.T) {
 			wantCheck: VerdictOK,
 			verify: func(t *testing.T, h *harness, res *Result) {
 				require.Empty(t, res.Step(StepProtection).Changes, "the next night repairs nothing")
+			},
+		},
+		{
+			name: "protection: dismissStaleReviews dismisses stale reviews in the review ruleset", step: StepProtection, entry: dismissStaleEntryYAML,
+			seed: func(h *harness) {
+				h.runner.AlignFilesAppID = testAlignAppID
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID)).Rules.PullRequest = nil
+				review := r.addRuleset(ReviewRulesetName, nil, appBypass(testAppID), adminBypass(), teamBypass(testTeamID), appBypass(testAlignAppID), appBypass(renovateAppID))
+				review.Rules.Deletion, review.Rules.NonFastForward = nil, nil
+			},
+			wantCheck: VerdictDrift, wantChange: "dismiss stale reviews false → true",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{"dismiss stale reviews false → true"}, res.Step(StepProtection).Changes)
+				require.True(t, h.repo().ruleset(ReviewRulesetName).Rules.PullRequest.DismissStaleReviewsOnPush)
+				require.Nil(t, h.repo().ruleset(RulesetName).Rules.PullRequest, "the review rule stays in its own ruleset")
+			},
+		},
+		{
+			name: "protection: dismissStaleReviews dismisses stale reviews in the default branch's ruleset that holds the review", step: StepProtection, entry: dismissStaleEntryYAML,
+			seed: func(h *harness) {
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.addRuleset(RulesetName, []*github.RuleStatusCheck{statusCheck(ctxGoBuild)}, appBypass(testAppID), adminBypass(), teamBypass(testTeamID))
+			},
+			wantCheck: VerdictDrift, wantChange: "dismiss stale reviews false → true",
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{"dismiss stale reviews false → true"}, res.Step(StepProtection).Changes)
+				require.True(t, h.repo().ruleset(RulesetName).Rules.PullRequest.DismissStaleReviewsOnPush)
+			},
+		},
+		{
+			name: "protection: dismissStaleReviews dismisses stale reviews in classic protection without the App id", step: StepProtection, entry: dismissStaleEntryYAML,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, checks: []string{ctxGoBuild}}
+				r.protected = "main"
+			},
+			wantCheck: VerdictDrift, wantChange: "dismiss stale reviews false → true", wantFinding: FindingRulesetsNotEnabled, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.True(t, h.repo().protection.dismissStale)
+			},
+		},
+		{
+			name: "protection: an entry without dismissStaleReviews leaves classic protection dismissing stale reviews", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.protection = &fakeProtection{reviews: 1, enforceAdmins: true, dismissStale: true, checks: []string{ctxGoBuild}}
+			},
+			wantCheck: VerdictReported, wantFinding: FindingRulesetsNotEnabled, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Empty(t, res.Step(StepProtection).Changes, "the omitted field is not drift")
+				require.Empty(t, h.repo().protected, "no protection is written")
+				require.True(t, h.repo().protection.dismissStale)
+			},
+		},
+		{
+			name: "protection: a repair of other drift keeps classic protection dismissing stale reviews", step: StepProtection,
+			seed: func(h *harness) {
+				h.runner.DevctlAppID = 0
+				r := h.gh.addRepo(owner, name)
+				r.statuses = []string{ctxGoBuild}
+				r.protection = &fakeProtection{reviews: 1, enforceAdmins: false, dismissStale: true, checks: []string{ctxGoBuild}}
+			},
+			wantCheck: VerdictDrift, wantChange: "enforce admins false → true", wantFinding: FindingRulesetsNotEnabled, wantAfter: VerdictReported,
+			verify: func(t *testing.T, h *harness, res *Result) {
+				require.Equal(t, []string{"enforce admins false → true"}, res.Step(StepProtection).Changes)
+				require.True(t, h.repo().protection.dismissStale, "the write carries the setting it read")
 			},
 		},
 		{
