@@ -17,6 +17,8 @@ Writes and unknown tools are not retried: their outcome may be unknown, so check
 
 Declares a new repository: the team-file pull request the reconciler creates the repository from.
 
+Use `--draft` to keep the declaration pending review. A draft cannot merge, so the reconciler cannot create or release the repository until the declaration is made ready and merged.
+
 ```nohighlight
 devctl repo create --team bumblebee --name my-service \
   --component-type service --flavour app --language go \

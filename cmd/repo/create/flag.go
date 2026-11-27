@@ -27,6 +27,7 @@ type flag struct {
 	Visibility        string
 	Owner             string
 	DryRun            bool
+	Draft             bool
 	Local             bool
 	Output            string
 }
@@ -42,6 +43,7 @@ func (f *flag) Init(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.Visibility, "visibility", "", fmt.Sprintf("Visibility of the repository: %s. Without it the entry says visibility: private, the org's default.", oneOf(reposetup.EmbeddedFieldValues("visibility"))))
 	cmd.Flags().StringVar(&f.Owner, "owner", reposetup.DefaultOwner, "GitHub organisation the repository is declared in and whose teams the guard reads; another organisation takes --local with --dry-run.")
 	cmd.Flags().BoolVar(&f.DryRun, "dry-run", false, "Print the manager's creation preview; open no pull request.")
+	cmd.Flags().BoolVar(&f.Draft, "draft", false, "Open the declaration as a draft, keeping repository creation pending review.")
 	cmd.Flags().BoolVar(&f.Local, "local", false, "With --dry-run: validate with devctl's own engine instead of asking giantswarm-repo-manager.")
 	cmd.Flags().StringVarP(&f.Output, "output", "o", outputText, "Output format: text or json (the dry run and the pull request URL).")
 }

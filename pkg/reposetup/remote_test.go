@@ -145,7 +145,7 @@ func newRemote(t *testing.T, f *fakeTeamFiles) (Remote, func()) {
 }
 
 func TestRemote(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	f := &fakeTeamFiles{files: map[string]string{
 		"team-bumblebee": "# header\n- name: alpha\n  componentType: service\n",
 		"team-rocket":    "- name: rocket-thing\n  componentType: service\n",
@@ -184,7 +184,7 @@ func TestRemote(t *testing.T) {
 
 	pr, err := remote.OpenPullRequest(ctx, PullRequest{
 		Branch: "repo-create/new", Path: tf.Path, Content: []byte("new content"), SHA: tf.SHA,
-		Title: "feat(bumblebee): declare new", Body: "body",
+		Title: "feat(bumblebee): declare new", Body: "body", Draft: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -199,7 +199,7 @@ func TestRemote(t *testing.T) {
 	if string(content) != "new content" || f.commit["sha"] != "sha-team-bumblebee" || f.commit["branch"] != "repo-create/new" || f.commit["message"] != "feat(bumblebee): declare new" {
 		t.Errorf("commit: %v", f.commit)
 	}
-	if f.pull["head"] != "repo-create/new" || f.pull["base"] != "main" || f.pull["title"] != "feat(bumblebee): declare new" || f.pull["body"] != "body" {
+	if f.pull["head"] != "repo-create/new" || f.pull["base"] != "main" || f.pull["title"] != "feat(bumblebee): declare new" || f.pull["body"] != "body" || f.pull["draft"] != true {
 		t.Errorf("pull: %v", f.pull)
 	}
 
