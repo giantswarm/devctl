@@ -77,7 +77,7 @@ var autoReleaseReleases = []fakeRelease{
 }
 
 // pointer is a CHANGELOG.md frozen as a pointer at the GitHub Releases.
-const pointer = "# Changelog\n\nThe changes of each release are in its notes on GitHub Releases:\nhttps://github.com/giantswarm/fixture/releases\n"
+const pointer = "# Changelog\n\nThe changes of each release are in its notes on GitHub Releases:\n<https://github.com/giantswarm/fixture/releases>\n"
 
 func TestParseChangelog_GitHubReleases(t *testing.T) {
 	for name, changelog := range map[string]string{
