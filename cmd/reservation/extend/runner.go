@@ -65,7 +65,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (er
 		}
 	} else {
 		for _, entry := range extended {
-			_, _ = fmt.Fprintf(r.stdout, "%s\t%s\t%s\n", entry.Cluster, entry.App, entry.Until.Format(time.RFC3339))
+			// The GitOps source comes last, so the older columns keep their place.
+			_, _ = fmt.Fprintf(r.stdout, "%s\t%s\t%s\t%s\n", entry.Cluster, entry.App, entry.Until.Format(time.RFC3339), entry.GitOpsSource)
 		}
 	}
 

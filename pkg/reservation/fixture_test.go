@@ -9,6 +9,8 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+
+	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
 
 // The fixture is a git working tree shaped like a `<customer>-management-clusters`
@@ -19,6 +21,8 @@ const (
 	fixtureCluster  = "graveler"
 	fixtureApp      = "hello-world"
 	fixtureOtherApp = "other-app"
+	// fixtureExtrasApp is a chart that runs from the cluster's extras only.
+	fixtureExtrasApp = "extras-app"
 
 	// fixtureAppFile is the collection base file carrying fixtureApp. A test
 	// reshapes the app by overriding it through fixtureOptions.extraFiles.
@@ -176,6 +180,56 @@ spec:
 `
 		files[root+"collections/kustomization.yaml"] = opts.collectionsKustomization
 
+		// The extras: a root with a hand-written patch already in its patches:
+		// list, as on the real clusters, and an app in a child folder.
+		files[root+"extras/kustomization.yaml"] = `resources:
+  - ./extras-app/
+patches:
+  # A hand-written test stage for extras-app.
+  - patch: |-
+      - op: replace
+        path: /spec/ref/semver
+        value: ">=1.0.0"
+    target:
+      kind: OCIRepository
+      name: extras-app
+      namespace: flux-giantswarm
+`
+		files[root+"extras/extras-app/kustomization.yaml"] = `resources:
+  - extras-app.yaml
+`
+		files[root+"extras/extras-app/extras-app.yaml"] = `---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: extras-app
+  namespace: flux-giantswarm
+spec:
+  interval: 10m
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+  provider: generic
+  ref:
+    semver: ">=0.0.0"
+  secretRef:
+    name: container-registries-configuration
+  url: oci://gsoci.azurecr.io/charts/giantswarm/extras-app
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: extras-app
+  namespace: flux-giantswarm
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: extras-app
+  interval: 5m
+  releaseName: extras-app
+  storageNamespace: giantswarm
+  targetNamespace: giantswarm
+`
+
 		if !opts.omitConfigMap {
 			files[root+"configmap-reservations.yaml"] = `apiVersion: v1
 kind: ConfigMap
@@ -244,4 +298,28 @@ func readFixtureFile(t *testing.T, dir, name string) string {
 	}
 
 	return string(b)
+}
+
+// heldBy returns the reservation holder the rendered OCIRepository name
+// carries, after it checks that the source selects dev builds.
+func heldBy(t *testing.T, objects map[string]map[string]any, name string) any {
+	t.Helper()
+	src := mustObject(t, objects, "OCIRepository/"+name)
+	ref, _ := src["spec"].(map[string]any)["ref"].(map[string]any)
+	if got := ref["semver"]; got != ">=0.0.0-0" {
+		t.Errorf("%s ref semver: got %v, want a dev build selector", name, got)
+	}
+	annotations, _ := src["metadata"].(map[string]any)["annotations"].(map[string]any)
+	return annotations[reservation.AnnotationPrefix+"user"]
+}
+
+func writeLocalFixtureFile(t *testing.T, dir, name, content string) {
+	t.Helper()
+	target := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil { //nolint:gosec // a temporary test fixture
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte(content), 0o644); err != nil { //nolint:gosec // a temporary test fixture
+		t.Fatal(err)
+	}
 }

@@ -1,13 +1,12 @@
 package reservation_test
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/giantswarm/devctl/v8/pkg/reservation"
 )
@@ -92,6 +91,12 @@ func TestReleaseRestoresTheRepoByteForByte(t *testing.T) {
 	if res.App != fixtureApp {
 		t.Errorf("resolved app: got %q, want %q", res.App, fixtureApp)
 	}
+	if res.GitOpsSource != "collections" {
+		t.Errorf("result gitops source: got %q, want collections", res.GitOpsSource)
+	}
+	if diff := cmp.Diff([]string{pathCollections, pathReservations}, res.Files); diff != "" {
+		t.Errorf("released files (-want +got):\n%s", diff)
+	}
 
 	after := commitAt(t, repo)
 	if after.Hash == before.Hash {
@@ -153,13 +158,11 @@ func TestReleaseRepeatedCyclesLeaveNothingBehind(t *testing.T) {
 	}
 }
 
-// TestReleaseRestoresAPreexistingEmptyComponentsList covers the cluster whose
-// collections/kustomization.yaml already carries `components: []` before its
-// first reservation: addComponent turns that line into a real list, and
-// release has to put `components: []` back rather than deleting the key or
-// dropping whatever follows it, which byte-for-byte restoration would catch
-// either way.
-func TestReleaseRestoresAPreexistingEmptyComponentsList(t *testing.T) {
+// TestReleaseRestoresAPreexistingEmptyPatchesList covers the cluster whose
+// collections/kustomization.yaml ends with `patches: []`: Reserve turns that
+// line into a real list, and release has to put `patches: []` back rather than
+// deleting the key, as it does for a key Reserve added itself.
+func TestReleaseRestoresAPreexistingEmptyPatchesList(t *testing.T) {
 	dir := newGitOpsFixture(t, fixtureOptions{
 		collectionsKustomization: `apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -195,9 +198,8 @@ patches: []
 }
 
 // TestReleaseLeavesOtherReservationsIntact makes sure removing one app's
-// component and ConfigMap entry does not disturb its neighbor: the
-// components: list and the data: block both hold more than the one item
-// Release has to delete.
+// block and ConfigMap entry does not disturb its neighbor: the patches: list
+// and the data: block both hold more than the one item Release has to delete.
 func TestReleaseLeavesOtherReservationsIntact(t *testing.T) {
 	dir := newGitOpsFixture(t, fixtureOptions{})
 
@@ -225,100 +227,7 @@ func TestReleaseLeavesOtherReservationsIntact(t *testing.T) {
 	}
 
 	objects := renderCluster(t, dir, fixtureCluster)
-	release := mustObject(t, objects, "HelmRelease/"+fixtureOtherApp)
-	chartRef, _ := release["spec"].(map[string]any)["chartRef"].(map[string]any)
-	if got, want := chartRef["name"], fixtureOtherApp+"-dev-reservation"; got != want {
-		t.Errorf("%s chartRef name: got %v, want %q (release disturbed the other component)", fixtureOtherApp, got, want)
+	if got := heldBy(t, objects, fixtureOtherApp); got != testOtherUser {
+		t.Errorf("%s source holder: got %v, want %q (release disturbed the other block)", fixtureOtherApp, got, testOtherUser)
 	}
-}
-
-// TestReleaseRefusesWhenComponentsListWasReformatted is the decisive test for
-// a class of bug where a hand-edited collections/kustomization.yaml (a
-// re-indent, a quoting change, a comment moved) no longer matches
-// removeComponent's plain-text matcher. Release must refuse rather than
-// delete the component directory while leaving the stale reference behind:
-// that combination breaks `kustomize build` for the whole cluster, not just
-// the released app, while reporting success.
-func TestReleaseRefusesWhenComponentsListWasReformatted(t *testing.T) {
-	dir := newGitOpsFixture(t, fixtureOptions{})
-
-	if _, err := reservation.Reserve(testRequest(dir)); err != nil {
-		t.Fatal(err)
-	}
-
-	// Requote the entry addComponent wrote. Kustomize parses it exactly the
-	// same either way; removeComponent's plain string matcher does not.
-	collectionsFile := filepath.Join(dir, pathCollections)
-	original, err := os.ReadFile(collectionsFile) //nolint:gosec // a test fixture
-	if err != nil {
-		t.Fatal(err)
-	}
-	old := "- reservations/" + fixtureApp
-	reformatted := strings.Replace(string(original), old, `- "reservations/`+fixtureApp+`"`, 1)
-	if reformatted == string(original) {
-		t.Fatal("the fixture's components entry was not found to reformat")
-	}
-	if err := os.WriteFile(collectionsFile, []byte(reformatted), 0o600); err != nil { //nolint:gosec // a test fixture
-		t.Fatal(err)
-	}
-
-	componentDir := filepath.Join(dir, "management-clusters", fixtureCluster, "collections", "reservations", fixtureApp)
-
-	if _, err := reservation.Release(testReleaseRequest(dir)); err == nil {
-		t.Fatal("expected Release to refuse a components list it cannot parse, got success")
-	}
-
-	if _, statErr := os.Stat(componentDir); statErr != nil {
-		t.Errorf("the component directory was removed despite the refusal: %v", statErr)
-	}
-	entries := reservationEntries(t, dir, fixtureCluster)
-	if _, held := entries[fixtureApp]; !held {
-		t.Error("the ConfigMap entry was removed despite the refusal")
-	}
-
-	// The strongest check available: the tree kustomize-controller would
-	// actually build still renders, proving the refusal left nothing dangling.
-	renderCluster(t, dir, fixtureCluster)
-}
-
-// TestReleasePreservesCommentsAndBlankLinesInTheComponentsBlock covers drift
-// finding 1's test does not: a components block a human annotated, rather
-// than reformatted, since Reserve wrote it. A GitOps repository's comments
-// carry operational intent, so removing the sole reservation entry must not
-// silently discard them along with the rest of the block.
-func TestReleasePreservesCommentsAndBlankLinesInTheComponentsBlock(t *testing.T) {
-	dir := newGitOpsFixture(t, fixtureOptions{})
-
-	if _, err := reservation.Reserve(testRequest(dir)); err != nil {
-		t.Fatal(err)
-	}
-
-	// An ops engineer annotates the entry Reserve wrote, before it is released.
-	collectionsFile := filepath.Join(dir, pathCollections)
-	original, err := os.ReadFile(collectionsFile) //nolint:gosec // a test fixture
-	if err != nil {
-		t.Fatal(err)
-	}
-	const comment = "  # ops: keep this reservation until the incident bridge closes"
-	old := "  - reservations/" + fixtureApp
-	annotated := strings.Replace(string(original), old, "\n"+comment+"\n"+old, 1)
-	if annotated == string(original) {
-		t.Fatal("the fixture's components entry was not found to annotate")
-	}
-	if err := os.WriteFile(collectionsFile, []byte(annotated), 0o600); err != nil { //nolint:gosec // a test fixture
-		t.Fatal(err)
-	}
-
-	if _, err := reservation.Release(testReleaseRequest(dir)); err != nil {
-		t.Fatal(err)
-	}
-
-	after := readFixtureFile(t, dir, pathCollections)
-	if !strings.Contains(after, "ops: keep this reservation until the incident bridge closes") {
-		t.Errorf("release discarded the comment in the components block:\n%s", after)
-	}
-
-	// The comment survives only if the file still parses: this is also the
-	// strongest available check that the release itself took effect cleanly.
-	renderCluster(t, dir, fixtureCluster)
 }

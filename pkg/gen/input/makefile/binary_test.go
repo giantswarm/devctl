@@ -15,16 +15,18 @@ import (
 )
 
 // Use a real executable without compiling a second Go program. An open stdin
-// keeps cat running while make replaces its on-disk binary.
+// keeps sh running while make replaces its on-disk binary. Not cat: the uutils
+// cat of newer Ubuntu releases dispatches on its file name and refuses to run
+// as a copy named after the fixture.
 func TestGoBuildReplacesRunningBinary(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("Linux executable inode semantics")
 	}
-	cat, err := exec.LookPath("cat")
+	sh, err := exec.LookPath("sh")
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldBinary, err := os.ReadFile(cat) // #nosec G304 -- the local cat executable
+	oldBinary, err := os.ReadFile(sh) // #nosec G304 -- the local sh executable
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,11 +77,11 @@ func TestGoBuildReplacesRunningBinary(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					// #nosec G204 -- an isolated copy of cat, with no arguments
+					// #nosec G204 -- an isolated copy of sh, with no arguments
 					process := exec.CommandContext(t.Context(), target)
-					// BusyBox dispatches its cat applet using argv[0], even when
+					// BusyBox dispatches its sh applet using argv[0], even when
 					// the executable itself has been copied to an alias path.
-					process.Args[0] = "cat"
+					process.Args[0] = "sh"
 					stdin, err := process.StdinPipe()
 					if err != nil {
 						t.Fatal(err)
@@ -103,7 +105,7 @@ func TestGoBuildReplacesRunningBinary(t *testing.T) {
 
 					// Confirm the executable is serving stdin before replacement;
 					// this also catches multicall applet dispatch failures.
-					if _, err := stdin.Write([]byte("ready\n")); err != nil {
+					if _, err := stdin.Write([]byte("echo ready\n")); err != nil {
 						t.Fatal(err)
 					}
 					ready := make([]byte, len("ready\n"))
@@ -124,7 +126,7 @@ func TestGoBuildReplacesRunningBinary(t *testing.T) {
 					if os.SameFile(previous, installed) || installed.Mode().Perm() != 0o751 || !installed.ModTime().Equal(stamp) {
 						t.Errorf("replacement must have a new inode and retain source mode/timestamp: %v", installed)
 					}
-					if _, err := stdin.Write([]byte("still running\n")); err != nil {
+					if _, err := stdin.Write([]byte("echo still running\n")); err != nil {
 						t.Fatal(err)
 					}
 					if err := stdin.Close(); err != nil {

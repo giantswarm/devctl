@@ -67,7 +67,7 @@ func TestRefusesAWrongCall(t *testing.T) {
 
 // newReleasableFixture builds the smallest checkout Release needs: a
 // reservations ConfigMap holding one entry for chart, and the Kustomize
-// component Reserve would have written for it. It pushes the initial commit to
+// reservation block Reserve would have written for it. It pushes the initial commit to
 // a local bare "origin", so a plain `git push` after Release succeeds without
 // any network or credentials, exactly as it would tracking a real remote from
 // a laptop.
@@ -102,19 +102,16 @@ func newReleasableFixtureWithCharts(t *testing.T, cluster string, charts ...stri
 	kustomization := "apiVersion: kustomize.config.k8s.io/v1beta1\n" +
 		"kind: Kustomization\n" +
 		"resources: []\n" +
-		"components:\n"
+		"patches:\n"
+	if err := os.MkdirAll(collectionsDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
 
 	files := map[string]string{}
 	for _, chart := range charts {
-		componentDir := filepath.Join(collectionsDir, "reservations", chart)
-		if err := os.MkdirAll(componentDir, 0o750); err != nil {
-			t.Fatal(err)
-		}
-
 		configMap += "  " + chart + ": '{user: alice, branch: fix/crash, pr: giantswarm/hello-world#123, scope: app, from: 2026-09-15T10:00:00Z, until: 2026-09-15T20:00:00Z}'\n"
-		kustomization += "  - reservations/" + chart + "\n"
-		files[filepath.Join(componentDir, "kustomization.yaml")] = "apiVersion: kustomize.config.k8s.io/v1alpha1\nkind: Component\nresources:\n  - " + chart + "-dev-reservation.yaml\n"
-		files[filepath.Join(componentDir, chart+"-dev-reservation.yaml")] = "apiVersion: source.toolkit.fluxcd.io/v1\nkind: OCIRepository\nmetadata:\n  name: " + chart + "-dev-reservation\n  namespace: giantswarm\n"
+		kustomization += "  # BEGIN reservation of " + chart + ", written by `devctl reservation reserve`. Do not edit.\n" +
+			"  # END reservation of " + chart + ", written by `devctl reservation reserve`\n"
 	}
 	files[filepath.Join(clusterDir, "configmap-reservations.yaml")] = configMap
 	files[filepath.Join(collectionsDir, "kustomization.yaml")] = kustomization
@@ -155,8 +152,8 @@ func TestReleaseCommitsAndPushesWithNoToken(t *testing.T) {
 		t.Errorf("stdout does not mention %q: %s", chart, stdout.String())
 	}
 
-	if _, err := os.Stat(filepath.Join(dir, "management-clusters", cluster, "collections", "reservations", chart)); !os.IsNotExist(err) {
-		t.Errorf("component directory still exists: %v", err)
+	if b, err := os.ReadFile(filepath.Join(dir, "management-clusters", cluster, "collections", "kustomization.yaml")); err != nil || strings.Contains(string(b), "reservation of") { // #nosec G304 -- the fixture checkout in this test's temporary directory
+		t.Errorf("reservation block still exists: %v", err)
 	}
 
 	head := gittest.GitOutput(t, dir, "rev-parse", "HEAD")
@@ -249,6 +246,12 @@ func TestReleaseByPullRequestNeedsNoClusterOrApp(t *testing.T) {
 			t.Errorf("stdout does not mention %q: %s", chart, stdout.String())
 		}
 	}
+	// The GitOps source comes last, so the older columns keep their place.
+	for _, line := range strings.Split(strings.TrimSpace(stdout.String()), "\n") {
+		if fields := strings.Split(line, "\t"); len(fields) != 4 || fields[3] != "collections" {
+			t.Errorf("line %q: want 4 tab-separated fields, the last one collections", line)
+		}
+	}
 
 	configMap := gittest.GitOutput(t, origin, "show", "main:management-clusters/"+cluster+"/configmap-reservations.yaml")
 	for _, chart := range []string{chartA, chartB} {
@@ -283,6 +286,9 @@ func TestReleaseOneClusterChecksThePullRequest(t *testing.T) {
 	})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("release from the holding pull request: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "(GitOps source: collections).") {
+		t.Errorf("stdout does not name the GitOps source: %s", stdout.String())
 	}
 
 	// An unrelated pull request is refused, and the reservation survives.

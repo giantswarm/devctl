@@ -30,6 +30,11 @@ func (f *fakeCircleCI) GetProject(context.Context, string, string) (*circlecicli
 	return &circleciclient.Project{ID: "p1"}, nil
 }
 
+func (f *fakeCircleCI) Follow(context.Context, string, string) error {
+	f.writes = append(f.writes, "follow")
+	return nil
+}
+
 func (f *fakeCircleCI) ListPipelineDefinitions(context.Context, string) ([]circleciclient.PipelineDefinition, error) {
 	defs := []circleciclient.PipelineDefinition{{ID: "oauth", ConfigSource: circleciclient.DefinitionSource{Provider: circleciclient.ProviderGitHubOAuth}}}
 	if f.setUp {
@@ -77,6 +82,10 @@ func (f *fakeCircleCI) GetPipeline(context.Context, string) (*circleciclient.Pip
 
 func (f *fakeCircleCI) GetWorkflow(context.Context, string) (*circleciclient.WorkflowDetail, error) {
 	return nil, fmt.Errorf("unexpected workflow attribution read")
+}
+
+func (f *fakeCircleCI) GetProjectJob(context.Context, string, string, int64) (*circleciclient.ProjectJob, error) {
+	return nil, fmt.Errorf("unexpected OAuth job read")
 }
 
 func (f *fakeCircleCI) ListPipelineWorkflows(context.Context, string) ([]circleciclient.Workflow, error) {

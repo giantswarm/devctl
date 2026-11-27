@@ -134,9 +134,9 @@ func TestReserveRefusesAnAppTheRenderDoesNotHold(t *testing.T) {
 	}
 }
 
-// TestReserveRefusesAnExtrasApp names the real reason. "Not found" would send
-// the reader looking for a typo in a command that was right.
-func TestReserveRefusesAnExtrasApp(t *testing.T) {
+// TestReserveRefusesAnAppInNeitherTree: a chart that only an unwired extras
+// file mentions is in neither render, so it is not found.
+func TestReserveRefusesAnAppInNeitherTree(t *testing.T) {
 	dir := newGitOpsFixture(t, fixtureOptions{extraFiles: map[string]string{
 		"management-clusters/" + fixtureCluster + "/extras/mystery/helmrelease.yaml": collectionApp("mystery", "mystery-app", "mystery"),
 	}})
@@ -145,13 +145,10 @@ func TestReserveRefusesAnExtrasApp(t *testing.T) {
 	req.App = "mystery-app"
 
 	_, err := reservation.Reserve(req)
-	if err == nil {
-		t.Fatal("expected a refusal, got none")
+	if !reservation.IsAppNotFound(err) {
+		t.Fatalf("expected an app-not-found error, got %v", err)
 	}
-	if !reservation.IsAppNotSupported(err) {
-		t.Fatalf("expected an app-not-supported error, got %v", err)
-	}
-	for _, want := range []string{"mystery-app", "extras", "collection"} {
+	for _, want := range []string{"mystery-app", "collections", "extras"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal does not mention %q: %s", want, err.Error())
 		}
@@ -248,8 +245,8 @@ func TestReserveAppArgumentOverridesTheChartName(t *testing.T) {
 }
 
 // TestReservePatchesEveryInstanceOfTheApp covers an app running twice on one
-// cluster. Both instances share the chart and the branch, so one source object
-// serves both.
+// cluster. Both instances share the chart and the branch, so one block patches
+// the source of each.
 func TestReservePatchesEveryInstanceOfTheApp(t *testing.T) {
 	dir := newGitOpsFixture(t, fixtureOptions{extraFiles: map[string]string{
 		fixtureAppFile: collectionApp(fixtureApp, fixtureApp, fixtureApp) +
@@ -261,22 +258,23 @@ func TestReservePatchesEveryInstanceOfTheApp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// One source object, not one per instance.
 	want := []string{
 		"management-clusters/" + fixtureCluster + "/collections/kustomization.yaml",
-		"management-clusters/" + fixtureCluster + "/collections/reservations/" + fixtureApp + "/" + fixtureApp + "-dev-reservation.yaml",
-		"management-clusters/" + fixtureCluster + "/collections/reservations/" + fixtureApp + "/kustomization.yaml",
 		"management-clusters/" + fixtureCluster + "/" + reservation.ConfigMapFile,
 	}
 	if diff := cmp.Diff(want, res.Files); diff != "" {
 		t.Errorf("written files (-want +got):\n%s", diff)
 	}
 
+	// Each instance keeps the chartRef to its own source, and the block
+	// patches every source of the chart.
 	objects := renderCluster(t, dir, fixtureCluster)
-	mustObject(t, objects, "OCIRepository/"+res.SourceName)
-	for _, release := range []string{fixtureApp, fixtureApp + "-eu"} {
-		if got := chartRefName(t, objects, release); got != res.SourceName {
-			t.Errorf("%s chartRef name: got %v, want %q", release, got, res.SourceName)
+	for _, name := range []string{fixtureApp, fixtureApp + "-eu"} {
+		if got := heldBy(t, objects, name); got != testUser {
+			t.Errorf("%s source holder: got %v, want %q", name, got, testUser)
+		}
+		if got := chartRefName(t, objects, name); got != name {
+			t.Errorf("%s chartRef name: got %v, want %q", name, got, name)
 		}
 	}
 }

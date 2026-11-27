@@ -84,6 +84,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (er
 			App:         r.flag.App,
 			AppDir:      appDir,
 			Branch:      r.flag.Branch,
+			Bundle:      r.flag.Bundle,
 			User:        user,
 			PullRequest: r.flag.PullRequest,
 			Duration:    duration,
@@ -97,6 +98,9 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (er
 	}
 	checkout.Wrote(r.stderr)
 
+	for _, w := range result.Warnings {
+		_, _ = fmt.Fprintf(r.stderr, "%s: %s\n", termout.Warning(r.stderr), w)
+	}
 	if result.PullRequest == "" {
 		_, _ = fmt.Fprintf(r.stderr, "%s: no pull request linked (--%s). devctl does not check that a pull request exists for branch %s; you are responsible for builds of that branch to exist. extend --%s, release --%s and the reap rename check do not find this reservation.\n",
 			termout.Warning(r.stderr), flagPullRequest, r.flag.Branch, flagPullRequest, flagPullRequest)
@@ -112,8 +116,8 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (er
 			reservation.Result
 		}{r.flag.Cluster, user, r.flag.Branch, result.PullRequest, scope, result})
 	}
-	_, _ = fmt.Fprintf(r.stdout, "Reserved %s on %s for %s until %s.\n",
-		result.App, r.flag.Cluster, user, result.Until.Format("2006-01-02 15:04 MST"))
+	_, _ = fmt.Fprintf(r.stdout, "Reserved %s on %s for %s until %s (GitOps source: %s).\n",
+		result.App, r.flag.Cluster, user, result.Until.Format("2006-01-02 15:04 MST"), result.GitOpsSource)
 	if termout.Debug(cmd) {
 		_, _ = fmt.Fprintf(r.stdout, "Source %s follows %s\n", result.SourceName, result.SemverFilter)
 		_, _ = fmt.Fprintf(r.stdout, "Commit %s on %s\n", result.Commit, r.flag.GitOps.Repo)

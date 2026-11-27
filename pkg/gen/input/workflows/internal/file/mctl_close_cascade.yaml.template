@@ -42,11 +42,40 @@ jobs:
               }
             );
 
+            // Anyone who can read the repo can comment, so markers only count from the workflows'
+            // bots and from people with write access (a local `mctl create mc` posts as its operator; Tekton falls back to tinkerers-ci).
+            const MARKER_BOTS = ['github-actions[bot]', 'giantswarm-mctlbot[bot]', 'tinkerers-ci[bot]'];
+            const canWrite = new Map();
+            async function trustedAuthor(c) {
+              const login = c.user?.login;
+              if (!login) return false;
+              if (MARKER_BOTS.includes(login)) return c.user.type === 'Bot';
+              if (c.user.type !== 'User') return false;
+              if (!canWrite.has(login)) {
+                let ok = false;
+                try {
+                  const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                    owner: context.repo.owner, repo: context.repo.repo, username: login,
+                  });
+                  // maintain is reported as write.
+                  ok = ['admin', 'write'].includes(data.permission);
+                } catch (err) {
+                  core.warning(`Could not read the permission of ${login}: ${err.message}`);
+                }
+                canWrite.set(login, ok);
+              }
+              return canWrite.get(login);
+            }
+            const trusted = [];
+            for (const c of comments) {
+              if (await trustedAuthor(c)) trusted.push(c);
+            }
+
             // Newest first; markers shared with merge_gate and merge_cascade.
             let ccrURL = '';
             let instURL = '';
             let fleetURL = '';
-            for (const comment of comments.reverse()) {
+            for (const comment of trusted.reverse()) {
               if (!ccrURL) {
                 const m = comment.body.match(/\*\*CCR PR:\*\* (https?:\/\/\S+)/);
                 if (m) ccrURL = m[1];
@@ -87,6 +116,7 @@ jobs:
           steps.find.outputs.teleport_fleet_pr_url != ''
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
           CCR_PR_URL: ${{ steps.find.outputs.ccr_pr_url }}
           INSTALLATIONS_PR_URL: ${{ steps.find.outputs.installations_pr_url }}
           TELEPORT_FLEET_PR_URL: ${{ steps.find.outputs.teleport_fleet_pr_url }}
@@ -95,16 +125,53 @@ jobs:
           script: |
             const closed = [];
             const failed = [];
+            const skipped = [];
+            const done = [];
+            const unreadable = [];
+            const installation = process.env.BRANCH.replace(/-init(-(capa|capz|capv|capvcd))?$/, '');
+            const customer = context.repo.repo.replace(/-management-clusters$/, '');
 
-            async function closePR(url) {
+            // mctl opens its PRs from a branch of the target repo into its default branch.
+            function fromMctlBranch(pr, head) {
+              return pr.head.ref === head && pr.head.repo?.full_name === pr.base.repo.full_name &&
+                pr.base.ref === pr.base.repo.default_branch;
+            }
+
+            // Only the PRs mctl opens for this installation (the App token reaches every repo of the org).
+            async function closePR(url, wantRepo, wantHead) {
               if (!url) return;
               const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
               if (!m) {
                 core.warning(`Cannot parse PR URL: ${url}`);
+                skipped.push(url);
                 return;
               }
               const [, owner, repo, pull_number] = m;
+              if (owner !== context.repo.owner || repo !== wantRepo) {
+                core.warning(`Not closing ${url}: it is not in ${context.repo.owner}/${wantRepo}`);
+                skipped.push(url);
+                return;
+              }
+              let pr;
               try {
+                ({ data: pr } = await github.rest.pulls.get({
+                  owner, repo, pull_number: parseInt(pull_number),
+                }));
+              } catch (e) {
+                core.warning(`Could not read ${url}: ${e.message}`);
+                unreadable.push(`${url} (${e.status || e.message})`);
+                return;
+              }
+              try {
+                if (!fromMctlBranch(pr, wantHead)) {
+                  core.warning(`Not closing ${url}: it is not from the ${wantHead} branch into the default branch`);
+                  skipped.push(url);
+                  return;
+                }
+                if (pr.merged || pr.state === 'closed') {
+                  done.push(`${url} (${pr.merged ? 'merged' : 'closed'})`);
+                  return;
+                }
                 await github.rest.pulls.update({
                   owner,
                   repo,
@@ -118,15 +185,30 @@ jobs:
               }
             }
 
-            await closePR(process.env.CCR_PR_URL);
-            await closePR(process.env.INSTALLATIONS_PR_URL);
-            await closePR(process.env.TELEPORT_FLEET_PR_URL);
+            await closePR(process.env.CCR_PR_URL, `${customer}-configs`, `${installation}-config`);
+            await closePR(process.env.INSTALLATIONS_PR_URL, 'installations', `${installation}-init`);
+            await closePR(process.env.TELEPORT_FLEET_PR_URL, 'teleport-fleet', `bot-${installation}-token`);
 
-            const lines = ['### Related cluster PRs closed\n'];
-            for (const url of closed) lines.push(`- ${url}`);
+            const lines = ['### Related cluster PRs\n'];
+            if (closed.length) {
+              lines.push('**Closed:**');
+              for (const url of closed) lines.push(`- ${url}`);
+            }
             if (failed.length) {
               lines.push('\n**Failed to close (check the giantswarm-mctlbot app permissions):**');
               for (const url of failed) lines.push(`- ${url}`);
+            }
+            if (unreadable.length) {
+              lines.push('\n**Could not be read, left as they are:**');
+              for (const url of unreadable) lines.push(`- ${url}`);
+            }
+            if (done.length) {
+              lines.push('\n**Already merged or closed:**');
+              for (const url of done) lines.push(`- ${url}`);
+            }
+            if (skipped.length) {
+              lines.push('\n**Left open, not a PR mctl opened for this cluster:**');
+              for (const url of skipped) lines.push(`- ${url}`);
             }
 
             await github.rest.issues.createComment({

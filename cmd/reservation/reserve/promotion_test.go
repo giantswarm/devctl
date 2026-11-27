@@ -87,11 +87,25 @@ data: {}
 
 func newReserveCheckout(t *testing.T) string {
 	t.Helper()
+
+	return newReserveCheckoutWith(t, nil)
+}
+
+// newReserveCheckoutWith adds files to the fixture, over any of the same name.
+func newReserveCheckoutWith(t *testing.T, more map[string]string) string {
+	t.Helper()
 	origin, dir := t.TempDir(), t.TempDir()
 	gittest.RunGit(t, origin, "init", "--bare", "-b", "main")
 	gittest.RunGit(t, dir, "init", "-b", "main")
 	gittest.RunGit(t, dir, "remote", "add", "origin", origin)
+	files := map[string]string{}
 	for name, content := range gitopsFiles {
+		files[name] = content
+	}
+	for name, content := range more {
+		files[name] = content
+	}
+	for name, content := range files {
 		full := filepath.Join(dir, name)
 		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
 			t.Fatal(err)
@@ -165,11 +179,69 @@ func TestReserveReportsEffectivePullRequest(t *testing.T) {
 					if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
 						t.Fatal(err)
 					}
-					if doc != after {
+					// Compare JSON with JSON: the stored reservation also
+					// holds what the entry records, which JSON leaves out.
+					b, err := json.Marshal(after)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var stored reservation.Reservation
+					if err := json.Unmarshal(b, &stored); err != nil {
+						t.Fatal(err)
+					}
+					if doc != stored {
 						t.Errorf("JSON reports %+v, stored %+v", doc, after)
 					}
 				}
 			})
+		}
+	}
+}
+
+// TestReserveTextNamesTheGitOpsSource: a human sees where the reservation lives.
+func TestReserveTextNamesTheGitOpsSource(t *testing.T) {
+	stdout, _ := runReserve(t, newReserveCheckout(t), "table")
+	if !strings.Contains(stdout, "(GitOps source: collections).") {
+		t.Errorf("stdout does not name the GitOps source: %s", stdout)
+	}
+}
+
+// TestReserveJSONNamesTheGitOpsSource pins the JSON key that callers parse.
+func TestReserveJSONNamesTheGitOpsSource(t *testing.T) {
+	stdout, _ := runReserve(t, newReserveCheckout(t), "json")
+
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	if got := doc["gitopsSource"]; got != reservation.GitOpsSourceCollections {
+		t.Errorf("gitopsSource: got %v, want %q:\n%s", got, reservation.GitOpsSourceCollections, stdout)
+	}
+}
+
+// TestReserveWarnsWhenTheChartIsAlsoInTheExtras: an extras source that feeds no
+// release leaves the patch to the collections, and the user hears where else the
+// chart lives.
+func TestReserveWarnsWhenTheChartIsAlsoInTheExtras(t *testing.T) {
+	dir := newReserveCheckoutWith(t, map[string]string{
+		"management-clusters/graveler/extras/kustomization.yaml": "resources:\n  - source.yaml\n",
+		"management-clusters/graveler/extras/source.yaml": `apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: hello-world
+  namespace: giantswarm
+spec:
+  interval: 10m
+  ref:
+    semver: x.x.x
+  url: oci://gsoci.azurecr.io/charts/giantswarm/hello-world
+`,
+	})
+
+	_, stderr := runReserve(t, dir, "table", "--pull-request", "giantswarm/hello-world#1")
+	for _, want := range []string{"Warning", "management-clusters/graveler/collections", "management-clusters/graveler/extras"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr does not mention %q: %s", want, stderr)
 		}
 	}
 }

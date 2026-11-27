@@ -156,7 +156,7 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	}
 
 	if r.flag.Language == "go" {
-		inputs = append(inputs, workflowsInput.FixVulnerabilities())
+		inputs = append(inputs, workflowsInput.FixVulnerabilities(), workflowsInput.NestedGoModules())
 	}
 
 	if r.flag.CheckSecrets {
@@ -227,6 +227,7 @@ func (r *runner) run(ctx context.Context, _ *cobra.Command, _ []string) error {
 	// workflows, including ones another generator prefixes zz_generated.
 	optional := []input.Input{
 		workflowsInput.FixVulnerabilities(),
+		workflowsInput.NestedGoModules(),
 		workflowsInput.Gitleaks(),
 		workflowsInput.CheckValuesSchema(),
 		workflowsInput.ChartTests(),

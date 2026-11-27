@@ -91,7 +91,7 @@ func (r *runner) run(ctx context.Context, cmd *cobra.Command, args []string) (er
 		}{r.flag.Cluster, result})
 	}
 
-	_, _ = fmt.Fprintf(r.stdout, "Released %s on %s.\n", result.App, r.flag.Cluster)
+	_, _ = fmt.Fprintf(r.stdout, "Released %s on %s (GitOps source: %s).\n", result.App, r.flag.Cluster, result.GitOpsSource)
 	if termout.Debug(cmd) {
 		_, _ = fmt.Fprintf(r.stdout, "Commit %s\n", result.Commit)
 	}
@@ -118,7 +118,8 @@ func (r *runner) releaseAll(ctx context.Context, checkout *gitops.Checkout, user
 		}
 	} else {
 		for _, entry := range released {
-			_, _ = fmt.Fprintf(r.stdout, "%s\t%s\t%s\n", entry.Cluster, entry.App, entry.Commit)
+			// The GitOps source comes last, so the older columns keep their place.
+			_, _ = fmt.Fprintf(r.stdout, "%s\t%s\t%s\t%s\n", entry.Cluster, entry.App, entry.Commit, entry.GitOpsSource)
 		}
 	}
 

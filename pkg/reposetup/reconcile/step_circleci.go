@@ -39,7 +39,9 @@ const CircleCIAppLogin = "circleci-app[bot]"
 // latest release's tag, else recently merged pull requests' heads
 // (recentCircleCIStatuses): statuses posted by CircleCIAppLogin are a GitHub
 // App pipeline's, statuses posted by a person are an OAuth follow's, which
-// stops building when that person leaves.
+// stops building when that person leaves. A person's statuses beside the
+// App's on the default branch's first build (firstBuild) are the follow's
+// that created the project, no OAuth trigger.
 func (r *Runner) stepCircleCI(ctx context.Context, s *run, sr *StepResult) error {
 	if r.CircleCI != nil {
 		return r.circleCIDefinitions(ctx, s, sr)
@@ -122,7 +124,18 @@ func (r *Runner) circleCIFromStatuses(ctx context.Context, s *run, sr *StepResul
 		return err
 	}
 	app, others := CircleCIPosters(statuses)
+	first := false
+	if app && len(others) > 0 && src.built != "" {
+		if first, err = r.firstBuild(ctx, s, src.built); err != nil {
+			return err
+		}
+	}
 	switch {
+	case first:
+		// The follow that creates a project builds the branch once as the
+		// person, before the App pipeline runs it: those statuses name no
+		// trigger. The next push builds on what is triggered.
+		sr.Summary = fmt.Sprintf("CircleCI statuses on %s from %s: GitHub App pipeline; those of %s beside them are of the branch's first build, a follow's, and the next push shows whether an OAuth trigger builds too", where, CircleCIAppLogin, strings.Join(others, ", "))
 	case app && len(others) > 0:
 		s.report(sr, FindingCircleCIOAuthFollow,
 			fmt.Sprintf("the CircleCI statuses of %s on %s come from %s and from %s: it builds on the GitHub App pipeline and on an OAuth follow, so every push builds twice", s.slug(), where, CircleCIAppLogin, strings.Join(others, ", ")),
@@ -165,6 +178,10 @@ const recentPullRequests = 3
 // exactly what it looked at.
 type statusSources struct {
 	read, refused []string
+	// built is the default branch's commit (the branch for its head)
+	// whose statuses recentCircleCIStatuses returned; empty when they are
+	// another ref's.
+	built string
 }
 
 // recentCircleCIStatuses returns the CircleCI statuses the circleci step
@@ -183,6 +200,7 @@ func (r *Runner) recentCircleCIStatuses(ctx context.Context, s *run) ([]*github.
 	var src statusSources
 	statuses, err := r.circleCIStatuses(ctx, s, s.branch())
 	if err != nil || len(statuses) > 0 {
+		src.built = s.branch()
 		return statuses, s.branch(), src, err
 	}
 	commits, resp, err := r.GitHub.Repositories.ListCommits(ctx, s.owner, s.name, &github.CommitsListOptions{SHA: s.branch(), ListOptions: github.ListOptions{PerPage: recentCommits}})
@@ -207,6 +225,7 @@ func (r *Runner) recentCircleCIStatuses(ctx context.Context, s *run) ([]*github.
 		}
 		statuses, err := r.circleCIStatuses(ctx, s, c.GetSHA())
 		if err != nil || len(statuses) > 0 {
+			src.built = c.GetSHA()
 			return statuses, s.branch(), src, err
 		}
 	}
@@ -267,6 +286,39 @@ func (r *Runner) recentCircleCIStatuses(ctx context.Context, s *run) ([]*github.
 		src.read = append(src.read, "the head of a pull request merged into "+s.branch())
 	}
 	return nil, "", src, nil
+}
+
+// firstBuild says the default branch's commit ref is the first the
+// branch's CircleCI statuses show built: none of the recentCommits commits
+// before it carries a CircleCI status. A repository followed to create its
+// CircleCI project is built so, and a pipeline that builds every push twice
+// built the pushes before too. A branch whose commits GitHub refuses or
+// lists empty is no first build: the verdict stays the statuses'. A
+// pipeline that builds every push twice and whose recentCommits pushes
+// before skipped CI reads as a first build until its next push.
+func (r *Runner) firstBuild(ctx context.Context, s *run, ref string) (bool, error) {
+	// ref and the recentCommits commits before it.
+	commits, resp, err := r.GitHub.Repositories.ListCommits(ctx, s.owner, s.name, &github.CommitsListOptions{SHA: ref, ListOptions: github.ListOptions{PerPage: recentCommits + 1}})
+	switch {
+	case resp != nil && resp.StatusCode == http.StatusConflict, isNotFound(resp, err), isForbidden(err):
+		return false, nil
+	case err != nil:
+		return false, err
+	case len(commits) == 0:
+		return false, nil
+	}
+	for _, c := range commits[1:] {
+		statuses, err := r.circleCIStatuses(ctx, s, c.GetSHA())
+		switch {
+		case isForbidden(err):
+			return false, nil
+		case err != nil:
+			return false, err
+		case len(statuses) > 0:
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // recentlyMerged returns the last recentPullRequests pull requests merged

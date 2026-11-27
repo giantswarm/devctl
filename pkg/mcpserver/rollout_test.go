@@ -137,7 +137,7 @@ func gravelerWith(t *testing.T, d *dex, a *apiServer, clientID, clientSecret str
 	exchange := map[string]any{
 		"tokenEndpoint": dexServer.URL + "/token",
 		"issuer":        issuer,
-		"connectorId":   "giantswarm-simple-oidc",
+		"connectorId":   "giantswarm-gazelle-oidc",
 		"clientIdFile":  write("client-id", clientID),
 	}
 	if clientSecret != "" {
@@ -245,7 +245,7 @@ func TestRolloutWaitAsThePerson(t *testing.T) {
 					"subject_token":        tt.bearer,
 					"subject_token_type":   "urn:ietf:params:oauth:token-type:id_token",
 					"requested_token_type": "urn:ietf:params:oauth:token-type:id_token",
-					"connector_id":         "giantswarm-simple-oidc",
+					"connector_id":         "giantswarm-gazelle-oidc",
 					"scope":                "openid profile email groups audience:server:client_id:dex-k8s-authenticator",
 				} {
 					if form[k] != want {
