@@ -55,7 +55,7 @@ check-env:
 ##@ Chart tests
 
 # renovate: datasource=github-releases depName=helm-unittest/helm-unittest
-HELM_UNITTEST_VERSION ?= v1.2.1
+HELM_UNITTEST_VERSION ?= v1.3.0
 HELM_UNITTEST_ATTEMPTS ?= 3
 HELM_UNITTEST_RETRY_DELAY ?= 5
 
